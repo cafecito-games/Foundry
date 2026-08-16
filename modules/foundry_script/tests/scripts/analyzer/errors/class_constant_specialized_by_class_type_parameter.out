@@ -1,3 +1,5 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 10: Constant "Aliased" cannot be specialized by class type parameter "U": every specialization of "Wrapper" shares one constant.
->> ERROR at line 14: Constant "Nested" cannot be specialized by class type parameter "U": every specialization of "NestedWrapper" shares one constant.
+>> ERROR at line 12: Constant "Aliased" cannot be specialized by class type parameter "U": every specialization of "Wrapper" shares one constant.
+>> ERROR at line 16: Constant "Nested" cannot be specialized by class type parameter "U": every specialization of "NestedWrapper" shares one constant.
+>> ERROR at line 20: Constant "Hidden" cannot be specialized by class type parameter "U": every specialization of "HiddenWrapper" shares one constant.
+>> ERROR at line 25: Constant "Aliased" cannot be specialized by class type parameter "U": every specialization of "LocalWrapper" shares one constant.

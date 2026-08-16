@@ -1,7 +1,9 @@
-# A class constant has exactly one slot, materialized once for the declaring class with no receiver to
-# reify a type parameter against. Binding it to a specialized class handle whose arguments name a
-# class type parameter would give every specialization the same handle -- the identical unsoundness a
-# static variable typed by a class parameter has -- so the declaration is rejected outright.
+# A constant is folded once into a constant pool -- the class's for a member, the compiled function's
+# for a local -- with no receiver to reify a type parameter against. Binding one to a specialized
+# class handle whose arguments name a class type parameter would give every specialization the same
+# handle, which is the identical unsoundness a static variable typed by a class parameter has, so the
+# declaration is rejected outright. An annotation that hides the handle does not change what the
+# constant slot holds, so it does not change the answer either.
 class Holder[T]:
 	var value: T
 
@@ -14,9 +16,24 @@ class NestedWrapper[U]:
 	const Nested = Holder[Array[U]]
 
 
+class HiddenWrapper[U]:
+	const Hidden: Variant = Holder[U]
+
+
+class LocalWrapper[U]:
+	func build() -> Variant:
+		const Aliased = Holder[U]
+		return Aliased.new()
+
+
 class Fixed:
 	const Concrete = Holder[int]
 
+	func build() -> Variant:
+		const Local = Holder[int]
+		return Local.new()
+
 
 func test() -> void:
-	print(Wrapper, NestedWrapper, Fixed.Concrete.new() != null)
+	print(Wrapper, NestedWrapper, HiddenWrapper, LocalWrapper)
+	print(Fixed.Concrete.new() != null, Fixed.new().build() != null)

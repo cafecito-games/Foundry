@@ -5118,6 +5118,14 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value,
 
 	Vector<ContainerType> type_arguments;
 	for (const FSParser::DataType &argument : p_datatype.type_arguments) {
+		if (_datatype_contains_erased_type_parameter(argument)) {
+			// A constant is one slot materialized with no receiver, so it cannot honestly claim the
+			// specialization a type parameter stands for. Baking the parameter's erasure in would record
+			// the definite evidence `Variant`, which every slot that really resolves the parameter then
+			// rejects. The bare unspecialized handle carries no evidence instead, and the analyzer rejects
+			// the declaration outright wherever it can see the class the parameter belongs to.
+			return resolved;
+		}
 		type_arguments.push_back(_gdtype_from_datatype(argument, p_owner).to_container_type());
 	}
 	return FSSpecializedClassHandle::create(Ref<FoundryScript>(base_class), type_arguments);

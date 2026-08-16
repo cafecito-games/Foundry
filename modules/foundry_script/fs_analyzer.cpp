@@ -5223,6 +5223,9 @@ void FSAnalyzer::resolve_variable_destructure(FSParser::VariableDestructureNode 
 void FSAnalyzer::resolve_constant(FSParser::ConstantNode *p_constant, bool p_is_local) {
 	static constexpr const char *kind = "constant";
 	resolve_assignable(p_constant, kind);
+	if (p_is_local) {
+		validate_local_constant_type_parameters(p_constant);
+	}
 
 #ifdef DEBUG_ENABLED
 	if (p_is_local) {
@@ -10145,6 +10148,44 @@ void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p
 	}
 }
 
+// The specialized class handle a constant is bound to. An annotated declaration names it directly; a
+// `Variant`-annotated or inferred one hides it, but the compiler still folds the initializer's handle
+// into the constant slot (`_constant_storage_datatype()` in `fs_compiler.cpp`), so the initializer is
+// what the check has to read when the declaration says nothing.
+static FSParser::DataType _specialized_constant_handle_type(const FSParser::ConstantNode *p_constant) {
+	const FSParser::DataType declared = p_constant->get_datatype();
+	if (declared.is_meta_type) {
+		return declared;
+	}
+	if (p_constant->initializer != nullptr) {
+		const FSParser::DataType initializer_type = p_constant->initializer->get_datatype();
+		if (initializer_type.is_meta_type) {
+			return initializer_type;
+		}
+	}
+	return FSParser::DataType();
+}
+
+// A constant is folded once into a constant pool -- the class's for a member, the compiled function's
+// for a local -- with no receiver to reify a type parameter against, so one handle would have to stand
+// for every specialization. That is the identical unsoundness `validate_static_variable_type_parameters()`
+// rejects for a static variable, and the parameter is not recoverable later, so the declaration is
+// rejected rather than given a fabricated argument.
+void FSAnalyzer::validate_local_constant_type_parameters(const FSParser::ConstantNode *p_constant) {
+	// A trait declares a template rather than storage and is analyzed once, before any implementer's
+	// arguments are known, so its own bodies are left alone.
+	if (p_constant == nullptr || p_constant->identifier == nullptr || parser->current_class == nullptr ||
+			parser->current_class->is_trait) {
+		return;
+	}
+	const StringName parameter = _remaining_class_type_parameter(_specialized_constant_handle_type(p_constant));
+	if (parameter != StringName()) {
+		push_error(vformat(R"(Constant "%s" cannot be specialized by class type parameter "%s": every specialization of "%s" shares one constant.)",
+						   p_constant->identifier->name, parameter, _class_or_trait_name(parser->current_class)),
+				p_constant);
+	}
+}
+
 void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_class) {
 	// A class constant has exactly one slot, materialized once for the declaring class with no receiver
 	// to reify a type parameter against. Binding one to a specialized class handle whose arguments name
@@ -10164,8 +10205,8 @@ void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_
 				member.constant->identifier == nullptr) {
 			continue;
 		}
-		const FSParser::DataType constant_type = member.constant->get_datatype();
-		if (!constant_type.is_meta_type) {
+		const FSParser::DataType constant_type = _specialized_constant_handle_type(member.constant);
+		if (!constant_type.is_set()) {
 			continue;
 		}
 		const StringName parameter = _remaining_class_type_parameter(constant_type);
@@ -10192,8 +10233,8 @@ void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_
 			if (p_class->has_member(member.constant->identifier->name)) {
 				continue;
 			}
-			const FSParser::DataType constant_type = member.constant->get_datatype();
-			if (!constant_type.is_meta_type) {
+			const FSParser::DataType constant_type = _specialized_constant_handle_type(member.constant);
+			if (!constant_type.is_set()) {
 				continue;
 			}
 			const FSParser::DataType flattened =
