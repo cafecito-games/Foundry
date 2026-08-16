@@ -369,6 +369,18 @@ class ReleaseLinuxWorkflowTests(WorkflowContractTestCase):
         )
         self.assertEqual("${{ matrix.runner }}", self.workflow.job_key("build-linux", "runs-on"))
 
+    def test_each_linux_cell_installs_python_for_its_own_runner(self) -> None:
+        # The deps action defaults to an x64 Python, which cannot execute on an Arm runner.
+        matrix = self.workflow.strategy("build-linux")["matrix"]
+        self.assertEqual(
+            {"x86_64": "x64", "arm64": "arm64"},
+            {cell["arch"]: cell["python_arch"] for cell in matrix["include"] if "python_arch" in cell},
+        )
+        self.assertEqual(
+            "${{ matrix.python_arch }}",
+            self.workflow.step_with("build-linux", "Setup Python and SCons")["python-arch"],
+        )
+
     def test_each_linux_cell_compiles_and_uploads_its_own_architecture(self) -> None:
         self.assertIn(
             "arch=${{ matrix.arch }}",

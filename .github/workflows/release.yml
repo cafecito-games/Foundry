@@ -109,10 +109,14 @@ jobs:
         target: [editor, template_debug, template_release]
         include:
           # Both architectures build natively; arm64 uses GitHub's Arm runners.
+          # `python_arch` must track the runner: the shared deps action defaults to
+          # x64, and an x64 Python on an Arm runner cannot execute at all.
           - arch: x86_64
             runner: ubuntu-22.04
+            python_arch: x64
           - arch: arm64
             runner: ubuntu-22.04-arm
+            python_arch: arm64
           - target: editor
             template_scons_flags: ""
           - target: template_debug
@@ -149,6 +153,8 @@ jobs:
 
       - name: Setup Python and SCons
         uses: ./.github/actions/foundry-deps
+        with:
+          python-arch: ${{ matrix.python_arch }}
 
       - name: Compilation
         uses: ./.github/actions/foundry-build
