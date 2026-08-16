@@ -227,6 +227,20 @@ repos:
             misc/checks/.*\.(?:py|toml)
           )$
 
+      - id: foundry-docker-context
+        name: Foundry headless container build context
+        language: python
+        entry: python misc/checks/check_docker_context.py
+        pass_filenames: false
+        # `.dockerignore` denies everything and re-includes the staged binaries by name,
+        # so a renamed or added COPY source produces a build that only fails once a
+        # release is already running. Both sides of that comparison are the trigger set.
+        files: |
+          (?x)^(
+            docker/\.dockerignore|
+            docker/foundry-headless\.Dockerfile
+          )$
+
       - id: foundry-doc-class-registration
         name: Foundry doc class registration parity
         language: python
