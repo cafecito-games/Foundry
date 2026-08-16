@@ -826,6 +826,8 @@ def test_command(args: argparse.Namespace, target: BuildTarget | None = None) ->
     command = [str(target.binary_path), "--headless", "test", "run"]
     for case_filter in args.test_case or []:
         command.extend(["--case", case_filter])
+    for suite_filter in args.test_suite or []:
+        command.extend(["--suite", suite_filter])
     command.append("--force-colors")
     return command
 
@@ -893,6 +895,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "Run a focused doctest case filter after building. Repeatable: every occurrence "
             "is retained and forwarded, and the selected tests are the union of all supplied "
             "patterns (matches any). Implies --test."
+        ),
+    )
+    parser.add_argument(
+        "--suite",
+        dest="test_suite",
+        action="append",
+        help=(
+            "Run a focused doctest suite filter after building. Repeatable, and combines with "
+            "--case: the selected tests are the union of every supplied case and suite pattern. "
+            "Implies --test."
         ),
     )
     parser.add_argument(
@@ -991,7 +1003,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.dev_mode and args.dev_build:
         parser.error("--dev-mode and --dev-build cannot be combined")
-    if args.test_case:
+    if args.test_case or args.test_suite:
         args.test = True
     try:
         job_selection = resolve_job_selection(args.jobs, os.environ, os.cpu_count())

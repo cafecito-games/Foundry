@@ -60,6 +60,17 @@ of all supplied patterns (a test runs when its name matches any of them):
 python3 scripts/agent_build.py --backend ninja --test --case "*FoundryCLIParser*" --case "*FoundryCLI*TestRun*"
 ```
 
+`--suite <pattern>` behaves the same way for doctest suite names, and combines with `--case`:
+the selected tests are the union of every supplied case and suite pattern. Use it when the
+pattern names a suite rather than a case, since `--case` matches case names only:
+
+```sh
+python3 scripts/agent_build.py --backend ninja --test --suite "*[Modules][FoundryScript][Format]*"
+```
+
+A filter that matches no test is an error, so an empty result means the pattern is wrong, not
+that the run was trivially clean.
+
 ## Ninja + ccache pilot
 
 ```sh
