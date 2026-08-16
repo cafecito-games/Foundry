@@ -2585,10 +2585,25 @@ void FSPrinter::print_match(const FSParser::MatchNode *p_match) {
 				print_erased_pass_anchor(pass_line);
 			}
 		};
+		// A branch's own annotations are emitted by `print_match_branch`, so the leading
+		// flush has to stop at the first of them: the annotation lines are not trivia and
+		// would otherwise be counted as blank lines and produce a spurious gap.
+		const auto branch_first_line = [](const FSParser::MatchBranchNode *p_branch) {
+			int first_line = p_branch->start_line;
+			for (const FSParser::AnnotationNode *annotation : p_branch->annotations) {
+				if (annotation->start_line > 0 && annotation->start_line < first_line) {
+					first_line = annotation->start_line;
+				}
+			}
+			return first_line;
+		};
 		for (int i = 0; i < p_match->branches.size(); i++) {
 			const FSParser::MatchBranchNode *branch = p_match->branches[i];
+			// An erased `pass` interleaved with a branch's leading annotations is hoisted
+			// above them: an annotation has to stay adjacent to the branch it annotates, so
+			// the anchor keeping the `pass` comment alive goes ahead of the whole branch.
 			emit_erased_passes_before(branch->start_line);
-			emit_leading_trivia(branch->start_line, 0);
+			emit_leading_trivia(branch_first_line(branch), 0);
 			print_match_branch(branch);
 			// The branch's tail-comment flush may already have advanced the cursor; never
 			// move it backward (that would re-emit a comment).

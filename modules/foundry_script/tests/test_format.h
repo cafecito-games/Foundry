@@ -1623,6 +1623,41 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		check_format_invariants(source, formatted, "match_branch_pass.fs");
 	}
 
+	TEST_CASE("[Format] Hoists a commented `pass` above a branch's annotations") {
+		// A branch annotation has to stay adjacent to the branch it annotates, so an
+		// erased `pass` interleaved with the annotations keeps its anchor ahead of both.
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\t@warning_ignore(\"unassigned_variable\")\n"
+				"\t\tpass #note\n"
+				"\t\t1:\n"
+				"\t\t\treturn 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted ==
+						"func f(value):\n\tmatch value:\n\n\t\tpass  # note\n"
+						"\t\t@warning_ignore(\"unassigned_variable\")\n\t\t1:\n\t\t\treturn 1\n",
+				vformat("A pass among branch annotations must keep its comment: %s", formatted));
+		check_format_invariants(source, formatted, "match_annotated_branch_pass.fs");
+	}
+
+	TEST_CASE("[Format] Keeps an annotated match branch flush against the match header") {
+		// A branch's annotation lines are not trivia, so the leading flush has to stop at
+		// the first of them instead of counting them as blank lines.
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\t@warning_ignore(\"unassigned_variable\")\n"
+				"\t\t1:\n"
+				"\t\t\treturn 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted ==
+						"func f(value):\n\tmatch value:\n\t\t@warning_ignore(\"unassigned_variable\")\n"
+						"\t\t1:\n\t\t\treturn 1\n",
+				vformat("An annotated branch must not gain a leading blank line: %s", formatted));
+		check_format_invariants(source, formatted, "match_annotated_branch.fs");
+	}
+
 	TEST_CASE("[Format] Still drops a comment-free branchless match `pass`") {
 		const String source =
 				"func f(value):\n"
