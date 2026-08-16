@@ -133,10 +133,12 @@ public:
 	// slot erases like any other parameter, but the receiver reifies the argument, so the store is
 	// checked rather than rejected.
 	//
-	// A parameter used as the type argument of a specialized class handle (`Holder[T]`) is deliberately
-	// not included: constructing one inside the declaring class does not reify `T` onto the constructed
-	// instance, so there is no argument at run time to check against and enforcing the slot would reject
-	// values the program legitimately produces.
+	// Two positions are deliberately not included, because no store into them is checkable and this
+	// answer must match the one code generation gives. A parameter used as the type argument of a
+	// specialized class handle (`Holder[T]`): constructing one inside the declaring class does not reify
+	// `T` onto the constructed instance, so enforcing the slot would reject values the program
+	// legitimately produces. And a tuple slot, which erases to an untyped Array describing none of its
+	// elements.
 	static bool destination_depends_on_receiver_type_parameter(const FSParser::DataType &p_type);
 
 	// Structural identity used for invariant positions such as a typed container element: two types

@@ -1,0 +1,5 @@
+FS_TEST_OK
+~~ WARNING at line 35: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
+true
+5
+lambda capture ok

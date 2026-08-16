@@ -1205,6 +1205,13 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
 	}
+	if (p_type.kind == FSParser::DataType::TUPLE) {
+		// A tuple erases to an untyped Array that describes none of its slots, so no store into one can be
+		// checked against a receiver. Stopping here keeps this answer identical to the one code generation
+		// gives, which matters beyond diagnostics: a "yes" here also makes an enclosing lambda capture the
+		// instance, and a capture taken for a check that is never emitted only creates a reference cycle.
+		return false;
+	}
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
 		// `@Self` is scoped to the class but is not reified per instance: it denotes the class the frame
 		// runs against, which a static frame has as well, and it lowers to a concrete script rather than
