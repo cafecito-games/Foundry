@@ -1071,8 +1071,13 @@ Vector<FSDataType> FSCompiler::_bake_construction_type_arguments(const Vector<FS
 		}
 		// A construction that still names a parameter is resolved from the receiver, so an enclosing
 		// lambda has to carry one. The requirement is read off the shape actually emitted, so a
-		// substituted-away parameter takes no capture and creates no reference cycle.
-		current_function_requires_receiver = current_function_requires_receiver || _baked_shape_needs_receiver(converted);
+		// substituted-away parameter takes no capture and creates no reference cycle. A static frame has
+		// no receiver at all: the construction there resolves nothing and builds an unspecialized
+		// instance by design, and asking for a capture would only make the enclosing lambda a self-lambda
+		// that a static call cannot create.
+		if (!p_codegen.is_static) {
+			current_function_requires_receiver = current_function_requires_receiver || _baked_shape_needs_receiver(converted);
+		}
 		baked.write[i] = converted;
 	}
 	return baked;

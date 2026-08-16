@@ -2,4 +2,6 @@ FS_TEST_OK
 true
 false
 5
+true
+false
 static frame construction ok

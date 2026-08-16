@@ -26,6 +26,12 @@ class LocalWrapper[U]:
 		return Aliased.new()
 
 
+# A hard annotation that names no specialization widens it away, so the shared constant claims
+# nothing about the parameter and stays legal.
+class WidenedWrapper[U]:
+	const Widened: FoundryScript = Holder[U]
+
+
 class Fixed:
 	const Concrete = Holder[int]
 
@@ -36,4 +42,5 @@ class Fixed:
 
 func test() -> void:
 	print(Wrapper, NestedWrapper, HiddenWrapper, LocalWrapper)
+	print(WidenedWrapper[int].new().Widened != null)
 	print(Fixed.Concrete.new() != null, Fixed.new().build() != null)

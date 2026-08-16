@@ -10154,8 +10154,11 @@ void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p
 // what the check has to read when the declaration says nothing.
 static FSParser::DataType _specialized_constant_handle_type(const FSParser::ConstantNode *p_constant) {
 	const FSParser::DataType declared = p_constant->get_datatype();
-	if (declared.is_meta_type) {
-		return declared;
+	if (p_constant->datatype_specifier != nullptr && declared.is_hard_type() && !declared.is_variant()) {
+		// A hard annotation is exactly what the slot holds, and one that names no specialization
+		// (`const Aliased: FoundryScript = Holder[U]`) deliberately widens it away, so the folded
+		// constant claims nothing about the parameter and is safe to share.
+		return declared.is_meta_type ? declared : FSParser::DataType();
 	}
 	if (p_constant->initializer != nullptr) {
 		const FSParser::DataType initializer_type = p_constant->initializer->get_datatype();
