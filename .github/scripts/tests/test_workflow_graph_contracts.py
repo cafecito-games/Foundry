@@ -352,6 +352,50 @@ class PrEditorArtifactsWorkflowTests(WorkflowContractTestCase):
         self.assertEqual("${{ needs.preflight.outputs.pr_head_sha }}", inputs["ref"])
 
 
+class ReleaseLinuxWorkflowTests(WorkflowContractTestCase):
+    workflow: workflow_graph.Workflow
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.workflow = load_workflow("release.yml")
+
+    def test_linux_builds_every_target_for_both_architectures(self) -> None:
+        matrix = self.workflow.strategy("build-linux")["matrix"]
+        self.assertEqual(["x86_64", "arm64"], matrix["arch"])
+        self.assertEqual(["editor", "template_debug", "template_release"], matrix["target"])
+        self.assertEqual(
+            {"x86_64": "ubuntu-22.04", "arm64": "ubuntu-22.04-arm"},
+            {cell["arch"]: cell["runner"] for cell in matrix["include"] if "runner" in cell},
+        )
+        self.assertEqual("${{ matrix.runner }}", self.workflow.job_key("build-linux", "runs-on"))
+
+    def test_each_linux_cell_compiles_and_uploads_its_own_architecture(self) -> None:
+        self.assertIn(
+            "arch=${{ matrix.arch }}",
+            self.workflow.step_with("build-linux", "Compilation")["scons-flags"],
+        )
+        for step_name, expected in (
+            ("Restore Foundry build cache", "release-linux-${{ matrix.target }}-${{ matrix.arch }}"),
+            ("Save Foundry build cache", "release-linux-${{ matrix.target }}-${{ matrix.arch }}"),
+        ):
+            with self.subTest(step=step_name):
+                self.assertEqual(expected, self.workflow.step_with("build-linux", step_name)["cache-name"])
+        self.assertEqual(
+            "release-linux-${{ matrix.target }}-${{ matrix.arch }}",
+            self.workflow.step_with("build-linux", "Upload artifact")["name"],
+        )
+
+    def test_the_api_bundle_is_produced_by_a_single_cell(self) -> None:
+        # The bundle describes the engine's script-facing surface, which does not vary by
+        # architecture; two cells producing it would collide on one artifact name.
+        for step_name in ("Generate API artifact bundle", "Upload API artifact"):
+            with self.subTest(step=step_name):
+                self.assertEqual(
+                    "matrix.target == 'editor' && matrix.arch == 'x86_64'",
+                    self.workflow.step_if("build-linux", step_name),
+                )
+
+
 class ReleaseIosWorkflowTests(WorkflowContractTestCase):
     workflow: workflow_graph.Workflow
 
@@ -425,13 +469,40 @@ class ReleaseContainerWorkflowTests(WorkflowContractTestCase):
             self.workflow.job_if("publish-container"),
         )
 
-    def test_publish_container_serializes_per_channel(self) -> None:
-        concurrency = self.workflow.concurrency("publish-container")
+    def test_publish_container_manifest_serializes_per_channel(self) -> None:
+        # The tagged index is the only thing that races between concurrent releases;
+        # the per-architecture pushes are by digest and cannot collide.
+        concurrency = self.workflow.concurrency("publish-container-manifest")
         self.assertEqual("release-container-${{ needs.resolve.outputs.channel }}", concurrency["group"])
         self.assertIs(False, concurrency["cancel-in-progress"])
 
+    def test_publish_container_builds_each_architecture_natively(self) -> None:
+        self.assertIs(False, self.workflow.strategy("publish-container")["fail-fast"])
+        cells = {key[0]: cell for key, cell in self.keyed_cells(self.workflow, "publish-container", ("arch",)).items()}
+        self.assertEqual(
+            {
+                "x86_64": {"arch": "x86_64", "docker_arch": "amd64", "runner": "ubuntu-24.04"},
+                "arm64": {"arch": "arm64", "docker_arch": "arm64", "runner": "ubuntu-24.04-arm"},
+            },
+            cells,
+        )
+        self.assertEqual("${{ matrix.runner }}", self.workflow.job_key("publish-container", "runs-on"))
+        self.assertEqual(
+            "release-linux-editor-${{ matrix.arch }}",
+            self.workflow.step_with("publish-container", "Download Linux editor artifact")["name"],
+        )
+        for step_name in ("Build local smoke image", "Publish architecture image"):
+            with self.subTest(step=step_name):
+                self.assertEqual(
+                    "linux/${{ matrix.docker_arch }}",
+                    self.workflow.step_with("publish-container", step_name)["platforms"],
+                )
+        # Nothing in the matrix may push a tag: a half-finished release must never leave a
+        # tag resolving to a single architecture.
+        self.assertNotIn("tags", self.workflow.step_with("publish-container", "Publish architecture image"))
+
     def test_publish_container_passes_version_and_revision_build_args(self) -> None:
-        for step_name in ("Build local smoke image", "Publish release image"):
+        for step_name in ("Build local smoke image", "Publish architecture image"):
             with self.subTest(step=step_name):
                 build_args = self.workflow.step_with("publish-container", step_name)["build-args"]
                 self.assertEqual(
@@ -442,10 +513,24 @@ class ReleaseContainerWorkflowTests(WorkflowContractTestCase):
                     [entry for entry in build_args.splitlines() if entry.strip()],
                 )
 
+    def test_publish_container_manifest_joins_every_architecture_digest(self) -> None:
+        self.assertEqual(("resolve", "publish-container"), self.workflow.needs("publish-container-manifest"))
+        self.assertEqual(
+            "release-container-digest-${{ matrix.docker_arch }}",
+            self.workflow.step_with("publish-container", "Upload image digest")["name"],
+        )
+        download = self.workflow.step_with("publish-container-manifest", "Download image digests")
+        self.assertEqual("release-container-digest-*", download["pattern"])
+        self.assertIs(True, download["merge-multiple"])
+
     def test_publish_container_delegates_its_decisions_to_tested_scripts(self) -> None:
         self.assertIn(
             ".github/scripts/resolve_channel_tag_freshness.sh",
-            self.workflow.step_run("publish-container", "Check moving alias freshness"),
+            self.workflow.step_run("publish-container-manifest", "Check moving alias freshness"),
+        )
+        self.assertIn(
+            ".github/scripts/create_container_manifest.sh",
+            self.workflow.step_run("publish-container-manifest", "Create multi-architecture manifest"),
         )
         self.assertIn(
             ".github/scripts/verify_headless_image.sh",

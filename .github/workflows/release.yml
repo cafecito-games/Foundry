@@ -99,13 +99,20 @@ jobs:
 
   build-linux:
     needs: resolve
-    runs-on: ubuntu-22.04
-    name: Linux ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    name: Linux ${{ matrix.target }} (${{ matrix.arch }})
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
+        arch: [x86_64, arm64]
+        target: [editor, template_debug, template_release]
         include:
+          # Both architectures build natively; arm64 uses GitHub's Arm runners.
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
           - target: editor
             template_scons_flags: ""
           - target: template_debug
@@ -137,7 +144,7 @@ jobs:
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
         with:
-          cache-name: release-linux-${{ matrix.target }}
+          cache-name: release-linux-${{ matrix.target }}-${{ matrix.arch }}
         continue-on-error: true
 
       - name: Setup Python and SCons
@@ -146,14 +153,14 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=x86_64
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=${{ matrix.arch }}
           platform: linuxbsd
           target: ${{ matrix.target }}
 
       - name: Save Foundry build cache
         uses: ./.github/actions/foundry-cache-save
         with:
-          cache-name: release-linux-${{ matrix.target }}
+          cache-name: release-linux-${{ matrix.target }}-${{ matrix.arch }}
         continue-on-error: true
 
       - name: Prepare artifact
@@ -163,10 +170,12 @@ jobs:
 
       - name: Verify version metadata
         if: matrix.target == 'editor'
-        run: python3 misc/scripts/verify_foundry_version.py bin/foundry.linuxbsd.editor.x86_64
+        run: python3 misc/scripts/verify_foundry_version.py bin/foundry.linuxbsd.editor.${{ matrix.arch }}
 
+      # The API bundle describes the engine's script-facing surface, which is
+      # identical across architectures, so only one build needs to produce it.
       - name: Generate API artifact bundle
-        if: matrix.target == 'editor'
+        if: matrix.target == 'editor' && matrix.arch == 'x86_64'
         env:
           VERSION: ${{ needs.resolve.outputs.release_version }}
           TAG: ${{ needs.resolve.outputs.tag }}
@@ -179,7 +188,7 @@ jobs:
             --commit "$(git rev-parse HEAD)"
 
       - name: Upload API artifact
-        if: matrix.target == 'editor'
+        if: matrix.target == 'editor' && matrix.arch == 'x86_64'
         uses: ./.github/actions/upload-artifact
         with:
           name: release-api
@@ -188,7 +197,7 @@ jobs:
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
-          name: release-linux-${{ matrix.target }}
+          name: release-linux-${{ matrix.target }}-${{ matrix.arch }}
 
   build-windows:
     needs: resolve
@@ -1114,8 +1123,10 @@ jobs:
           echo "$TEMPLATE_VERSION" > templates/version.txt
 
           # Linux desktop templates.
-          cp artifacts/release-linux-template_release/foundry.linuxbsd.template_release.x86_64 templates/linux_release.x86_64
-          cp artifacts/release-linux-template_debug/foundry.linuxbsd.template_debug.x86_64 templates/linux_debug.x86_64
+          for arch in x86_64 arm64; do
+            cp "artifacts/release-linux-template_release-${arch}/foundry.linuxbsd.template_release.${arch}" "templates/linux_release.${arch}"
+            cp "artifacts/release-linux-template_debug-${arch}/foundry.linuxbsd.template_debug.${arch}" "templates/linux_debug.${arch}"
+          done
 
           # Windows desktop templates: the GUI executable is the main template,
           # and the console wrapper ships alongside it as *.console.exe (the
@@ -1162,14 +1173,19 @@ jobs:
           # upload-artifact/download-artifact does not preserve POSIX executable
           # bits, so restore them on loose Unix binaries before zipping (binaries
           # already inside .zip/.apk artifacts keep their stored permissions).
-          chmod +x templates/linux_release.x86_64 templates/linux_debug.x86_64
-          chmod +x artifacts/release-linux-editor/foundry.linuxbsd.editor.x86_64
+          for arch in x86_64 arm64; do
+            chmod +x "templates/linux_release.${arch}" "templates/linux_debug.${arch}"
+            chmod +x "artifacts/release-linux-editor-${arch}/foundry.linuxbsd.editor.${arch}"
+          done
           chmod +x artifacts/release-macos-editor/*.app/Contents/MacOS/*
 
           ( cd templates && zip -r -q "../dist/Foundry_v${VERSION}_export_templates.tpz" . )
 
           # --- Editor archives ----------------------------------------------
-          ( cd artifacts/release-linux-editor && zip -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_linux.x86_64.zip" foundry.linuxbsd.editor.x86_64 )
+          for arch in x86_64 arm64; do
+            ( cd "artifacts/release-linux-editor-${arch}" \
+              && zip -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_linux.${arch}.zip" "foundry.linuxbsd.editor.${arch}" )
+          done
           # The Windows editor needs its D3D12 sidecar DLLs (and console wrapper)
           # alongside the executable; include whichever were produced.
           ( cd artifacts/release-windows-editor
@@ -1270,15 +1286,18 @@ jobs:
           fi
 
           macos_asset="dist/Foundry_v${RELEASE_VERSION}_macos.universal.zip"
-          linux_asset="dist/Foundry_v${RELEASE_VERSION}_linux.x86_64.zip"
+          linux_x86_64_asset="dist/Foundry_v${RELEASE_VERSION}_linux.x86_64.zip"
+          linux_arm64_asset="dist/Foundry_v${RELEASE_VERSION}_linux.arm64.zip"
           if [ ! -f "$macos_asset" ]; then
             echo "::error::Missing macOS release asset: $macos_asset"
             exit 1
           fi
-          if [ ! -f "$linux_asset" ]; then
-            echo "::error::Missing Linux release asset: $linux_asset"
-            exit 1
-          fi
+          for linux_asset in "$linux_x86_64_asset" "$linux_arm64_asset"; do
+            if [ ! -f "$linux_asset" ]; then
+              echo "::error::Missing Linux release asset: $linux_asset"
+              exit 1
+            fi
+          done
 
           tap_dir="$RUNNER_TEMP/homebrew-tap"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/cafecito-games/homebrew-tap.git" "$tap_dir"
@@ -1287,7 +1306,8 @@ jobs:
             --status "$RELEASE_STATUS" \
             --version "$RELEASE_VERSION" \
             --macos-asset "$macos_asset" \
-            --linux-asset "$linux_asset" \
+            --linux-x86-64-asset "$linux_x86_64_asset" \
+            --linux-arm64-asset "$linux_arm64_asset" \
             --output-dir "$tap_dir/Casks")"
           cask_token="$(basename "$cask_path" .rb)"
 
@@ -1331,11 +1351,21 @@ jobs:
         && needs.resolve.outputs.draft == 'false'
         && needs.publish.outputs.github_release_published == 'true'
       }}
-    runs-on: ubuntu-24.04
-    concurrency:
-      group: release-container-${{ needs.resolve.outputs.channel }}
-      cancel-in-progress: false
-      queue: max
+    name: Container image (${{ matrix.arch }})
+    # Each architecture builds and smoke-runs its own image on a native runner,
+    # then pushes it untagged, by digest. publish-container-manifest joins the
+    # digests into the tagged multi-architecture index.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            docker_arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            docker_arch: arm64
+            runner: ubuntu-24.04-arm
     # Registry-attached BuildKit attestations use package auth, not OIDC permissions for the separate actions/attest.
     permissions:
       contents: read
@@ -1349,11 +1379,124 @@ jobs:
       - name: Download Linux editor artifact
         uses: actions/download-artifact@v8
         with:
-          name: release-linux-editor
+          name: release-linux-editor-${{ matrix.arch }}
           path: docker
 
-      - name: Restore Linux executable mode
-        run: chmod 0755 docker/foundry.linuxbsd.editor.x86_64
+      - name: Stage the editor binary for the image build
+        # The Dockerfile selects its binary by BuildKit's TARGETARCH name, and
+        # download-artifact does not preserve the executable bit.
+        run: |
+          mv docker/foundry.linuxbsd.editor.${{ matrix.arch }} docker/foundry-${{ matrix.docker_arch }}
+          chmod 0755 docker/foundry-${{ matrix.docker_arch }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.resolve.outputs.release_version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build local smoke image
+        uses: docker/build-push-action@v6
+        # The local and registry exports share this builder and identical context/Dockerfile/platform/args/labels.
+        # load: true makes the image runnable for pre-auth smoke; the local exporter cannot retain SBOM/provenance.
+        with:
+          context: docker
+          file: docker/foundry-headless.Dockerfile
+          platforms: linux/${{ matrix.docker_arch }}
+          load: true
+          tags: foundry-headless-smoke:${{ github.sha }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
+            FOUNDRY_REVISION=${{ github.sha }}
+
+      - name: Verify headless image
+        env:
+          IMAGE_REF: foundry-headless-smoke:${{ github.sha }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.docker_arch }}
+          ENGINE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.release_version }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          SOURCE_REPOSITORY: https://github.com/cafecito-games/Foundry
+          SOURCE_REVISION: ${{ github.sha }}
+        run: .github/scripts/verify_headless_image.sh
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish architecture image
+        id: push
+        uses: docker/build-push-action@v6
+        # Reuse BuildKit's content-addressed cached graph for the registry export and add SBOM/provenance.
+        # This is a second image export, not a second Foundry compilation. The push is by digest and
+        # carries no tag, so a half-finished release never leaves a tag pointing at a single architecture.
+        with:
+          context: docker
+          file: docker/foundry-headless.Dockerfile
+          platforms: linux/${{ matrix.docker_arch }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
+            FOUNDRY_REVISION=${{ github.sha }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export image digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p digests
+          echo "$DIGEST" > "digests/${{ matrix.docker_arch }}"
+
+      - name: Upload image digest
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-container-digest-${{ matrix.docker_arch }}
+          path: digests/*
+
+  publish-container-manifest:
+    needs:
+      - resolve
+      - publish-container
+    if: >-
+      ${{
+        !cancelled()
+        && needs.resolve.result == 'success'
+        && needs.publish-container.result == 'success'
+      }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: release-container-${{ needs.resolve.outputs.channel }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NAME: ghcr.io/cafecito-games/foundry
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download image digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-container-digest-*
+          merge-multiple: true
+          path: digests
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -1394,6 +1537,9 @@ jobs:
       - name: Resolve image metadata
         id: metadata
         uses: docker/metadata-action@v5
+        env:
+          # Annotations belong on the index this job creates, not on the per-architecture manifests.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
@@ -1403,32 +1549,6 @@ jobs:
             org.opencontainers.image.version=${{ needs.resolve.outputs.release_version }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Build local smoke image
-        uses: docker/build-push-action@v6
-        # The local and registry exports share this builder and identical context/Dockerfile/platform/args/labels.
-        # load: true makes the image runnable for pre-auth smoke; the local exporter cannot retain SBOM/provenance.
-        with:
-          context: docker
-          file: docker/foundry-headless.Dockerfile
-          platforms: linux/amd64
-          load: true
-          tags: foundry-headless-smoke:${{ github.sha }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          build-args: |
-            FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
-            FOUNDRY_REVISION=${{ github.sha }}
-
-      - name: Verify headless image
-        env:
-          IMAGE_REF: foundry-headless-smoke:${{ github.sha }}
-          ENGINE_VERSION: ${{ needs.resolve.outputs.version }}
-          RELEASE_VERSION: ${{ needs.resolve.outputs.release_version }}
-          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
-          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
-          SOURCE_REPOSITORY: https://github.com/cafecito-games/Foundry
-          SOURCE_REVISION: ${{ github.sha }}
-        run: .github/scripts/verify_headless_image.sh
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -1436,19 +1556,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish release image
-        uses: docker/build-push-action@v6
-        # Reuse BuildKit's content-addressed cached graph for the registry export and add SBOM/provenance.
-        # This is a second image export, not a second Foundry compilation.
-        with:
-          context: docker
-          file: docker/foundry-headless.Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          build-args: |
-            FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
-            FOUNDRY_REVISION=${{ github.sha }}
-          sbom: true
-          provenance: mode=max
+      - name: Create multi-architecture manifest
+        env:
+          TAGS: ${{ steps.metadata.outputs.tags }}
+          ANNOTATIONS: ${{ steps.metadata.outputs.annotations }}
+        run: .github/scripts/create_container_manifest.sh digests
+
+      - name: Verify published manifest
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          platforms="$(docker buildx imagetools inspect "$IMAGE_NAME:$RELEASE_TAG" --raw \
+            | jq -r '.manifests[] | select(.platform.os != "unknown") | "\(.platform.os)/\(.platform.architecture)"' \
+            | sort -u)"
+          echo "Published platforms:"
+          echo "$platforms"
+          for expected in linux/amd64 linux/arm64; do
+            if ! echo "$platforms" | grep -Fxq "$expected"; then
+              echo "::error::Published image $IMAGE_NAME:$RELEASE_TAG is missing $expected."
+              exit 1
+            fi
+          done
