@@ -66,6 +66,17 @@ class FSCompiler {
 	const FSParser::ClassNode *flattened_trait_declaration = nullptr;
 	Vector<FSParser::DataType> flattened_trait_type_arguments;
 
+	// Set while a function body is compiled, and true once that body emits a store whose shape still
+	// names a class type parameter for the receiver to resolve. A lambda needs the instance exactly when
+	// its body does, and only the compiler knows that: the shape may resolve to a concrete type once a
+	// trait's arguments are substituted, and a slot the analyzer sees may emit no store at all. Taking a
+	// capture the body does not need is not free -- a receiver that stores the Callable and a Callable
+	// that holds the receiver retain each other forever.
+	bool current_function_requires_receiver = false;
+	// The value the most recently finished `_parse_function()` left behind, read by the lambda site that
+	// requested it.
+	bool last_parsed_function_requires_receiver = false;
+
 	struct FunctionLambdaInfo {
 		FSFunction *function = nullptr;
 		FSFunction *parent = nullptr;

@@ -1012,10 +1012,6 @@ private:
 	void mark_node_unsafe(const FSParser::Node *p_node);
 	void downgrade_node_type_source(FSParser::Node *p_node);
 	void mark_lambda_use_self();
-	// Records that the enclosing lambda, if any, stores into a slot whose declared type mentions a
-	// class type parameter. Such a store is validated against the receiver's reification, so the lambda
-	// must capture the instance even when its body never names `self`.
-	void mark_receiver_type_parameter_slot(const FSParser::DataType &p_destination);
 	void resolve_pending_lambda_bodies();
 	void reduce_identifier_from_base_set_class(FSParser::IdentifierNode *p_identifier, FSParser::DataType p_identifier_datatype);
 	Ref<FoundryScript> get_depended_shallow_script(const String &p_path, Error &r_error);

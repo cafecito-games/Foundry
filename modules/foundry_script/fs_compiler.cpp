@@ -920,6 +920,29 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 	return found;
 }
 
+// Whether a baked slot shape still names a class type parameter, and therefore still needs a receiver
+// to resolve. A shape whose parameters were all substituted away -- a trait applied with a concrete
+// argument -- validates on its own.
+static bool _baked_shape_needs_receiver(const FSDataType &p_type, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return false;
+	}
+	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
+		return true;
+	}
+	for (const FSDataType &element_type : p_type.container_element_types) {
+		if (_baked_shape_needs_receiver(element_type, p_depth + 1)) {
+			return true;
+		}
+	}
+	for (const FSDataType &type_argument : p_type.type_arguments) {
+		if (_baked_shape_needs_receiver(type_argument, p_depth + 1)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // Whether a function-body slot (a local, a later assignment, or a return) has to be validated against
 // the receiver instead of stored directly. A class type parameter is reified onto the instance, but a
 // function body is compiled once for the declaring class and sees only the parameter, which erases
@@ -963,6 +986,7 @@ FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_decl
 	if (flattened_trait_declaration != nullptr) {
 		_substitute_binding_type_parameters(baked, flattened_trait_type_arguments, p_script);
 	}
+	current_function_requires_receiver = current_function_requires_receiver || _baked_shape_needs_receiver(baked);
 	return baked;
 }
 
@@ -2683,8 +2707,14 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				return FSCodeGenerator::Address();
 			}
 
-			codegen.script->lambda_info.insert(function, { (int)lambda->captures.size(), lambda->use_self });
-			gen->write_lambda(result, function, captures, lambda->use_self);
+			// A body that resolves a class type parameter needs the instance even when it never names
+			// `self`, and that requirement propagates outward: an enclosing lambda has to carry the
+			// receiver its nested one will ask for.
+			const bool lambda_uses_self = lambda->use_self || last_parsed_function_requires_receiver;
+			current_function_requires_receiver = current_function_requires_receiver || last_parsed_function_requires_receiver;
+
+			codegen.script->lambda_info.insert(function, { (int)lambda->captures.size(), lambda_uses_self });
+			gen->write_lambda(result, function, captures, lambda_uses_self);
 
 			for (int i = 0; i < captures.size(); i++) {
 				if (captures[i].mode == FSCodeGenerator::Address::TEMPORARY) {
@@ -4243,6 +4273,25 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 	codegen.script = p_script;
 	codegen.declaration_site_script = witness_declaration_site_script;
 	codegen.function_node = p_func;
+
+	// Each body answers for itself whether it needs the receiver, and publishes that answer for the
+	// lambda site that asked for it. A nested body's answer is folded into its enclosing one at that
+	// site rather than by leaking through this flag, and the restore runs on every exit path.
+	struct ReceiverRequirementScope {
+		FSCompiler *compiler = nullptr;
+		bool enclosing = false;
+
+		explicit ReceiverRequirementScope(FSCompiler *p_compiler) :
+				compiler(p_compiler), enclosing(p_compiler->current_function_requires_receiver) {
+			compiler->current_function_requires_receiver = false;
+		}
+
+		~ReceiverRequirementScope() {
+			compiler->last_parsed_function_requires_receiver = compiler->current_function_requires_receiver;
+			compiler->current_function_requires_receiver = enclosing;
+		}
+	};
+	const ReceiverRequirementScope receiver_requirement_scope(this);
 
 	StringName func_name;
 	bool is_abstract = false;

@@ -24,6 +24,32 @@ class NullableCrate[T]:
 			return kept
 
 
+# A defaulted parameter is not a checked slot: nothing validates a default against the receiver.
+class DefaultedCrate[T]:
+	var keeper
+
+	func setup() -> void:
+		keeper = func(v: T = null):
+			return v
+
+
+# A trait applied with a concrete argument leaves a shape with no parameter left in it, so the body
+# checks the slot without needing a receiver at all -- and therefore without a capture.
+trait LambdaKeeper[V]:
+	var keeper := func(v):
+		var kept: V = v
+		return kept
+
+
+class ConcreteLambdaKeeper:
+	uses LambdaKeeper[int]
+
+
+# Forwarding the implementer's own parameter does leave one, so this lambda captures and checks.
+class ForwardingLambdaKeeper[W]:
+	uses LambdaKeeper[W]
+
+
 # The comparison case: a bare `T` slot is checked against the receiver, so this lambda does capture
 # it, and the resulting cycle is the deliberate cost of the check.
 class CheckedCrate[T]:
@@ -47,6 +73,20 @@ func test() -> void:
 	var weak_nullable: WeakRef = weakref(nullable_crate)
 	nullable_crate = null
 	print(weak_nullable.get_ref() == null)
+
+	var defaulted := DefaultedCrate[int].new()
+	defaulted.setup()
+	var weak_defaulted: WeakRef = weakref(defaulted)
+	defaulted = null
+	print(weak_defaulted.get_ref() == null)
+
+	var concrete_trait := ConcreteLambdaKeeper.new()
+	var weak_concrete_trait: WeakRef = weakref(concrete_trait)
+	print(concrete_trait.keeper.call(1))
+	concrete_trait = null
+	print(weak_concrete_trait.get_ref() == null)
+
+	print(ForwardingLambdaKeeper[int].new().keeper.call(2))
 
 	var checked := CheckedCrate[int].new()
 	checked.setup()

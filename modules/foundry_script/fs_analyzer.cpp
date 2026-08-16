@@ -5033,7 +5033,6 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 				type.type_source = FSParser::DataType::INFERRED;
 			}
 		} else if (!specified_type.is_variant()) {
-			mark_receiver_type_parameter_slot(specified_type);
 			if (_datatype_contains_self_type_parameter(specified_type)) {
 				if (!initializer_type.is_hard_type() || !_datatype_matches_self_return_contract(specified_type, initializer_type)) {
 					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
@@ -6031,7 +6030,6 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 	}
 
 	if (has_expected_type && !compatibility_expected_type.is_variant()) {
-		mark_receiver_type_parameter_slot(compatibility_expected_type);
 		if (preserve_self_contract) {
 			if (!self_container_literal_validated && (!result.is_hard_type() || !_datatype_matches_self_return_contract(expected_type, result))) {
 				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
@@ -6678,7 +6676,6 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 	}
 
 	FSParser::DataType assignee_type = p_assignment->assignee->get_datatype();
-	mark_receiver_type_parameter_slot(assignee_type);
 
 	// A contextual case shorthand on the right of an assignment takes its union from the assignee,
 	// which is only typed above, so this runs after the assignee is reduced rather than beside the
@@ -16711,19 +16708,6 @@ void FSAnalyzer::downgrade_node_type_source(FSParser::Node *p_node) {
 	FSParser::DataType datatype;
 	datatype.kind = FSParser::DataType::VARIANT;
 	source->set_datatype(datatype);
-}
-
-void FSAnalyzer::mark_receiver_type_parameter_slot(const FSParser::DataType &p_destination) {
-	if (current_lambda == nullptr || static_context) {
-		return;
-	}
-	if (!FSTypeCompatibility::destination_depends_on_receiver_type_parameter(p_destination)) {
-		return;
-	}
-	// The store compiled for such a slot is validated against the receiver's reified argument, so the
-	// lambda needs the instance even though its body never spells `self`. Without the capture the frame
-	// would run with no receiver and the check would silently do nothing.
-	mark_lambda_use_self();
 }
 
 void FSAnalyzer::mark_lambda_use_self() {
