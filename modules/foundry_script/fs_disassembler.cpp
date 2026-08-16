@@ -696,6 +696,18 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_ASSIGN_TYPED_TUPLE: {
+				text += "assign typed tuple of arity ";
+				text += itos(_code_ptr[ip + 4]);
+				text += " (";
+				text += DADDR(3);
+				text += ") ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+
+				incr += 5;
+			} break;
 			case OPCODE_ASSIGN_TYPED_DICTIONARY: {
 				text += "assign typed dictionary ";
 				text += DADDR(1);

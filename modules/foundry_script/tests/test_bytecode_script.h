@@ -882,6 +882,54 @@ TEST_CASE("[FoundryScript][BytecodeScript] Receiver-relative class-parameter che
 	original->clear();
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Tuple slot shape checks survive the bytecode round trip") {
+	// A tuple slot's whole shape lives in a serialized descriptor constant, since the slot's own
+	// address type erases to a bare Array. A round trip that dropped it would leave the restored
+	// script taking any Array of any arity, with no other symptom.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func keep(value) -> (int, String):\n"
+			"\tvar kept: (int, String) = value\n"
+			"\treturn kept\n");
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	const Variant instance = bytecode_new_instance(restored);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	Array good;
+	good.push_back(1);
+	good.push_back("one");
+	const Variant accepted = bytecode_instance_call(object, SNAME("keep"), { good });
+	REQUIRE(accepted.get_type() == Variant::ARRAY);
+	CHECK(Array(accepted).size() == 2);
+	// The value is stored, not converted: the check never retypes the carrier into a typed Array.
+	CHECK_FALSE(Array(accepted).is_typed());
+
+	Array wrong_element;
+	wrong_element.push_back(1);
+	wrong_element.push_back(2);
+	Array wrong_arity;
+	wrong_arity.push_back(1);
+	wrong_arity.push_back("one");
+	wrong_arity.push_back(true);
+	ERR_PRINT_OFF;
+	const Variant rejected_element = bytecode_instance_call(object, SNAME("keep"), { wrong_element });
+	const Variant rejected_arity = bytecode_instance_call(object, SNAME("keep"), { wrong_arity });
+	ERR_PRINT_ON;
+	// A rejected store aborts the function before its return, so each call yields the return type's
+	// default rather than the offending value. A tuple return erases to a plain Array, whose default
+	// is empty.
+	REQUIRE(rejected_element.get_type() == Variant::ARRAY);
+	REQUIRE(rejected_arity.get_type() == Variant::ARRAY);
+	CHECK(Array(rejected_element).is_empty());
+	CHECK(Array(rejected_arity).is_empty());
+
+	restored->clear();
+	original->clear();
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges survive serialization") {
 	// A conformance file reached through a namespace is the one script a compiled file references
 	// nowhere: no constant, no type, no base. Only the declaring script's own compilation registers

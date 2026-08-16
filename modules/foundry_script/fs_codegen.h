@@ -133,6 +133,12 @@ public:
 	// `p_is_erased_container` marks a slot *declared* as a container of a parameter (`Array[T]`), whose
 	// runtime element typing belongs to its concrete consumer, so the check must not retype the value.
 	virtual void write_assign_typed_class_parameter(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, bool p_is_type_handle, bool p_is_erased_container) = 0;
+	// Store into a function-body slot declared as a tuple, validating the value's arity and element
+	// types against the declared shape at runtime. The address type of a tuple slot is an erased,
+	// untyped Array, so `p_expected_type` is the un-erased `TUPLE` shape the same lowering builds for an
+	// `is` test. Nothing is converted: tuple elements are invariant and the value keeps the read-only
+	// Array identity its value semantics depend on.
+	virtual void write_assign_typed_tuple(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) = 0;
 	// Retype a runtime-erased (untyped) array — the result of a generic method returning `Array[T]` —
 	// into the concrete typed array of the target, converting each element.
 	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) = 0;

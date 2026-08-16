@@ -874,7 +874,7 @@ static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *
 //
 // Traversal follows typed-container elements only. It never follows the type arguments of a
 // specialized class handle, whose construction inside the declaring class does not reify them, and it
-// stops at a tuple, which erases to an untyped Array that describes none of its slots. The analyzer's
+// stops at a tuple, which carries its own shape through a separate store. The analyzer's
 // `FSTypeCompatibility::destination_depends_on_receiver_type_parameter()` answers the same question
 // for a static frame, where no shape is checkable at all and both exclusions are moot.
 static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &p_type,
@@ -891,9 +891,11 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 	}
 
 	if (p_type.kind == FSParser::DataType::TUPLE) {
-		// A tuple erases to a plain, untyped Array with no element metadata at all, so nothing describes
-		// its slots at run time. A check emitted for one would only assert "this is an Array" while
-		// claiming to enforce the parameter, so the slot is left unbound instead.
+		// A tuple slot is checked by its own store, which carries the shape as a compiled descriptor and
+		// lowers every element through `_gdtype_tuple_test_type_from_datatype()`. That lowering erases a
+		// type parameter to Variant, so a parameter element is accepted-as-anything rather than resolved
+		// against the receiver; reporting the slot here instead would replace the whole structural check
+		// with a projection that describes none of the concrete elements.
 		return false;
 	}
 
@@ -969,6 +971,16 @@ bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_dec
 	}
 	bool is_sound = true;
 	return _type_depends_on_declared_type_parameters(p_declared_type, declaring_class->type_parameters, is_sound) && is_sound;
+}
+
+// Whether a function-body slot (a local, a later assignment, or a return) is declared as a tuple, and
+// therefore has to carry its shape as a compiled operand. Every tuple slot erases to a bare, untyped
+// Array in the address type -- see the `TUPLE` early return in `_gdtype_from_datatype()` -- so the
+// ordinary typed-store lowerings see nothing to enforce and the slot would take any Array of any
+// arity with any contents.
+bool FSCompiler::_slot_is_tuple_shaped(const FSParser::DataType &p_declared_type) const {
+	return p_declared_type.is_set() && p_declared_type.is_hard_type() &&
+			p_declared_type.kind == FSParser::DataType::TUPLE;
 }
 
 // The shape such a slot is validated with: the declared type, with its parameter nodes preserved for
@@ -2702,6 +2714,10 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					bool slot_is_erased_container = false;
 					const FSDataType slot_type = _bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
 					gen->write_assign_typed_class_parameter(target, to_assign, slot_type, slot_is_type_handle, slot_is_erased_container);
+				} else if (!is_member && _slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
+					// A later store into a tuple local is the same boundary its initializer was: without a
+					// check here the declared shape could be laundered away after the fact.
+					gen->write_assign_typed_tuple(target, to_assign, _gdtype_tuple_test_type_from_datatype(assignment->assignee->get_datatype(), codegen.script));
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -3719,6 +3735,13 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							return_target = codegen.add_temporary(return_type);
 							gen->write_assign_typed_class_parameter(return_target, return_value, slot_type, slot_is_type_handle, slot_is_erased_container);
 							pop_return_target = true;
+						} else if (_slot_is_tuple_shaped(codegen.function_node->get_datatype())) {
+							// The return slot erases to a bare Array, so the shape is checked here rather than
+							// at whatever the caller happens to consume the result as -- a `Variant` binding at
+							// the call site would otherwise check nothing at all.
+							return_target = codegen.add_temporary(return_type);
+							gen->write_assign_typed_tuple(return_target, return_value, _gdtype_tuple_test_type_from_datatype(codegen.function_node->get_datatype(), codegen.script));
+							pop_return_target = true;
 						}
 					}
 					gen->write_return(return_target);
@@ -3816,6 +3839,8 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 						bool slot_is_erased_container = false;
 						const FSDataType slot_type = _bake_receiver_slot_type(lv->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
 						gen->write_assign_typed_class_parameter(local, src_address, slot_type, slot_is_type_handle, slot_is_erased_container);
+					} else if (_slot_is_tuple_shaped(lv->get_datatype())) {
+						gen->write_assign_typed_tuple(local, src_address, _gdtype_tuple_test_type_from_datatype(lv->get_datatype(), codegen.script));
 					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {
