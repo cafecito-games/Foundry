@@ -45,6 +45,16 @@ class HalfPair[V] extends Pair[int, V]:
 	pass
 
 
+# A nullable element admits null whatever its parameter turns out to be, so the declared nullability
+# travels with the node and is applied after the receiver resolves it. A slot whose *only* parameter
+# element is nullable keeps no evidence at all -- the same limitation a nullable member binding has --
+# so it takes a sibling element to make this shape receiver-relative in the first place.
+class OptionalPair[K, V]:
+	func keep_optional(value) -> (K, V?):
+		var kept: (K, V?) = value
+		return kept
+
+
 # A trait body names the TRAIT's parameters, so its slots are resolved through the arguments each
 # implementer applied rather than through the implementer's own parameter list.
 trait TupleKeeper[V]:
@@ -84,6 +94,10 @@ func test() -> void:
 	# stays gradual.
 	var half := HalfPair.new()
 	print(half.keep_both(supply((9, "anything"))))
+
+	var optional := OptionalPair[int, String].new()
+	print(optional.keep_optional(supply((1, null))))
+	print(optional.keep_optional(supply((2, "two"))))
 
 	print(ForwardingTupleCrate[String].new().keep_via_trait(supply((10, "ten"))))
 	print(ConcreteTupleCrate.new().keep_via_trait(supply((11, "eleven"))))

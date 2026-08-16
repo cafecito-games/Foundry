@@ -1,15 +1,17 @@
 FS_TEST_OK
-~~ WARNING at line 70: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 71: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 71: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 72: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_erased_element()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 73: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_nested()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 76: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 81: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 86: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_both()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 88: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 89: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 94: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 80: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 81: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 81: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 82: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_erased_element()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 83: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_nested()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 86: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 91: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 96: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_both()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 99: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 100: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 102: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 103: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 108: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
 [1, 2]
 [3, 4]
 [1, ["not an int", true]]
@@ -19,6 +21,8 @@ FS_TEST_OK
 true
 [7, 8]
 [9, "anything"]
+[1, <null>]
+[2, "two"]
 [10, "ten"]
 [11, "eleven"]
 [12, "anything"]
