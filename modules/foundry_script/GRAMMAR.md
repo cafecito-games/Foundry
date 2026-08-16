@@ -1416,6 +1416,15 @@ Rules:
 - A `when` guard adds a boolean condition; pattern binds are in scope in the guard and the
   branch body.
 - Only `@warning_ignore` annotations are allowed on match branches.
+- An expression pattern ordinarily matches by type-and-value equality against the subject, with one
+  exception: when the expression is a type test (§5.5) whose operand is the **same identifier** as
+  the match subject, and the subject itself is a plain identifier, the pattern is that type test —
+  the same predicate `value is T` denotes outside a `match`, evaluated against the subject value the
+  statement saved once. The subject then narrows to the tested type inside the branch, exactly as it
+  does inside `if value is T:`. Anything else stays an equality pattern or is rejected: an unrelated
+  operand, a non-identifier subject, and the negated form `value is not T` (which parses as a unary
+  `not` over a type test, not as a type test) are all errors. The `is` operand rules of §5.5 apply
+  unchanged, so a multi-member union on the right of `is` remains an error here too.
 - A tuple pattern has arity >= 2 and matches element by element; `(p)` is a grouping and `(p,)`
   is an error, never a one-element tuple. Because a tuple erases to a read-only Array, an array
   pattern of the same arity (`[a, b]`) also matches a tuple value.

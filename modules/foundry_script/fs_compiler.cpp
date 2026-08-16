@@ -2068,27 +2068,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				return FSCodeGenerator::Address();
 			}
 
-			if (type_test->test_datatype.kind == FSParser::DataType::ENUM && type_test->test_datatype.is_hard_type() && !type_test->test_datatype.is_meta_type) {
-				_parse_enum_type_test(codegen, type_test, result, operand);
-				if (operand.mode == FSCodeGenerator::Address::TEMPORARY) {
-					gen->pop_temporary();
-				}
-				return result;
-			}
-
-			const bool handles_type_annotation = type_test->test_datatype.is_type_handle_annotation;
-			FSDataType test_type = type_test->test_datatype.kind == FSParser::DataType::TUPLE && type_test->test_datatype.is_hard_type()
-					? _gdtype_tuple_test_type_from_datatype(type_test->test_datatype, codegen.script)
-					: _gdtype_from_datatype(type_test->test_datatype, codegen.script, handles_type_annotation);
-			if (r_error) {
-				return FSCodeGenerator::Address();
-			}
-
-			if (test_type.has_type()) {
-				gen->write_type_test(result, operand, test_type);
-			} else {
-				gen->write_assign_true(result);
-			}
+			_write_type_test(codegen, type_test, result, operand);
 
 			if (operand.mode == FSCodeGenerator::Address::TEMPORARY) {
 				gen->pop_temporary();
@@ -2696,6 +2676,32 @@ FSCodeGenerator::Address FSCompiler::_parse_match_pattern(CodeGen &codegen, Erro
 				codegen.generator->write_or_left_operand(p_previous_test);
 			}
 
+			// `value is T` against the match subject is a type test, not a value comparison. It is
+			// lowered like the ordinary expression, against the saved subject so the source operand is
+			// never re-read.
+			if (p_pattern->is_subject_type_test) {
+				FSDataType bool_type;
+				bool_type.kind = FSDataType::BUILTIN;
+				bool_type.builtin_type = Variant::BOOL;
+				FSCodeGenerator::Address result_addr = codegen.add_temporary(bool_type);
+
+				_write_type_test(codegen, static_cast<const FSParser::TypeTestNode *>(p_pattern->expression), result_addr, p_value_addr);
+
+				// If this isn't the first, we need to OR with the previous pattern. If it's nested, we use AND instead.
+				if (p_is_nested) {
+					codegen.generator->write_and_right_operand(result_addr);
+					codegen.generator->write_end_and(p_previous_test);
+				} else if (!p_is_first) {
+					codegen.generator->write_or_right_operand(result_addr);
+					codegen.generator->write_end_or(p_previous_test);
+				} else {
+					codegen.generator->write_assign(p_previous_test, result_addr);
+				}
+				codegen.generator->pop_temporary(); // Remove result_addr from stack.
+
+				return p_previous_test;
+			}
+
 			FSCodeGenerator::Address type_string_addr = codegen.add_constant(Variant::STRING);
 			FSCodeGenerator::Address type_stringname_addr = codegen.add_constant(Variant::STRING_NAME);
 
@@ -3100,6 +3106,29 @@ FSCodeGenerator::Address FSCompiler::_parse_match_pattern(CodeGen &codegen, Erro
 	_set_error("Compiler bug (please report): Reaching the end of pattern compilation without matching a pattern.", p_pattern);
 	r_error = ERR_COMPILATION_FAILED;
 	return p_previous_test;
+}
+
+// Lowers an `is` test against an already-evaluated source address. Both the ordinary expression form
+// and the `match value: value is T:` pattern go through here, so every subject kind -- builtin
+// numeric ranges, native and script objects, traits, tuples, type handles, enums, and nullables --
+// behaves identically in either position. The caller owns `p_source` and releases it afterwards.
+void FSCompiler::_write_type_test(CodeGen &codegen, const FSParser::TypeTestNode *p_type_test, const FSCodeGenerator::Address &p_target, const FSCodeGenerator::Address &p_source) {
+	const FSParser::DataType &tested = p_type_test->test_datatype;
+
+	if (tested.kind == FSParser::DataType::ENUM && tested.is_hard_type() && !tested.is_meta_type) {
+		_parse_enum_type_test(codegen, p_type_test, p_target, p_source);
+		return;
+	}
+
+	FSDataType test_type = tested.kind == FSParser::DataType::TUPLE && tested.is_hard_type()
+			? _gdtype_tuple_test_type_from_datatype(tested, codegen.script)
+			: _gdtype_from_datatype(tested, codegen.script, tested.is_type_handle_annotation);
+
+	if (test_type.has_type()) {
+		codegen.generator->write_type_test(p_target, p_source, test_type);
+	} else {
+		codegen.generator->write_assign_true(p_target);
+	}
 }
 
 void FSCompiler::_parse_enum_type_test(CodeGen &codegen, const FSParser::TypeTestNode *p_type_test, const FSCodeGenerator::Address &p_target, const FSCodeGenerator::Address &p_source) {

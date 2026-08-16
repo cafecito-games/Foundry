@@ -1512,7 +1512,7 @@ static bool _match_branch_accepts_null(const FSParser::MatchBranchNode *p_branch
 	return false;
 }
 
-static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern, FSParser::ExpressionNode *p_match_test, FSParser::DataType &r_type) {
+static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern, FSParser::DataType &r_type) {
 	if (p_pattern == nullptr) {
 		return false;
 	}
@@ -1536,23 +1536,22 @@ static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern
 		return false;
 	}
 
-	if (expression->type == FSParser::Node::TYPE_TEST) {
+	// `value is T` against the match subject narrows exactly like the same test in a condition. The
+	// analyzer classified the pattern while resolving it, so this consults that decision instead of
+	// re-deriving it.
+	if (p_pattern->is_subject_type_test) {
 		const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(expression);
-		if (p_match_test == nullptr || p_match_test->type != FSParser::Node::IDENTIFIER ||
-				type_test->operand == nullptr || type_test->operand->type != FSParser::Node::IDENTIFIER ||
-				!type_test->test_datatype.is_set()) {
-			return false;
-		}
-
-		const FSParser::IdentifierNode *match_identifier = static_cast<const FSParser::IdentifierNode *>(p_match_test);
-		const FSParser::IdentifierNode *pattern_operand = static_cast<const FSParser::IdentifierNode *>(type_test->operand);
-		if (pattern_operand->name != match_identifier->name) {
+		if (!type_test->test_datatype.is_set()) {
 			return false;
 		}
 
 		r_type = type_test->test_datatype;
 		r_type.is_meta_type = false;
 		return true;
+	}
+
+	if (expression->type == FSParser::Node::TYPE_TEST) {
+		return false;
 	}
 
 	if (!expression->is_constant && !expression->get_datatype().is_meta_type) {
@@ -1583,11 +1582,11 @@ static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern
 	return false;
 }
 
-static bool _match_branch_type_narrowing(FSParser::ExpressionNode *p_match_test, const FSParser::MatchBranchNode *p_branch, FSParser::DataType &r_type) {
+static bool _match_branch_type_narrowing(const FSParser::MatchBranchNode *p_branch, FSParser::DataType &r_type) {
 	if (p_branch == nullptr || p_branch->has_wildcard || p_branch->patterns.size() != 1) {
 		return false;
 	}
-	return _match_pattern_type_narrowing(p_branch->patterns[0], p_match_test, r_type);
+	return _match_pattern_type_narrowing(p_branch->patterns[0], r_type);
 }
 // The inclusive value range an `is` test on a numeric builtin accepts. `OPCODE_TYPE_TEST_BUILTIN`
 // checks the Variant carrier and then the value's magnitude, never a declared width, so a slot that
@@ -1786,7 +1785,7 @@ void FSAnalyzer::FlowFinalityContext::apply_match_branch_flow_narrowing(FSParser
 	}
 
 	FSParser::DataType narrowed_type;
-	if (_match_branch_type_narrowing(p_match_test, p_match_branch, narrowed_type)) {
+	if (_match_branch_type_narrowing(p_match_branch, narrowed_type)) {
 		apply_flow_narrowing(identifier, narrowed_type);
 		return;
 	}
