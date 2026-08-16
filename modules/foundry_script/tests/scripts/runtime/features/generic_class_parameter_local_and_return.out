@@ -1,5 +1,6 @@
 FS_TEST_OK
 5
+7
 2
 [3]
 11
@@ -11,5 +12,6 @@ kept
 13
 14
 15
+16
 anything
 class parameter local and return ok

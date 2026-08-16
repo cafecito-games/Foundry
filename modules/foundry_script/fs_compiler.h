@@ -38,7 +38,11 @@
 #include "core/templates/hash_set.h"
 #include "core/templates/local_vector.h"
 
+struct FlattenedTraitScope;
+
 class FSCompiler {
+	// Sets and restores the flattened-trait compilation scope below.
+	friend struct FlattenedTraitScope;
 	const FSParser *parser = nullptr;
 	HashSet<FoundryScript *> parsed_classes;
 	HashSet<FoundryScript *> parsing_classes;

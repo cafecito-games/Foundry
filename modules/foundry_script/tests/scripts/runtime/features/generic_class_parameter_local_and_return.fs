@@ -2,8 +2,9 @@
 # a local, a later store into that local, or the return -- is validated against the argument this
 # receiver actually carries, without generating a separate method body per specialization. The check
 # happens at the slot's own boundary, so it holds no matter what the caller consumes the result as.
-# The slot itself stays erased: the check rejects values the receiver cannot hold, it does not retype
-# the value a gradual consumer receives.
+# The check converts where a member store would, so a scalar slot keeps the converted value. A
+# container slot is the exception: a generic method returning `Array[T]` yields a runtime array whose
+# element type is erased on purpose, and its concrete consumer is what retypes it.
 class Crate[T]:
 	func keep(value) -> T:
 		var kept: T = value
@@ -63,6 +64,19 @@ class TraitCrate[W]:
 	uses Keeper[W]
 
 
+# A trait brings its field initializers along too, and a lambda inside one is compiled with the
+# implementer's `@implicit_new()` rather than with the trait's methods; it still has to resolve
+# through the arguments this implementer applied.
+trait LambdaKeeper[V]:
+	var keeper := func(v):
+		var kept: V = v
+		return kept
+
+
+class ShadowingLambdaKeeper[V]:
+	uses LambdaKeeper[int]
+
+
 class ConcreteTraitCrate:
 	uses Keeper[int]
 
@@ -76,6 +90,7 @@ class ShadowingTraitCrate[V]:
 func test() -> void:
 	var crate := Crate[int].new()
 	print(crate.keep(5))
+	print(crate.keep(7.0)) # converted to int, exactly as a member store would
 	print(crate.replace(1, 2))
 	print(crate.collect(3))
 
@@ -94,6 +109,7 @@ func test() -> void:
 	print(via_trait.keep_via_trait(13))
 	print(ConcreteTraitCrate.new().keep_via_trait(14))
 	print(ShadowingTraitCrate[String].new().keep_via_trait(15))
+	print(ShadowingLambdaKeeper[String].new().keeper.call(16))
 
 	# A raw, un-parameterized receiver carries no reified argument, so the slot stays gradual.
 	var raw := Crate.new()

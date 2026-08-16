@@ -3330,11 +3330,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 
-				// Validated on a copy, and the original value is what gets stored. The slot itself stays
-				// erased, and a generic method returning `Array[T]` is retyped by its concrete *consumer*
-				// (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`); retyping it here instead would hand a gradual
-				// consumer a typed container the declaration never promised. The check is what this store
-				// adds, not a change of the value's runtime typing.
+				// Validation converts the value where a fully known container type would, and that converted
+				// value is what gets stored -- the same result a member store produces, so `var kept: T = 1.5`
+				// on a `Box[int]` keeps an int.
+				//
+				// A container slot is the exception. A generic method returning `Array[T]` yields a runtime
+				// array whose element type is erased on purpose, and its concrete *consumer* is what retypes
+				// it (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`). Retyping it here would hand a gradual consumer a
+				// typed container the declaration never promised, so for those slots the check stays a check
+				// and the value's runtime typing is left to the consumer.
 				Variant validated = *src;
 				String expected_type_name;
 				if (!FoundryScript::validate_projected_type_write(expected, expected_is_type_handle, validated, "variable", &expected_type_name)) {
@@ -3344,7 +3348,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
-				*dst = *src;
+				const bool slot_is_erased_container = expected.is_known() && !expected_is_type_handle &&
+						(expected.outer.builtin_type == Variant::ARRAY || expected.outer.builtin_type == Variant::DICTIONARY);
+				*dst = slot_is_erased_container ? *src : validated;
 
 				ip += 5;
 			}

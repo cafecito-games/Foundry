@@ -3851,6 +3851,31 @@ struct FlattenedTraitArguments {
 	Vector<FSParser::DataType> arguments;
 };
 
+// Publishes, for the duration of one member's compilation, which generic trait declared that member
+// and what the implementer supplied for the trait's parameters. A flattened body is compiled against
+// the implementer but still names the trait's parameters, so a receiver-relative slot inside it has
+// to resolve against the trait's list, not the implementer's -- which may be named differently,
+// ordered differently, or absent. Restores the previous scope so a nested compilation (a lambda in a
+// field initializer, compiled while `@implicit_new()` is built) cannot clear an outer one.
+struct FlattenedTraitScope {
+	FSCompiler *compiler = nullptr;
+	const FSParser::ClassNode *previous_declaration = nullptr;
+	Vector<FSParser::DataType> previous_arguments;
+
+	FlattenedTraitScope(FSCompiler *p_compiler, const FlattenedTraitArguments *p_applied) :
+			compiler(p_compiler) {
+		previous_declaration = compiler->flattened_trait_declaration;
+		previous_arguments = compiler->flattened_trait_type_arguments;
+		compiler->flattened_trait_declaration = p_applied != nullptr ? p_applied->trait : nullptr;
+		compiler->flattened_trait_type_arguments = p_applied != nullptr ? p_applied->arguments : Vector<FSParser::DataType>();
+	}
+
+	~FlattenedTraitScope() {
+		compiler->flattened_trait_declaration = previous_declaration;
+		compiler->flattened_trait_type_arguments = previous_arguments;
+	}
+};
+
 // Maps each member a class flattens in from a generic trait to that trait's applied type arguments.
 // Such a member is typed by the TRAIT's parameters, so its ordinals index this table rather than the
 // implementer's own reified arguments.
@@ -4338,6 +4363,12 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 	}
 
 	if (!p_for_lambda && (is_implicit_initializer || is_implicit_ready)) {
+		// A field flattened in from a generic trait brings its initializer -- and any lambda inside it --
+		// along, and those are compiled here rather than in the member loop, so the trait scope has to be
+		// re-established per field.
+		const HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> initializer_trait_arguments =
+				_flattened_trait_arguments(p_class);
+
 		// Initialize class fields.
 		for (const FSParser::ClassNode::Member *member_ptr : initializer_members) {
 			if (member_ptr->type != FSParser::ClassNode::Member::VARIABLE) {
@@ -4347,6 +4378,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 			if (field->is_static) {
 				continue;
 			}
+			const FlattenedTraitScope field_trait_scope(this, initializer_trait_arguments.getptr(member_ptr));
 
 			if (field->onready != is_implicit_ready) {
 				// Only initialize in `@implicit_ready()`.
@@ -5571,24 +5603,6 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 	const Vector<const FSParser::ClassNode::Member *> members_to_compile = collect_effective_members(p_class);
 	const HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> compiled_trait_arguments =
 			_flattened_trait_arguments(p_class);
-
-	// A body flattened in from a generic trait is compiled here against the implementer, but its
-	// declared types still name the trait's parameters. Publish which trait declared the body and what
-	// the implementer supplied for it, so a receiver-relative slot resolves against the right list.
-	struct FlattenedTraitScope {
-		FSCompiler *compiler = nullptr;
-		FlattenedTraitScope(FSCompiler *p_compiler, const FlattenedTraitArguments *p_applied) :
-				compiler(p_compiler) {
-			if (p_applied != nullptr) {
-				compiler->flattened_trait_declaration = p_applied->trait;
-				compiler->flattened_trait_type_arguments = p_applied->arguments;
-			}
-		}
-		~FlattenedTraitScope() {
-			compiler->flattened_trait_declaration = nullptr;
-			compiler->flattened_trait_type_arguments.clear();
-		}
-	};
 
 	for (int i = 0; i < members_to_compile.size(); i++) {
 		const FSParser::ClassNode::Member &member = *members_to_compile[i];
