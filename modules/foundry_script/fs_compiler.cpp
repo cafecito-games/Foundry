@@ -506,6 +506,10 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				result.type_parameter_scope = p_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS
 						? FSDataType::TYPE_PARAMETER_CLASS
 						: FSDataType::TYPE_PARAMETER_METHOD;
+				// `Type[T]` stands for a class handle for the argument, not an instance of it. The layer has
+				// to travel with the preserved node, because a node nested inside a composite has no other
+				// place to record it and would otherwise validate instances once the argument resolves.
+				result.is_type_handle = p_datatype.is_type_handle_annotation;
 				break;
 			}
 			// Plain `T` is erased to Variant. `Type[T]` cannot preserve the represented method parameter
@@ -856,6 +860,69 @@ static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *
 		default:
 			return false;
 	}
+}
+
+// Whether `p_type` names a class type parameter in a receiver-checkable position, and whether every
+// such node really is one `p_type_parameters` declares at the ordinal the node carries.
+//
+// A slot that merely *contains* a parameter (`items: Array[T]`, `by_name: Dictionary[String, T]`) is
+// as receiver-relative as a bare `T` slot: the container is concrete, and only the leaves need the
+// instance's reified arguments to become checkable. The ordinal-and-name agreement is what makes
+// projecting a leaf against `type_arguments[ordinal]` sound; a node that fails it (`@Self`, a
+// method-scope parameter, or an ordinal from some other declaration) would silently validate against
+// an unrelated argument, so the whole slot is left unbound instead.
+//
+// Traversal matches `FSTypeCompatibility::destination_depends_on_receiver_type_parameter()`, which
+// decides the same question for the analyzer: only typed-container elements, never the type arguments
+// of a specialized class handle, whose construction inside the declaring class does not reify them.
+static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &p_type,
+		const Vector<FSParser::TypeParameterNode *> &p_type_parameters, bool &r_is_sound, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		r_is_sound = false;
+		return false;
+	}
+
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+		if (p_type.type_parameter_scope != FSParser::DataType::TYPE_PARAMETER_CLASS) {
+			return false;
+		}
+		const int ordinal = p_type.type_parameter_index;
+		const FSParser::TypeParameterNode *declared = ordinal >= 0 && ordinal < p_type_parameters.size()
+				? p_type_parameters[ordinal]
+				: nullptr;
+		if (declared == nullptr || declared->identifier == nullptr ||
+				declared->identifier->name != p_type.type_parameter_name) {
+			r_is_sound = false;
+			return false;
+		}
+		return true;
+	}
+
+	bool found = false;
+	for (const FSParser::DataType &element_type : p_type.container_element_types) {
+		found = _type_depends_on_declared_type_parameters(element_type, p_type_parameters, r_is_sound, p_depth + 1) || found;
+	}
+	return found;
+}
+
+// Whether a function-body slot (a local, a later assignment, or a return) has to be validated against
+// the receiver instead of stored directly. A class type parameter is reified onto the instance, but a
+// function body is compiled once for the declaring class and sees only the parameter, which erases
+// exactly like a method-scope one -- so without this the slot would take any value untested. A static
+// frame has no receiver to resolve against, and the analyzer rejects such a declaration there.
+//
+// A conformance witness is compiled against a foreign target, so the running frame's script is not the
+// class whose parameters these ordinals index; those bodies keep the plain store.
+static bool _slot_validates_against_receiver(const FSParser::DataType &p_declared_type,
+		const FSParser::ClassNode *p_class, bool p_is_static, bool p_is_conformance_witness) {
+	if (p_is_static || p_is_conformance_witness || p_class == nullptr) {
+		return false;
+	}
+	if (!p_declared_type.is_set() || !p_declared_type.is_hard_type()) {
+		return false;
+	}
+	bool is_sound = true;
+	return _type_depends_on_declared_type_parameters(p_declared_type, p_class->type_parameters, is_sound) && is_sound;
 }
 
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
@@ -2528,6 +2595,13 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// The whole assigned value is a generic method returning an erased `Dictionary[K, V]`; retype
 					// the untyped runtime dictionary into the concrete typed-dictionary target.
 					gen->write_assign_typed_dictionary_convert(target, to_assign);
+				} else if (!is_member && _slot_validates_against_receiver(assignment->assignee->get_datatype(), codegen.class_node, codegen.is_static, witness_declaration_site_script != nullptr)) {
+					// A later store into a local whose declared type mentions a class parameter has to be
+					// checked at the same boundary its initializer was, or the slot could be laundered after
+					// the fact. A member has its own binding, resolved for the class that owns the slot, and
+					// is checked by the member store above; only a slot with no binding reaches here.
+					gen->write_assign_typed_class_parameter(target, to_assign,
+							_gdtype_from_datatype(assignment->assignee->get_datatype(), codegen.script, true, true));
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -3529,6 +3603,14 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							return_target = codegen.add_temporary(return_type);
 							gen->write_assign_typed_dictionary_convert(return_target, return_value);
 							pop_return_target = true;
+						} else if (_slot_validates_against_receiver(codegen.function_node->get_datatype(), codegen.class_node, codegen.is_static, witness_declaration_site_script != nullptr)) {
+							// The return slot erases with its class parameter, so the value is checked here,
+							// against this receiver's reification, rather than at whatever the caller happens to
+							// consume the result as.
+							return_target = codegen.add_temporary(return_type);
+							gen->write_assign_typed_class_parameter(return_target, return_value,
+									_gdtype_from_datatype(codegen.function_node->get_datatype(), codegen.script, true, true));
+							pop_return_target = true;
 						}
 					}
 					gen->write_return(return_target);
@@ -3621,6 +3703,9 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 						gen->write_assign_typed_array_convert(local, src_address);
 					} else if (_is_erased_container_call_to_typed_dictionary(lv->initializer, local.type)) {
 						gen->write_assign_typed_dictionary_convert(local, src_address);
+					} else if (_slot_validates_against_receiver(lv->get_datatype(), codegen.class_node, codegen.is_static, witness_declaration_site_script != nullptr)) {
+						gen->write_assign_typed_class_parameter(local, src_address,
+								_gdtype_from_datatype(lv->get_datatype(), codegen.script, true, true));
 					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {
@@ -5169,6 +5254,29 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 						minfo.type_argument_binding.kind = FoundryScript::TypeArgumentBinding::OPEN;
 						minfo.type_argument_binding.is_type_handle = member_datatype.is_type_handle_annotation;
 						minfo.type_argument_binding.leaf_ordinal = ordinal;
+					}
+				} else if (!variable->is_static && member_datatype.is_set() && member_datatype.is_hard_type()) {
+					// A parameter nested inside the declared type (`items: Array[T]`, `by_name:
+					// Dictionary[String, T]`) erases exactly like a bare `T` does, so without a binding the
+					// slot takes any value at run time. Bake the whole declared shape with its parameter nodes
+					// preserved; projection resolves those leaves against the receiver's reified arguments and
+					// enforces the concrete parts of the shape regardless.
+					const FlattenedTraitArguments *applied_trait = flattened_trait_arguments.getptr(members_to_compile[i]);
+					const Vector<FSParser::TypeParameterNode *> &declaring_type_parameters =
+							applied_trait != nullptr ? applied_trait->trait->type_parameters : p_class->type_parameters;
+					bool binding_is_sound = true;
+					if (_type_depends_on_declared_type_parameters(member_datatype, declaring_type_parameters, binding_is_sound) &&
+							binding_is_sound) {
+						FSDataType baked = _gdtype_from_datatype(member_datatype, p_script, true, true);
+						if (baked.has_type()) {
+							minfo.type_argument_binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
+							minfo.type_argument_binding.fixed = baked;
+							if (applied_trait != nullptr) {
+								// Trait-declared ordinals index the trait's parameters, so substitute the arguments
+								// this class supplied before the binding is stored against the implementer.
+								_specialize_type_argument_binding(minfo.type_argument_binding, applied_trait->arguments, p_script);
+							}
+						}
 					}
 				}
 

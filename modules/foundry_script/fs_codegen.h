@@ -125,6 +125,10 @@ public:
 	// Store into a member typed as a class type parameter (`value: T`), validating the value against the
 	// instance's reified type argument at runtime.
 	virtual void write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_member_index) = 0;
+	// Store into a function-body slot (local, later assignment, or return) whose declared type mentions
+	// a class type parameter, validating the value against the receiver's reification of that parameter
+	// at runtime. `p_expected_type` keeps its `TYPE_PARAMETER` nodes so the receiver resolves them.
+	virtual void write_assign_typed_class_parameter(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) = 0;
 	// Retype a runtime-erased (untyped) array — the result of a generic method returning `Array[T]` —
 	// into the concrete typed array of the target, converting each element.
 	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) = 0;

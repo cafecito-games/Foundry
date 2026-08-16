@@ -590,6 +590,11 @@ public:
 		OPCODE_ASSIGN_TYPED_NATIVE,
 		OPCODE_ASSIGN_TYPED_SCRIPT,
 		OPCODE_ASSIGN_TYPED_PARAMETER,
+		// Store validated against the receiver's reification of the declaring class's type parameters.
+		// Emitted for a function-body slot (local, later assignment, or return) whose declared type
+		// mentions a class-scope parameter, which erases like any other parameter and would otherwise
+		// take the value untested.
+		OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,
 		OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,
 		OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,
 		OPCODE_CAST_TO_BUILTIN,

@@ -557,6 +557,7 @@ public:
 	virtual void write_assign(const Address &p_target, const Address &p_source) override;
 	virtual void write_assign_with_conversion(const Address &p_target, const Address &p_source) override;
 	virtual void write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_member_index) override;
+	virtual void write_assign_typed_class_parameter(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) override;
 	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) override;
 	virtual void write_assign_typed_dictionary_convert(const Address &p_target, const Address &p_source) override;
 	virtual void write_assign_null(const Address &p_target) override;

@@ -684,6 +684,16 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 4;
 			} break;
+			case OPCODE_ASSIGN_TYPED_CLASS_PARAMETER: {
+				text += "assign typed class parameter (";
+				text += DADDR(3);
+				text += ") ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+
+				incr += 4;
+			} break;
 			case OPCODE_ASSIGN_TYPED_DICTIONARY: {
 				text += "assign typed dictionary ";
 				text += DADDR(1);

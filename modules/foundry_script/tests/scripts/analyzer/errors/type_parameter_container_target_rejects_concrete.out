@@ -1,0 +1,7 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot assign a value of type Array[int] to variable "local" with specified type Array[T].
+>> ERROR at line 13: Cannot return value of type "Array[int]" because the function return type is "Array[T]".
+>> ERROR at line 18: Value of type "Array[int]" cannot be assigned to a variable of type "Array[T]".
+>> ERROR at line 23: Cannot return value of type "Dictionary[String, int]" because the function return type is "Dictionary[String, T]".
+>> ERROR at line 27: Cannot return value of type "Dictionary[int, String]" because the function return type is "Dictionary[T, String]".
+>> ERROR at line 31: Cannot return value of type "Array[Dictionary[String, Array[int]]]" because the function return type is "Array[Dictionary[String, Array[T]]]".

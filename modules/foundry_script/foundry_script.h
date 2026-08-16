@@ -232,6 +232,14 @@ public:
 	// `r_expected_type_name` is non-null, it receives the name of the type that was expected.
 	static bool validate_type_argument_binding_write(const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value, String *r_expected_type_name = nullptr);
 
+	// The same validator, entered with evidence that was resolved somewhere other than a member binding.
+	// A function-body slot whose declared type mentions a class type parameter (`var kept: T`, `-> T`)
+	// resolves its parameters against the running receiver rather than against a stored member binding,
+	// and must still accept and reject exactly what the member boundary does.
+	// `p_where` names the slot in the engine-level container diagnostics, matching the wording the
+	// member path uses for a member.
+	static bool validate_projected_type_write(const ProjectedContainerType &p_expected, bool p_is_type_handle, Variant &r_value, const char *p_where, String *r_expected_type_name = nullptr);
+
 	// True when `p_expected_type` (or, recursively, one of its element types) is an unspecialized native
 	// object slot that a specialized class handle can be erased into.
 	static bool container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type);

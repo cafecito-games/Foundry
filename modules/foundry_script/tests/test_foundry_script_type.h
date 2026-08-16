@@ -4993,4 +4993,91 @@ TEST_CASE("[Modules][FoundryScript][NumericType] A nested container element norm
 	CHECK(container == TestFSAnalyzerAccessor::container_type_of(declared_dictionary));
 }
 
+// Builds an erased method-scope type parameter, optionally bounded by `p_final_bound`.
+static FSParser::DataType make_method_type_parameter(const StringName &p_name, int p_index,
+		const FSParser::ClassNode *p_final_bound = nullptr) {
+	FSParser::DataType parameter;
+	parameter.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	parameter.kind = FSParser::DataType::TYPE_PARAMETER;
+	parameter.type_parameter_name = p_name;
+	parameter.type_parameter_index = p_index;
+	parameter.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_METHOD;
+	if (p_final_bound != nullptr) {
+		FSParser::DataType bound;
+		bound.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		bound.kind = FSParser::DataType::CLASS;
+		bound.builtin_type = Variant::OBJECT;
+		bound.class_type = const_cast<FSParser::ClassNode *>(p_final_bound);
+		parameter.type_parameter_bound.push_back(bound);
+	}
+	return parameter;
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter destination refuses narrowing at every depth") {
+	const FSParser::DataType parameter = make_method_type_parameter(SNAME("T"), 0);
+	const FSParser::DataType concrete = make_builtin_type(Variant::INT);
+
+	SUBCASE("bare") {
+		CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(parameter, concrete));
+	}
+	SUBCASE("array element") {
+		CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(make_array_of(parameter), make_array_of(concrete)));
+	}
+	SUBCASE("dictionary value") {
+		CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(
+				make_dictionary_of(make_builtin_type(Variant::STRING), parameter),
+				make_dictionary_of(make_builtin_type(Variant::STRING), concrete)));
+	}
+	SUBCASE("dictionary key") {
+		CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(
+				make_dictionary_of(parameter, make_builtin_type(Variant::STRING)),
+				make_dictionary_of(concrete, make_builtin_type(Variant::STRING))));
+	}
+	SUBCASE("mixed nesting") {
+		const FSParser::DataType nested_parameter =
+				make_array_of(make_dictionary_of(make_builtin_type(Variant::STRING), make_array_of(parameter)));
+		const FSParser::DataType nested_concrete =
+				make_array_of(make_dictionary_of(make_builtin_type(Variant::STRING), make_array_of(concrete)));
+		CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(nested_parameter, nested_concrete));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] The same parameter satisfies a parameter destination at every depth") {
+	const FSParser::DataType parameter = make_method_type_parameter(SNAME("T"), 0);
+
+	CHECK(FSTypeCompatibility::is_compatible(parameter, parameter, true));
+	CHECK(FSTypeCompatibility::is_compatible(make_array_of(parameter), make_array_of(parameter), true));
+	CHECK(FSTypeCompatibility::is_compatible(
+			make_dictionary_of(make_builtin_type(Variant::STRING), parameter),
+			make_dictionary_of(make_builtin_type(Variant::STRING), parameter), true));
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A final-bounded parameter stays decidable at every depth") {
+	FSParser::ClassNode final_class;
+	final_class.is_final = true;
+	FSParser::ClassNode open_class;
+	open_class.is_final = false;
+
+	const FSParser::DataType final_bounded = make_method_type_parameter(SNAME("W"), 0, &final_class);
+	const FSParser::DataType open_bounded = make_method_type_parameter(SNAME("W"), 0, &open_class);
+
+	FSParser::DataType bound_value;
+	bound_value.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	bound_value.kind = FSParser::DataType::CLASS;
+	bound_value.builtin_type = Variant::OBJECT;
+	bound_value.class_type = &final_class;
+
+	CHECK(FSTypeCompatibility::is_compatible(final_bounded, bound_value, true));
+	CHECK(FSTypeCompatibility::is_compatible(make_array_of(final_bounded), make_array_of(bound_value), true));
+	CHECK(FSTypeCompatibility::is_compatible(
+			make_dictionary_of(make_builtin_type(Variant::STRING), final_bounded),
+			make_dictionary_of(make_builtin_type(Variant::STRING), bound_value), true));
+
+	// An open bound leaves subtypes possible, so the erasure rule still applies at the same depths.
+	FSParser::DataType open_bound_value = bound_value;
+	open_bound_value.class_type = &open_class;
+	CHECK_FALSE(FSTypeCompatibility::is_compatible(open_bounded, open_bound_value, true));
+	CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(make_array_of(open_bounded), make_array_of(open_bound_value)));
+}
+
 } // namespace FSTests

@@ -410,12 +410,48 @@ struct FrameSelfBinding {
 	bool requires_receiver = false;
 };
 
+// How a descriptor's `TYPE_PARAMETER` nodes resolve for the frame's receiver. A node names a
+// parameter of the class that declares the running function, and `arguments` holds what that
+// receiver reified for those parameters. Any node without a definite argument leaves the whole
+// description unusable, so the flag is what a caller checks before validating: a shape with one
+// unresolved leaf describes a *different* type rather than a weaker one (an untyped element makes an
+// `Array[int]` value mismatch), and enforcing it would reject values the slot legitimately holds.
+struct ReceiverTypeArguments {
+	const Vector<ContainerType> *arguments = nullptr;
+	bool resolved_every_parameter = true;
+};
+
 // Every node the descriptor marks as having come from `Self` is re-bound through the one resolver, at
 // every nesting depth. Returns false only when a static frame needs a receiver and has none; the
 // caller must fail the instruction rather than proceed with an ancestor specialization.
 static bool _container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
-		ContainerType &r_type) {
+		ContainerType &r_type, ReceiverTypeArguments *r_receiver_arguments = nullptr) {
 	Dictionary descriptor = p_descriptor;
+	// Only the receiver-relative store emits parameter nodes and it is the only caller that supplies
+	// arguments to resolve them with, so every other decode skips the lookup entirely.
+	if (r_receiver_arguments != nullptr) {
+		const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
+		if (type_parameter_index.get_type() == Variant::INT) {
+			const int64_t ordinal = type_parameter_index;
+			ContainerType resolved;
+			const bool resolvable = r_receiver_arguments->arguments != nullptr &&
+					ordinal >= 0 && ordinal < r_receiver_arguments->arguments->size();
+			if (resolvable) {
+				resolved = (*r_receiver_arguments->arguments)[ordinal];
+			}
+			// `Type[T]` denotes a class handle for the argument, not an instance of it, and only an
+			// object-shaped argument has a handle form to describe.
+			const bool is_type_handle = descriptor.get("is_type_handle", false);
+			if (!resolvable || (is_type_handle && resolved.builtin_type != Variant::OBJECT)) {
+				r_receiver_arguments->resolved_every_parameter = false;
+				r_type = ContainerType();
+				return true;
+			}
+			resolved.is_type_handle = resolved.is_type_handle || is_type_handle;
+			r_type = resolved;
+			return true;
+		}
+	}
 	if (descriptor.get("is_self_type", false) && (p_frame_self.receiver != nullptr || p_frame_self.requires_receiver)) {
 		FSDataType self_position;
 		self_position.is_self_type = true;
@@ -446,7 +482,7 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {
 		ContainerType element_type;
-		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type)) {
+		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type, r_receiver_arguments)) {
 			return false;
 		}
 		type.element_types.push_back(element_type);
@@ -455,7 +491,7 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	Array type_arguments = descriptor.get("type_arguments", Array());
 	for (int i = 0; i < type_arguments.size(); i++) {
 		ContainerType argument_type;
-		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type)) {
+		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type, r_receiver_arguments)) {
 			return false;
 		}
 		type.type_arguments.push_back(argument_type);
@@ -1128,6 +1164,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_NATIVE,                    \
 		&&OPCODE_ASSIGN_TYPED_SCRIPT,                    \
 		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
+		&&OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,           \
 		&&OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,             \
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,        \
 		&&OPCODE_CAST_TO_BUILTIN,                        \
@@ -3202,6 +3239,77 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 					*dst = value;
 				} else {
+					*dst = *src;
+				}
+
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_ASSIGN_TYPED_CLASS_PARAMETER) {
+				CHECK_SPACE(4);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+				GET_VARIANT_PTR(type_info, 2);
+
+				// A class type parameter is reified onto the instance, but a function body compiled once in
+				// the declaring class sees only the parameter. The declared shape therefore reaches here with
+				// its parameter nodes intact, and the receiver supplies the arguments: the leaf script maps
+				// every ancestor's parameters onto its own reification, so a method inherited by
+				// `IntBox extends Box[int]` validates against `int` without a per-specialization body.
+				Vector<ContainerType> receiver_arguments;
+				bool receiver_arguments_are_exact = false;
+				if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+					Vector<ProjectedContainerType> projected;
+					if (p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, projected)) {
+						receiver_arguments_are_exact = true;
+						receiver_arguments.resize(projected.size());
+						for (int i = 0; i < projected.size(); i++) {
+							// An unspecialized receiver (`Box.new()`) or a chain step that never resolved leaves a
+							// parameter without a definite argument. Only complete evidence is usable here: the
+							// shape is checked as one type, and a gap in it would describe a different type rather
+							// than a weaker one, rejecting values the slot legitimately holds.
+							if (projected[i].state != ProjectedContainerType::EXACT) {
+								receiver_arguments_are_exact = false;
+								break;
+							}
+							receiver_arguments.write[i] = projected[i].to_container_type();
+						}
+					}
+				}
+
+				ReceiverTypeArguments receiver_type_arguments;
+				if (receiver_arguments_are_exact) {
+					receiver_type_arguments.arguments = &receiver_arguments;
+				} else {
+					receiver_type_arguments.resolved_every_parameter = false;
+				}
+
+				ContainerType expected_type;
+				if (unlikely(!_container_type_from_descriptor(*type_info, frame_self, expected_type, &receiver_type_arguments))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+
+				if (receiver_type_arguments.resolved_every_parameter) {
+					// Validated on a copy, and the original value is what gets stored. The slot itself stays
+					// erased, and a generic method returning `Array[T]` is retyped by its concrete *consumer*
+					// (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`); retyping it here instead would hand a gradual
+					// consumer a typed container the declaration never promised. The check is what this store
+					// adds, not a change of the value's runtime typing.
+					Variant validated = *src;
+					String expected_type_name;
+					if (!FoundryScript::validate_projected_type_write(ProjectedContainerType::exact(expected_type), false, validated, "variable", &expected_type_name)) {
+#ifdef DEBUG_ENABLED
+						err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
+								_get_var_type(src), expected_type_name);
+#endif // DEBUG_ENABLED
+						OPCODE_BREAK;
+					}
+					*dst = *src;
+				} else {
+					// No usable evidence for this receiver, so the slot stays gradual exactly like an erased
+					// member binding that resolves to nothing.
 					*dst = *src;
 				}
 

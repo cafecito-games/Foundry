@@ -618,7 +618,7 @@ ProjectedContainerType FoundryScript::project_type_argument_binding(const Foundr
 // Applies a member slot's optional `Type[...]` wrapper to already-resolved evidence and validates the
 // write. Every member-write path funnels through here so the dynamic `set()` path, the direct VM
 // member-store opcode, and the inherited-static backstop cannot disagree.
-static bool _validate_write_against_projected_type(ProjectedContainerType p_expected, bool p_is_type_handle, Variant &r_value, String *r_expected_type_name) {
+static bool _validate_write_against_projected_type(ProjectedContainerType p_expected, bool p_is_type_handle, Variant &r_value, const char *p_where, String *r_expected_type_name) {
 	ProjectedContainerType expected = p_expected;
 	if (!expected.is_known()) {
 		return true;
@@ -651,7 +651,7 @@ static bool _validate_write_against_projected_type(ProjectedContainerType p_expe
 		}
 		return false;
 	}
-	if (!expected.validate_value(r_value, "member", "assign")) {
+	if (!expected.validate_value(r_value, p_where, "assign")) {
 		if (r_expected_type_name != nullptr) {
 			*r_expected_type_name = expected.get_type_name();
 		}
@@ -662,7 +662,11 @@ static bool _validate_write_against_projected_type(ProjectedContainerType p_expe
 
 bool FoundryScript::validate_type_argument_binding_write(const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value, String *r_expected_type_name) {
 	return _validate_write_against_projected_type(project_type_argument_binding(p_binding, p_leaf_type_arguments),
-			p_binding.is_type_handle, r_value, r_expected_type_name);
+			p_binding.is_type_handle, r_value, "member", r_expected_type_name);
+}
+
+bool FoundryScript::validate_projected_type_write(const ProjectedContainerType &p_expected, bool p_is_type_handle, Variant &r_value, const char *p_where, String *r_expected_type_name) {
+	return _validate_write_against_projected_type(p_expected, p_is_type_handle, r_value, p_where, r_expected_type_name);
 }
 
 bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value) {
@@ -698,7 +702,7 @@ bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, Fou
 	// The projected slot carries the same recursive evidence a resolved instance binding does, so a
 	// composite argument fixed partway up the chain (`extends Box[Pair[int, U]]`) still enforces its
 	// known parts here instead of degrading the whole slot to untyped.
-	return _validate_write_against_projected_type(projected[p_binding.leaf_ordinal], p_binding.is_type_handle, r_value, nullptr);
+	return _validate_write_against_projected_type(projected[p_binding.leaf_ordinal], p_binding.is_type_handle, r_value, "member", nullptr);
 }
 
 Ref<FSAnnotation> FSAnnotation::from_usage(const FoundryScript::AnnotationUsage &p_usage) {
