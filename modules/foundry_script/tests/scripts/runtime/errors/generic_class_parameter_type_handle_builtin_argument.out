@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_type_handle_builtin_argument.fs:6 on Box.keep_handle(): Trying to assign a value of type "Node" to a variable of type "Type[int]".
+<null>

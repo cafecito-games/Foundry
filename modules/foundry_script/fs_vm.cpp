@@ -476,7 +476,8 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 // Returns false only when a static frame needs a receiver for a `Self` node and has none, matching
 // `_container_type_from_descriptor`.
 static bool _projected_container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
-		const Vector<ProjectedContainerType> &p_receiver_arguments, ProjectedContainerType &r_projected, int p_depth) {
+		const Vector<ProjectedContainerType> &p_receiver_arguments, ProjectedContainerType &r_projected, int p_depth,
+		bool *r_root_is_type_handle = nullptr) {
 	r_projected = ProjectedContainerType();
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return true;
@@ -499,8 +500,16 @@ static bool _projected_container_type_from_descriptor(const Variant &p_descripto
 		}
 		ProjectedContainerType resolved = p_receiver_arguments[ordinal];
 		if (descriptor.get("is_type_handle", false)) {
-			// `Type[T]` denotes a class handle for the argument, not an instance of it, and only an
-			// object-shaped argument has a handle form to describe.
+			// `Type[T]` denotes a class handle for the argument, not an instance of it. At the root the
+			// handle layer is reported to the caller and applied by the shared validator, which is what
+			// makes an argument with no handle form (`Type[int]`) admit null and nothing else instead of
+			// going unchecked. A nested node has nowhere to report it, so a non-object argument leaves that
+			// subtree without evidence, exactly as a nested member-binding node does.
+			if (r_root_is_type_handle != nullptr) {
+				*r_root_is_type_handle = true;
+				r_projected = resolved;
+				return true;
+			}
 			if (!resolved.is_known() || resolved.outer.builtin_type != Variant::OBJECT) {
 				return true;
 			}
@@ -3320,7 +3329,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				ProjectedContainerType expected;
-				if (unlikely(!_projected_container_type_from_descriptor(*type_info, frame_self, receiver_arguments, expected, 0))) {
+				bool expected_is_type_handle = false;
+				if (unlikely(!_projected_container_type_from_descriptor(*type_info, frame_self, receiver_arguments, expected, 0, &expected_is_type_handle))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
@@ -3332,7 +3342,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// adds, not a change of the value's runtime typing.
 				Variant validated = *src;
 				String expected_type_name;
-				if (!FoundryScript::validate_projected_type_write(expected, false, validated, "variable", &expected_type_name)) {
+				if (!FoundryScript::validate_projected_type_write(expected, expected_is_type_handle, validated, "variable", &expected_type_name)) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
 							_get_var_type(src), expected_type_name);
