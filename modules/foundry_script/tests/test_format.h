@@ -1735,6 +1735,30 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		check_format_invariants(source, formatted, "empty_class_pass_tail.fs");
 	}
 
+	TEST_CASE("[Format] Leaves a comment after a single-line `pass` body in the outer scope") {
+		// The erased `pass` shares the header line, so the following comment is written at
+		// the enclosing indent and belongs to the enclosing scope, not to the class body.
+		const String source =
+				"class Inner: pass\n"
+				"# after\n"
+				"var x = 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\tpass\n\n\n# after\nvar x = 1\n",
+				vformat("Trailing comment must stay at the outer indent: %s", formatted));
+		check_format_invariants(source, formatted, "single_line_class_pass.fs");
+	}
+
+	TEST_CASE("[Format] Leaves a comment after a single-line conformance `pass` in the outer scope") {
+		const String source =
+				"extend Node uses Marker: pass\n"
+				"# after\n"
+				"var x = 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Marker:\n\tpass\n\n\n# after\nvar x = 1\n",
+				vformat("Trailing comment must stay at the outer indent: %s", formatted));
+		check_format_invariants(source, formatted, "single_line_conformance_pass.fs");
+	}
+
 	TEST_CASE("[Format] Collapses multiple passes in an empty class onto one anchor") {
 		const String source =
 				"class Inner:\n"

@@ -1525,7 +1525,11 @@ void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line,
 	if (anchor_line > last_emitted_line) {
 		last_emitted_line = anchor_line;
 	}
-	if (p_owns_body_tail) {
+	// A single-line body (`class Inner: pass`) puts the erased `pass` on the header
+	// line, whose indentation is the enclosing scope's. There is no body line to
+	// measure a trailing comment's depth against, so leave that comment to the
+	// enclosing printer rather than pulling it a level deeper.
+	if (p_owns_body_tail && anchor_line > p_header_line) {
 		flush_block_tail_comments(anchor_line);
 	}
 }
