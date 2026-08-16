@@ -46,6 +46,30 @@ func weak_later_store[T](seed: T) -> void:
 	print(kept)
 
 
+# A container literal is retyped to the declared container, so its elements reach the parameter slot
+# one at a time rather than as one gradual value. A concrete element is already refused there; a
+# gradual one has to be refused on the same grounds, or the bracket would be all it takes to get
+# around the rejection above.
+func array_literal_element[T](value: Variant) -> void:
+	var kept: Array[T] = [value]
+	print(kept)
+
+
+func dictionary_literal_value[T](value: Variant) -> void:
+	var kept: Dictionary[String, T] = {"a": value}
+	print(kept)
+
+
+func dictionary_literal_key[T](value: Variant) -> void:
+	var kept: Dictionary[T, String] = {value: "a"}
+	print(kept)
+
+
+func weak_literal_element[T]() -> void:
+	var kept: Array[T] = [loose_int()]
+	print(kept)
+
+
 func test():
 	bare_local[int]("nope")
 	later_store[int](1, "nope")
@@ -54,3 +78,7 @@ func test():
 	dictionary_local[int]({"a": 1})
 	weak_source[int]("nope")
 	weak_later_store[int](1)
+	array_literal_element[int]("nope")
+	dictionary_literal_value[int]("nope")
+	dictionary_literal_key[int]("nope")
+	weak_literal_element[int]()

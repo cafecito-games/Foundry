@@ -23,6 +23,11 @@ func gradual_return[T: FbgLabel](value: Variant) -> T:
 	return value
 
 
+func literal_element[T: FbgLabel](value: Variant) -> int:
+	var kept: Array[T] = [value]
+	return kept.size()
+
+
 class Holder[T: FbgLabel]:
 	static func static_bare_local(value: Variant) -> String:
 		var kept: T = value
@@ -49,6 +54,7 @@ func test() -> void:
 	print(bare_local[FbgLabel](untyped_label()))
 	print(nested_local[FbgLabel](untyped_labels()))
 	print(gradual_return[FbgLabel](untyped_label()).read())
+	print(literal_element[FbgLabel](untyped_label()))
 	print(Holder[FbgLabel].static_bare_local(untyped_label()))
 	print(Holder[FbgLabel].static_nested_local(untyped_labels()))
 	print(Holder[FbgLabel].static_gradual_return[FbgLabel](untyped_label()).read())

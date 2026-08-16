@@ -14,6 +14,12 @@ class Crate[T]:
 		var kept: Array[T] = value
 		return kept
 
+	func keep_literal_element(value: Variant) -> Array[T]:
+		# A container literal's element reaches the parameter slot on its own, and this receiver can
+		# decide it, so the gradual element keeps the allowance a concrete one has here.
+		var kept: Array[T] = [value]
+		return kept
+
 
 func untyped_int() -> Variant:
 	return 5
@@ -34,4 +40,5 @@ func test() -> void:
 	print(crate.keep(untyped_float())) # converted to int at the slot boundary
 	print(crate.keep_returned(untyped_int()))
 	print(crate.keep_collected(untyped_numbers()))
+	print(crate.keep_literal_element(untyped_int()))
 	print("class parameter gradual source ok")
