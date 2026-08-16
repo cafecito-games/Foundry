@@ -397,7 +397,8 @@ Published editor binaries and export templates are available from the
 
 Containers begin publishing with the first non-draft container-enabled release
 after this feature lands. They use `ghcr.io/cafecito-games/foundry`, a minimal
-`linux/amd64` image for Foundry Script tooling and project-owned test runners.
+`linux/amd64` and `linux/arm64` image for Foundry Script tooling and
+project-owned test runners.
 Before using a command, choose an actually published exact or channel tag and
 set `FOUNDRY_IMAGE` to it:
 
@@ -449,9 +450,10 @@ docker run --rm \
   script format --write .
 ```
 
-The initial image is `linux/amd64` only and contains Foundry plus its runtime
-libraries, not export templates, compilers, Git, or the internal engine test
-suite. The GHCR package is intended to be public. After its first publication,
+Each tag is a multi-architecture index covering `linux/amd64` and `linux/arm64`,
+so `docker pull` and `docker run` select the host's architecture without an
+explicit `--platform`. The image contains Foundry plus its runtime libraries,
+not export templates, compilers, Git, or the internal engine test suite. The GHCR package is intended to be public. After its first publication,
 verify anonymous access from a shell that is not authenticated to GHCR. Set
 `PUBLISHED_EXACT_TAG` to an actually published exact tag, including its leading
 `v`:

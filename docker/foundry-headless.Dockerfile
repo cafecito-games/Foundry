@@ -2,6 +2,9 @@ FROM ubuntu:24.04
 
 ARG FOUNDRY_VERSION
 ARG FOUNDRY_REVISION
+# Set by BuildKit to the architecture being built (amd64, arm64). The build
+# context stages one editor binary per architecture under that exact name.
+ARG TARGETARCH
 
 LABEL org.opencontainers.image.title="Foundry" \
       org.opencontainers.image.description="Foundry editor CLI for headless CI and Foundry Script tooling" \
@@ -27,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mkdir -p /home/foundry/.config /home/foundry/.cache /home/foundry/.local/share /workspace && \
     chown -R 10001:10001 /home/foundry /workspace
 
-COPY --chown=10001:10001 --chmod=0755 foundry.linuxbsd.editor.x86_64 /usr/local/bin/foundry
+COPY --chown=10001:10001 --chmod=0755 foundry-${TARGETARCH} /usr/local/bin/foundry
 
 ENV HOME=/home/foundry \
     XDG_CONFIG_HOME=/home/foundry/.config \

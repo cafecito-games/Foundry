@@ -32,11 +32,13 @@ CLEAN_WORKFLOW = """\
           RELEASE_STATUS: ${{ needs.resolve.outputs.status }}
         run: |
           macos_asset="Foundry_v${RELEASE_VERSION}_macos.universal.zip"
-          linux_asset="Foundry_v${RELEASE_VERSION}_linux.x86_64.zip"
+          linux_x86_64_asset="Foundry_v${RELEASE_VERSION}_linux.x86_64.zip"
+          linux_arm64_asset="Foundry_v${RELEASE_VERSION}_linux.arm64.zip"
           git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/cafecito-games/homebrew-tap.git "$tap_dir"
           cask_path="$(python3 .github/scripts/generate_homebrew_cask.py \\
             --macos-asset "$macos_asset" \\
-            --linux-asset "$linux_asset")"
+            --linux-x86-64-asset "$linux_x86_64_asset" \\
+            --linux-arm64-asset "$linux_arm64_asset")"
           ruby -c "$cask_path"
           brew tap cafecito-games/tap "$tap_dir"
           brew_tap_dir="$(brew --repository cafecito-games/tap)"

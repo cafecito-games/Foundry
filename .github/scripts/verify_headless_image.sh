@@ -3,12 +3,13 @@
 #
 # Expects IMAGE_REF, ENGINE_VERSION, RELEASE_VERSION, RELEASE_TAG, RELEASE_CHANNEL,
 # SOURCE_REPOSITORY, SOURCE_REVISION, and RUNNER_TEMP in the environment, and must be
-# run from the repository root so the fixture project resolves.
+# run from the repository root so the fixture project resolves. EXPECTED_ARCHITECTURE
+# names the OCI architecture the image must report; it defaults to amd64.
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "amd64"
+test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "${EXPECTED_ARCHITECTURE:-amd64}"
 test "$(docker image inspect "$IMAGE_REF" --format '{{.Config.User}}')" = "10001:10001"
 
 version_json="$(docker run --rm "$IMAGE_REF" --version --json)"

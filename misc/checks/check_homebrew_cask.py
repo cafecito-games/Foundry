@@ -91,7 +91,8 @@ def check_render_stable_cask(generator) -> None:
         token="foundry",
         version="0.1.0",
         macos_sha256="0" * 64,
-        linux_sha256="1" * 64,
+        linux_x86_64_sha256="1" * 64,
+        linux_arm64_sha256="2" * 64,
     )
 
     required = [
@@ -109,9 +110,14 @@ def check_render_stable_cask(generator) -> None:
         'app "Foundry.app"',
         'binary "#{appdir}/Foundry.app/Contents/MacOS/Foundry", target: "foundry"',
         "on_linux do",
+        "on_intel do",
         'sha256 "1111111111111111111111111111111111111111111111111111111111111111"',
         'url "https://github.com/cafecito-games/Foundry/releases/download/v#{version}/Foundry_v#{version}_linux.x86_64.zip"',
         'binary "foundry.linuxbsd.editor.x86_64", target: "foundry"',
+        "on_arm do",
+        'sha256 "2222222222222222222222222222222222222222222222222222222222222222"',
+        'url "https://github.com/cafecito-games/Foundry/releases/download/v#{version}/Foundry_v#{version}_linux.arm64.zip"',
+        'binary "foundry.linuxbsd.editor.arm64", target: "foundry"',
     ]
     for snippet in required:
         require_contains(cask, snippet, "stable cask")
@@ -125,7 +131,8 @@ def check_render_alpha_cask(generator) -> None:
         token="foundry@alpha",
         version="0.1.0-alpha.3",
         macos_sha256="a" * 64,
-        linux_sha256="c" * 64,
+        linux_x86_64_sha256="c" * 64,
+        linux_arm64_sha256="e" * 64,
     )
 
     required = [
@@ -133,9 +140,11 @@ def check_render_alpha_cask(generator) -> None:
         'version "0.1.0-alpha.3"',
         'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
         'sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"',
+        'sha256 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"',
         'conflicts_with cask: ["foundry", "foundry@beta", "foundry@rc"]',
         'binary "#{appdir}/Foundry.app/Contents/MacOS/Foundry", target: "foundry"',
         'binary "foundry.linuxbsd.editor.x86_64", target: "foundry"',
+        'binary "foundry.linuxbsd.editor.arm64", target: "foundry"',
     ]
     for snippet in required:
         require_contains(cask, snippet, "alpha cask")
@@ -151,11 +160,14 @@ def check_cli_writes_expected_cask_and_checksum(generator) -> None:
         tmp_path = Path(tmp)
         casks_dir = tmp_path / "Casks"
         macos_asset = tmp_path / "Foundry_v0.1.0-beta.2_macos.universal.zip"
-        linux_asset = tmp_path / "Foundry_v0.1.0-beta.2_linux.x86_64.zip"
+        linux_x86_64_asset = tmp_path / "Foundry_v0.1.0-beta.2_linux.x86_64.zip"
+        linux_arm64_asset = tmp_path / "Foundry_v0.1.0-beta.2_linux.arm64.zip"
         macos_asset.write_bytes(b"fake foundry macos app archive")
-        linux_asset.write_bytes(b"fake foundry linux editor archive")
+        linux_x86_64_asset.write_bytes(b"fake foundry linux x86_64 editor archive")
+        linux_arm64_asset.write_bytes(b"fake foundry linux arm64 editor archive")
         expected_macos_sha = hashlib.sha256(macos_asset.read_bytes()).hexdigest()
-        expected_linux_sha = hashlib.sha256(linux_asset.read_bytes()).hexdigest()
+        expected_linux_x86_64_sha = hashlib.sha256(linux_x86_64_asset.read_bytes()).hexdigest()
+        expected_linux_arm64_sha = hashlib.sha256(linux_arm64_asset.read_bytes()).hexdigest()
 
         result = subprocess.run(
             [
@@ -167,8 +179,10 @@ def check_cli_writes_expected_cask_and_checksum(generator) -> None:
                 "0.1.0-beta.2",
                 "--macos-asset",
                 str(macos_asset),
-                "--linux-asset",
-                str(linux_asset),
+                "--linux-x86-64-asset",
+                str(linux_x86_64_asset),
+                "--linux-arm64-asset",
+                str(linux_arm64_asset),
                 "--output-dir",
                 str(casks_dir),
             ],
@@ -187,10 +201,13 @@ def check_cli_writes_expected_cask_and_checksum(generator) -> None:
 
         cask = cask_path.read_text()
         require_contains(cask, f'sha256 "{expected_macos_sha}"', "generated macOS checksum")
-        require_contains(cask, f'sha256 "{expected_linux_sha}"', "generated Linux checksum")
+        require_contains(cask, f'sha256 "{expected_linux_x86_64_sha}"', "generated Linux x86_64 checksum")
+        require_contains(cask, f'sha256 "{expected_linux_arm64_sha}"', "generated Linux arm64 checksum")
         require_contains(cask, 'cask "foundry@beta" do', "generated beta cask")
         require_contains(cask, "on_macos do", "generated beta cask macOS block")
         require_contains(cask, "on_linux do", "generated beta cask Linux block")
+        require_contains(cask, "on_intel do", "generated beta cask Linux x86_64 block")
+        require_contains(cask, "on_arm do", "generated beta cask Linux arm64 block")
         require_contains(
             cask,
             'conflicts_with cask: ["foundry", "foundry@alpha", "foundry@rc"]',
@@ -206,7 +223,8 @@ def check_cli_accepts_explicit_sha256_values() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         casks_dir = Path(tmp) / "Casks"
         expected_macos_sha = "b" * 64
-        expected_linux_sha = "d" * 64
+        expected_linux_x86_64_sha = "d" * 64
+        expected_linux_arm64_sha = "f" * 64
 
         result = subprocess.run(
             [
@@ -218,8 +236,10 @@ def check_cli_accepts_explicit_sha256_values() -> None:
                 "0.1.0-rc.4",
                 "--macos-sha256",
                 expected_macos_sha,
-                "--linux-sha256",
-                expected_linux_sha,
+                "--linux-x86-64-sha256",
+                expected_linux_x86_64_sha,
+                "--linux-arm64-sha256",
+                expected_linux_arm64_sha,
                 "--output-dir",
                 str(casks_dir),
             ],
@@ -233,7 +253,8 @@ def check_cli_accepts_explicit_sha256_values() -> None:
         require_equal(result.stdout.strip(), str(cask_path), "generator stdout for explicit checksum")
         cask = cask_path.read_text()
         require_contains(cask, f'sha256 "{expected_macos_sha}"', "explicit macOS checksum")
-        require_contains(cask, f'sha256 "{expected_linux_sha}"', "explicit Linux checksum")
+        require_contains(cask, f'sha256 "{expected_linux_x86_64_sha}"', "explicit Linux x86_64 checksum")
+        require_contains(cask, f'sha256 "{expected_linux_arm64_sha}"', "explicit Linux arm64 checksum")
 
 
 def find_workflow_wiring_violations(workflow: str) -> list[str]:
@@ -249,10 +270,12 @@ def find_workflow_wiring_violations(workflow: str) -> list[str]:
         "RELEASE_STATUS: ${{ needs.resolve.outputs.status }}",
         "Foundry_v${RELEASE_VERSION}_macos.universal.zip",
         "Foundry_v${RELEASE_VERSION}_linux.x86_64.zip",
+        "Foundry_v${RELEASE_VERSION}_linux.arm64.zip",
         "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/cafecito-games/homebrew-tap.git",
         "python3 .github/scripts/generate_homebrew_cask.py",
         '--macos-asset "$macos_asset"',
-        '--linux-asset "$linux_asset"',
+        '--linux-x86-64-asset "$linux_x86_64_asset"',
+        '--linux-arm64-asset "$linux_arm64_asset"',
         'ruby -c "$cask_path"',
         'brew tap cafecito-games/tap "$tap_dir"',
         'brew_tap_dir="$(brew --repository cafecito-games/tap)"',
