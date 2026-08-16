@@ -999,6 +999,12 @@ private:
 	// receiver, so the runtime-narrowing allowance has no check to stand on and the assignment stays a
 	// static error.
 	bool receiver_validation_is_unavailable(const FSParser::DataType &p_destination) const;
+	// True when a gradual source -- a `Variant` or any other non-hard value -- must be refused because
+	// `p_destination` names a type parameter the frame can decide nothing about. Gradual does not mean
+	// unchecked in this language: every other gradual destination is verified at run time. A destination
+	// that emits no check can honor neither half of that contract, so it is refused exactly where the
+	// typed path is refused rather than accepting the value untested.
+	bool gradual_destination_is_undecidable(const FSParser::DataType &p_destination) const;
 	bool is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr, const FSParser::ExpressionNode *p_constant_source = nullptr);
 
 	// Whether an `is p_test_type` on a value of `p_operand_type` is statically always true because the

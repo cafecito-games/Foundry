@@ -87,10 +87,20 @@ static bool _is_undecidable_type_parameter_target(const FSParser::DataType &p_ty
 // arguments, and for the parameter/return slots of a callable signature, so the leaf rule from a bare
 // `T` destination is applied to every leaf of the shape. A leaf bounded by a `final` class denotes
 // exactly that bound and stays decidable at any depth.
+//
+// A tuple node stops the walk. A tuple destination carries its own store check, which tests the
+// declared shape exactly as the `is` operator does and accepts any value in an element the compiler
+// cannot describe. That is the same allowance the test gives, so a parameter under a tuple is neither
+// more nor less decidable than the erased element the check already waves through, and answering
+// otherwise would make this rule stricter than the check it claims to describe.
 static bool _destination_has_erased_type_parameter(const FSParser::DataType &p_type, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		// A shape this deep cannot be reasoned about usefully; leave the decision to the rules that ran
 		// before this one rather than inventing a rejection here.
+		return false;
+	}
+
+	if (p_type.kind == FSParser::DataType::TUPLE) {
 		return false;
 	}
 
@@ -1201,7 +1211,13 @@ bool FSTypeCompatibility::callable_signature_rest_parameter_type(const FSParser:
 	return true;
 }
 
-static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type, int p_depth) {
+// `p_exempt_final_bound` distinguishes the two questions this traversal answers. Code generation and
+// the check-emission rules ask "would a store here be validated against the receiver", where a final
+// bound changes nothing: the slot is still reified and still checked. The undecidability rule asks
+// "is there anything to decide", and a parameter bounded by a `final` class denotes exactly that
+// bound, so it is decidable without a receiver -- which is why `FSTypeCompatibility::check()` settles
+// such a destination against the bound in a static frame rather than refusing it.
+static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type, int p_depth, bool p_exempt_final_bound = false) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
 	}
@@ -1221,6 +1237,9 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 		return false;
 	}
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+		if (p_exempt_final_bound && _is_type_parameter_bounded_by_final_class(p_type)) {
+			return false;
+		}
 		// `@Self` is scoped to the class but is not reified per instance: it denotes the class the frame
 		// runs against, which a static frame has as well, and it lowers to a concrete script rather than
 		// to an erased slot.
@@ -1239,12 +1258,12 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 	// opposite reading from `_destination_has_erased_type_parameter()`, which walks both because it
 	// answers "is this undecidable", where erasure is the reason to say yes.
 	for (const FSParser::DataType &element_type : p_type.container_element_types) {
-		if (_depends_on_receiver_type_parameter(element_type, p_depth + 1)) {
+		if (_depends_on_receiver_type_parameter(element_type, p_depth + 1, p_exempt_final_bound)) {
 			return true;
 		}
 	}
 	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
-		if (_depends_on_receiver_type_parameter(type_argument, p_depth + 1)) {
+		if (_depends_on_receiver_type_parameter(type_argument, p_depth + 1, p_exempt_final_bound)) {
 			return true;
 		}
 	}
@@ -1253,6 +1272,32 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 
 bool FSTypeCompatibility::destination_depends_on_receiver_type_parameter(const FSParser::DataType &p_type) {
 	return _depends_on_receiver_type_parameter(p_type, 0);
+}
+
+// Two disjoint reasons make a destination undecidable, and the answer is the union of both because
+// each names a slot the compiler emits no check for:
+//
+//   * The shape names a method-scope parameter anywhere. Such a parameter is chosen per call and
+//     erased before the callee runs, so no frame -- static or instance -- has anything to check
+//     against. This half does not depend on the frame and is asked unconditionally.
+//   * The frame has no receiver and the shape names a class-scope parameter in a position a store
+//     would have been validated against that receiver. With a receiver those positions are checked;
+//     without one the same slot is exactly as undecidable as a method-scope parameter.
+//
+// The second half is asked of `_depends_on_receiver_type_parameter()`, the traversal code generation
+// itself uses, rather than of the erasure walk, so a "yes" always names a slot that would have been
+// checked had a receiver existed. The two traversals differ: a tuple slot, a nullable slot, a bare
+// specialized meta-type destination and a callable-signature slot are unchecked with a receiver as
+// well, so answering "undecidable" for them only in a static frame would make the static and the
+// instance frame disagree about the same declaration. Closing those shapes is the business of the
+// issues that own them, and it must close them for every frame at once. A leaf bounded by a `final`
+// class is exempt from both halves at every depth: it denotes exactly its bound, which `check()`
+// settles a static-frame destination against instead of refusing it.
+bool FSTypeCompatibility::destination_is_undecidable_type_parameter(const FSParser::DataType &p_type, const Options &p_options) {
+	if (_destination_has_erased_type_parameter(p_type)) {
+		return true;
+	}
+	return !p_options.receiver_is_available && _depends_on_receiver_type_parameter(p_type, 0, true);
 }
 
 bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide) {
@@ -1268,13 +1313,15 @@ bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_n
 		// become a "runtime check" the runtime cannot perform.
 		return false;
 	}
-	if (_destination_has_erased_type_parameter(p_narrow)) {
+	if (destination_is_undecidable_type_parameter(p_narrow, Options())) {
 		// The reverse-compatibility rule below reads an assignment as a downcast the runtime will check.
 		// An erased type-parameter destination has no runtime type to check against and gets no emitted
 		// check at all, so nothing backs that reading and the assignment must stay a static error. Same
 		// reasoning as the erased Callable signature and the numeric width below: an allowance that
 		// claims a runtime check must name one the runtime can actually perform. A parameter buried in a
 		// container or signature slot is no more decidable than a bare one, so the whole shape is walked.
+		// A default-constructed `Options` is deliberate: this rule is consulted from frames of both kinds,
+		// and a static frame's own missing receiver is judged by its caller before narrowing is offered.
 		return false;
 	}
 	if (FSNumericConversion::is_numeric_builtin(p_narrow) && FSNumericConversion::is_numeric_builtin(p_wide)) {

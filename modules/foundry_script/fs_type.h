@@ -141,6 +141,14 @@ public:
 	// elements.
 	static bool destination_depends_on_receiver_type_parameter(const FSParser::DataType &p_type);
 
+	// True when nothing at the destination can decide a value against `p_type`, so a store into it is
+	// neither justified statically nor verified at run time. Both the typed and the gradual paths ask
+	// this one question, which is what keeps them from answering differently for the same declaration.
+	//
+	// Pass `p_options.receiver_is_available = false` while a static frame is checked; a default-
+	// constructed `Options` describes a frame that has a receiver.
+	static bool destination_is_undecidable_type_parameter(const FSParser::DataType &p_type, const Options &p_options);
+
 	// Structural identity used for invariant positions such as a typed container element: two types
 	// match only when every nested slot -- container elements, generic arguments, and callable/signal
 	// parameter, return and rest signatures -- matches as well. `DataType::operator==` stops at the

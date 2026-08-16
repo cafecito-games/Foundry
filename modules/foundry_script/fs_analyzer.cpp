@@ -5050,6 +5050,13 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 									   p_assignable->identifier->name,
 									   specified_type.to_string()),
 							p_assignable->initializer);
+				} else if (gradual_destination_is_undecidable(specified_type)) {
+					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s: an erased type parameter has no run-time type to check the value against.)",
+									   initializer_type.to_string(),
+									   p_kind,
+									   p_assignable->identifier->name,
+									   specified_type.to_string()),
+							p_assignable->initializer);
 				} else {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
@@ -6049,6 +6056,11 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 				push_error(vformat(R"(Cannot return Variant value in strict dynamic mode; expected "%s".)",
 								   expected_type.to_string()),
 						p_return);
+			} else if (gradual_destination_is_undecidable(compatibility_expected_type)) {
+				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s": an erased type parameter has no run-time type to check the value against.)",
+								   result.to_string(),
+								   expected_type.to_string()),
+						p_return);
 			} else {
 				mark_node_unsafe(p_return);
 			}
@@ -6835,7 +6847,14 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		} else if (assignee_is_hard && !assigned_is_hard) {
 			// hard non-variant assignee and weak assigned
 			mark_node_unsafe(p_assignment);
-			p_assignment->use_conversion_assign = true;
+			if (gradual_destination_is_undecidable(assignee_type)) {
+				push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s": an erased type parameter has no run-time type to check the value against.)",
+								   assigned_value_type.to_string(),
+								   assignee_type.to_string()),
+						p_assignment->assigned_value);
+			} else {
+				p_assignment->use_conversion_assign = true;
+			}
 			downgrades_assigned = downgrades_assigned || (!assigned_is_variant && !is_type_compatible(assignee_type, op_type, true, p_assignment->assigned_value, p_assignment->assigned_value));
 		} else if (compatible) {
 			if (op_type.is_variant()) {
@@ -6854,7 +6873,14 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					}
 				} else if (assignee_is_hard) {
 					// hard non-variant assignee and variant result
-					p_assignment->use_conversion_assign = true;
+					if (gradual_destination_is_undecidable(assignee_type)) {
+						push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s": an erased type parameter has no run-time type to check the value against.)",
+										   assigned_value_type.to_string(),
+										   assignee_type.to_string()),
+								p_assignment->assigned_value);
+					} else {
+						p_assignment->use_conversion_assign = true;
+					}
 				} else {
 					// weak non-variant assignee and variant result
 					downgrades_assignee = true;
@@ -10088,6 +10114,12 @@ static StringName _remaining_class_type_parameter(const FSParser::DataType &p_ty
 
 bool FSAnalyzer::receiver_validation_is_unavailable(const FSParser::DataType &p_destination) const {
 	return static_context && FSTypeCompatibility::destination_depends_on_receiver_type_parameter(p_destination);
+}
+
+bool FSAnalyzer::gradual_destination_is_undecidable(const FSParser::DataType &p_destination) const {
+	FSTypeCompatibility::Options options;
+	options.receiver_is_available = !static_context;
+	return FSTypeCompatibility::destination_is_undecidable_type_parameter(p_destination, options);
 }
 
 void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p_class) {

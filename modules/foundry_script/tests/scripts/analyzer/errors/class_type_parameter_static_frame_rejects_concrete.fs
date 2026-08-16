@@ -2,6 +2,8 @@
 # concrete value against the receiver's actual argument. A static function has no receiver, so there
 # is nothing to reify against and no check to license the assignment: the concrete value would be
 # laundered into the parameter slot untested, exactly as it would through a method-scope parameter.
+# A gradual source is judged by the same criterion; see
+# `class_type_parameter_static_frame_rejects_gradual.fs`.
 class Crate[T]:
 	static func seeded_local() -> void:
 		var kept: T = 5

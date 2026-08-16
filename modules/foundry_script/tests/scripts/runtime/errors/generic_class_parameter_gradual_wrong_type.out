@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a variable of type 'String' into a variable of type 'int'.
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_gradual_wrong_type.fs:6 on Crate.keep(): Trying to assign a value of type "String" to a variable of type "int".
+<null>
