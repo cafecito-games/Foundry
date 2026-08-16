@@ -50,6 +50,19 @@ class ForwardingLambdaKeeper[W]:
 	uses LambdaKeeper[W]
 
 
+# A node no receiver can ever resolve -- a nested `Type[V]` whose argument has no handle form -- is
+# not a reason to capture either. Substitution marks it permanently unresolved, and the runtime reads
+# that as no evidence.
+trait NestedHandleKeeper[V]:
+	var keeper := func(v):
+		var kept: Array[Type[V]] = v
+		return kept
+
+
+class IntNestedHandleKeeper:
+	uses NestedHandleKeeper[int]
+
+
 # The comparison case: a bare `T` slot is checked against the receiver, so this lambda does capture
 # it, and the resulting cycle is the deliberate cost of the check.
 class CheckedCrate[T]:
@@ -87,6 +100,11 @@ func test() -> void:
 	print(weak_concrete_trait.get_ref() == null)
 
 	print(ForwardingLambdaKeeper[int].new().keeper.call(2))
+
+	var nested_handle := IntNestedHandleKeeper.new()
+	var weak_nested_handle: WeakRef = weakref(nested_handle)
+	nested_handle = null
+	print(weak_nested_handle.get_ref() == null)
 
 	var checked := CheckedCrate[int].new()
 	checked.setup()

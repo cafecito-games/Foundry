@@ -928,7 +928,10 @@ static bool _baked_shape_needs_receiver(const FSDataType &p_type, int p_depth = 
 		return false;
 	}
 	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
-		return true;
+		// A method-scope node, and the `-1` sentinel a raw `extends`/`uses` step leaves behind, can never
+		// be resolved by any receiver: projection reads both as no evidence. Reporting them as needing one
+		// would only make an enclosing lambda hold its receiver for a check that never happens.
+		return p_type.type_parameter_scope == FSDataType::TYPE_PARAMETER_CLASS && p_type.type_parameter_index >= 0;
 	}
 	for (const FSDataType &element_type : p_type.container_element_types) {
 		if (_baked_shape_needs_receiver(element_type, p_depth + 1)) {
