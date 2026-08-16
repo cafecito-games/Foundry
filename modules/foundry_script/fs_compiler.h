@@ -199,6 +199,7 @@ class FSCompiler {
 	bool _slot_needs_receiver_validation(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen) const;
 	bool _slot_is_tuple_shaped(const FSParser::DataType &p_declared_type) const;
 	FSDataType _bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle, bool &r_is_erased_container);
+	Vector<FSDataType> _bake_construction_type_arguments(const Vector<FSParser::DataType> &p_type_arguments, const CodeGen &p_codegen);
 
 	bool _is_class_member_property(CodeGen &codegen, const StringName &p_name);
 	bool _is_class_member_property(FoundryScript *owner, const StringName &p_name);

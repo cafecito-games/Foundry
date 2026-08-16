@@ -5080,4 +5080,99 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A final-bounded parameter
 	CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(make_array_of(open_bounded), make_array_of(open_bound_value)));
 }
 
+// Builds a class-scoped type parameter, the shape a receiver reifies.
+static FSParser::DataType make_class_type_parameter(const StringName &p_name, int p_index = 0) {
+	FSParser::DataType parameter;
+	parameter.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	parameter.kind = FSParser::DataType::TYPE_PARAMETER;
+	parameter.type_parameter_name = p_name;
+	parameter.type_parameter_index = p_index;
+	parameter.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_CLASS;
+	return parameter;
+}
+
+// The analyzer's half of the receiver-checkable rule. It has to answer identically to the traversal
+// code generation uses (`_type_depends_on_declared_type_parameters()` in `fs_compiler.cpp`): a "yes"
+// here is also what makes an enclosing lambda capture its receiver, so a disagreement is either a
+// silently missing check or a capture taken for a check that never happens.
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A class parameter in a type argument is receiver-checkable") {
+	FSParser::ClassNode holder;
+	const FSParser::DataType parameter = make_class_type_parameter(SNAME("T"));
+
+	SUBCASE("depth 1") {
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { parameter })));
+	}
+	SUBCASE("nested deeper") {
+		const FSParser::DataType inner = make_specialized_class_type(&holder, { parameter });
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_array_of(inner) })));
+	}
+	SUBCASE("beside a concrete argument") {
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_builtin_type(Variant::INT), parameter })));
+	}
+	SUBCASE("concrete arguments only") {
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_builtin_type(Variant::INT) })));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An undescribed slot keeps a class parameter unchecked") {
+	FSParser::ClassNode holder;
+	const FSParser::DataType parameter = make_class_type_parameter(SNAME("T"));
+
+	SUBCASE("tuple argument") {
+		// A tuple erases to an untyped Array describing none of its slots.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { tuple })));
+	}
+	SUBCASE("nullable argument") {
+		// No container type expresses "this type or null", so the runtime keeps no evidence for it.
+		FSParser::DataType nullable = parameter;
+		nullable.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { nullable })));
+	}
+	SUBCASE("callable signature argument") {
+		// A Callable erases its signature completely, so a check would assert nothing.
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_callable_with_parameter(parameter) })));
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_callable_returning(parameter) })));
+	}
+	SUBCASE("union argument") {
+		// A multi-member union erases to one untyped slot.
+		FSParser::DataType union_type;
+		union_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		union_type.kind = FSParser::DataType::UNION;
+		union_type.union_members.push_back(make_builtin_type(Variant::INT));
+		union_type.union_members.push_back(parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { union_type })));
+	}
+	SUBCASE("bare specialized meta-type destination") {
+		// The destination holds a class handle, not an instance, so a check built from its shape would
+		// describe the class and reject the handle.
+		FSParser::DataType handle_destination = make_specialized_class_type(&holder, { parameter });
+		handle_destination.is_meta_type = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(handle_destination));
+	}
+	SUBCASE("@Self argument") {
+		// `@Self` denotes the class the frame runs against, which a static frame has too.
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_class_type_parameter(SNAME("@Self")) })));
+	}
+	SUBCASE("method-scope argument") {
+		// A method-scope parameter is picked per call and erased before the callee runs.
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { make_method_type_parameter(SNAME("X"), 0) })));
+	}
+}
+
 } // namespace FSTests

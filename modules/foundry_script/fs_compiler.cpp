@@ -872,15 +872,31 @@ static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *
 // method-scope parameter, or an ordinal from some other declaration) would silently validate against
 // an unrelated argument, so the whole slot is left unbound instead.
 //
-// Traversal follows typed-container elements only. It never follows the type arguments of a
-// specialized class handle, whose construction inside the declaring class does not reify them, and it
-// stops at a tuple, which carries its own shape through a separate store. The analyzer's
-// `FSTypeCompatibility::destination_depends_on_receiver_type_parameter()` answers the same question
-// for a static frame, where no shape is checkable at all and both exclusions are moot.
+// Traversal follows typed-container elements and the type arguments of a specialized class handle,
+// both of which are reified at run time. It stops at a tuple, which carries its own shape through a
+// separate store, and it never follows a callable/signal signature slot or a union member: a
+// signature erases completely and a union erases to one untyped slot, so a check emitted for either
+// would assert nothing while claiming to enforce the parameter. That is the opposite reading from
+// `_destination_has_erased_type_parameter()` in `fs_type.cpp`, which walks all of them because it
+// answers "is this undecidable", where erasure is the reason to say yes.
+//
+// The analyzer's `FSTypeCompatibility::destination_depends_on_receiver_type_parameter()` answers the
+// same question, and the two must stay in agreement: a "yes" here emits a check, and a "yes" there is
+// also what makes an enclosing lambda capture its receiver, so a disagreement is either a silently
+// missing check or a capture taken for a check that never happens.
 static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &p_type,
 		const Vector<FSParser::TypeParameterNode *> &p_type_parameters, bool &r_is_sound, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		r_is_sound = false;
+		return false;
+	}
+
+	if (p_depth == 0 && p_type.is_meta_type && !p_type.is_type_handle_annotation) {
+		// A bare specialized meta-type slot (`var handle := Holder[T]`) holds a class handle, not an
+		// instance. Its runtime value is a distinct handle object, while the shape a check would be baked
+		// from describes the class itself, so the check would reject the very handle the declaration is
+		// for. A `Type[...]` slot is different and stays included: its handle layer travels beside the
+		// shape, which is exactly what makes it checkable.
 		return false;
 	}
 
@@ -918,6 +934,9 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 	bool found = false;
 	for (const FSParser::DataType &element_type : p_type.container_element_types) {
 		found = _type_depends_on_declared_type_parameters(element_type, p_type_parameters, r_is_sound, p_depth + 1) || found;
+	}
+	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
+		found = _type_depends_on_declared_type_parameters(type_argument, p_type_parameters, r_is_sound, p_depth + 1) || found;
 	}
 	return found;
 }
@@ -1016,6 +1035,51 @@ FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_decl
 	}
 
 	current_function_requires_receiver = current_function_requires_receiver || _baked_shape_needs_receiver(baked);
+	return baked;
+}
+
+// The type arguments a specialized construction (`Holder[Type[U]].new()`) reifies onto the new
+// instance. A class type parameter is preserved so the frame's receiver resolves it at the moment the
+// instance is built; without that the body's single compilation would record the parameter's erasure,
+// claiming `Holder[Type[Object]]` for every specialization and making the slots that hold the result
+// uncheckable.
+//
+// A trait body names the trait's parameters, so the implementer's applied arguments are substituted
+// first: a forwarded parameter stays receiver-resolved, a concrete application bakes the argument in
+// and needs no receiver at all.
+Vector<FSDataType> FSCompiler::_bake_construction_type_arguments(const Vector<FSParser::DataType> &p_type_arguments, const CodeGen &p_codegen) {
+	const FSParser::ClassNode *declaring_class =
+			flattened_trait_declaration != nullptr ? flattened_trait_declaration : p_codegen.class_node;
+
+	Vector<FSDataType> baked;
+	baked.resize(p_type_arguments.size());
+	for (int i = 0; i < p_type_arguments.size(); i++) {
+		const FSParser::DataType &argument = p_type_arguments[i];
+		// Only a node whose ordinal indexes the declaring class's parameter list, under the name declared
+		// at that ordinal, is sound to resolve against a receiver's arguments; anything else erases as it
+		// did before rather than validating against an unrelated argument.
+		bool preserve_type_parameters = false;
+		if (declaring_class != nullptr) {
+			bool is_sound = true;
+			preserve_type_parameters =
+					_type_depends_on_declared_type_parameters(argument, declaring_class->type_parameters, is_sound) && is_sound;
+		}
+
+		FSDataType converted = _gdtype_from_datatype(argument, p_codegen.script, argument.is_type_handle_annotation, preserve_type_parameters);
+		if (preserve_type_parameters && flattened_trait_declaration != nullptr) {
+			_substitute_binding_type_parameters(converted, flattened_trait_type_arguments, p_codegen.script);
+		}
+		// A construction that still names a parameter is resolved from the receiver, so an enclosing
+		// lambda has to carry one. The requirement is read off the shape actually emitted, so a
+		// substituted-away parameter takes no capture and creates no reference cycle. A static frame has
+		// no receiver at all: the construction there resolves nothing and builds an unspecialized
+		// instance by design, and asking for a capture would only make the enclosing lambda a self-lambda
+		// that a static call cannot create.
+		if (!p_codegen.is_static) {
+			current_function_requires_receiver = current_function_requires_receiver || _baked_shape_needs_receiver(converted);
+		}
+		baked.write[i] = converted;
+	}
 	return baked;
 }
 
@@ -1744,11 +1808,11 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 							Vector<FSDataType> specialized_type_arguments;
 							FSParser::DataType specialized_static_type;
 							if (specialization != nullptr) {
-								const FSDataType specialization_type = _gdtype_from_datatype(specialization->get_datatype(), codegen.script);
-								if (!specialization_type.type_arguments.is_empty()) {
+								const FSParser::DataType specialization_datatype = specialization->get_datatype();
+								if (!specialization_datatype.type_arguments.is_empty()) {
 									specialized_base = specialization->base;
-									specialized_static_type = specialization->get_datatype();
-									specialized_type_arguments = specialization_type.type_arguments;
+									specialized_static_type = specialization_datatype;
+									specialized_type_arguments = _bake_construction_type_arguments(specialization_datatype.type_arguments, codegen);
 								}
 							} else if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr) {
 								const FSParser::DataType base_static = subscript->base->get_datatype();
@@ -1757,14 +1821,11 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 										!base_static.type_arguments.is_empty()) {
 									// The handle's own type may be weakly inferred (an untyped `var h = Box[int]`), which would
 									// make `_gdtype_from_datatype(base_static)` discard the whole type. The reified arguments
-									// themselves are hard explicit types, so convert them individually instead.
-									Vector<FSDataType> reified_arguments;
-									for (int i = 0; i < base_static.type_arguments.size(); i++) {
-										reified_arguments.push_back(_gdtype_from_datatype(base_static.type_arguments[i], codegen.script));
-									}
+									// themselves are hard explicit types, so convert them individually instead, through the
+									// same baking the direct form uses so the two encodings agree.
 									specialized_base = subscript->base;
 									specialized_static_type = base_static;
-									specialized_type_arguments = reified_arguments;
+									specialized_type_arguments = _bake_construction_type_arguments(base_static.type_arguments, codegen);
 								}
 							}
 
@@ -2016,9 +2077,23 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						}
 					}
 					if (base_class != nullptr) {
+						const Vector<FSDataType> baked_arguments = _bake_construction_type_arguments(subscript_type.type_arguments, codegen);
+						bool needs_receiver = false;
+						for (const FSDataType &argument : baked_arguments) {
+							needs_receiver = needs_receiver || _baked_shape_needs_receiver(argument);
+						}
+						if (needs_receiver) {
+							// A handle whose arguments name a class type parameter cannot be a constant: one
+							// constant would have to stand for every specialization, and there is no receiver
+							// where a constant is materialized. It is built from the frame's receiver instead,
+							// so `var h := Holder[Type[U]]; h.new()` reifies exactly as the direct form does.
+							FSCodeGenerator::Address handle = codegen.add_temporary(_gdtype_from_datatype(subscript_type, codegen.script));
+							gen->write_make_specialized_class_handle(handle, codegen.add_constant(Ref<FoundryScript>(base_class)), baked_arguments);
+							return handle;
+						}
 						Vector<ContainerType> type_arguments;
-						for (const FSParser::DataType &argument : subscript_type.type_arguments) {
-							type_arguments.push_back(_gdtype_from_datatype(argument, codegen.script).to_container_type());
+						for (const FSDataType &argument : baked_arguments) {
+							type_arguments.push_back(argument.to_container_type());
 						}
 						return codegen.add_constant(FSSpecializedClassHandle::create(Ref<FoundryScript>(base_class), type_arguments));
 					}
@@ -5048,6 +5123,14 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value,
 
 	Vector<ContainerType> type_arguments;
 	for (const FSParser::DataType &argument : p_datatype.type_arguments) {
+		if (_datatype_contains_erased_type_parameter(argument)) {
+			// A constant is one slot materialized with no receiver, so it cannot honestly claim the
+			// specialization a type parameter stands for. Baking the parameter's erasure in would record
+			// the definite evidence `Variant`, which every slot that really resolves the parameter then
+			// rejects. The bare unspecialized handle carries no evidence instead, and the analyzer rejects
+			// the declaration outright wherever it can see the class the parameter belongs to.
+			return resolved;
+		}
 		type_arguments.push_back(_gdtype_from_datatype(argument, p_owner).to_container_type());
 	}
 	return FSSpecializedClassHandle::create(Ref<FoundryScript>(base_class), type_arguments);

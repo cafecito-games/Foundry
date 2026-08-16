@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign an object specialized as 'RefCounted[Type[Label]]' into a variable of 'RefCounted[Type[Button]]'.
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_specialized_handle_return_wrong_type.fs:9 on Wrapper.produce(): Trying to assign a value of type "RefCounted (Holder)" to a variable of type "RefCounted[Type[Button]]".
+<null>

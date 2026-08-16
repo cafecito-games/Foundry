@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign an object specialized as 'RefCounted[Type[Label]]' into a member of 'RefCounted[Type[Button]]'.
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_specialized_handle_member_wrong_type.fs:15 on test(): Invalid assignment of property or key 'holder' with value of type 'RefCounted (Holder)' on a base object of type 'RefCounted (Wrapper)'.
