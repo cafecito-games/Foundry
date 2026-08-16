@@ -3341,8 +3341,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// `Array[T]` yields a runtime array whose element type is erased on purpose, and its concrete
 				// *consumer* is what retypes it (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`). Retyping it here would
 				// hand a gradual consumer a typed container the declaration never promised, so for those
-				// slots the check stays a check and the value's runtime typing is left to the consumer. A
-				// bare `T` that merely happens to resolve to a container is not one of them.
+				// slots the check establishes convertibility -- what the consumer's conversion then performs --
+				// and the stored value keeps the erased contents a gradual consumer is entitled to see. A bare
+				// `T` that merely happens to resolve to a container is not one of them.
 				Variant validated = *src;
 				String expected_type_name;
 				if (!FoundryScript::validate_projected_type_write(expected, expected_is_type_handle, validated, "variable", &expected_type_name)) {
