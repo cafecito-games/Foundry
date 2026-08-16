@@ -1,0 +1,6 @@
+FS_TEST_OK
+value setter 1
+count setter 1
+value setter 1
+count setter 1
+generic member setter receives validated value ok
