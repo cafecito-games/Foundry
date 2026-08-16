@@ -5070,7 +5070,8 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 				}
 				if (!type_handle_error.is_empty()) {
 					push_error(type_handle_error, p_assignable->initializer);
-				} else if (!nullable_mismatch && !is_constant && FSTypeCompatibility::allows_runtime_narrowing(specified_type, initializer_type)) {
+				} else if (!nullable_mismatch && !is_constant && !receiver_validation_is_unavailable(specified_type) &&
+						FSTypeCompatibility::allows_runtime_narrowing(specified_type, initializer_type)) {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
@@ -6054,7 +6055,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 			const bool nullable_mismatch = strict_null_checks && result.is_nullable &&
 					!compatibility_expected_type.is_nullable && !compatibility_expected_type.is_variant();
 			mark_node_unsafe(p_return);
-			if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(compatibility_expected_type, result)) {
+			if (nullable_mismatch || receiver_validation_is_unavailable(compatibility_expected_type) ||
+					!FSTypeCompatibility::allows_runtime_narrowing(compatibility_expected_type, result)) {
 				if (nullable_mismatch) {
 					push_error(vformat(R"(Cannot return nullable value of type "%s"; expected non-nullable "%s".)",
 									   result.to_string(),
@@ -6870,7 +6872,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					}
 					if (!type_handle_error.is_empty()) {
 						push_error(type_handle_error, p_assignment->assigned_value);
-					} else if (!nullable_mismatch && FSTypeCompatibility::allows_runtime_narrowing(assignee_type, op_type)) {
+					} else if (!nullable_mismatch && !receiver_validation_is_unavailable(assignee_type) &&
+							FSTypeCompatibility::allows_runtime_narrowing(assignee_type, op_type)) {
 						// hard non-variant assignee and maybe compatible result
 						p_assignment->use_conversion_assign = true;
 					} else {
@@ -10077,6 +10080,10 @@ static StringName _remaining_class_type_parameter(const FSParser::DataType &p_ty
 		}
 	}
 	return StringName();
+}
+
+bool FSAnalyzer::receiver_validation_is_unavailable(const FSParser::DataType &p_destination) const {
+	return static_context && FSTypeCompatibility::destination_depends_on_receiver_type_parameter(p_destination);
 }
 
 void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p_class) {
@@ -16601,6 +16608,10 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	options.strict_dynamic = strict_dynamic_checks;
 	options.strict_null = strict_null_checks;
+	// A class type parameter is checkable only against a receiver's reification of it, which a static
+	// frame does not have. Nothing there can decide such a destination, so it is refused like an erased
+	// method-scope one instead of being accepted on a check that is never emitted.
+	options.receiver_is_available = !static_context;
 	if (p_constant_source != nullptr && p_constant_source->is_constant) {
 		options.constant_source_value = &p_constant_source->reduced_value;
 	}

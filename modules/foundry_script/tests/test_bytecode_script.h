@@ -817,6 +817,71 @@ TEST_CASE("[FoundryScript][BytecodeScript] A class-handle type argument survives
 	CHECK(restored_handle_binding != restored_instance_binding);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Receiver-relative class-parameter checks survive the bytecode round trip") {
+	// Both halves of the receiver-relative rule are serialized state: the composite member's structured
+	// binding, and the descriptor constant the function-body store opcode resolves through the
+	// receiver. A round trip that dropped either would leave the restored script accepting exactly the
+	// values the source rejects, with no other symptom.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Shelf[T]:\n"
+			"\tvar items: Array[T] = []\n"
+			"\n"
+			"\tfunc stock(values) -> void:\n"
+			"\t\titems = values\n"
+			"\n"
+			"\tfunc keep(value) -> T:\n"
+			"\t\tvar kept: T = value\n"
+			"\t\treturn kept\n"
+			"\n"
+			"class IntShelf extends Shelf[int]:\n"
+			"\tpass\n");
+
+	REQUIRE(original->get_subclasses().has(SNAME("Shelf")));
+	// A directly declared `Array[T]` is bound as a baked shape (FIXED) whose element node the receiver
+	// resolves, rather than being left unbound as it would be without a structured binding.
+	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(
+				  original->get_subclasses().find(SNAME("Shelf"))->value, SNAME("items")) == 1);
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	REQUIRE(restored->get_subclasses().has(SNAME("Shelf")));
+	REQUIRE(restored->get_subclasses().has(SNAME("IntShelf")));
+	const Ref<FoundryScript> restored_shelf = restored->get_subclasses().find(SNAME("Shelf"))->value;
+	const Ref<FoundryScript> restored_int_shelf = restored->get_subclasses().find(SNAME("IntShelf"))->value;
+	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_shelf, SNAME("items")) == 1);
+
+	const Variant instance = bytecode_new_instance(restored_int_shelf);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	ContainerType int_element;
+	int_element.builtin_type = Variant::INT;
+	Array good_items;
+	good_items.set_typed(int_element);
+	good_items.push_back(1);
+	bytecode_instance_call(object, SNAME("stock"), { good_items });
+	CHECK(Array(object->get(SNAME("items"))).size() == 1);
+	CHECK(int(bytecode_instance_call(object, SNAME("keep"), { 7 })) == 7);
+
+	ContainerType string_element;
+	string_element.builtin_type = Variant::STRING;
+	Array wrong_items;
+	wrong_items.set_typed(string_element);
+	wrong_items.push_back("not an int");
+	ERR_PRINT_OFF;
+	bytecode_instance_call(object, SNAME("stock"), { wrong_items });
+	const Variant rejected_local = bytecode_instance_call(object, SNAME("keep"), { "not an int" });
+	ERR_PRINT_ON;
+	// The rejected member write leaves the previous value in place, and the rejected local store aborts
+	// the function before its return.
+	CHECK(Array(object->get(SNAME("items"))).size() == 1);
+	CHECK(rejected_local.get_type() == Variant::NIL);
+
+	restored->clear();
+	original->clear();
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges survive serialization") {
 	// A conformance file reached through a namespace is the one script a compiled file references
 	// nowhere: no constant, no type, no base. Only the declaring script's own compilation registers

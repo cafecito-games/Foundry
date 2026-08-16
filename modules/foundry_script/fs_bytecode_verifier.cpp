@@ -402,6 +402,16 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_ADDR(ip + 2);
 				ip += 4;
 			} break;
+			case FSFunction::OPCODE_ASSIGN_TYPED_CLASS_PARAMETER: {
+				// Unlike the member store above, the third operand is an address: the constant holding the
+				// declared shape whose type-parameter nodes the receiver resolves. The fourth is the
+				// `Type[...]` flag, read as a plain boolean.
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_ADDR(ip + 3);
+				ip += 5;
+			} break;
 			case FSFunction::OPCODE_AWAIT:
 			case FSFunction::OPCODE_AWAIT_RESUME:
 			case FSFunction::OPCODE_RETURN: {

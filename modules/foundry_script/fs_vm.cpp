@@ -464,6 +464,97 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	return true;
 }
 
+// Rebuilds a descriptor as recursive evidence, resolving each `TYPE_PARAMETER` node against what the
+// frame's receiver reified for the declaring class's parameters.
+//
+// Evidence is tracked per node, exactly as a member binding's projection tracks it
+// (`_project_binding_data_type()` in `foundry_script.cpp`): a parameter the receiver never supplied
+// makes only that subtree `UNKNOWN`, so the concrete parts of the shape keep validating instead of
+// the whole slot degrading to untyped. A node no receiver can resolve at all -- a method-scope
+// parameter, recorded as ordinal -1 -- degrades the same way.
+//
+// Returns false only when a static frame needs a receiver for a `Self` node and has none, matching
+// `_container_type_from_descriptor`.
+static bool _projected_container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
+		const Vector<ProjectedContainerType> &p_receiver_arguments, ProjectedContainerType &r_projected, int p_depth) {
+	r_projected = ProjectedContainerType();
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return true;
+	}
+
+	Dictionary descriptor = p_descriptor;
+	if (descriptor.get("is_nullable", false)) {
+		// `ContainerType` cannot express "this type or null", so evidence built here would reject the
+		// nulls the slot admits. Same deliberate limitation the member-binding projection has, and it is
+		// checked before the parameter node below so a `T?` slot keeps accepting null once the receiver
+		// resolves `T` to a concrete type. The limitation is confined to this node, so siblings and
+		// ancestors keep their own evidence; the analyzer is what enforces a nullable declaration.
+		return true;
+	}
+	const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
+	if (type_parameter_index.get_type() == Variant::INT) {
+		const int64_t ordinal = type_parameter_index;
+		if (ordinal < 0 || ordinal >= p_receiver_arguments.size()) {
+			return true;
+		}
+		ProjectedContainerType resolved = p_receiver_arguments[ordinal];
+		if (descriptor.get("is_type_handle", false)) {
+			// A nested `Type[T]` denotes a class handle for the argument, not an instance of it, and has
+			// nowhere to record that layer once the argument resolves, so an argument with no handle form
+			// leaves the subtree without evidence -- exactly as a nested member-binding node does. A slot
+			// that is a handle at its root does not come through here: its layer travels beside the shape.
+			if (!resolved.is_known() || resolved.outer.builtin_type != Variant::OBJECT) {
+				return true;
+			}
+			resolved.outer.is_type_handle = true;
+		}
+		r_projected = resolved;
+		return true;
+	}
+
+	ContainerType outer;
+	if (!_container_type_from_descriptor(p_descriptor, p_frame_self, outer)) {
+		return false;
+	}
+	r_projected.state = ProjectedContainerType::EXACT;
+	r_projected.outer = outer;
+	r_projected.outer.element_types.clear();
+	r_projected.outer.type_arguments.clear();
+
+	const Array element_types = descriptor.get("element_types", Array());
+	for (int i = 0; i < element_types.size(); i++) {
+		ProjectedContainerType element_projected;
+		if (!_projected_container_type_from_descriptor(element_types[i], p_frame_self, p_receiver_arguments, element_projected, p_depth + 1)) {
+			return false;
+		}
+		r_projected.element_types.push_back(element_projected);
+	}
+	const Array type_arguments = descriptor.get("type_arguments", Array());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		ProjectedContainerType argument_projected;
+		if (!_projected_container_type_from_descriptor(type_arguments[i], p_frame_self, p_receiver_arguments, argument_projected, p_depth + 1)) {
+			return false;
+		}
+		r_projected.type_arguments.push_back(argument_projected);
+	}
+
+	for (const ProjectedContainerType &child : r_projected.element_types) {
+		if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+			r_projected.state = ProjectedContainerType::PARTIAL;
+			break;
+		}
+	}
+	if (r_projected.state == ProjectedContainerType::EXACT) {
+		for (const ProjectedContainerType &child : r_projected.type_arguments) {
+			if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+				r_projected.state = ProjectedContainerType::PARTIAL;
+				break;
+			}
+		}
+	}
+	return true;
+}
+
 // Rebuilds the tuple shape a type test was compiled against. Only tuple descriptors carry the
 // `is_tuple` marker, so every other node reads back through the shared container-type path.
 static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
@@ -1128,6 +1219,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_NATIVE,                    \
 		&&OPCODE_ASSIGN_TYPED_SCRIPT,                    \
 		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
+		&&OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,           \
 		&&OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,             \
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,        \
 		&&OPCODE_CAST_TO_BUILTIN,                        \
@@ -3206,6 +3298,64 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_ASSIGN_TYPED_CLASS_PARAMETER) {
+				CHECK_SPACE(5);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+				GET_VARIANT_PTR(type_info, 2);
+				// Both flags describe the *declaration*, which the resolved shape cannot recover. The
+				// `Type[...]` layer travels beside the shape so a slot whose argument has no handle form is
+				// still described, the same split a member binding uses.
+				const int slot_flags = _code_ptr[ip + 4];
+				const bool expected_is_type_handle = (slot_flags & FSFunction::ASSIGN_TYPED_CLASS_PARAMETER_TYPE_HANDLE) != 0;
+				const bool slot_is_erased_container = (slot_flags & FSFunction::ASSIGN_TYPED_CLASS_PARAMETER_ERASED_CONTAINER) != 0;
+
+				// A class type parameter is reified onto the instance, but a function body compiled once in
+				// the declaring class sees only the parameter. The declared shape therefore reaches here with
+				// its parameter nodes intact, and the receiver supplies the arguments: the leaf script maps
+				// every ancestor's parameters onto its own reification, so a method inherited by
+				// `IntBox extends Box[int]` validates against `int` without a per-specialization body.
+				//
+				// An unspecialized receiver (`Box.new()`), or a chain step that never resolved, leaves a
+				// parameter with no argument. That degrades only the subtree naming it, so the concrete parts
+				// of the shape keep validating, matching how a member binding projects.
+				Vector<ProjectedContainerType> receiver_arguments;
+				if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+					p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
+				}
+
+				ProjectedContainerType expected;
+				if (unlikely(!_projected_container_type_from_descriptor(*type_info, frame_self, receiver_arguments, expected, 0))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+
+				// Validation converts the value where a fully known container type would, and that converted
+				// value is what gets stored -- the same result a member store produces, so `var kept: T = 1.5`
+				// on a `Box[int]` keeps an int.
+				//
+				// A slot *declared* as a container of a parameter is the exception. A generic method returning
+				// `Array[T]` yields a runtime array whose element type is erased on purpose, and its concrete
+				// *consumer* is what retypes it (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`). Retyping it here would
+				// hand a gradual consumer a typed container the declaration never promised, so for those
+				// slots the check establishes convertibility -- what the consumer's conversion then performs --
+				// and the stored value keeps the erased contents a gradual consumer is entitled to see. A bare
+				// `T` that merely happens to resolve to a container is not one of them.
+				Variant validated = *src;
+				String expected_type_name;
+				if (!FoundryScript::validate_projected_type_write(expected, expected_is_type_handle, validated, "variable", &expected_type_name)) {
+#ifdef DEBUG_ENABLED
+					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
+							_get_var_type(src), expected_type_name);
+#endif // DEBUG_ENABLED
+					OPCODE_BREAK;
+				}
+				*dst = slot_is_erased_container ? *src : validated;
+
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 

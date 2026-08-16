@@ -1,5 +1,6 @@
-# Conversion of a runtime-erased class-parameterized return must still reject contents that do not
-# fit the concrete destination instead of widening it to Variant.
+# A class-parameterized return is checked at its own boundary against the receiver's reified argument,
+# so contents that no `Bag[int]` could hold fail inside `corrupted()` rather than being carried out to
+# the caller's conversion.
 class Bag[T]:
 	func corrupted(value: Variant) -> Array[T]:
 		var result: Array = [value]

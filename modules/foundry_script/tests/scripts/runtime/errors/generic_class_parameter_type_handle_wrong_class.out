@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a class handle for 'RefCounted' into a variable of type 'Type[Node]', whose represented type is not compatible.
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_type_handle_wrong_class.fs:5 on Box.keep_handle(): Trying to assign a value of type "RefCounted" to a variable of type "Type[Node]".
+<null>

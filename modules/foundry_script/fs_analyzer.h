@@ -992,6 +992,11 @@ private:
 	// constant may enter a numeric slot a dynamic value of the same type may not, because the exact
 	// value can be checked against the destination's range; pass it wherever a numeric boundary is
 	// validated so assignment, arguments, returns, signals, and typed collection elements agree.
+	// True when `p_destination` mentions a class type parameter and the frame being analyzed is static.
+	// Such a slot is only checkable against the receiver's reified argument, and a static frame has no
+	// receiver, so the runtime-narrowing allowance has no check to stand on and the assignment stays a
+	// static error.
+	bool receiver_validation_is_unavailable(const FSParser::DataType &p_destination) const;
 	bool is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr, const FSParser::ExpressionNode *p_constant_source = nullptr);
 
 	// Whether an `is p_test_type` on a value of `p_operand_type` is statically always true because the

@@ -98,6 +98,11 @@ public:
 		// because its exact value can be checked against the destination's range. Never propagated
 		// into a nested element check: the constant describes the whole value, not its parts.
 		const Variant *constant_source_value = nullptr;
+		// False while a static frame is checked. A class type parameter is normally checkable because the
+		// receiver reifies it, which is what lets a concrete value enter such a slot under a runtime
+		// check. A static frame has no receiver, so nothing reifies the parameter and no check exists:
+		// the destination is then as undecidable as a method-scope one and is refused the same way.
+		bool receiver_is_available = true;
 	};
 
 	struct Result {
@@ -122,6 +127,19 @@ public:
 	// read-only Array, so no runtime evidence distinguishes a named tuple from its unnamed erasure and
 	// the "check" would silently accept unnamed -> named or named A -> named B.
 	static bool allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide);
+
+	// True when `p_type` names a class-scope type parameter in a position a store can be validated
+	// against the running receiver: the type itself, or a typed-container element at any depth. Such a
+	// slot erases like any other parameter, but the receiver reifies the argument, so the store is
+	// checked rather than rejected.
+	//
+	// Two positions are deliberately not included, because no store into them is checkable and this
+	// answer must match the one code generation gives. A parameter used as the type argument of a
+	// specialized class handle (`Holder[T]`): constructing one inside the declaring class does not reify
+	// `T` onto the constructed instance, so enforcing the slot would reject values the program
+	// legitimately produces. And a tuple slot, which erases to an untyped Array describing none of its
+	// elements.
+	static bool destination_depends_on_receiver_type_parameter(const FSParser::DataType &p_type);
 
 	// Structural identity used for invariant positions such as a typed container element: two types
 	// match only when every nested slot -- container elements, generic arguments, and callable/signal

@@ -38,7 +38,11 @@
 #include "core/templates/hash_set.h"
 #include "core/templates/local_vector.h"
 
+struct FlattenedTraitScope;
+
 class FSCompiler {
+	// Sets and restores the flattened-trait compilation scope below.
+	friend struct FlattenedTraitScope;
 	const FSParser *parser = nullptr;
 	HashSet<FoundryScript *> parsed_classes;
 	HashSet<FoundryScript *> parsing_classes;
@@ -52,6 +56,26 @@ class FSCompiler {
 	// it is the declaring file. Unset outside witness compilation, where `Self` keeps lowering against
 	// the owning class.
 	FSParser::DataType witness_self_type;
+
+	// Set only while a function body flattened in from a generic trait (and any lambda inside it) is
+	// compiled. Such a body is compiled against the implementing class, but its declared types still
+	// name the TRAIT's parameters, whose ordinals index the arguments the implementer supplied in
+	// `uses Keeper[int]` rather than the implementer's own parameter list. Resolving them against the
+	// implementer would validate against an unrelated argument, so both the declaring parameter list
+	// and the arguments to substitute travel with the compilation.
+	const FSParser::ClassNode *flattened_trait_declaration = nullptr;
+	Vector<FSParser::DataType> flattened_trait_type_arguments;
+
+	// Set while a function body is compiled, and true once that body emits a store whose shape still
+	// names a class type parameter for the receiver to resolve. A lambda needs the instance exactly when
+	// its body does, and only the compiler knows that: the shape may resolve to a concrete type once a
+	// trait's arguments are substituted, and a slot the analyzer sees may emit no store at all. Taking a
+	// capture the body does not need is not free -- a receiver that stores the Callable and a Callable
+	// that holds the receiver retain each other forever.
+	bool current_function_requires_receiver = false;
+	// The value the most recently finished `_parse_function()` left behind, read by the lambda site that
+	// requested it.
+	bool last_parsed_function_requires_receiver = false;
 
 	struct FunctionLambdaInfo {
 		FSFunction *function = nullptr;
@@ -169,6 +193,11 @@ class FSCompiler {
 			generator->end_block();
 		}
 	};
+	// Whether a function-body slot (a local, a later assignment, or a return) has to be validated
+	// against the receiver, and the shape to validate it with. Defined with the receiver-relative rule
+	// in the implementation.
+	bool _slot_needs_receiver_validation(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen) const;
+	FSDataType _bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle, bool &r_is_erased_container);
 
 	bool _is_class_member_property(CodeGen &codegen, const StringName &p_name);
 	bool _is_class_member_property(FoundryScript *owner, const StringName &p_name);
