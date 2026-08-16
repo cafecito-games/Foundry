@@ -245,7 +245,17 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
     def test_no_case_leaves_the_filter_unset_and_does_not_imply_test(self) -> None:
         args = agent_build.parse_args([])
         self.assertIsNone(args.test_case)
+        self.assertIsNone(args.test_suite)
         self.assertFalse(args.test)
+
+    def test_suite_implies_test(self) -> None:
+        args = agent_build.parse_args(["--suite", "*[Modules][FoundryScript][Format]*"])
+        self.assertTrue(args.test)
+        self.assertEqual(args.test_suite, ["*[Modules][FoundryScript][Format]*"])
+
+    def test_repeated_suite_retains_every_value_in_order(self) -> None:
+        args = agent_build.parse_args(["--suite", "*A*", "--suite", "*B*"])
+        self.assertEqual(args.test_suite, ["*A*", "*B*"])
 
     def test_command_forwards_every_repeated_case_filter_in_order(self) -> None:
         args = agent_build.parse_args(["--case", "*A*", "--case", "*B*"])
@@ -266,6 +276,31 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                 "*A*",
                 "--case",
                 "*B*",
+                "--force-colors",
+            ],
+        )
+
+    def test_command_forwards_case_and_suite_filters_together(self) -> None:
+        args = agent_build.parse_args(["--case", "*A*", "--suite", "*S*", "--suite", "*T*"])
+        target = agent_build.BuildTarget(
+            scons_platform="macos",
+            binary_path=Path("/tmp/foundry.macos.editor.dev.arm64"),
+            default_display=None,
+        )
+        command = agent_build.test_command(args, target)
+        self.assertEqual(
+            command,
+            [
+                str(target.binary_path),
+                "--headless",
+                "test",
+                "run",
+                "--case",
+                "*A*",
+                "--suite",
+                "*S*",
+                "--suite",
+                "*T*",
                 "--force-colors",
             ],
         )
