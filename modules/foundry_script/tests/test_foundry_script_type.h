@@ -5116,22 +5116,34 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A class parameter in a ty
 		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
 				make_specialized_class_type(&holder, { make_builtin_type(Variant::INT) })));
 	}
+	SUBCASE("tuple element") {
+		// A tuple slot carries its own shape to run time as a compiled descriptor, so an element naming a
+		// class parameter is resolved against the receiver like any other typed-container element.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(parameter);
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(tuple));
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder, { tuple })));
+	}
+	SUBCASE("tuple of concrete elements only") {
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(make_builtin_type(Variant::STRING));
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(tuple));
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An undescribed slot keeps a class parameter unchecked") {
 	FSParser::ClassNode holder;
 	const FSParser::DataType parameter = make_class_type_parameter(SNAME("T"));
 
-	SUBCASE("tuple argument") {
-		// A tuple erases to an untyped Array describing none of its slots.
-		FSParser::DataType tuple;
-		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-		tuple.kind = FSParser::DataType::TUPLE;
-		tuple.builtin_type = Variant::ARRAY;
-		tuple.container_element_types.push_back(parameter);
-		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
-				make_specialized_class_type(&holder, { tuple })));
-	}
 	SUBCASE("nullable argument") {
 		// No container type expresses "this type or null", so the runtime keeps no evidence for it.
 		FSParser::DataType nullable = parameter;
