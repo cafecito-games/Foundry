@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a variable of type 'String' into a container of type 'int'.
+>> SCRIPT ERROR at runtime/errors/generic_composite_member_setter_write_wrong_type.fs:13 on Shelf.stock(): Trying to assign a value of type "Array[String]" to a member of type "Array[int]".
+[]
+[]

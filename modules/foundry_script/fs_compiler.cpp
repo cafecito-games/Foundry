@@ -2648,10 +2648,26 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 							converted_setter_argument = true;
 						}
 					}
+					bool validated_setter_argument = false;
+					if (member_type_parameter_slot >= 0) {
+						// A setter is never a pre-validation coercion hook: a concretely typed member's setter
+						// parameter is checked before its body runs, so a `T`-typed member's setter must not be
+						// the one place a refused value becomes observable. Validate the write against the
+						// receiver's reification first and hand the setter the value that boundary produced,
+						// which is also the converted one wherever the check converts. The temporary is untyped
+						// because the reified argument is unknown at compile time.
+						FSCodeGenerator::Address validated = codegen.add_temporary();
+						gen->write_assign_typed_parameter(validated, setter_argument, member_type_parameter_slot);
+						setter_argument = validated;
+						validated_setter_argument = true;
+					}
 					Vector<FSCodeGenerator::Address> args;
 					args.push_back(setter_argument);
 					FSCodeGenerator::Address call_base = is_static ? FSCodeGenerator::Address(FSCodeGenerator::Address::CLASS) : FSCodeGenerator::Address(FSCodeGenerator::Address::SELF);
 					gen->write_call(FSCodeGenerator::Address(), call_base, setter_function, args);
+					if (validated_setter_argument) {
+						gen->pop_temporary();
+					}
 					if (converted_setter_argument) {
 						gen->pop_temporary();
 					}
