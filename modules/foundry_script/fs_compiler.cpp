@@ -922,16 +922,33 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 //
 // A conformance witness is compiled against a foreign target, so the running frame's script is not the
 // class whose parameters these ordinals index; those bodies keep the plain store.
-static bool _slot_validates_against_receiver(const FSParser::DataType &p_declared_type,
-		const FSParser::ClassNode *p_class, bool p_is_static, bool p_is_conformance_witness) {
-	if (p_is_static || p_is_conformance_witness || p_class == nullptr) {
+bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen) const {
+	if (p_codegen.is_static || witness_declaration_site_script != nullptr) {
+		return false;
+	}
+	// A trait body names the trait's parameters; every other body names the compiled class's own.
+	const FSParser::ClassNode *declaring_class =
+			flattened_trait_declaration != nullptr ? flattened_trait_declaration : p_codegen.class_node;
+	if (declaring_class == nullptr) {
 		return false;
 	}
 	if (!p_declared_type.is_set() || !p_declared_type.is_hard_type()) {
 		return false;
 	}
 	bool is_sound = true;
-	return _type_depends_on_declared_type_parameters(p_declared_type, p_class->type_parameters, is_sound) && is_sound;
+	return _type_depends_on_declared_type_parameters(p_declared_type, declaring_class->type_parameters, is_sound) && is_sound;
+}
+
+// The shape such a slot is validated with: the declared type, with its parameter nodes preserved for
+// the receiver to resolve. A trait body's nodes are substituted with the arguments the implementer
+// applied first, so a forwarded parameter keeps standing for the implementer's own (and is resolved
+// against the receiver) while a concrete application bakes the argument in and needs no receiver.
+FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script) {
+	FSDataType baked = _gdtype_from_datatype(p_declared_type, p_script, true, true);
+	if (flattened_trait_declaration != nullptr) {
+		_substitute_binding_type_parameters(baked, flattened_trait_type_arguments, p_script);
+	}
+	return baked;
 }
 
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
@@ -2604,13 +2621,13 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// The whole assigned value is a generic method returning an erased `Dictionary[K, V]`; retype
 					// the untyped runtime dictionary into the concrete typed-dictionary target.
 					gen->write_assign_typed_dictionary_convert(target, to_assign);
-				} else if (!is_member && _slot_validates_against_receiver(assignment->assignee->get_datatype(), codegen.class_node, codegen.is_static, witness_declaration_site_script != nullptr)) {
+				} else if (!is_member && _slot_needs_receiver_validation(assignment->assignee->get_datatype(), codegen)) {
 					// A later store into a local whose declared type mentions a class parameter has to be
 					// checked at the same boundary its initializer was, or the slot could be laundered after
 					// the fact. A member has its own binding, resolved for the class that owns the slot, and
 					// is checked by the member store above; only a slot with no binding reaches here.
 					gen->write_assign_typed_class_parameter(target, to_assign,
-							_gdtype_from_datatype(assignment->assignee->get_datatype(), codegen.script, true, true));
+							_bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script));
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -3612,13 +3629,13 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							return_target = codegen.add_temporary(return_type);
 							gen->write_assign_typed_dictionary_convert(return_target, return_value);
 							pop_return_target = true;
-						} else if (_slot_validates_against_receiver(codegen.function_node->get_datatype(), codegen.class_node, codegen.is_static, witness_declaration_site_script != nullptr)) {
+						} else if (_slot_needs_receiver_validation(codegen.function_node->get_datatype(), codegen)) {
 							// The return slot erases with its class parameter, so the value is checked here,
 							// against this receiver's reification, rather than at whatever the caller happens to
 							// consume the result as.
 							return_target = codegen.add_temporary(return_type);
 							gen->write_assign_typed_class_parameter(return_target, return_value,
-									_gdtype_from_datatype(codegen.function_node->get_datatype(), codegen.script, true, true));
+									_bake_receiver_slot_type(codegen.function_node->get_datatype(), codegen.script));
 							pop_return_target = true;
 						}
 					}
@@ -3712,9 +3729,9 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 						gen->write_assign_typed_array_convert(local, src_address);
 					} else if (_is_erased_container_call_to_typed_dictionary(lv->initializer, local.type)) {
 						gen->write_assign_typed_dictionary_convert(local, src_address);
-					} else if (_slot_validates_against_receiver(lv->get_datatype(), codegen.class_node, codegen.is_static, witness_declaration_site_script != nullptr)) {
+					} else if (_slot_needs_receiver_validation(lv->get_datatype(), codegen)) {
 						gen->write_assign_typed_class_parameter(local, src_address,
-								_gdtype_from_datatype(lv->get_datatype(), codegen.script, true, true));
+								_bake_receiver_slot_type(lv->get_datatype(), codegen.script));
 					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {
@@ -5540,9 +5557,30 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 	// from applied traits. Trait functions are compiled against the implementing script
 	// so member accesses bind to the flattened member layout of this class.
 	const Vector<const FSParser::ClassNode::Member *> members_to_compile = collect_effective_members(p_class);
+	const HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> compiled_trait_arguments =
+			_flattened_trait_arguments(p_class);
+
+	// A body flattened in from a generic trait is compiled here against the implementer, but its
+	// declared types still name the trait's parameters. Publish which trait declared the body and what
+	// the implementer supplied for it, so a receiver-relative slot resolves against the right list.
+	struct FlattenedTraitScope {
+		FSCompiler *compiler = nullptr;
+		FlattenedTraitScope(FSCompiler *p_compiler, const FlattenedTraitArguments *p_applied) :
+				compiler(p_compiler) {
+			if (p_applied != nullptr) {
+				compiler->flattened_trait_declaration = p_applied->trait;
+				compiler->flattened_trait_type_arguments = p_applied->arguments;
+			}
+		}
+		~FlattenedTraitScope() {
+			compiler->flattened_trait_declaration = nullptr;
+			compiler->flattened_trait_type_arguments.clear();
+		}
+	};
 
 	for (int i = 0; i < members_to_compile.size(); i++) {
 		const FSParser::ClassNode::Member &member = *members_to_compile[i];
+		const FlattenedTraitScope trait_scope(this, compiled_trait_arguments.getptr(members_to_compile[i]));
 		if (member.type == member.FUNCTION) {
 			const FSParser::FunctionNode *function = member.function;
 			Error err = OK;

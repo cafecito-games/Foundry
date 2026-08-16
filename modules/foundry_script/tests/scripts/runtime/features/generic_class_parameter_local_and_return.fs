@@ -50,6 +50,9 @@ class Relay[U] extends Crate[U]:
 	pass
 
 
+# A trait body is compiled into each implementer but keeps naming the TRAIT's parameters, so its
+# slots are resolved through the arguments that implementer applied rather than through its own
+# parameter list -- which may be named differently, ordered differently, or absent entirely.
 trait Keeper[V]:
 	func keep_via_trait(value) -> V:
 		var kept: V = value
@@ -58,6 +61,16 @@ trait Keeper[V]:
 
 class TraitCrate[W]:
 	uses Keeper[W]
+
+
+class ConcreteTraitCrate:
+	uses Keeper[int]
+
+
+# The implementer declares a parameter that shares the trait parameter's name and ordinal while
+# applying the trait with something else entirely.
+class ShadowingTraitCrate[V]:
+	uses Keeper[int]
 
 
 func test() -> void:
@@ -79,6 +92,8 @@ func test() -> void:
 
 	var via_trait := TraitCrate[int].new()
 	print(via_trait.keep_via_trait(13))
+	print(ConcreteTraitCrate.new().keep_via_trait(14))
+	print(ShadowingTraitCrate[String].new().keep_via_trait(15))
 
 	# A raw, un-parameterized receiver carries no reified argument, so the slot stays gradual.
 	var raw := Crate.new()

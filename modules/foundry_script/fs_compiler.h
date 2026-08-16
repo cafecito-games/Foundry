@@ -53,6 +53,15 @@ class FSCompiler {
 	// the owning class.
 	FSParser::DataType witness_self_type;
 
+	// Set only while a function body flattened in from a generic trait (and any lambda inside it) is
+	// compiled. Such a body is compiled against the implementing class, but its declared types still
+	// name the TRAIT's parameters, whose ordinals index the arguments the implementer supplied in
+	// `uses Keeper[int]` rather than the implementer's own parameter list. Resolving them against the
+	// implementer would validate against an unrelated argument, so both the declaring parameter list
+	// and the arguments to substitute travel with the compilation.
+	const FSParser::ClassNode *flattened_trait_declaration = nullptr;
+	Vector<FSParser::DataType> flattened_trait_type_arguments;
+
 	struct FunctionLambdaInfo {
 		FSFunction *function = nullptr;
 		FSFunction *parent = nullptr;
@@ -169,6 +178,11 @@ class FSCompiler {
 			generator->end_block();
 		}
 	};
+	// Whether a function-body slot (a local, a later assignment, or a return) has to be validated
+	// against the receiver, and the shape to validate it with. Defined with the receiver-relative rule
+	// in the implementation.
+	bool _slot_needs_receiver_validation(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen) const;
+	FSDataType _bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script);
 
 	bool _is_class_member_property(CodeGen &codegen, const StringName &p_name);
 	bool _is_class_member_property(FoundryScript *owner, const StringName &p_name);
