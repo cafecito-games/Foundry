@@ -1839,6 +1839,18 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		check_format_invariants(source, formatted, "single_line_conformance_pass.fs");
 	}
 
+	TEST_CASE("[Format] Keeps one line's comment on the canonical pass when passes share it") {
+		// `pass; pass  # note` is two erased statements and one comment; the comment
+		// belongs to the single canonical `pass`, not to a lifted line of its own.
+		const String source =
+				"class Inner:\n"
+				"\tpass; pass # note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\tpass  # note\n",
+				vformat("Shared-line passes must keep the comment inline: %s", formatted));
+		check_format_invariants(source, formatted, "shared_line_passes.fs");
+	}
+
 	TEST_CASE("[Format] Collapses multiple passes in an empty class onto one anchor") {
 		const String source =
 				"class Inner:\n"

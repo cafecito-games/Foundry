@@ -1525,12 +1525,18 @@ void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line,
 	}
 	const Vector<int> &lines = p_erased_pass_lines.is_empty() ? fallback_lines : p_erased_pass_lines;
 
+	const int anchor_line = lines[lines.size() - 1];
 	bool first_piece = true;
 	// The body collapses to a single canonical `pass`, so every erased line but the
 	// last can contribute only comments: its full-line trivia stays where it was and
 	// its inline comment is lifted onto a line of its own, in source order.
 	for (int i = 0; i < lines.size() - 1; i++) {
 		const int line = lines[i];
+		if (line >= anchor_line) {
+			// Several passes on one physical line (`pass; pass  # note`) share that line's
+			// single comment, and it belongs to the canonical `pass` emitted below.
+			continue;
+		}
 		// The body's own lines are the ones between the header and the erased `pass`; a
 		// single-line body (`class Inner: pass`) has none, and its inline comment has
 		// already been claimed by the header line.
@@ -1546,7 +1552,6 @@ void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line,
 		}
 	}
 
-	const int anchor_line = lines[lines.size() - 1];
 	if (anchor_line > p_header_line) {
 		emit_leading_trivia(anchor_line, first_piece ? p_required_blanks : 0);
 	}
