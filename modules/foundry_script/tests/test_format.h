@@ -1770,6 +1770,29 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		check_format_invariants(source, formatted, "empty_class_pass_tail.fs");
 	}
 
+	TEST_CASE("[Format] Hoists a commented `pass` above a member's annotations") {
+		// An annotation has to stay adjacent to the declaration it annotates, so a `pass`
+		// written between the two keeps its anchor ahead of the whole member.
+		const String source =
+				"@export\n"
+				"pass # keep me\n"
+				"var x = 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "pass  # keep me\n@export\nvar x = 1\n",
+				vformat("A pass between an annotation and its member must keep its comment: %s", formatted));
+		check_format_invariants(source, formatted, "annotated_member_pass.fs");
+	}
+
+	TEST_CASE("[Format] Leaves an annotated member's shared-line comment alone") {
+		const String source =
+				"@export\n"
+				"pass; var x = 1 # belongs to x\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "@export\nvar x = 1  # belongs to x\n",
+				vformat("The annotated member must keep the shared line's comment: %s", formatted));
+		check_format_invariants(source, formatted, "annotated_member_shared_line.fs");
+	}
+
 	TEST_CASE("[Format] Leaves a shared line's comment on the surviving declaration") {
 		// A semicolon-separated line carries one comment and two statements. Splitting it
 		// keeps the comment on the declaration that survives, whichever side of the

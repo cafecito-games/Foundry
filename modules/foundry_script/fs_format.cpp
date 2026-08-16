@@ -1305,12 +1305,28 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 		previous_is_definition = true;
 	};
 
+	// True when `p_line` also carries part of `p_node`'s own text -- its declaration line
+	// or one of its annotation lines. A `pass` sharing such a line gets no line of its
+	// own in the output (`pass; var x = 1  # note` splits in two), and the line's comment
+	// belongs to the declaration that survives on it.
+	const auto node_occupies_line = [](const FSParser::Node *p_node, int p_line) {
+		if (p_node == nullptr || p_line <= 0) {
+			return false;
+		}
+		if (p_node->start_line == p_line) {
+			return true;
+		}
+		for (const FSParser::AnnotationNode *annotation : p_node->annotations) {
+			if (annotation->start_line == p_line) {
+				return true;
+			}
+		}
+		return false;
+	};
+
 	const auto emit_next_erased_pass = [&](bool p_shares_declaration_line) {
 		const int pass_line = p_class->erased_pass_lines[erased_pass_index++];
 		if (p_shares_declaration_line) {
-			// A semicolon-separated line (`pass; var x = 1  # note`) has one comment and
-			// two statements. The declaration survives on its own line and keeps the
-			// comment, so the erased `pass` must not claim it on the way past.
 			return;
 		}
 		// An anchor is not a definition, so it neither demands nor suppresses the blank
@@ -1322,8 +1338,9 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 	};
 
 	// Emits every conformance and erased `pass` that precedes `p_line` in the source,
-	// interleaved with each other; `p_line` of 0 drains what is left.
-	const auto emit_pending_before = [&](int p_line) {
+	// interleaved with each other; `p_line` of 0 drains what is left. `p_next_node` is
+	// the declaration those lines are being drained ahead of, when there is one.
+	const auto emit_pending_before = [&](int p_line, const FSParser::Node *p_next_node) {
 		for (;;) {
 			const bool has_conformance = conformance_index < p_class->conformances.size();
 			const bool has_pass = erased_pass_index < p_class->erased_pass_lines.size();
@@ -1334,7 +1351,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 			if (conformance_ready && (!pass_ready || conformance_line <= pass_line)) {
 				emit_next_conformance();
 			} else if (pass_ready) {
-				emit_next_erased_pass(p_line > 0 && pass_line == p_line);
+				emit_next_erased_pass(node_occupies_line(p_next_node, pass_line));
 			} else {
 				return;
 			}
@@ -1351,7 +1368,11 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 
 		const FSParser::Node *node = member_node(member);
 		const int start_line = member_start_line(member);
-		emit_pending_before(start_line);
+		// Drain up to the member's own declaration line rather than its first annotation
+		// line, so a `pass` written between an annotation and the member it annotates is
+		// still drained. Its anchor lands here, ahead of the annotations, because an
+		// annotation has to stay adjacent to the declaration it annotates.
+		emit_pending_before(node != nullptr && node->start_line > 0 ? node->start_line : start_line, node);
 
 		const int required_blanks = required_blanks_before(member_is_definition(member));
 		if (start_line > 0) {
@@ -1404,7 +1425,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 	}
 	// Conformances and erased passes written after the last member (or in a class with
 	// no members at all).
-	emit_pending_before(0);
+	emit_pending_before(0, nullptr);
 
 	if (p_is_root) {
 		flush_tail_comments();
