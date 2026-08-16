@@ -811,13 +811,18 @@ forbidden = ["Godot's built-in debugger"]
 name = "headless-container-context-is-deny-by-default"
 reason = "The Docker build context is the whole repository unless it is denied by default and the release binary explicitly allowed; without both lines a build uploads the entire tree. `.github/scripts/verify_headless_image.sh` inspects the built image and never sees the context."
 paths = ["docker/.dockerignore"]
-required = ["*", "!foundry.linuxbsd.editor.x86_64"]
+required = ["*", "!foundry-amd64", "!foundry-arm64"]
 
 [[rule]]
 name = "headless-container-release-binary-is-untracked"
-reason = "The release binary is staged into `docker/` during the release build; without the ignore entry a release run leaves a multi-hundred-megabyte binary in `git status`."
+reason = "The release binaries are downloaded into `docker/` and renamed to their `TARGETARCH` names during the release build; without an ignore entry for every name a release run leaves multi-hundred-megabyte binaries in `git status`."
 paths = [".gitignore"]
-required = ["/docker/foundry.linuxbsd.editor.x86_64"]
+required = [
+  "/docker/foundry.linuxbsd.editor.arm64",
+  "/docker/foundry.linuxbsd.editor.x86_64",
+  "/docker/foundry-amd64",
+  "/docker/foundry-arm64",
+]
 
 [[rule]]
 name = "headless-container-has-a-default-command"

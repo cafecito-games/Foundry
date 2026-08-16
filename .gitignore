@@ -408,5 +408,9 @@ $RECYCLE.BIN/
 # Worktrees
 .worktrees/
 
-# Staged release artifact for the headless container image.
+# Staged release artifacts for the headless container image (downloaded name and
+# the TARGETARCH name the Dockerfile copies).
+/docker/foundry.linuxbsd.editor.arm64
 /docker/foundry.linuxbsd.editor.x86_64
+/docker/foundry-amd64
+/docker/foundry-arm64
