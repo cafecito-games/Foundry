@@ -3306,9 +3306,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 				GET_VARIANT_PTR(type_info, 2);
-				// The `Type[...]` layer travels beside the shape rather than inside it, so a slot whose
-				// argument has no handle form is still described. Same split a member binding uses.
-				const bool expected_is_type_handle = _code_ptr[ip + 4] != 0;
+				// Both flags describe the *declaration*, which the resolved shape cannot recover. The
+				// `Type[...]` layer travels beside the shape so a slot whose argument has no handle form is
+				// still described, the same split a member binding uses.
+				const int slot_flags = _code_ptr[ip + 4];
+				const bool expected_is_type_handle = (slot_flags & FSFunction::ASSIGN_TYPED_CLASS_PARAMETER_TYPE_HANDLE) != 0;
+				const bool slot_is_erased_container = (slot_flags & FSFunction::ASSIGN_TYPED_CLASS_PARAMETER_ERASED_CONTAINER) != 0;
 
 				// A class type parameter is reified onto the instance, but a function body compiled once in
 				// the declaring class sees only the parameter. The declared shape therefore reaches here with
@@ -3334,11 +3337,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// value is what gets stored -- the same result a member store produces, so `var kept: T = 1.5`
 				// on a `Box[int]` keeps an int.
 				//
-				// A container slot is the exception. A generic method returning `Array[T]` yields a runtime
-				// array whose element type is erased on purpose, and its concrete *consumer* is what retypes
-				// it (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`). Retyping it here would hand a gradual consumer a
-				// typed container the declaration never promised, so for those slots the check stays a check
-				// and the value's runtime typing is left to the consumer.
+				// A slot *declared* as a container of a parameter is the exception. A generic method returning
+				// `Array[T]` yields a runtime array whose element type is erased on purpose, and its concrete
+				// *consumer* is what retypes it (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`). Retyping it here would
+				// hand a gradual consumer a typed container the declaration never promised, so for those
+				// slots the check stays a check and the value's runtime typing is left to the consumer. A
+				// bare `T` that merely happens to resolve to a container is not one of them.
 				Variant validated = *src;
 				String expected_type_name;
 				if (!FoundryScript::validate_projected_type_write(expected, expected_is_type_handle, validated, "variable", &expected_type_name)) {
@@ -3348,8 +3352,6 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
-				const bool slot_is_erased_container = expected.is_known() && !expected_is_type_handle &&
-						(expected.outer.builtin_type == Variant::ARRAY || expected.outer.builtin_type == Variant::DICTIONARY);
 				*dst = slot_is_erased_container ? *src : validated;
 
 				ip += 5;

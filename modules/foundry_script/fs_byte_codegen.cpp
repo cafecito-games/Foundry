@@ -1543,14 +1543,21 @@ void FSByteCodeGenerator::write_assign_typed_parameter(const Address &p_target, 
 	append(p_member_index);
 }
 
-void FSByteCodeGenerator::write_assign_typed_class_parameter(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, bool p_is_type_handle) {
+void FSByteCodeGenerator::write_assign_typed_class_parameter(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, bool p_is_type_handle, bool p_is_erased_container) {
 	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_CLASS_PARAMETER);
 	append(p_target);
 	append(p_source);
 	// Always the full descriptor: the shape keeps `TYPE_PARAMETER` nodes, which the compact
 	// `script_type` constant the other typed stores fall back to cannot express.
 	append(get_constant_pos(make_container_type_descriptor(p_expected_type)) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
-	append(p_is_type_handle ? 1 : 0);
+	int flags = 0;
+	if (p_is_type_handle) {
+		flags |= FSFunction::ASSIGN_TYPED_CLASS_PARAMETER_TYPE_HANDLE;
+	}
+	if (p_is_erased_container) {
+		flags |= FSFunction::ASSIGN_TYPED_CLASS_PARAMETER_ERASED_CONTAINER;
+	}
+	append(flags);
 }
 
 void FSByteCodeGenerator::write_assign_typed_array_convert(const Address &p_target, const Address &p_source) {

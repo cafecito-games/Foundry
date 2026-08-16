@@ -977,7 +977,7 @@ bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_dec
 // type, exactly as a member binding stores that layer beside the shape. Keeping the layer on the node
 // instead would lose it the moment substitution replaced the node with an argument that has no handle
 // form (`uses Keeper[int]`), leaving a slot only null can satisfy with no evidence at all.
-FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle) {
+FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle, bool &r_is_erased_container) {
 	r_is_type_handle = p_declared_type.is_type_handle_annotation;
 	FSDataType baked = _gdtype_from_datatype(p_declared_type, p_script, true, true);
 	if (r_is_type_handle) {
@@ -986,6 +986,20 @@ FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_decl
 	if (flattened_trait_declaration != nullptr) {
 		_substitute_binding_type_parameters(baked, flattened_trait_type_arguments, p_script);
 	}
+
+	// Whether the *declaration* is a container of a parameter, which the resolved shape cannot say: a
+	// bare `T` on a `Box[Array[int]]` receiver resolves to a typed array too, and that one is an
+	// ordinary slot whose value the check converts like any other.
+	r_is_erased_container = !r_is_type_handle && baked.kind == FSDataType::BUILTIN &&
+			(baked.builtin_type == Variant::ARRAY || baked.builtin_type == Variant::DICTIONARY);
+	if (r_is_erased_container) {
+		bool has_parameter_element = false;
+		for (const FSDataType &element_type : baked.container_element_types) {
+			has_parameter_element = has_parameter_element || _baked_shape_needs_receiver(element_type);
+		}
+		r_is_erased_container = has_parameter_element;
+	}
+
 	current_function_requires_receiver = current_function_requires_receiver || _baked_shape_needs_receiver(baked);
 	return baked;
 }
@@ -2666,8 +2680,9 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// the fact. A member has its own binding, resolved for the class that owns the slot, and
 					// is checked by the member store above; only a slot with no binding reaches here.
 					bool slot_is_type_handle = false;
-					const FSDataType slot_type = _bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script, slot_is_type_handle);
-					gen->write_assign_typed_class_parameter(target, to_assign, slot_type, slot_is_type_handle);
+					bool slot_is_erased_container = false;
+					const FSDataType slot_type = _bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
+					gen->write_assign_typed_class_parameter(target, to_assign, slot_type, slot_is_type_handle, slot_is_erased_container);
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -3680,9 +3695,10 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							// against this receiver's reification, rather than at whatever the caller happens to
 							// consume the result as.
 							bool slot_is_type_handle = false;
-							const FSDataType slot_type = _bake_receiver_slot_type(codegen.function_node->get_datatype(), codegen.script, slot_is_type_handle);
+							bool slot_is_erased_container = false;
+							const FSDataType slot_type = _bake_receiver_slot_type(codegen.function_node->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
 							return_target = codegen.add_temporary(return_type);
-							gen->write_assign_typed_class_parameter(return_target, return_value, slot_type, slot_is_type_handle);
+							gen->write_assign_typed_class_parameter(return_target, return_value, slot_type, slot_is_type_handle, slot_is_erased_container);
 							pop_return_target = true;
 						}
 					}
@@ -3778,8 +3794,9 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 						gen->write_assign_typed_dictionary_convert(local, src_address);
 					} else if (_slot_needs_receiver_validation(lv->get_datatype(), codegen)) {
 						bool slot_is_type_handle = false;
-						const FSDataType slot_type = _bake_receiver_slot_type(lv->get_datatype(), codegen.script, slot_is_type_handle);
-						gen->write_assign_typed_class_parameter(local, src_address, slot_type, slot_is_type_handle);
+						bool slot_is_erased_container = false;
+						const FSDataType slot_type = _bake_receiver_slot_type(lv->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
+						gen->write_assign_typed_class_parameter(local, src_address, slot_type, slot_is_type_handle, slot_is_erased_container);
 					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {

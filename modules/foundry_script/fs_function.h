@@ -537,6 +537,15 @@ public:
 	// bounds checker in `FSBytecodeVerifier::verify_function`. Adding, removing, or changing the
 	// operands of any opcode requires updating all three and bumping `FSBytecodeFormat::FORMAT_VERSION`
 	// (the verifier has no default fall-through: an opcode with no matching case is rejected as corrupt).
+	// Operand flags of `OPCODE_ASSIGN_TYPED_CLASS_PARAMETER`. Both describe the *declared* slot, which
+	// the resolved shape alone cannot recover: a bare `T` reified to `Array[int]` looks like a declared
+	// `Array[T]` once resolved, and a `Type[...]` layer is dropped from the shape so an argument with no
+	// handle form still resolves.
+	enum AssignTypedClassParameterFlags {
+		ASSIGN_TYPED_CLASS_PARAMETER_TYPE_HANDLE = 1 << 0,
+		ASSIGN_TYPED_CLASS_PARAMETER_ERASED_CONTAINER = 1 << 1,
+	};
+
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,

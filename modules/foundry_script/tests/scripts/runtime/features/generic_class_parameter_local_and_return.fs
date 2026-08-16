@@ -15,6 +15,13 @@ class Crate[T]:
 		kept = second
 		return kept
 
+	func keep_container_argument(value: Variant) -> T:
+		# A bare `T` reified to a container is an ordinary slot: the check converts the value into the
+		# argument, exactly as it does for any other. Only a slot *declared* as a container of a
+		# parameter leaves its runtime element typing to the consumer.
+		var kept: T = value
+		return kept
+
 	func collect(value) -> Array[T]:
 		var kept: Array[T] = [value]
 		return kept
@@ -87,12 +94,21 @@ class ShadowingTraitCrate[V]:
 	uses Keeper[int]
 
 
+func untyped_numbers() -> Variant:
+	return [1, 2]
+
+
 func test() -> void:
 	var crate := Crate[int].new()
 	print(crate.keep(5))
 	print(crate.keep(7.0)) # converted to int, exactly as a member store would
 	print(crate.replace(1, 2))
 	print(crate.collect(3))
+
+	var container_crate := Crate[Array[int]].new()
+	var container_kept = container_crate.keep_container_argument(untyped_numbers())
+	print(container_kept)
+	print(container_kept.get_typed_builtin() == TYPE_INT)
 
 	var inherited := IntCrate.new()
 	print(inherited.keep(11))
