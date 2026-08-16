@@ -5748,17 +5748,19 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 				reduce_expression(expr);
 				reducing_match_pattern_expression = previous_reducing_match_pattern_expression;
 				result = expr->get_datatype();
-				if (!expr->is_constant) {
-					bool valid_type_test_pattern = false;
-					if (expr->type == FSParser::Node::TYPE_TEST && p_match_test != nullptr && p_match_test->type == FSParser::Node::IDENTIFIER) {
-						const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(expr);
-						if (type_test->operand != nullptr && type_test->operand->type == FSParser::Node::IDENTIFIER) {
-							const FSParser::IdentifierNode *pattern_operand = static_cast<const FSParser::IdentifierNode *>(type_test->operand);
-							const FSParser::IdentifierNode *match_identifier = static_cast<const FSParser::IdentifierNode *>(p_match_test);
-							valid_type_test_pattern = pattern_operand->name == match_identifier->name;
-						}
+				// `value is T` where the operand names the same identifier as the match subject is a
+				// type test on the subject, not a value comparison. Record the classification on the
+				// pattern so flow narrowing and the compiler agree with this decision.
+				if (expr->type == FSParser::Node::TYPE_TEST && p_match_test != nullptr && p_match_test->type == FSParser::Node::IDENTIFIER) {
+					const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(expr);
+					if (type_test->operand != nullptr && type_test->operand->type == FSParser::Node::IDENTIFIER) {
+						const FSParser::IdentifierNode *pattern_operand = static_cast<const FSParser::IdentifierNode *>(type_test->operand);
+						const FSParser::IdentifierNode *match_identifier = static_cast<const FSParser::IdentifierNode *>(p_match_test);
+						p_match_pattern->is_subject_type_test = pattern_operand->name == match_identifier->name;
 					}
-					if (!valid_type_test_pattern) {
+				}
+				if (!expr->is_constant) {
+					if (!p_match_pattern->is_subject_type_test) {
 						while (expr && expr->type == FSParser::Node::SUBSCRIPT) {
 							FSParser::SubscriptNode *sub = static_cast<FSParser::SubscriptNode *>(expr);
 							if (!sub->is_attribute) {

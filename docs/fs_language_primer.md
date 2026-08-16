@@ -268,6 +268,31 @@ match state:
 - `for name in iterable:` works with arrays, dictionaries, strings, packed arrays, and `range(...)`.
 - `range(end)`, `range(start, end)`, and `range(start, end, step)` stop before `end`.
 - `match` supports patterns, `_` as a catch-all, and `when` guards.
+- A branch may test the subject's runtime type by repeating the subject identifier: `value is T`.
+
+```foundry_script
+match value:
+	value is String:
+		print("string of length " + str(value.length()))
+	value is int:
+		print("int")
+	_:
+		print("something else")
+```
+
+- The pattern is the same predicate as the expression `value is T`, so builtin numeric ranges,
+  native and script objects, traits, tuples, typed containers, type handles, enums, and nullable
+  types all behave exactly as they do outside a `match`. Order numeric tests narrowest-first, for
+  the reasons in [Type Aliases And Unions](#type-aliases-and-unions).
+- The operand must repeat the match subject, and the subject must be a plain identifier. The subject
+  is evaluated once and every branch tests that saved value, so a property with a side-effecting
+  getter is read exactly one time.
+- Inside a matching branch the subject narrows to the tested type, just as it would inside
+  `if value is T:`.
+- Only the direct positive form is a pattern. `value is not T`, an unrelated operand, a
+  non-identifier subject, and a multi-member union on the right of `is` are all rejected.
+- Comma-separated alternatives compose with OR, and a `when` guard still runs after the pattern
+  succeeds, falling through to the next branch when the guard is false.
 
 ### Types
 

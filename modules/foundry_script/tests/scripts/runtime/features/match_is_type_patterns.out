@@ -1,0 +1,19 @@
+FS_TEST_OK
+string:hi
+int:4
+resource:named
+fallback
+fallback
+int
+long
+identified:7
+fallback
+level
+fallback
+string or int
+string or int
+other
+plain string
+guarded string
+string
+getter reads: 1

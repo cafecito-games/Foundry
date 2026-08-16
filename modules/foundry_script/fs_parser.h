@@ -1661,6 +1661,11 @@ public:
 		// For PT_ENUM_CASE: whether every payload sub-pattern is irrefutable, i.e. the pattern matches
 		// every value of its case and therefore covers it for exhaustiveness.
 		bool case_payload_is_irrefutable = false;
+		// For PT_EXPRESSION: whether the analyzer classified this as the supported same-subject type
+		// test, `match value: value is T:`. The analyzer owns the classification so pattern validation,
+		// flow narrowing, and the compiler's lowering choice cannot disagree about which expression
+		// patterns are a type test on the match subject rather than a value comparison.
+		bool is_subject_type_test = false;
 
 		// For PT_ENUM_CASE: whether the head was written with the leading-`.` contextual shorthand
 		// (`.Ok(value)`), so `case_type` names only the case and the union comes from the subject.
