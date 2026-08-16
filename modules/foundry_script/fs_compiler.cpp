@@ -872,13 +872,22 @@ static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *
 // method-scope parameter, or an ordinal from some other declaration) would silently validate against
 // an unrelated argument, so the whole slot is left unbound instead.
 //
-// Traversal matches `FSTypeCompatibility::destination_depends_on_receiver_type_parameter()`, which
-// decides the same question for the analyzer: only typed-container elements, never the type arguments
-// of a specialized class handle, whose construction inside the declaring class does not reify them.
+// Traversal follows typed-container elements only. It never follows the type arguments of a
+// specialized class handle, whose construction inside the declaring class does not reify them, and it
+// stops at a tuple, which erases to an untyped Array that describes none of its slots. The analyzer's
+// `FSTypeCompatibility::destination_depends_on_receiver_type_parameter()` answers the same question
+// for a static frame, where no shape is checkable at all and both exclusions are moot.
 static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &p_type,
 		const Vector<FSParser::TypeParameterNode *> &p_type_parameters, bool &r_is_sound, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		r_is_sound = false;
+		return false;
+	}
+
+	if (p_type.kind == FSParser::DataType::TUPLE) {
+		// A tuple erases to a plain, untyped Array with no element metadata at all, so nothing describes
+		// its slots at run time. A check emitted for one would only assert "this is an Array" while
+		// claiming to enforce the parameter, so the slot is left unbound instead.
 		return false;
 	}
 

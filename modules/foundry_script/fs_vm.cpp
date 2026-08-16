@@ -483,6 +483,14 @@ static bool _projected_container_type_from_descriptor(const Variant &p_descripto
 	}
 
 	Dictionary descriptor = p_descriptor;
+	if (descriptor.get("is_nullable", false)) {
+		// `ContainerType` cannot express "this type or null", so evidence built here would reject the
+		// nulls the slot admits. Same deliberate limitation the member-binding projection has, and it is
+		// checked before the parameter node below so a `T?` slot keeps accepting null once the receiver
+		// resolves `T` to a concrete type. The limitation is confined to this node, so siblings and
+		// ancestors keep their own evidence; the analyzer is what enforces a nullable declaration.
+		return true;
+	}
 	const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
 	if (type_parameter_index.get_type() == Variant::INT) {
 		const int64_t ordinal = type_parameter_index;
@@ -499,13 +507,6 @@ static bool _projected_container_type_from_descriptor(const Variant &p_descripto
 			resolved.outer.is_type_handle = true;
 		}
 		r_projected = resolved;
-		return true;
-	}
-
-	if (descriptor.get("is_nullable", false)) {
-		// `ContainerType` cannot express "this type or null", so evidence built here would reject the
-		// nulls the slot admits. Same deliberate limitation the member-binding projection has, confined
-		// to this node so siblings and ancestors keep their own evidence.
 		return true;
 	}
 

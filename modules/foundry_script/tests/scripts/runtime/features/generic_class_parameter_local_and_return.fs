@@ -18,6 +18,19 @@ class Crate[T]:
 		var kept: Array[T] = [value]
 		return kept
 
+	func keep_optional(value) -> T?:
+		# A nullable slot admits null, which no container type can describe, so this one stays gradual
+		# rather than rejecting the nulls it legitimately holds. Same deliberate limitation a nullable
+		# member binding has.
+		var kept: T? = value
+		return kept
+
+	func keep_tuple(value) -> (int, T):
+		# A tuple erases to an untyped Array that describes none of its slots, so this one is left
+		# unchecked instead of carrying a check that only asserts "this is an Array".
+		var kept: (int, T) = value
+		return kept
+
 	func keep_in_lambda(value):
 		# The lambda never spells `self`, but its `T` slot is checked against the receiver, so it has
 		# to capture the instance anyway.
@@ -59,6 +72,9 @@ func test() -> void:
 	var relayed := Relay[String].new()
 	print(relayed.keep("kept"))
 
+	print(crate.keep_optional(null))
+	print(crate.keep_optional(6))
+	print(crate.keep_tuple((1, 2)))
 	print(crate.keep_in_lambda(9))
 
 	var via_trait := TraitCrate[int].new()

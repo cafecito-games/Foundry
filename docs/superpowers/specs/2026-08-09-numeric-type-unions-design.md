@@ -178,7 +178,12 @@ A parameter bounded by a `final` class is the one exception, and it is not an ex
 
 Evidence is per parameter, not per slot: a receiver that fixes one of a base's parameters through `extends` and leaves another open still enforces the half it knows, exactly as a member binding's projection does. A lambda whose body declares such a slot captures the instance even when it never names `self`, since without the receiver the check would silently do nothing.
 
-Two positions are deliberately outside this rule. A parameter used as the type argument of a specialized class handle (`holder: Holder[T]`) is one: constructing `Holder[T]` inside the declaring class does not reify `T` onto the constructed instance, so there is no argument at run time to check against, and enforcing the slot would reject values the program legitimately produces. A `Variant` source in a static function is the other: gradual sources are unchanged by this rule, so `return some_variant` under a class-dependent return type in a static function stays accepted and unchecked. Both wait on separate work.
+Several positions are deliberately outside this rule, each because nothing at run time describes the slot:
+
+- A parameter used as the type argument of a specialized class handle (`holder: Holder[T]`). Constructing `Holder[T]` inside the declaring class does not reify `T` onto the constructed instance, so there is no argument to check against, and enforcing the slot would reject values the program legitimately produces.
+- A tuple slot (`kept: (int, T)`). A tuple erases to a plain untyped Array with no element metadata, so a check emitted for one would only assert "this is an Array" while claiming to enforce the parameter.
+- A nullable slot (`kept: T?`). No container type expresses "this type or null", so evidence built for one would reject the nulls the slot admits. This is the same limitation a nullable member binding has, and it is confined to the node itself.
+- A `Variant` source in a static function. Gradual sources are unchanged by this rule, so `return some_variant` under a class-dependent return type in a static function stays accepted and unchecked.
 
 The mirror direction is not symmetric and stays allowed: a type parameter as the *source* of an assignment to a concrete type is the downcast shape, because the destination is a type the runtime can still name and the erased value carries what a type test needs. That is why `return value` under `-> long` in the example above is accepted while `return value` under `-> X` is not.
 
