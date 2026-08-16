@@ -1,0 +1,4 @@
+FS_TEST_OK
+~~ WARNING at line 20: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_all()" requires the subtype "Variant" but the supertype "Variant" was provided.
+[[1, 2], ["wrong", "shape", "and arity"]]
+tuple under container ok

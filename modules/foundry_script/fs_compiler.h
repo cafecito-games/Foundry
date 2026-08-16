@@ -199,6 +199,7 @@ class FSCompiler {
 	bool _slot_needs_receiver_validation(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen) const;
 	bool _slot_is_tuple_shaped(const FSParser::DataType &p_declared_type) const;
 	FSDataType _bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle, bool &r_is_erased_container);
+	FSDataType _tuple_slot_shape(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen);
 	Vector<FSDataType> _bake_construction_type_arguments(const Vector<FSParser::DataType> &p_type_arguments, const CodeGen &p_codegen);
 
 	bool _is_class_member_property(CodeGen &codegen, const StringName &p_name);
@@ -221,7 +222,7 @@ class FSCompiler {
 	// step: a forwarded parameter is rewritten to the deriving class's ordinal, a concrete argument
 	// replaces the node outright, and a step that supplies nothing marks the node permanently unresolved.
 	void _substitute_binding_type_parameters(FSDataType &r_type, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner, int p_depth = 0);
-	FSDataType _gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner);
+	FSDataType _gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_preserve_type_parameters = false);
 	// A `const` aliasing a class in this compilation unit (`const Alias = Box`) folds to the analyzer's
 	// shallow, uncompiled class object; constructing through it (`Alias.new()`) fails. Re-point such a
 	// folded value at the live subclass compiled in this unit so the alias matches the inner-class name.

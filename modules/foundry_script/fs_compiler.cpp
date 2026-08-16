@@ -307,18 +307,28 @@ static bool _datatype_contains_coroutine(const FSParser::DataType &p_datatype) {
 
 // Type slots erase a tuple to a plain Array, but an `is` test has to keep the shape: the runtime
 // tuple kind carries the arity and the element types so the test can check them structurally.
-FSDataType FSCompiler::_gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner) {
+//
+// `p_preserve_type_parameters` keeps an element that *is* a type parameter as a `TYPE_PARAMETER` node
+// instead of erasing it to Variant, so a receiver can resolve it when the shape is applied. An `is`
+// test has no slot to resolve against and always erases.
+FSDataType FSCompiler::_gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_preserve_type_parameters) {
 	FSDataType result;
 	result.kind = FSDataType::TUPLE;
 	result.builtin_type = Variant::ARRAY;
 	result.is_nullable = p_datatype.is_nullable;
 	for (const FSParser::DataType &element : p_datatype.container_element_types) {
 		if (element.kind == FSParser::DataType::TUPLE) {
-			result.container_element_types.push_back(_gdtype_tuple_test_type_from_datatype(element, p_owner));
+			result.container_element_types.push_back(_gdtype_tuple_test_type_from_datatype(element, p_owner, p_preserve_type_parameters));
 		} else {
 			// A soft or unset element type yields the `VARIANT` kind, which accepts any value: an
 			// element the analyzer could not pin down must not make the whole test fail.
-			result.container_element_types.push_back(_gdtype_from_datatype(element, p_owner));
+			//
+			// A container *declared* around a parameter (`Array[T]`) keeps erasing its element typing,
+			// which is what leaves the runtime typing of such a container to its concrete consumer.
+			// Preserving the node there would instead demand a typed container invariantly, rejecting
+			// exactly the erased arrays a generic method is entitled to produce.
+			const bool preserve_element = p_preserve_type_parameters && element.kind == FSParser::DataType::TYPE_PARAMETER;
+			result.container_element_types.push_back(_gdtype_from_datatype(element, p_owner, true, preserve_element));
 		}
 	}
 	return result;
@@ -872,11 +882,11 @@ static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *
 // method-scope parameter, or an ordinal from some other declaration) would silently validate against
 // an unrelated argument, so the whole slot is left unbound instead.
 //
-// Traversal follows typed-container elements and the type arguments of a specialized class handle,
-// both of which are reified at run time. It stops at a tuple, which carries its own shape through a
-// separate store, and it never follows a callable/signal signature slot or a union member: a
-// signature erases completely and a union erases to one untyped slot, so a check emitted for either
-// would assert nothing while claiming to enforce the parameter. That is the opposite reading from
+// Traversal follows typed-container elements -- which is also where a tuple keeps its positional
+// element types -- and the type arguments of a specialized class handle. All three are reified at run
+// time. It never follows a callable/signal signature slot or a union member: a signature erases
+// completely and a union erases to one untyped slot, so a check emitted for either would assert
+// nothing while claiming to enforce the parameter. That is the opposite reading from
 // `_destination_has_erased_type_parameter()` in `fs_type.cpp`, which walks all of them because it
 // answers "is this undecidable", where erasure is the reason to say yes.
 //
@@ -903,15 +913,6 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 	if (p_type.is_nullable) {
 		// A nullable node admits null, which no container type can express, so the projection keeps no
 		// evidence for it or anything below it and a check emitted here would decide nothing.
-		return false;
-	}
-
-	if (p_type.kind == FSParser::DataType::TUPLE) {
-		// A tuple slot is checked by its own store, which carries the shape as a compiled descriptor and
-		// lowers every element through `_gdtype_tuple_test_type_from_datatype()`. That lowering erases a
-		// type parameter to Variant, so a parameter element is accepted-as-anything rather than resolved
-		// against the receiver; reporting the slot here instead would replace the whole structural check
-		// with a projection that describes none of the concrete elements.
 		return false;
 	}
 
@@ -1013,7 +1014,12 @@ bool FSCompiler::_slot_is_tuple_shaped(const FSParser::DataType &p_declared_type
 // form (`uses Keeper[int]`), leaving a slot only null can satisfy with no evidence at all.
 FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle, bool &r_is_erased_container) {
 	r_is_type_handle = p_declared_type.is_type_handle_annotation;
-	FSDataType baked = _gdtype_from_datatype(p_declared_type, p_script, true, true);
+	// A tuple erases to a bare Array through the ordinary lowering, which would discard the arity and
+	// every element alongside the parameter nodes. Its own lowering keeps the whole shape, which is what
+	// the tuple store validates against.
+	FSDataType baked = p_declared_type.kind == FSParser::DataType::TUPLE
+			? _gdtype_tuple_test_type_from_datatype(p_declared_type, p_script, true)
+			: _gdtype_from_datatype(p_declared_type, p_script, true, true);
 	if (r_is_type_handle) {
 		baked.is_type_handle = false;
 	}
@@ -1081,6 +1087,24 @@ Vector<FSDataType> FSCompiler::_bake_construction_type_arguments(const Vector<FS
 		baked.write[i] = converted;
 	}
 	return baked;
+}
+
+// The shape a tuple slot's store is validated against. A tuple whose elements name a class type
+// parameter keeps those nodes for the receiver to resolve, and is baked through the same path the
+// scalar receiver-relative slots use, so a trait body's nodes are substituted with the arguments the
+// implementer applied and an enclosing lambda still captures the receiver it now needs. Every other
+// tuple slot lowers fully erased, exactly as an `is` test against the same type does.
+//
+// A tuple never routes to `write_assign_typed_class_parameter()`: the projection that opcode applies
+// has no positional, arity-checked form, so it would read `(int, T)` as an Array with two element
+// types and check neither the arity nor the `int`.
+FSDataType FSCompiler::_tuple_slot_shape(const FSParser::DataType &p_declared_type, const CodeGen &p_codegen) {
+	if (!_slot_needs_receiver_validation(p_declared_type, p_codegen)) {
+		return _gdtype_tuple_test_type_from_datatype(p_declared_type, p_codegen.script);
+	}
+	bool slot_is_type_handle = false;
+	bool slot_is_erased_container = false;
+	return _bake_receiver_slot_type(p_declared_type, p_codegen.script, slot_is_type_handle, slot_is_erased_container);
 }
 
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
@@ -2780,6 +2804,11 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// The whole assigned value is a generic method returning an erased `Dictionary[K, V]`; retype
 					// the untyped runtime dictionary into the concrete typed-dictionary target.
 					gen->write_assign_typed_dictionary_convert(target, to_assign);
+				} else if (!is_member && _slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
+					// A later store into a tuple local is the same boundary its initializer was: without a
+					// check here the declared shape could be laundered away after the fact. Checked before
+					// the class-parameter store below so a tuple keeps its positional shape.
+					gen->write_assign_typed_tuple(target, to_assign, _tuple_slot_shape(assignment->assignee->get_datatype(), codegen));
 				} else if (!is_member && _slot_needs_receiver_validation(assignment->assignee->get_datatype(), codegen)) {
 					// A later store into a local whose declared type mentions a class parameter has to be
 					// checked at the same boundary its initializer was, or the slot could be laundered after
@@ -2789,10 +2818,6 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					bool slot_is_erased_container = false;
 					const FSDataType slot_type = _bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
 					gen->write_assign_typed_class_parameter(target, to_assign, slot_type, slot_is_type_handle, slot_is_erased_container);
-				} else if (!is_member && _slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
-					// A later store into a tuple local is the same boundary its initializer was: without a
-					// check here the declared shape could be laundered away after the fact.
-					gen->write_assign_typed_tuple(target, to_assign, _gdtype_tuple_test_type_from_datatype(assignment->assignee->get_datatype(), codegen.script));
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -3800,6 +3825,14 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							return_target = codegen.add_temporary(return_type);
 							gen->write_assign_typed_dictionary_convert(return_target, return_value);
 							pop_return_target = true;
+						} else if (_slot_is_tuple_shaped(codegen.function_node->get_datatype())) {
+							// The return slot erases to a bare Array, so the shape is checked here rather than
+							// at whatever the caller happens to consume the result as -- a `Variant` binding at
+							// the call site would otherwise check nothing at all. Checked before the
+							// class-parameter store below so a tuple keeps its positional shape.
+							return_target = codegen.add_temporary(return_type);
+							gen->write_assign_typed_tuple(return_target, return_value, _tuple_slot_shape(codegen.function_node->get_datatype(), codegen));
+							pop_return_target = true;
 						} else if (_slot_needs_receiver_validation(codegen.function_node->get_datatype(), codegen)) {
 							// The return slot erases with its class parameter, so the value is checked here,
 							// against this receiver's reification, rather than at whatever the caller happens to
@@ -3809,13 +3842,6 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							const FSDataType slot_type = _bake_receiver_slot_type(codegen.function_node->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
 							return_target = codegen.add_temporary(return_type);
 							gen->write_assign_typed_class_parameter(return_target, return_value, slot_type, slot_is_type_handle, slot_is_erased_container);
-							pop_return_target = true;
-						} else if (_slot_is_tuple_shaped(codegen.function_node->get_datatype())) {
-							// The return slot erases to a bare Array, so the shape is checked here rather than
-							// at whatever the caller happens to consume the result as -- a `Variant` binding at
-							// the call site would otherwise check nothing at all.
-							return_target = codegen.add_temporary(return_type);
-							gen->write_assign_typed_tuple(return_target, return_value, _gdtype_tuple_test_type_from_datatype(codegen.function_node->get_datatype(), codegen.script));
 							pop_return_target = true;
 						}
 					}
@@ -3909,13 +3935,14 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 						gen->write_assign_typed_array_convert(local, src_address);
 					} else if (_is_erased_container_call_to_typed_dictionary(lv->initializer, local.type)) {
 						gen->write_assign_typed_dictionary_convert(local, src_address);
+					} else if (_slot_is_tuple_shaped(lv->get_datatype())) {
+						// Checked before the class-parameter store below so a tuple keeps its positional shape.
+						gen->write_assign_typed_tuple(local, src_address, _tuple_slot_shape(lv->get_datatype(), codegen));
 					} else if (_slot_needs_receiver_validation(lv->get_datatype(), codegen)) {
 						bool slot_is_type_handle = false;
 						bool slot_is_erased_container = false;
 						const FSDataType slot_type = _bake_receiver_slot_type(lv->get_datatype(), codegen.script, slot_is_type_handle, slot_is_erased_container);
 						gen->write_assign_typed_class_parameter(local, src_address, slot_type, slot_is_type_handle, slot_is_erased_container);
-					} else if (_slot_is_tuple_shaped(lv->get_datatype())) {
-						gen->write_assign_typed_tuple(local, src_address, _gdtype_tuple_test_type_from_datatype(lv->get_datatype(), codegen.script));
 					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {

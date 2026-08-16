@@ -1220,13 +1220,6 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 		// cycle and buys nothing.
 		return false;
 	}
-	if (p_type.kind == FSParser::DataType::TUPLE) {
-		// A tuple erases to an untyped Array that describes none of its slots, so no store into one can be
-		// checked against a receiver. Stopping here keeps this answer identical to the one code generation
-		// gives, which matters beyond diagnostics: a "yes" here also makes an enclosing lambda capture the
-		// instance, and a capture taken for a check that is never emitted only creates a reference cycle.
-		return false;
-	}
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
 		// `@Self` is scoped to the class but is not reified per instance: it denotes the class the frame
 		// runs against, which a static frame has as well, and it lowers to a concrete script rather than
@@ -1234,9 +1227,11 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 		return p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS &&
 				p_type.type_parameter_name != SNAME("@Self");
 	}
-	// Typed-container elements and the type arguments of a specialized class handle are both reified at
-	// run time -- the container from its element metadata, the handle from what its construction
-	// recorded on the instance -- so a parameter in either position is decidable against a receiver.
+	// Typed-container elements -- which is also where a tuple keeps its positional element types -- and
+	// the type arguments of a specialized class handle are all reified at run time: the container from
+	// its element metadata, the handle from what its construction recorded on the instance. A parameter
+	// in any of those positions is therefore decidable against a receiver, and a `(int, T)` slot is
+	// reported exactly as an `Array[T]` one is.
 	//
 	// A callable/signal signature slot and a union member are not, and deliberately stay out: a
 	// signature erases completely at run time and a union erases to one untyped slot, so a check

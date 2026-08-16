@@ -3,13 +3,14 @@
 # since the receiver owns the Callable while the Callable holds a strong reference back. Freeing the
 # last outside reference has to actually free the instance.
 #
-# A tuple gets no check because it erases to an untyped Array describing none of its slots.
+# A tuple slot is checked, but a fully concrete one resolves nothing against the receiver, so it is
+# still not a reason to capture.
 class Crate[T]:
 	var keeper
 
 	func setup() -> void:
 		keeper = func(v):
-			var kept: (int, T) = v
+			var kept: (int, String) = v
 			return kept
 
 
@@ -74,8 +75,19 @@ class CheckedCrate[T]:
 			return kept
 
 
+# A tuple element naming the parameter is checked against the receiver too, so this one captures as
+# well -- the capture follows the emitted check, not the shape of the declaration.
+class CheckedTupleCrate[T]:
+	var keeper
+
+	func setup() -> void:
+		keeper = func(v):
+			var kept: (int, T) = v
+			return kept
+
+
 func test() -> void:
-	var crate := Crate[int].new()
+	var crate := Crate[String].new()
 	crate.setup()
 	var weak_crate: WeakRef = weakref(crate)
 	crate = null
@@ -109,4 +121,8 @@ func test() -> void:
 	var checked := CheckedCrate[int].new()
 	checked.setup()
 	print(checked.keeper.call(5))
+
+	var checked_tuple := CheckedTupleCrate[int].new()
+	checked_tuple.setup()
+	print(checked_tuple.keeper.call((6, 7)))
 	print("lambda capture ok")

@@ -34,8 +34,9 @@ class Crate[T]:
 		return kept
 
 	func keep_tuple(value) -> (int, T):
-		# A tuple erases to an untyped Array that describes none of its slots, so this one is left
-		# unchecked instead of carrying a check that only asserts "this is an Array".
+		# A tuple slot carries its shape to run time as a compiled descriptor, so the arity and the
+		# `int` are enforced structurally and the parameter element is resolved against this receiver.
+		# See `generic_class_parameter_tuple_slot.fs` for the full matrix.
 		var kept: (int, T) = value
 		return kept
 
