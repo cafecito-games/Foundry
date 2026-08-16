@@ -476,8 +476,7 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 // Returns false only when a static frame needs a receiver for a `Self` node and has none, matching
 // `_container_type_from_descriptor`.
 static bool _projected_container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
-		const Vector<ProjectedContainerType> &p_receiver_arguments, ProjectedContainerType &r_projected, int p_depth,
-		bool *r_root_is_type_handle = nullptr) {
+		const Vector<ProjectedContainerType> &p_receiver_arguments, ProjectedContainerType &r_projected, int p_depth) {
 	r_projected = ProjectedContainerType();
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return true;
@@ -500,16 +499,10 @@ static bool _projected_container_type_from_descriptor(const Variant &p_descripto
 		}
 		ProjectedContainerType resolved = p_receiver_arguments[ordinal];
 		if (descriptor.get("is_type_handle", false)) {
-			// `Type[T]` denotes a class handle for the argument, not an instance of it. At the root the
-			// handle layer is reported to the caller and applied by the shared validator, which is what
-			// makes an argument with no handle form (`Type[int]`) admit null and nothing else instead of
-			// going unchecked. A nested node has nowhere to report it, so a non-object argument leaves that
-			// subtree without evidence, exactly as a nested member-binding node does.
-			if (r_root_is_type_handle != nullptr) {
-				*r_root_is_type_handle = true;
-				r_projected = resolved;
-				return true;
-			}
+			// A nested `Type[T]` denotes a class handle for the argument, not an instance of it, and has
+			// nowhere to record that layer once the argument resolves, so an argument with no handle form
+			// leaves the subtree without evidence -- exactly as a nested member-binding node does. A slot
+			// that is a handle at its root does not come through here: its layer travels beside the shape.
 			if (!resolved.is_known() || resolved.outer.builtin_type != Variant::OBJECT) {
 				return true;
 			}
@@ -3309,10 +3302,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			DISPATCH_OPCODE;
 
 			OPCODE(OPCODE_ASSIGN_TYPED_CLASS_PARAMETER) {
-				CHECK_SPACE(4);
+				CHECK_SPACE(5);
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 				GET_VARIANT_PTR(type_info, 2);
+				// The `Type[...]` layer travels beside the shape rather than inside it, so a slot whose
+				// argument has no handle form is still described. Same split a member binding uses.
+				const bool expected_is_type_handle = _code_ptr[ip + 4] != 0;
 
 				// A class type parameter is reified onto the instance, but a function body compiled once in
 				// the declaring class sees only the parameter. The declared shape therefore reaches here with
@@ -3329,8 +3325,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				ProjectedContainerType expected;
-				bool expected_is_type_handle = false;
-				if (unlikely(!_projected_container_type_from_descriptor(*type_info, frame_self, receiver_arguments, expected, 0, &expected_is_type_handle))) {
+				if (unlikely(!_projected_container_type_from_descriptor(*type_info, frame_self, receiver_arguments, expected, 0))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
@@ -3351,7 +3346,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 				*dst = *src;
 
-				ip += 4;
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 

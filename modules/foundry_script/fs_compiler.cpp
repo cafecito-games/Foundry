@@ -943,8 +943,17 @@ bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_dec
 // the receiver to resolve. A trait body's nodes are substituted with the arguments the implementer
 // applied first, so a forwarded parameter keeps standing for the implementer's own (and is resolved
 // against the receiver) while a concrete application bakes the argument in and needs no receiver.
-FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script) {
+//
+// A `Type[...]` slot reports its handle layer through `r_is_type_handle` and bakes the *represented*
+// type, exactly as a member binding stores that layer beside the shape. Keeping the layer on the node
+// instead would lose it the moment substitution replaced the node with an argument that has no handle
+// form (`uses Keeper[int]`), leaving a slot only null can satisfy with no evidence at all.
+FSDataType FSCompiler::_bake_receiver_slot_type(const FSParser::DataType &p_declared_type, FoundryScript *p_script, bool &r_is_type_handle) {
+	r_is_type_handle = p_declared_type.is_type_handle_annotation;
 	FSDataType baked = _gdtype_from_datatype(p_declared_type, p_script, true, true);
+	if (r_is_type_handle) {
+		baked.is_type_handle = false;
+	}
 	if (flattened_trait_declaration != nullptr) {
 		_substitute_binding_type_parameters(baked, flattened_trait_type_arguments, p_script);
 	}
@@ -2626,8 +2635,9 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// checked at the same boundary its initializer was, or the slot could be laundered after
 					// the fact. A member has its own binding, resolved for the class that owns the slot, and
 					// is checked by the member store above; only a slot with no binding reaches here.
-					gen->write_assign_typed_class_parameter(target, to_assign,
-							_bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script));
+					bool slot_is_type_handle = false;
+					const FSDataType slot_type = _bake_receiver_slot_type(assignment->assignee->get_datatype(), codegen.script, slot_is_type_handle);
+					gen->write_assign_typed_class_parameter(target, to_assign, slot_type, slot_is_type_handle);
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -3633,9 +3643,10 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 							// The return slot erases with its class parameter, so the value is checked here,
 							// against this receiver's reification, rather than at whatever the caller happens to
 							// consume the result as.
+							bool slot_is_type_handle = false;
+							const FSDataType slot_type = _bake_receiver_slot_type(codegen.function_node->get_datatype(), codegen.script, slot_is_type_handle);
 							return_target = codegen.add_temporary(return_type);
-							gen->write_assign_typed_class_parameter(return_target, return_value,
-									_bake_receiver_slot_type(codegen.function_node->get_datatype(), codegen.script));
+							gen->write_assign_typed_class_parameter(return_target, return_value, slot_type, slot_is_type_handle);
 							pop_return_target = true;
 						}
 					}
@@ -3730,8 +3741,9 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 					} else if (_is_erased_container_call_to_typed_dictionary(lv->initializer, local.type)) {
 						gen->write_assign_typed_dictionary_convert(local, src_address);
 					} else if (_slot_needs_receiver_validation(lv->get_datatype(), codegen)) {
-						gen->write_assign_typed_class_parameter(local, src_address,
-								_bake_receiver_slot_type(lv->get_datatype(), codegen.script));
+						bool slot_is_type_handle = false;
+						const FSDataType slot_type = _bake_receiver_slot_type(lv->get_datatype(), codegen.script, slot_is_type_handle);
+						gen->write_assign_typed_class_parameter(local, src_address, slot_type, slot_is_type_handle);
 					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {
