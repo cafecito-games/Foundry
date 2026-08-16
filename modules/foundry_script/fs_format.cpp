@@ -1305,8 +1305,14 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 		previous_is_definition = true;
 	};
 
-	const auto emit_next_erased_pass = [&]() {
+	const auto emit_next_erased_pass = [&](bool p_shares_declaration_line) {
 		const int pass_line = p_class->erased_pass_lines[erased_pass_index++];
+		if (p_shares_declaration_line) {
+			// A semicolon-separated line (`pass; var x = 1  # note`) has one comment and
+			// two statements. The declaration survives on its own line and keeps the
+			// comment, so the erased `pass` must not claim it on the way past.
+			return;
+		}
 		// An anchor is not a definition, so it neither demands nor suppresses the blank
 		// lines the surrounding definitions require.
 		if (print_erased_pass_anchor(pass_line, required_blanks_before(false))) {
@@ -1328,7 +1334,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 			if (conformance_ready && (!pass_ready || conformance_line <= pass_line)) {
 				emit_next_conformance();
 			} else if (pass_ready) {
-				emit_next_erased_pass();
+				emit_next_erased_pass(p_line > 0 && pass_line == p_line);
 			} else {
 				return;
 			}
@@ -1438,6 +1444,11 @@ void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance
 					return;
 				}
 				erased_pass_index++;
+				if (p_line > 0 && pass_line == p_line) {
+					// A semicolon-separated line (`pass; func ping()  # note`) has one
+					// comment and two statements; the witness survives and keeps it.
+					continue;
+				}
 				if (print_erased_pass_anchor(pass_line, has_previous ? 1 : 0)) {
 					has_previous = true;
 				}

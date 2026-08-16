@@ -1735,6 +1735,28 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		check_format_invariants(source, formatted, "empty_class_pass_tail.fs");
 	}
 
+	TEST_CASE("[Format] Leaves a shared line's comment on the surviving declaration") {
+		// A semicolon-separated line carries one comment and two statements. Splitting it
+		// keeps the comment on the declaration that survives, whichever side of the
+		// semicolon the erased `pass` was on.
+		const String leading_pass = "pass; var x = 1 # belongs to x\n";
+		CHECK_EQ(format_or_fail(leading_pass), "var x = 1  # belongs to x\n");
+		const String trailing_pass = "var x = 1; pass # belongs to x\n";
+		CHECK_EQ(format_or_fail(trailing_pass), "var x = 1  # belongs to x\n");
+		check_format_invariants(leading_pass, format_or_fail(leading_pass), "shared_line_leading_pass.fs");
+		check_format_invariants(trailing_pass, format_or_fail(trailing_pass), "shared_line_trailing_pass.fs");
+	}
+
+	TEST_CASE("[Format] Leaves a shared line's comment on a conformance witness") {
+		const String source =
+				"extend Node uses Greeter:\n"
+				"\tpass; func greet() -> String # belongs to greet\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Greeter:\n\tfunc greet() -> String  # belongs to greet\n",
+				vformat("The witness must keep the shared line's comment: %s", formatted));
+		check_format_invariants(source, formatted, "shared_line_witness.fs");
+	}
+
 	TEST_CASE("[Format] Leaves a comment after a single-line `pass` body in the outer scope") {
 		// The erased `pass` shares the header line, so the following comment is written at
 		// the enclosing indent and belongs to the enclosing scope, not to the class body.
