@@ -1285,6 +1285,11 @@ public:
 		Vector<ConformanceNode *> conformances;
 #ifdef TOOLS_ENABLED
 		ClassDocData doc_data;
+		// Source lines, in source order, of the body-level `pass` statements the parser
+		// erased. A class-body `pass` declares nothing, so it leaves no member behind and
+		// a comment authored on its line would lose its only owner. Trivia ownership
+		// only: nothing outside the formatter reads this and it carries no semantics.
+		Vector<int> erased_pass_lines;
 
 		// EnumValue docs are parsed after itself, so we need a method to add/modify the doc property later.
 		void set_enum_value_doc_data(const StringName &p_name, const MemberDocData &p_doc_data) {
@@ -1364,6 +1369,11 @@ public:
 		// stand-in ClassNode whose self datatype is the builtin type so witness bodies resolve against the
 		// Variant builtin surface. Null for other target kinds.
 		ClassNode *builtin_target_shim = nullptr;
+#ifdef TOOLS_ENABLED
+		// Source lines of the body-level `pass` statements the parser erased. See
+		// `ClassNode::erased_pass_lines`: trivia ownership only, for the formatter.
+		Vector<int> erased_pass_lines;
+#endif // TOOLS_ENABLED
 
 		ConformanceNode() {
 			type = CONFORMANCE;
@@ -1599,6 +1609,11 @@ public:
 		// false means coverage could not be proven.
 		Vector<StringName> uncovered_case_names;
 		bool uncovered_includes_null = false;
+#ifdef TOOLS_ENABLED
+		// Source lines of the `match`-level `pass` statements the parser erased. See
+		// `ClassNode::erased_pass_lines`: trivia ownership only, for the formatter.
+		Vector<int> erased_pass_lines;
+#endif // TOOLS_ENABLED
 
 		MatchNode() {
 			type = MATCH;

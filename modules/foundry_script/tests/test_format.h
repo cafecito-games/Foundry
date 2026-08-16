@@ -745,6 +745,22 @@ static bool trees_equivalent(const String &p_original, const String &p_formatted
 	return node_eq(parser_original.get_tree(), parser_formatted.get_tree());
 }
 
+// The invariants every focused formatting case must satisfy beyond its exact text:
+// no comment gained or lost, the parsed tree unchanged, and a second format that
+// reproduces the first byte-for-byte.
+static void check_format_invariants(const String &p_source, const String &p_formatted, const String &p_path) {
+	CHECK_MESSAGE(count_comments(p_source) == count_comments(p_formatted),
+			vformat("Comment count changed for %s: %s", p_path, p_formatted));
+	CHECK_MESSAGE(trees_equivalent(p_source, p_formatted, p_path),
+			vformat("Formatted output changed the parsed tree for %s: %s", p_path, p_formatted));
+	FSFormatter formatter;
+	FSFormatter::Result second;
+	REQUIRE_MESSAGE(formatter.format(p_formatted, p_path, second) == OK,
+			vformat("Formatted output failed to re-parse for %s: %s", p_path, p_formatted));
+	CHECK_MESSAGE(second.formatted == p_formatted,
+			vformat("Formatter is not idempotent for %s: %s", p_path, second.formatted));
+}
+
 TEST_SUITE("[Modules][FoundryScript][Format]") {
 	TEST_CASE("[Format] Reindents structurally with tabs") {
 		String source = "func f():\n        return     1+2\n";
@@ -1550,6 +1566,300 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		FSParser reparser;
 		CHECK_MESSAGE(parse_no_errors(reparser, formatted, "pass_only_trait.fs"),
 				vformat("Formatted pass-only trait must re-parse: %s", formatted));
+	}
+
+	// An erased `pass` -- one the parser consumes without retaining a node -- is the sole
+	// owner of a comment authored on its line. These cases pin where those comments end
+	// up for every erased-pass position, and that a comment-free redundant `pass` keeps
+	// being removed.
+	TEST_CASE("[Format] Anchors the comments of a branchless match `pass`") {
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\t# why\n"
+				"\t\tpass #note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "func f(value):\n\tmatch value:\n\t\t# why\n\t\tpass  # note\n",
+				vformat("Branchless match must keep its comments: %s", formatted));
+		check_format_invariants(source, formatted, "branchless_match.fs");
+	}
+
+	TEST_CASE("[Format] Collapses multiple branchless match passes onto one anchor") {
+		// The body still needs exactly one `pass`, so every earlier erased line
+		// contributes its inline comment as a full-line comment, in source order.
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\tpass #one\n"
+				"\t\tpass #two\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "func f(value):\n\tmatch value:\n\t\t# one\n\t\tpass  # two\n",
+				vformat("Multiple erased passes must keep every comment once: %s", formatted));
+		check_format_invariants(source, formatted, "branchless_match_multiple.fs");
+	}
+
+	TEST_CASE("[Format] Keeps a full-line comment trailing a branchless match `pass`") {
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\tpass #note\n"
+				"\t\t# after\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "func f(value):\n\tmatch value:\n\t\tpass  # note\n\t\t# after\n",
+				vformat("Trailing comment must stay in the match body: %s", formatted));
+		check_format_invariants(source, formatted, "branchless_match_tail.fs");
+	}
+
+	TEST_CASE("[Format] Anchors a commented `pass` written beside match branches") {
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\tpass #lead\n"
+				"\t\t1:\n"
+				"\t\t\treturn 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "func f(value):\n\tmatch value:\n\t\tpass  # lead\n\t\t1:\n\t\t\treturn 1\n",
+				vformat("A commented match-level pass must keep an anchor: %s", formatted));
+		check_format_invariants(source, formatted, "match_branch_pass.fs");
+	}
+
+	TEST_CASE("[Format] Hoists a commented `pass` above a branch's annotations") {
+		// A branch annotation has to stay adjacent to the branch it annotates, so an
+		// erased `pass` interleaved with the annotations keeps its anchor ahead of both.
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\t@warning_ignore(\"unassigned_variable\")\n"
+				"\t\tpass #note\n"
+				"\t\t1:\n"
+				"\t\t\treturn 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted ==
+						"func f(value):\n\tmatch value:\n\n\t\tpass  # note\n"
+						"\t\t@warning_ignore(\"unassigned_variable\")\n\t\t1:\n\t\t\treturn 1\n",
+				vformat("A pass among branch annotations must keep its comment: %s", formatted));
+		check_format_invariants(source, formatted, "match_annotated_branch_pass.fs");
+	}
+
+	TEST_CASE("[Format] Keeps an annotated match branch flush against the match header") {
+		// A branch's annotation lines are not trivia, so the leading flush has to stop at
+		// the first of them instead of counting them as blank lines.
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\t@warning_ignore(\"unassigned_variable\")\n"
+				"\t\t1:\n"
+				"\t\t\treturn 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted ==
+						"func f(value):\n\tmatch value:\n\t\t@warning_ignore(\"unassigned_variable\")\n"
+						"\t\t1:\n\t\t\treturn 1\n",
+				vformat("An annotated branch must not gain a leading blank line: %s", formatted));
+		check_format_invariants(source, formatted, "match_annotated_branch.fs");
+	}
+
+	TEST_CASE("[Format] Still drops a comment-free branchless match `pass`") {
+		const String source =
+				"func f(value):\n"
+				"\tmatch value:\n"
+				"\t\tpass\n";
+		CHECK_EQ(format_or_fail(source), "func f(value):\n\tmatch value:\n\t\tpass\n");
+	}
+
+	TEST_CASE("[Format] Anchors the comments of a root-level `pass`") {
+		const String source =
+				"# why\n"
+				"pass #note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "# why\npass  # note\n",
+				vformat("A root-level pass must anchor its comments: %s", formatted));
+		check_format_invariants(source, formatted, "root_pass.fs");
+	}
+
+	TEST_CASE("[Format] Anchors root passes before, between, and after declarations") {
+		const String source =
+				"pass #lead\n"
+				"var before = 1\n"
+				"pass #between\n"
+				"var after = 2\n"
+				"pass #tail\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "pass  # lead\nvar before = 1\npass  # between\nvar after = 2\npass  # tail\n",
+				vformat("Root pass anchors must keep their source order: %s", formatted));
+		check_format_invariants(source, formatted, "root_pass_positions.fs");
+	}
+
+	TEST_CASE("[Format] Still drops comment-free root passes") {
+		const String source =
+				"pass\n"
+				"var x = 1\n"
+				"pass\n"
+				"func f():\n"
+				"\tpass\n"
+				"pass\n";
+		CHECK_EQ(format_or_fail(source), "var x = 1\n\n\nfunc f():\n\tpass\n");
+	}
+
+	TEST_CASE("[Format] Anchors a commented `pass` in a non-empty nested class") {
+		const String source =
+				"class Inner:\n"
+				"\tpass #lead\n"
+				"\tfunc ping():\n"
+				"\t\tpass\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\tpass  # lead\n\n\tfunc ping():\n\t\tpass\n",
+				vformat("A non-empty class must keep its pass comment: %s", formatted));
+		check_format_invariants(source, formatted, "nested_class_pass.fs");
+	}
+
+	TEST_CASE("[Format] Anchors a commented `pass` in a non-empty trait") {
+		const String source =
+				"trait Marker:\n"
+				"\tfunc mark():\n"
+				"\t\tpass\n"
+				"\tpass #tail\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "trait Marker:\n\tfunc mark():\n\t\tpass\n\n\tpass  # tail\n",
+				vformat("A non-empty trait must keep its pass comment: %s", formatted));
+		check_format_invariants(source, formatted, "nested_trait_pass.fs");
+	}
+
+	TEST_CASE("[Format] Still drops a comment-free `pass` in a non-empty nested class") {
+		const String source =
+				"class Inner:\n"
+				"\tfunc ping():\n"
+				"\t\tpass\n"
+				"\tpass\n";
+		CHECK_EQ(format_or_fail(source), "class Inner:\n\tfunc ping():\n\t\tpass\n");
+	}
+
+	TEST_CASE("[Format] Anchors commented passes around conformance witnesses") {
+		const String source =
+				"extend Node uses Greeter:\n"
+				"\tpass #lead\n"
+				"\tfunc greet() -> String:\n"
+				"\t\treturn \"hi\"\n"
+				"\tpass #tail\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted ==
+						"extend Node uses Greeter:\n\tpass  # lead\n\n\tfunc greet() -> String:\n"
+						"\t\treturn \"hi\"\n\n\tpass  # tail\n",
+				vformat("Conformance pass anchors must survive: %s", formatted));
+		check_format_invariants(source, formatted, "conformance_pass.fs");
+	}
+
+	TEST_CASE("[Format] Keeps a full-line comment trailing an empty conformance `pass`") {
+		const String source =
+				"extend Node uses Marker:\n"
+				"\tpass #note\n"
+				"\t# after\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Marker:\n\tpass  # note\n\t# after\n",
+				vformat("Trailing comment must stay in the conformance body: %s", formatted));
+		check_format_invariants(source, formatted, "conformance_pass_tail.fs");
+	}
+
+	TEST_CASE("[Format] Keeps a full-line comment trailing an empty class `pass`") {
+		const String source =
+				"class Inner:\n"
+				"\tpass #note\n"
+				"\t# after\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\tpass  # note\n\t# after\n",
+				vformat("Trailing comment must stay in the class body: %s", formatted));
+		check_format_invariants(source, formatted, "empty_class_pass_tail.fs");
+	}
+
+	TEST_CASE("[Format] Hoists a commented `pass` above a member's annotations") {
+		// An annotation has to stay adjacent to the declaration it annotates, so a `pass`
+		// written between the two keeps its anchor ahead of the whole member.
+		const String source =
+				"@export\n"
+				"pass # keep me\n"
+				"var x = 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "pass  # keep me\n@export\nvar x = 1\n",
+				vformat("A pass between an annotation and its member must keep its comment: %s", formatted));
+		check_format_invariants(source, formatted, "annotated_member_pass.fs");
+	}
+
+	TEST_CASE("[Format] Leaves an annotated member's shared-line comment alone") {
+		const String source =
+				"@export\n"
+				"pass; var x = 1 # belongs to x\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "@export\nvar x = 1  # belongs to x\n",
+				vformat("The annotated member must keep the shared line's comment: %s", formatted));
+		check_format_invariants(source, formatted, "annotated_member_shared_line.fs");
+	}
+
+	TEST_CASE("[Format] Leaves a shared line's comment on the surviving declaration") {
+		// A semicolon-separated line carries one comment and two statements. Splitting it
+		// keeps the comment on the declaration that survives, whichever side of the
+		// semicolon the erased `pass` was on.
+		const String leading_pass = "pass; var x = 1 # belongs to x\n";
+		CHECK_EQ(format_or_fail(leading_pass), "var x = 1  # belongs to x\n");
+		const String trailing_pass = "var x = 1; pass # belongs to x\n";
+		CHECK_EQ(format_or_fail(trailing_pass), "var x = 1  # belongs to x\n");
+		check_format_invariants(leading_pass, format_or_fail(leading_pass), "shared_line_leading_pass.fs");
+		check_format_invariants(trailing_pass, format_or_fail(trailing_pass), "shared_line_trailing_pass.fs");
+	}
+
+	TEST_CASE("[Format] Leaves a shared line's comment on a conformance witness") {
+		const String source =
+				"extend Node uses Greeter:\n"
+				"\tpass; func greet() -> String # belongs to greet\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Greeter:\n\tfunc greet() -> String  # belongs to greet\n",
+				vformat("The witness must keep the shared line's comment: %s", formatted));
+		check_format_invariants(source, formatted, "shared_line_witness.fs");
+	}
+
+	TEST_CASE("[Format] Leaves a comment after a single-line `pass` body in the outer scope") {
+		// The erased `pass` shares the header line, so the following comment is written at
+		// the enclosing indent and belongs to the enclosing scope, not to the class body.
+		const String source =
+				"class Inner: pass\n"
+				"# after\n"
+				"var x = 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\tpass\n\n\n# after\nvar x = 1\n",
+				vformat("Trailing comment must stay at the outer indent: %s", formatted));
+		check_format_invariants(source, formatted, "single_line_class_pass.fs");
+	}
+
+	TEST_CASE("[Format] Leaves a comment after a single-line conformance `pass` in the outer scope") {
+		const String source =
+				"extend Node uses Marker: pass\n"
+				"# after\n"
+				"var x = 1\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Marker:\n\tpass\n\n\n# after\nvar x = 1\n",
+				vformat("Trailing comment must stay at the outer indent: %s", formatted));
+		check_format_invariants(source, formatted, "single_line_conformance_pass.fs");
+	}
+
+	TEST_CASE("[Format] Keeps one line's comment on the canonical pass when passes share it") {
+		// `pass; pass  # note` is two erased statements and one comment; the comment
+		// belongs to the single canonical `pass`, not to a lifted line of its own.
+		const String source =
+				"class Inner:\n"
+				"\tpass; pass # note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\tpass  # note\n",
+				vformat("Shared-line passes must keep the comment inline: %s", formatted));
+		check_format_invariants(source, formatted, "shared_line_passes.fs");
+	}
+
+	TEST_CASE("[Format] Collapses multiple passes in an empty class onto one anchor") {
+		const String source =
+				"class Inner:\n"
+				"\tpass #one\n"
+				"\tpass #two\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\t# one\n\tpass  # two\n",
+				vformat("An empty class must keep every pass comment once: %s", formatted));
+		check_format_invariants(source, formatted, "empty_class_multiple_pass.fs");
 	}
 
 	TEST_CASE("[Format] Golden fixtures match byte-for-byte") {

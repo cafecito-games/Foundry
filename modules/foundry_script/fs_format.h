@@ -219,13 +219,39 @@ private:
 	// `ClassNode::conformances` rather than `members`, so `print_class_body` merges them
 	// back into the member walk by source line and calls this for each one.
 	void print_conformance(const FSParser::ConformanceNode *p_conformance);
-	// Writes the `pass` line that stands in for a body whose only statement was a
-	// `pass` the parser did not retain (an empty class, trait, or conformance body).
-	// The comments on that erased line are retained, so this flushes the full-line
-	// trivia between the header and the body's last line above the synthesized `pass`
-	// and reattaches the inline comment from that last line onto it. Call with
-	// `indent_level` already stepped into the body.
-	void print_synthesized_pass(int p_header_line, int p_body_end_line);
+	// Writes the canonical `pass` standing in for source `pass` statements the parser
+	// erased: an empty class/trait/conformance body, a branchless `match`, or a
+	// redundant `pass` in a body that also holds declarations. An erased `pass` leaves
+	// no node behind, so it is the sole owner of any comment authored on its line;
+	// this is the single place that decides where those comments end up.
+	//
+	// `p_erased_pass_lines` are the source lines this call answers for, in source
+	// order. Full-line trivia above them stays in place; every erased line but the
+	// last contributes its inline comment as a lifted full-line comment, and the last
+	// line's inline comment trails the one canonical `pass` emitted here. Callers that
+	// merge anchors back into a body of retained declarations pass a single line and
+	// only for a `pass` that actually owns a comment -- a comment-free redundant
+	// `pass` keeps being removed. `p_header_line` suppresses the leading-trivia flush
+	// for a single-line body (`class Inner: pass`), whose comment the header line
+	// already claimed; `p_body_end_line` is the fallback anchor when the parser
+	// recorded no erased line. `p_required_blanks` is the structural blank-line
+	// minimum before the first thing emitted. `p_owns_body_tail` is for a body whose
+	// entire content was erased passes: the canonical `pass` is then the last line of
+	// that body, so the trivia trailing it belongs here rather than to the enclosing
+	// printer, which would emit it at the outer indent. An anchor merged into a body
+	// of retained declarations must leave that trivia alone -- the following
+	// declaration's leading flush owns it, blank-line normalization included. Call
+	// with `indent_level` already stepped into the body.
+	void print_synthesized_pass(int p_header_line, int p_body_end_line,
+			const Vector<int> &p_erased_pass_lines, int p_required_blanks = 0,
+			bool p_owns_body_tail = false);
+	// Emits the no-op `pass` anchor keeping a comment-bearing erased `pass` alive inside
+	// a body that also holds retained declarations. Returns false, emitting nothing, for
+	// a comment-free `pass`, which stays removed.
+	bool print_erased_pass_anchor(int p_line, int p_required_blanks = 0);
+	// Emits the inline comment of `p_line` as a standalone full-line comment at the
+	// current indent, for an erased `pass` whose own line does not survive.
+	void lift_inline_comment(int p_line);
 	// `p_owns_trailing_comment` mirrors the same-named parameter on `print_enum`/
 	// `print_tuple`: true when the caller (`print_class_body`) has already
 	// determined this member self-flushes its own closing-line comment, so this

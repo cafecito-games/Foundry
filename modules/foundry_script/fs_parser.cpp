@@ -2098,6 +2098,9 @@ void FSParser::parse_conformance_body(ConformanceNode *p_conformance, bool p_is_
 			} break;
 			case FSTokenizer::Token::PASS:
 				advance();
+#ifdef TOOLS_ENABLED
+				p_conformance->erased_pass_lines.push_back(token.start_line);
+#endif // TOOLS_ENABLED
 				end_statement(R"("pass")");
 				break;
 			case FSTokenizer::Token::DEDENT:
@@ -2302,6 +2305,11 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 			}
 			case FSTokenizer::Token::PASS:
 				advance();
+#ifdef TOOLS_ENABLED
+				if (current_class != nullptr) {
+					current_class->erased_pass_lines.push_back(token.start_line);
+				}
+#endif // TOOLS_ENABLED
 				end_statement(R"("pass")");
 				break;
 			case FSTokenizer::Token::NAMESPACE:
@@ -4176,6 +4184,9 @@ FSParser::MatchNode *FSParser::parse_match() {
 
 	while (!check(FSTokenizer::Token::DEDENT) && !is_at_end()) {
 		if (match(FSTokenizer::Token::PASS)) {
+#ifdef TOOLS_ENABLED
+			match_node->erased_pass_lines.push_back(previous.start_line);
+#endif // TOOLS_ENABLED
 			consume(FSTokenizer::Token::NEWLINE, R"(Expected newline after "pass".)");
 			continue;
 		}

@@ -1118,7 +1118,7 @@ void FSPrinter::print_class(const FSParser::ClassNode *p_class, bool p_is_root, 
 	if (p_class->members.is_empty()) {
 		// An inner class or trait with an empty body (only `pass`) still needs a body
 		// line, and the parser does not retain the source `pass`.
-		print_synthesized_pass(p_class->start_line, p_class->end_line);
+		print_synthesized_pass(p_class->start_line, p_class->end_line, p_class->erased_pass_lines, 0, true);
 	} else {
 		print_class_body(p_class, false);
 	}
@@ -1284,26 +1284,77 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 	};
 
 	// Retroactive conformances (`extend X uses Y:`) declare no runtime member, so the
-	// parser keeps them in a side list instead of `members`. They are still source-order
-	// declarations, and both lists are already in source order, so a two-cursor merge on
-	// start line restores the file's ordering without giving them a member entry.
+	// parser keeps them in a side list instead of `members`. A body-level `pass` declares
+	// nothing at all and is erased outright, but it still owns any comment authored on
+	// its line, so a comment-bearing one needs a no-op anchor at its source position.
+	// All three lists are already in source order, so a cursor merge on start line
+	// restores the file's ordering without giving either kind a member entry.
 	int conformance_index = 0;
-	const auto emit_conformances_before = [&](int p_line) {
-		while (conformance_index < p_class->conformances.size()) {
-			const FSParser::ConformanceNode *conformance = p_class->conformances[conformance_index];
-			if (p_line > 0 && conformance->start_line > p_line) {
+	int erased_pass_index = 0;
+
+	const auto emit_next_conformance = [&]() {
+		const FSParser::ConformanceNode *conformance = p_class->conformances[conformance_index++];
+		if (conformance->start_line > 0) {
+			emit_leading_trivia(conformance->start_line, required_blanks_before(true));
+		}
+		print_conformance(conformance);
+		if (conformance->end_line > last_emitted_line) {
+			last_emitted_line = conformance->end_line;
+		}
+		has_previous = true;
+		previous_is_definition = true;
+	};
+
+	// True when `p_line` also carries part of `p_node`'s own text -- its declaration line
+	// or one of its annotation lines. A `pass` sharing such a line gets no line of its
+	// own in the output (`pass; var x = 1  # note` splits in two), and the line's comment
+	// belongs to the declaration that survives on it.
+	const auto node_occupies_line = [](const FSParser::Node *p_node, int p_line) {
+		if (p_node == nullptr || p_line <= 0) {
+			return false;
+		}
+		if (p_node->start_line == p_line) {
+			return true;
+		}
+		for (const FSParser::AnnotationNode *annotation : p_node->annotations) {
+			if (annotation->start_line == p_line) {
+				return true;
+			}
+		}
+		return false;
+	};
+
+	const auto emit_next_erased_pass = [&](bool p_shares_declaration_line) {
+		const int pass_line = p_class->erased_pass_lines[erased_pass_index++];
+		if (p_shares_declaration_line) {
+			return;
+		}
+		// An anchor is not a definition, so it neither demands nor suppresses the blank
+		// lines the surrounding definitions require.
+		if (print_erased_pass_anchor(pass_line, required_blanks_before(false))) {
+			has_previous = true;
+			previous_is_definition = false;
+		}
+	};
+
+	// Emits every conformance and erased `pass` that precedes `p_line` in the source,
+	// interleaved with each other; `p_line` of 0 drains what is left. `p_next_node` is
+	// the declaration those lines are being drained ahead of, when there is one.
+	const auto emit_pending_before = [&](int p_line, const FSParser::Node *p_next_node) {
+		for (;;) {
+			const bool has_conformance = conformance_index < p_class->conformances.size();
+			const bool has_pass = erased_pass_index < p_class->erased_pass_lines.size();
+			const int conformance_line = has_conformance ? p_class->conformances[conformance_index]->start_line : 0;
+			const int pass_line = has_pass ? p_class->erased_pass_lines[erased_pass_index] : 0;
+			const bool conformance_ready = has_conformance && (p_line <= 0 || conformance_line <= p_line);
+			const bool pass_ready = has_pass && (p_line <= 0 || pass_line <= p_line);
+			if (conformance_ready && (!pass_ready || conformance_line <= pass_line)) {
+				emit_next_conformance();
+			} else if (pass_ready) {
+				emit_next_erased_pass(node_occupies_line(p_next_node, pass_line));
+			} else {
 				return;
 			}
-			conformance_index++;
-			if (conformance->start_line > 0) {
-				emit_leading_trivia(conformance->start_line, required_blanks_before(true));
-			}
-			print_conformance(conformance);
-			if (conformance->end_line > last_emitted_line) {
-				last_emitted_line = conformance->end_line;
-			}
-			has_previous = true;
-			previous_is_definition = true;
 		}
 	};
 
@@ -1317,7 +1368,11 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 
 		const FSParser::Node *node = member_node(member);
 		const int start_line = member_start_line(member);
-		emit_conformances_before(start_line);
+		// Drain up to the member's own declaration line rather than its first annotation
+		// line, so a `pass` written between an annotation and the member it annotates is
+		// still drained. Its anchor lands here, ahead of the annotations, because an
+		// annotation has to stay adjacent to the declaration it annotates.
+		emit_pending_before(node != nullptr && node->start_line > 0 ? node->start_line : start_line, node);
 
 		const int required_blanks = required_blanks_before(member_is_definition(member));
 		if (start_line > 0) {
@@ -1368,8 +1423,9 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 		has_previous = true;
 		previous_is_definition = member_is_definition(member);
 	}
-	// Conformances written after the last member (or in a class with no members at all).
-	emit_conformances_before(0);
+	// Conformances and erased passes written after the last member (or in a class with
+	// no members at all).
+	emit_pending_before(0, nullptr);
 
 	if (p_is_root) {
 		flush_tail_comments();
@@ -1395,12 +1451,36 @@ void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance
 	if (p_conformance->witnesses.is_empty()) {
 		// A conformance body accepts only methods and `pass`; an all-`pass` body still
 		// needs a body line, and `pass` itself is not retained in the tree.
-		print_synthesized_pass(p_conformance->start_line, p_conformance->end_line);
+		print_synthesized_pass(p_conformance->start_line, p_conformance->end_line,
+				p_conformance->erased_pass_lines, 0, true);
 	} else {
+		bool has_previous = false;
+		int erased_pass_index = 0;
+		// A `pass` mixed in with witnesses is erased like any other, but a comment
+		// authored on its line has no other owner, so it keeps a no-op anchor in place.
+		const auto emit_erased_passes_before = [&](int p_line) {
+			while (erased_pass_index < p_conformance->erased_pass_lines.size()) {
+				const int pass_line = p_conformance->erased_pass_lines[erased_pass_index];
+				if (p_line > 0 && pass_line > p_line) {
+					return;
+				}
+				erased_pass_index++;
+				if (p_line > 0 && pass_line == p_line) {
+					// A semicolon-separated line (`pass; func ping()  # note`) has one
+					// comment and two statements; the witness survives and keeps it.
+					continue;
+				}
+				if (print_erased_pass_anchor(pass_line, has_previous ? 1 : 0)) {
+					has_previous = true;
+				}
+			}
+		};
+
 		for (int i = 0; i < p_conformance->witnesses.size(); i++) {
 			const FSParser::FunctionNode *witness = p_conformance->witnesses[i];
+			emit_erased_passes_before(witness->start_line);
 			if (witness->start_line > 0) {
-				emit_leading_trivia(witness->start_line, i == 0 ? 0 : 1);
+				emit_leading_trivia(witness->start_line, has_previous ? 1 : 0);
 			}
 			// A witness is a function: it emits its own suite (or, bodyless, collapses to
 			// one declaration line) and attaches its closing line's inline comment itself.
@@ -1408,22 +1488,87 @@ void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance
 			if (witness->end_line > last_emitted_line) {
 				last_emitted_line = witness->end_line;
 			}
+			has_previous = true;
 		}
+		emit_erased_passes_before(0);
 	}
 	indent_level--;
 }
 
-void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line) {
-	// The body's own lines are the ones between the header and the erased `pass`; a
-	// single-line body (`class Inner: pass`) has none, and its inline comment has
-	// already been claimed by the header line.
-	if (p_body_end_line > p_header_line) {
-		emit_leading_trivia(p_body_end_line, 0);
+void FSPrinter::lift_inline_comment(int p_line) {
+	if (!has_inline_comment(p_line)) {
+		return;
+	}
+	emit_comment_line(p_line, comments.find(p_line)->value.comment);
+	emitted_inline_comments.insert(p_line);
+}
+
+bool FSPrinter::print_erased_pass_anchor(int p_line, int p_required_blanks) {
+	if (!has_inline_comment(p_line)) {
+		return false; // A comment-free redundant `pass` owns nothing and stays removed.
+	}
+	Vector<int> anchor_lines;
+	anchor_lines.push_back(p_line);
+	// The enclosing body owns the trivia after the anchor: the next declaration's
+	// leading flush places it, blank-line normalization included.
+	print_synthesized_pass(0, p_line, anchor_lines, p_required_blanks);
+	return true;
+}
+
+void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line,
+		const Vector<int> &p_erased_pass_lines, int p_required_blanks, bool p_owns_body_tail) {
+	// No erased `pass` was recorded (a body emptied some other way); the body's last
+	// line is still the right place for the required structural `pass`.
+	Vector<int> fallback_lines;
+	if (p_erased_pass_lines.is_empty()) {
+		fallback_lines.push_back(p_body_end_line);
+	}
+	const Vector<int> &lines = p_erased_pass_lines.is_empty() ? fallback_lines : p_erased_pass_lines;
+
+	const int anchor_line = lines[lines.size() - 1];
+	bool first_piece = true;
+	// The body collapses to a single canonical `pass`, so every erased line but the
+	// last can contribute only comments: its full-line trivia stays where it was and
+	// its inline comment is lifted onto a line of its own, in source order.
+	for (int i = 0; i < lines.size() - 1; i++) {
+		const int line = lines[i];
+		if (line >= anchor_line) {
+			// Several passes on one physical line (`pass; pass  # note`) share that line's
+			// single comment, and it belongs to the canonical `pass` emitted below.
+			continue;
+		}
+		// The body's own lines are the ones between the header and the erased `pass`; a
+		// single-line body (`class Inner: pass`) has none, and its inline comment has
+		// already been claimed by the header line.
+		if (line > p_header_line) {
+			emit_leading_trivia(line, first_piece ? p_required_blanks : 0);
+			first_piece = false;
+		}
+		lift_inline_comment(line);
+		// The erased line itself is spoken for either way; leaving the cursor behind it
+		// would let the following flush read it as a blank line.
+		if (line > last_emitted_line) {
+			last_emitted_line = line;
+		}
+	}
+
+	if (anchor_line > p_header_line) {
+		emit_leading_trivia(anchor_line, first_piece ? p_required_blanks : 0);
 	}
 	write_indent();
 	write("pass");
 	newline();
-	emit_trailing_comment(p_body_end_line);
+	emit_trailing_comment(anchor_line);
+	if (anchor_line > last_emitted_line) {
+		last_emitted_line = anchor_line;
+	}
+	// A single-line body (`class Inner: pass`) puts the erased `pass` on the header
+	// line, whose indentation is the enclosing scope's. There is no body line to
+	// measure a trailing comment's depth against, so leave that comment to the
+	// enclosing printer rather than pulling it a level deeper.
+	if (p_owns_body_tail && anchor_line > p_header_line) {
+		flush_block_tail_comments(anchor_line);
+	}
 }
 
 void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member, bool p_owns_trailing_comment) {
@@ -2449,20 +2594,50 @@ void FSPrinter::print_match(const FSParser::MatchNode *p_match) {
 	emit_trailing_comment(p_match->start_line);
 	indent_level++;
 	if (p_match->branches.is_empty()) {
-		// A branchless `match` still needs an indented body line (e.g. `pass`).
-		write_indent();
-		write("pass");
-		newline();
-	}
-	for (int i = 0; i < p_match->branches.size(); i++) {
-		const FSParser::MatchBranchNode *branch = p_match->branches[i];
-		emit_leading_trivia(branch->start_line, 0);
-		print_match_branch(branch);
-		// The branch's tail-comment flush may already have advanced the cursor; never
-		// move it backward (that would re-emit a comment).
-		if (branch->end_line > last_emitted_line) {
-			last_emitted_line = branch->end_line;
+		// A branchless `match` still needs an indented body line, and the erased `pass`
+		// that occupied it is the sole owner of any comment authored there.
+		print_synthesized_pass(p_match->start_line, p_match->end_line, p_match->erased_pass_lines, 0, true);
+	} else {
+		int erased_pass_index = 0;
+		// A `pass` written alongside branches is erased too; it keeps a no-op anchor only
+		// when it owns an inline comment that would otherwise have nowhere to go.
+		const auto emit_erased_passes_before = [&](int p_line) {
+			while (erased_pass_index < p_match->erased_pass_lines.size()) {
+				const int pass_line = p_match->erased_pass_lines[erased_pass_index];
+				if (p_line > 0 && pass_line > p_line) {
+					return;
+				}
+				erased_pass_index++;
+				print_erased_pass_anchor(pass_line);
+			}
+		};
+		// A branch's own annotations are emitted by `print_match_branch`, so the leading
+		// flush has to stop at the first of them: the annotation lines are not trivia and
+		// would otherwise be counted as blank lines and produce a spurious gap.
+		const auto branch_first_line = [](const FSParser::MatchBranchNode *p_branch) {
+			int first_line = p_branch->start_line;
+			for (const FSParser::AnnotationNode *annotation : p_branch->annotations) {
+				if (annotation->start_line > 0 && annotation->start_line < first_line) {
+					first_line = annotation->start_line;
+				}
+			}
+			return first_line;
+		};
+		for (int i = 0; i < p_match->branches.size(); i++) {
+			const FSParser::MatchBranchNode *branch = p_match->branches[i];
+			// An erased `pass` interleaved with a branch's leading annotations is hoisted
+			// above them: an annotation has to stay adjacent to the branch it annotates, so
+			// the anchor keeping the `pass` comment alive goes ahead of the whole branch.
+			emit_erased_passes_before(branch->start_line);
+			emit_leading_trivia(branch_first_line(branch), 0);
+			print_match_branch(branch);
+			// The branch's tail-comment flush may already have advanced the cursor; never
+			// move it backward (that would re-emit a comment).
+			if (branch->end_line > last_emitted_line) {
+				last_emitted_line = branch->end_line;
+			}
 		}
+		emit_erased_passes_before(0);
 	}
 	indent_level--;
 }
