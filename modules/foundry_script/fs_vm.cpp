@@ -616,8 +616,15 @@ static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const 
 		// unspecialized, or the -1 a method-scope parameter is recorded as -- leaves this element without
 		// evidence. Only that element degrades: the concrete ones keep being checked, matching how a
 		// projected member binding treats an unresolved node.
+		//
+		// Anything short of `EXACT` degrades the same way. A structural tuple test has no per-node
+		// gradual form -- an `FSDataType` element is either enforced whole or not at all -- so
+		// materializing partial evidence would turn an unresolved descendant into a concrete `Variant`
+		// one and reject values the projection never contradicted. `Derived[U] extends Base[Array[U]]`
+		// on a raw receiver proves only "some Array", which no element type can state.
 		const int64_t ordinal = type_parameter_index;
-		if (ordinal < 0 || ordinal >= p_receiver_arguments.size() || !p_receiver_arguments[ordinal].is_known()) {
+		if (ordinal < 0 || ordinal >= p_receiver_arguments.size() ||
+				p_receiver_arguments[ordinal].state != ProjectedContainerType::EXACT) {
 			r_type = FSDataType();
 			return true;
 		}

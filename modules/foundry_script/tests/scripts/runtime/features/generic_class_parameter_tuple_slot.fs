@@ -45,6 +45,21 @@ class HalfPair[V] extends Pair[int, V]:
 	pass
 
 
+# A receiver can prove part of an argument and leave the rest open: `NestingCrate` fixes `ArrayCrate`'s
+# `T` to `Array[U]` through `extends` while its own `U` stays unsupplied on a raw instance. A
+# structural tuple test has no per-node gradual form -- an element type is either enforced whole or
+# not at all -- so evidence short of complete degrades that element instead of hardening "some Array"
+# into `Array[Variant]`, which would reject the untyped arrays the projection never contradicted.
+class ArrayCrate[T]:
+	func keep_array(value) -> (int, T):
+		var kept: (int, T) = value
+		return kept
+
+
+class NestingCrate[U] extends ArrayCrate[Array[U]]:
+	pass
+
+
 # A nullable element admits null whatever its parameter turns out to be, so the declared nullability
 # travels with the node and is applied after the receiver resolves it. A slot whose *only* parameter
 # element is nullable keeps no evidence at all -- the same limitation a nullable member binding has --
@@ -94,6 +109,13 @@ func test() -> void:
 	# stays gradual.
 	var half := HalfPair.new()
 	print(half.keep_both(supply((9, "anything"))))
+
+	print(NestingCrate.new().keep_array(supply((1, [2]))))
+
+	# A complete container argument is enforced exactly. The store never converts, so the element has
+	# to arrive already typed -- see `generic_class_parameter_tuple_untyped_container.fs`.
+	var typed_contents: Array[int] = [3]
+	print(ArrayCrate[Array[int]].new().keep_array(supply((1, typed_contents))))
 
 	var optional := OptionalPair[int, String].new()
 	print(optional.keep_optional(supply((1, null))))
