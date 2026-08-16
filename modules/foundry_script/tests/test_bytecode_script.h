@@ -54,6 +54,29 @@ namespace FSTests {
 // need; binding kinds are surfaced as plain integers matching FoundryScript::TypeArgumentBinding
 // (0 = NONE, 1 = FIXED, 2 = OPEN) because the nested type is private.
 class TestFSBytecodeScriptAccessor {
+	// Descriptors are Dictionaries, which are reference types, so rewriting the copy rewrites the one
+	// the function holds. Nested element and argument descriptors are reached too.
+	static int _retarget_descriptor_ordinals(const Variant &p_descriptor, int p_ordinal) {
+		if (p_descriptor.get_type() != Variant::DICTIONARY) {
+			return 0;
+		}
+		Dictionary descriptor = p_descriptor;
+		int rewritten = 0;
+		if (descriptor.has("type_parameter_index")) {
+			descriptor["type_parameter_index"] = p_ordinal;
+			rewritten++;
+		}
+		const Array element_types = descriptor.get("element_types", Array());
+		for (int i = 0; i < element_types.size(); i++) {
+			rewritten += _retarget_descriptor_ordinals(element_types[i], p_ordinal);
+		}
+		const Array type_arguments = descriptor.get("type_arguments", Array());
+		for (int i = 0; i < type_arguments.size(); i++) {
+			rewritten += _retarget_descriptor_ordinals(type_arguments[i], p_ordinal);
+		}
+		return rewritten;
+	}
+
 public:
 	static uint8_t get_self_reflection_kinds(const FSFunction *p_function) {
 		return p_function != nullptr ? p_function->self_reflection_kinds : uint8_t(FSFunction::REFLECTION_NONE);
@@ -118,6 +141,17 @@ public:
 
 	static FSFunction *get_initializer(const Ref<FoundryScript> &p_script) {
 		return p_script->initializer;
+	}
+
+	// Retargets every type-parameter ordinal in a function's constant descriptors, which is how an
+	// edited `.fsb` would present an ordinal that indexes nothing on the running receiver. Returns how
+	// many nodes were rewritten so a test can assert it actually reached the descriptor it meant to.
+	static int retarget_constant_type_parameter_ordinals(FSFunction *p_function, int p_ordinal) {
+		int rewritten = 0;
+		for (const Variant &constant : p_function->constants) {
+			rewritten += _retarget_descriptor_ordinals(constant, p_ordinal);
+		}
+		return rewritten;
 	}
 
 	// Rich compiled type records are the authoritative carrier of an integer width, but no source
@@ -925,6 +959,72 @@ TEST_CASE("[FoundryScript][BytecodeScript] Tuple slot shape checks survive the b
 	REQUIRE(rejected_arity.get_type() == Variant::ARRAY);
 	CHECK(Array(rejected_element).is_empty());
 	CHECK(Array(rejected_arity).is_empty());
+
+	restored->clear();
+	original->clear();
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] Reified construction type arguments survive the bytecode round trip") {
+	// A construction whose type arguments name a class type parameter carries descriptor constants the
+	// receiver resolves at run time, and the aliased-handle form carries a whole opcode that only
+	// exists for that case. A round trip that dropped either would silently build unspecialized
+	// instances, leaving the restored script accepting exactly the values the source rejects.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Holder[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"class Wrapper[U]:\n"
+			"\tfunc build() -> Holder[U]:\n"
+			"\t\treturn Holder[U].new()\n"
+			"\n"
+			"\tfunc build_via_alias() -> Holder[U]:\n"
+			"\t\tvar handle := Holder[U]\n"
+			"\t\treturn handle.new()\n"
+			"\n"
+			"\tfunc keep(value) -> Holder[U]:\n"
+			"\t\tvar kept: Holder[U] = value\n"
+			"\t\treturn kept\n"
+			"\n"
+			"class IntWrapper extends Wrapper[int]:\n"
+			"\tpass\n"
+			"\n"
+			"class StringWrapper extends Wrapper[String]:\n"
+			"\tpass\n");
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	REQUIRE(restored->get_subclasses().has(SNAME("IntWrapper")));
+	const Ref<FoundryScript> restored_int_wrapper = restored->get_subclasses().find(SNAME("IntWrapper"))->value;
+
+	const Variant instance = bytecode_new_instance(restored_int_wrapper);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	// Both construction forms reify against the receiver, so both results pass the slot that expects
+	// the receiver's own specialization.
+	const Variant built = bytecode_instance_call(object, SNAME("build"), {});
+	REQUIRE(built.get_type() == Variant::OBJECT);
+	CHECK(bytecode_instance_call(object, SNAME("keep"), { built }).get_type() == Variant::OBJECT);
+
+	const Variant built_via_alias = bytecode_instance_call(object, SNAME("build_via_alias"), {});
+	REQUIRE(built_via_alias.get_type() == Variant::OBJECT);
+	CHECK(bytecode_instance_call(object, SNAME("keep"), { built_via_alias }).get_type() == Variant::OBJECT);
+
+	// A differently specialized value is rejected, which is only possible because the reification
+	// survived: an unspecialized instance would be indistinguishable from the ones built above.
+	REQUIRE(restored->get_subclasses().has(SNAME("StringWrapper")));
+	const Variant string_wrapper_instance = bytecode_new_instance(restored->get_subclasses().find(SNAME("StringWrapper"))->value);
+	Object *string_wrapper = string_wrapper_instance;
+	REQUIRE(string_wrapper != nullptr);
+	const Variant string_holder = bytecode_instance_call(string_wrapper, SNAME("build"), {});
+	REQUIRE(string_holder.get_type() == Variant::OBJECT);
+
+	ERR_PRINT_OFF;
+	const Variant rejected = bytecode_instance_call(object, SNAME("keep"), { string_holder });
+	ERR_PRINT_ON;
+	// The rejected local store aborts the function before its return.
+	CHECK(rejected.get_type() == Variant::NIL);
 
 	restored->clear();
 	original->clear();

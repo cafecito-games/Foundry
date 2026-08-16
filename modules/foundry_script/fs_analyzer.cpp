@@ -529,6 +529,7 @@ Error FSAnalyzer::run_phase_body_expression_callable_signal() {
 void FSAnalyzer::run_phase_flow_finality_invariants(FSParser::ClassNode *p_class) {
 	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::FLOW_FINALITY_INVARIANTS);
 	validate_static_variable_type_parameters(p_class);
+	validate_class_constant_type_parameters(p_class);
 	validate_trait_conflicts(p_class);
 	validate_trait_requirements(p_class);
 	flow_finality.check_final_member_assignments(p_class);
@@ -10137,6 +10138,70 @@ void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p
 			if (parameter != StringName()) {
 				push_error(vformat(R"(Static variable "%s" flattened from trait "%s" cannot be typed by class type parameter "%s": every specialization of "%s" shares one static storage slot.)",
 								   member.variable->identifier->name, _class_or_trait_name(trait), parameter,
+								   _class_or_trait_name(p_class)),
+						_trait_requirement_source(p_class, trait));
+			}
+		}
+	}
+}
+
+void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_class) {
+	// A class constant has exactly one slot, materialized once for the declaring class with no receiver
+	// to reify a type parameter against. Binding one to a specialized class handle whose arguments name
+	// a class type parameter would hand every specialization the same handle, so `IntBox.Aliased.new()`
+	// and `StringBox.Aliased.new()` would build the same instance shape -- the identical unsound storage
+	// a static variable typed by a class parameter has. Reject the declaration rather than invent a
+	// per-specialization constant.
+	//
+	// A trait declares a template rather than storage, so the check runs on the implementer, where the
+	// trait's parameters have been substituted with the arguments that implementer supplied.
+	if (p_class == nullptr || p_class->is_trait) {
+		return;
+	}
+
+	for (const FSParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != FSParser::ClassNode::Member::CONSTANT || member.constant == nullptr ||
+				member.constant->identifier == nullptr) {
+			continue;
+		}
+		const FSParser::DataType constant_type = member.constant->get_datatype();
+		if (!constant_type.is_meta_type) {
+			continue;
+		}
+		const StringName parameter = _remaining_class_type_parameter(constant_type);
+		if (parameter != StringName()) {
+			push_error(vformat(R"(Constant "%s" cannot be specialized by class type parameter "%s": every specialization of "%s" shares one constant.)",
+							   member.constant->identifier->name, parameter, _class_or_trait_name(p_class)),
+					member.constant);
+		}
+	}
+
+	for (FSParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		resolve_class_interface(trait, p_class);
+
+		const HashMap<StringName, FSParser::DataType> substitutions = trait_type_argument_substitution(p_class, trait);
+		for (const FSParser::ClassNode::Member &member : trait->members) {
+			if (member.type != FSParser::ClassNode::Member::CONSTANT || member.constant == nullptr ||
+					member.constant->identifier == nullptr) {
+				continue;
+			}
+			// A member the implementer redeclares is its own; it was already checked above.
+			if (p_class->has_member(member.constant->identifier->name)) {
+				continue;
+			}
+			const FSParser::DataType constant_type = member.constant->get_datatype();
+			if (!constant_type.is_meta_type) {
+				continue;
+			}
+			const FSParser::DataType flattened =
+					_substitute_type_parameters_and_self(constant_type, substitutions, _self_type_for_class(p_class));
+			const StringName parameter = _remaining_class_type_parameter(flattened);
+			if (parameter != StringName()) {
+				push_error(vformat(R"(Constant "%s" flattened from trait "%s" cannot be specialized by class type parameter "%s": every specialization of "%s" shares one constant.)",
+								   member.constant->identifier->name, _class_or_trait_name(trait), parameter,
 								   _class_or_trait_name(p_class)),
 						_trait_requirement_source(p_class, trait));
 			}

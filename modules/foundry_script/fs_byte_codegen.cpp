@@ -2279,6 +2279,21 @@ void FSByteCodeGenerator::write_construct_specialized(const Address &p_target, c
 	ct.cleanup();
 }
 
+void FSByteCodeGenerator::write_make_specialized_class_handle(const Address &p_target, const Address &p_base, const Vector<FSDataType> &p_type_arguments) {
+	// Instruction args: [type-argument descriptors..., base script, target].
+	// Inline operand: type-argument count. Same descriptor encoding the construction opcode uses, so a
+	// handle and a direct construction resolve identically against the same receiver.
+	append_opcode_and_argcount(FSFunction::OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE, 2 + p_type_arguments.size());
+	for (int i = 0; i < p_type_arguments.size(); i++) {
+		append(get_constant_pos(make_container_type_descriptor(p_type_arguments[i])) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	}
+	append(p_base);
+	CallTarget ct = get_call_target(p_target);
+	append(ct.target);
+	append(p_type_arguments.size());
+	ct.cleanup();
+}
+
 void FSByteCodeGenerator::write_load_static_self_class(const Address &p_target) {
 	append_opcode(FSFunction::OPCODE_LOAD_STATIC_SELF_CLASS);
 	append(p_target);

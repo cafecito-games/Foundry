@@ -986,6 +986,25 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 6 + argc + type_argument_count;
 			} break;
+			case OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE: {
+				int instr_var_args = _code_ptr[++ip];
+				int type_argument_count = _code_ptr[ip + 1 + instr_var_args];
+
+				text += "make_specialized_class_handle ";
+				text += DADDR(type_argument_count + 2); // target
+				text += " = ";
+				text += DADDR(type_argument_count + 1); // base script
+				text += "[";
+				for (int i = 0; i < type_argument_count; i++) {
+					if (i > 0) {
+						text += ", ";
+					}
+					text += DADDR(1 + i);
+				}
+				text += "]";
+
+				incr += 4 + type_argument_count;
+			} break;
 			case OPCODE_CALL:
 			case OPCODE_CALL_RETURN:
 			case OPCODE_CALL_ASYNC: {

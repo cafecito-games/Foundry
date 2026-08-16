@@ -177,6 +177,7 @@ public:
 	virtual void write_construct_dictionary(const Address &p_target, const Vector<Address> &p_arguments) = 0;
 	virtual void write_construct_typed_dictionary(const Address &p_target, const FSDataType &p_key_type, const FSDataType &p_value_type, const Vector<Address> &p_arguments) = 0;
 	virtual void write_construct_specialized(const Address &p_target, const Address &p_base, const Address &p_expected_base, const Vector<FSDataType> &p_type_arguments, const Vector<Address> &p_arguments) = 0;
+	virtual void write_make_specialized_class_handle(const Address &p_target, const Address &p_base, const Vector<FSDataType> &p_type_arguments) = 0;
 	// Writes the class handle of the frame's exact static receiver. `Self` in an expression position
 	// cannot be a constant: one compiled function runs for every receiver it is inherited through.
 	virtual void write_load_static_self_class(const Address &p_target) = 0;

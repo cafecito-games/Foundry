@@ -413,8 +413,20 @@ struct FrameSelfBinding {
 // Every node the descriptor marks as having come from `Self` is re-bound through the one resolver, at
 // every nesting depth. Returns false only when a static frame needs a receiver and has none; the
 // caller must fail the instruction rather than proceed with an ancestor specialization.
+//
+// A `TYPE_PARAMETER` node is substituted from `p_receiver_arguments`, which a construction site fills
+// with what the frame's receiver reified for the declaring class. Every other caller passes none, and
+// such a node then reports through `r_unresolved_parameter` and leaves an unconstrained slot: the
+// erased shell around the node describes nothing the parameter stands for, so decoding it would claim
+// a constraint the declaration never made.
+//
+// This deliberately differs from `_projected_container_type_from_descriptor` on a nullable node. That
+// function answers "what evidence does this destination carry", where a nullable node has to answer
+// "none"; this one answers "what type is being reified", where a nullable argument has always erased
+// its nullability into a plain container type and must keep doing so.
 static bool _container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
-		ContainerType &r_type) {
+		ContainerType &r_type, const Vector<ProjectedContainerType> &p_receiver_arguments = Vector<ProjectedContainerType>(),
+		bool *r_unresolved_parameter = nullptr) {
 	Dictionary descriptor = p_descriptor;
 	if (descriptor.get("is_self_type", false) && (p_frame_self.receiver != nullptr || p_frame_self.requires_receiver)) {
 		FSDataType self_position;
@@ -425,6 +437,38 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 			return false;
 		}
 		r_type = resolved.to_container_type();
+		return true;
+	}
+	const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
+	if (type_parameter_index.get_type() == Variant::INT) {
+		// An ordinal out of range -- a method-scope node's permanent -1, or anything untrusted compiled
+		// data carries -- resolves to nothing rather than indexing the receiver's arguments.
+		const int64_t ordinal = type_parameter_index;
+		bool resolved_parameter = false;
+		r_type = ContainerType();
+		if (ordinal >= 0 && ordinal < p_receiver_arguments.size()) {
+			const ProjectedContainerType &argument = p_receiver_arguments[ordinal];
+			if (argument.state == ProjectedContainerType::EXACT) {
+				ContainerType substituted = argument.to_container_type();
+				if (descriptor.get("is_type_handle", false)) {
+					// A nested `Type[T]` denotes a class handle for the argument rather than an instance of
+					// it, and the layer has nowhere to live once the argument resolves, so an argument with
+					// no handle form leaves the node unresolved instead of silently dropping the layer.
+					if (substituted.builtin_type == Variant::OBJECT) {
+						substituted.is_type_handle = true;
+						resolved_parameter = true;
+					}
+				} else {
+					resolved_parameter = true;
+				}
+				if (resolved_parameter) {
+					r_type = substituted;
+				}
+			}
+		}
+		if (!resolved_parameter && r_unresolved_parameter != nullptr) {
+			*r_unresolved_parameter = true;
+		}
 		return true;
 	}
 	ContainerType type;
@@ -446,7 +490,7 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {
 		ContainerType element_type;
-		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type)) {
+		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type, p_receiver_arguments, r_unresolved_parameter)) {
 			return false;
 		}
 		type.element_types.push_back(element_type);
@@ -455,7 +499,7 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	Array type_arguments = descriptor.get("type_arguments", Array());
 	for (int i = 0; i < type_arguments.size(); i++) {
 		ContainerType argument_type;
-		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type)) {
+		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type, p_receiver_arguments, r_unresolved_parameter)) {
 			return false;
 		}
 		type.type_arguments.push_back(argument_type);
@@ -590,9 +634,11 @@ static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const 
 }
 
 static bool _container_type_from_type_info(const Variant &p_type_info, Variant::Type p_builtin_type,
-		const StringName &p_native_type, const FrameSelfBinding &p_frame_self, ContainerType &r_type) {
+		const StringName &p_native_type, const FrameSelfBinding &p_frame_self, ContainerType &r_type,
+		const Vector<ProjectedContainerType> &p_receiver_arguments = Vector<ProjectedContainerType>(),
+		bool *r_unresolved_parameter = nullptr) {
 	if (_is_container_type_descriptor(p_type_info)) {
-		return _container_type_from_descriptor(p_type_info, p_frame_self, r_type);
+		return _container_type_from_descriptor(p_type_info, p_frame_self, r_type, p_receiver_arguments, r_unresolved_parameter);
 	}
 	ContainerType type;
 	type.builtin_type = p_builtin_type;
@@ -1234,6 +1280,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CONSTRUCT_DICTIONARY,                   \
 		&&OPCODE_CONSTRUCT_TYPED_DICTIONARY,             \
 		&&OPCODE_CONSTRUCT_SPECIALIZED,                  \
+		&&OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE,          \
 		&&OPCODE_CALL,                                   \
 		&&OPCODE_CALL_RETURN,                            \
 		&&OPCODE_CALL_ASYNC,                             \
@@ -3928,14 +3975,32 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 					type_arguments = specialized_handle->get_type_arguments();
 				} else if (expected_foundry_script.is_null() || foundry_script == expected_foundry_script) {
+					// A type argument naming a class type parameter is reified against the running receiver,
+					// so a body compiled once for the declaring class still builds `Holder[Type[Button]]` on a
+					// `Wrapper[Button]`. A static frame has no receiver, and an unspecialized one supplies no
+					// argument; both leave the vector empty and the parameter unresolved.
+					Vector<ProjectedContainerType> receiver_arguments;
+					if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+						p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
+					}
+
+					// Reification is all-or-nothing: the reified vector has no representation for "this
+					// argument is unknown", and a blank slot reads back as the definite evidence `Variant`. A
+					// single unresolved parameter therefore drops the whole vector, producing the honest
+					// unspecialized instance an unspecialized receiver already produces today.
+					bool unresolved_parameter = false;
 					for (int i = 0; i < type_argument_count; i++) {
 						GET_INSTRUCTION_ARG(type_info, argc + i);
 						ContainerType type_argument;
-						if (unlikely(!_container_type_from_type_info(*type_info, Variant::NIL, StringName(), frame_self, type_argument))) {
+						if (unlikely(!_container_type_from_type_info(*type_info, Variant::NIL, StringName(), frame_self, type_argument,
+									receiver_arguments, &unresolved_parameter))) {
 							err_text = _missing_static_self_error(name);
 							OPCODE_BREAK;
 						}
 						type_arguments.push_back(type_argument);
+					}
+					if (unresolved_parameter) {
+						type_arguments.clear();
 					}
 				}
 
@@ -3953,6 +4018,56 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				*dst = result;
 
 				ip += 3;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(1 + instr_arg_count);
+				ip += instr_arg_count;
+
+				int type_argument_count = _code_ptr[ip + 1];
+				GD_ERR_BREAK(type_argument_count < 0);
+
+				// Instruction args: [type-argument descriptors..., base script, target].
+				GET_INSTRUCTION_ARG(base, type_argument_count);
+				GET_INSTRUCTION_ARG(dst, type_argument_count + 1);
+
+				Ref<FoundryScript> foundry_script = *base;
+				if (foundry_script.is_null()) {
+					err_text = "Cannot specialize a class handle whose base is not a FoundryScript.";
+					OPCODE_BREAK;
+				}
+
+				// The same resolution and the same all-or-nothing rule the construction opcode uses: a
+				// handle is a construction target in waiting, so the two must agree about what a given
+				// receiver reifies. An unresolved parameter yields the bare script, which is the
+				// unspecialized handle.
+				Vector<ProjectedContainerType> receiver_arguments;
+				if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+					p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
+				}
+
+				Vector<ContainerType> type_arguments;
+				bool unresolved_parameter = false;
+				for (int i = 0; i < type_argument_count; i++) {
+					GET_INSTRUCTION_ARG(type_info, i);
+					ContainerType type_argument;
+					if (unlikely(!_container_type_from_type_info(*type_info, Variant::NIL, StringName(), frame_self, type_argument,
+								receiver_arguments, &unresolved_parameter))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
+					type_arguments.push_back(type_argument);
+				}
+
+				if (unresolved_parameter) {
+					*dst = foundry_script;
+				} else {
+					*dst = FSSpecializedClassHandle::create(foundry_script, type_arguments);
+				}
+
+				ip += 2;
 			}
 			DISPATCH_OPCODE;
 

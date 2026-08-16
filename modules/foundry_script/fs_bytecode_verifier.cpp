@@ -640,6 +640,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			case FSFunction::OPCODE_CONSTRUCT_DICTIONARY:
 			case FSFunction::OPCODE_CONSTRUCT_TYPED_DICTIONARY:
 			case FSFunction::OPCODE_CONSTRUCT_SPECIALIZED:
+			case FSFunction::OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE:
 			case FSFunction::OPCODE_TYPE_TEST_ENUM_CASE:
 			case FSFunction::OPCODE_CALL:
 			case FSFunction::OPCODE_CALL_RETURN:
@@ -692,6 +693,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 					case FSFunction::OPCODE_CONSTRUCT_ARRAY:
 					case FSFunction::OPCODE_CONSTRUCT_TUPLE:
 					case FSFunction::OPCODE_CONSTRUCT_DICTIONARY:
+					case FSFunction::OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE:
 						tail = 2;
 						break;
 					case FSFunction::OPCODE_CONSTRUCT_TYPED_ARRAY:
@@ -776,6 +778,11 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int type_argument_count = code_ptr[shift + 2];
 						VERIFY_FAIL_COND(type_argument_count < 0, "negative type argument count");
 						highest_arg_index = (int64_t)argument_count + type_argument_count + 2;
+					} break;
+					case FSFunction::OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE: {
+						const int type_argument_count = code_ptr[shift + 1];
+						VERIFY_FAIL_COND(type_argument_count < 0, "negative type argument count");
+						highest_arg_index = (int64_t)type_argument_count + 1;
 					} break;
 					case FSFunction::OPCODE_CALL: {
 						const int argument_count = code_ptr[shift + 1];

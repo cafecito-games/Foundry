@@ -1205,6 +1205,14 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
 	}
+	if (p_depth == 0 && p_type.is_meta_type && !p_type.is_type_handle_annotation) {
+		// A bare specialized meta-type destination (`var handle := Holder[T]`) holds a class handle, not
+		// an instance. Its runtime value is a distinct handle object, while the container type a check
+		// would be built from describes the class itself, so the check would reject the very handle the
+		// declaration is for. A `Type[...]` destination is different and stays included: its handle layer
+		// travels beside the shape, which is exactly what makes it checkable.
+		return false;
+	}
 	if (p_type.is_nullable) {
 		// A nullable node admits null, which no container type can express, so the runtime deliberately
 		// keeps no evidence for it or anything below it. Answering yes for such a slot would only make an
@@ -1226,8 +1234,22 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 		return p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS &&
 				p_type.type_parameter_name != SNAME("@Self");
 	}
+	// Typed-container elements and the type arguments of a specialized class handle are both reified at
+	// run time -- the container from its element metadata, the handle from what its construction
+	// recorded on the instance -- so a parameter in either position is decidable against a receiver.
+	//
+	// A callable/signal signature slot and a union member are not, and deliberately stay out: a
+	// signature erases completely at run time and a union erases to one untyped slot, so a check
+	// emitted for either would assert nothing while claiming to enforce the parameter. That is the
+	// opposite reading from `_destination_has_erased_type_parameter()`, which walks both because it
+	// answers "is this undecidable", where erasure is the reason to say yes.
 	for (const FSParser::DataType &element_type : p_type.container_element_types) {
 		if (_depends_on_receiver_type_parameter(element_type, p_depth + 1)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
+		if (_depends_on_receiver_type_parameter(type_argument, p_depth + 1)) {
 			return true;
 		}
 	}

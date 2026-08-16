@@ -594,6 +594,7 @@ public:
 	virtual void write_construct_dictionary(const Address &p_target, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_typed_dictionary(const Address &p_target, const FSDataType &p_key_type, const FSDataType &p_value_type, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_specialized(const Address &p_target, const Address &p_base, const Address &p_expected_base, const Vector<FSDataType> &p_type_arguments, const Vector<Address> &p_arguments) override;
+	virtual void write_make_specialized_class_handle(const Address &p_target, const Address &p_base, const Vector<FSDataType> &p_type_arguments) override;
 	virtual void write_load_static_self_class(const Address &p_target) override;
 	virtual void write_await(const Address &p_target, const Address &p_operand) override;
 	virtual void write_if(const Address &p_condition) override;

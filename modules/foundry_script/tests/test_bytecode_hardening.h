@@ -1207,6 +1207,60 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier validates checked numeric
 	}
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] An out-of-range construction type-parameter ordinal degrades to unspecialized") {
+	// A construction's type-argument descriptors are compiled data an edited `.fsb` controls, and the
+	// ordinal in one indexes the receiver's reified arguments. The verifier checks operand shape, not
+	// descriptor contents, so the decode itself must refuse an ordinal that indexes nothing rather than
+	// reading past the vector. The construction then falls back to the unspecialized form, which is the
+	// same honest "no evidence" an unspecialized receiver produces.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Holder[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"class Wrapper[U]:\n"
+			"\tfunc build() -> Variant:\n"
+			"\t\treturn Holder[U].new()\n"
+			"\n"
+			"class IntWrapper extends Wrapper[int]:\n"
+			"\tpass\n");
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> script = bytecode_round_trip_script(original, &resolver);
+
+	REQUIRE(script->get_subclasses().has(SNAME("Wrapper")));
+	REQUIRE(script->get_subclasses().has(SNAME("IntWrapper")));
+	const Ref<FoundryScript> wrapper = script->get_subclasses().find(SNAME("Wrapper"))->value;
+	const HashMap<StringName, FSFunction *>::ConstIterator build = wrapper->get_member_functions().find(SNAME("build"));
+	REQUIRE(build != wrapper->get_member_functions().end());
+
+	const Variant instance = bytecode_new_instance(script->get_subclasses().find(SNAME("IntWrapper"))->value);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	// The unedited ordinal reifies against the receiver, which is what the edited ones must lose. The
+	// built value is held in a named local: it owns the only reference to the constructed instance.
+	const Variant built = bytecode_instance_call(object, SNAME("build"), {});
+	FSInstance *reified = bytecode_fs_instance_of(built);
+	REQUIRE(reified != nullptr);
+	REQUIRE_EQ(reified->get_type_arguments().size(), 1);
+	CHECK(reified->get_type_arguments()[0].builtin_type == Variant::INT);
+
+	SUBCASE("ordinal past the receiver's arguments") {
+		CHECK(TestFSBytecodeScriptAccessor::retarget_constant_type_parameter_ordinals(build->value, 4096) == 1);
+	}
+	SUBCASE("negative ordinal") {
+		CHECK(TestFSBytecodeScriptAccessor::retarget_constant_type_parameter_ordinals(build->value, -7) == 1);
+	}
+
+	const Variant rebuilt = bytecode_instance_call(object, SNAME("build"), {});
+	FSInstance *degraded = bytecode_fs_instance_of(rebuilt);
+	REQUIRE(degraded != nullptr);
+	CHECK(degraded->get_type_arguments().is_empty());
+
+	script->clear();
+	original->clear();
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

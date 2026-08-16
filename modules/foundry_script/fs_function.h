@@ -623,6 +623,9 @@ public:
 		OPCODE_CONSTRUCT_DICTIONARY,
 		OPCODE_CONSTRUCT_TYPED_DICTIONARY,
 		OPCODE_CONSTRUCT_SPECIALIZED, // Instantiate a generic script with reified type arguments.
+		// Build a specialized class handle whose type arguments name a class type parameter, resolved
+		// against the frame's receiver. A handle whose arguments are all concrete stays a constant.
+		OPCODE_MAKE_SPECIALIZED_CLASS_HANDLE,
 		OPCODE_CALL,
 		OPCODE_CALL_RETURN,
 		OPCODE_CALL_ASYNC,
