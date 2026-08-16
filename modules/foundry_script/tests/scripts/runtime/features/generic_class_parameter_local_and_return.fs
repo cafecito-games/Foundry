@@ -18,6 +18,14 @@ class Crate[T]:
 		var kept: Array[T] = [value]
 		return kept
 
+	func keep_in_lambda(value):
+		# The lambda never spells `self`, but its `T` slot is checked against the receiver, so it has
+		# to capture the instance anyway.
+		var keeper := func(v):
+			var kept: T = v
+			return kept
+		return keeper.call(value)
+
 
 # An inherited body still resolves against the leaf's specialization, not against the parameter the
 # declaring class left open.
@@ -50,6 +58,8 @@ func test() -> void:
 
 	var relayed := Relay[String].new()
 	print(relayed.keep("kept"))
+
+	print(crate.keep_in_lambda(9))
 
 	var via_trait := TraitCrate[int].new()
 	print(via_trait.keep_via_trait(13))

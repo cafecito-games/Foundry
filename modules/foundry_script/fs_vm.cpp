@@ -410,48 +410,12 @@ struct FrameSelfBinding {
 	bool requires_receiver = false;
 };
 
-// How a descriptor's `TYPE_PARAMETER` nodes resolve for the frame's receiver. A node names a
-// parameter of the class that declares the running function, and `arguments` holds what that
-// receiver reified for those parameters. Any node without a definite argument leaves the whole
-// description unusable, so the flag is what a caller checks before validating: a shape with one
-// unresolved leaf describes a *different* type rather than a weaker one (an untyped element makes an
-// `Array[int]` value mismatch), and enforcing it would reject values the slot legitimately holds.
-struct ReceiverTypeArguments {
-	const Vector<ContainerType> *arguments = nullptr;
-	bool resolved_every_parameter = true;
-};
-
 // Every node the descriptor marks as having come from `Self` is re-bound through the one resolver, at
 // every nesting depth. Returns false only when a static frame needs a receiver and has none; the
 // caller must fail the instruction rather than proceed with an ancestor specialization.
 static bool _container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
-		ContainerType &r_type, ReceiverTypeArguments *r_receiver_arguments = nullptr) {
+		ContainerType &r_type) {
 	Dictionary descriptor = p_descriptor;
-	// Only the receiver-relative store emits parameter nodes and it is the only caller that supplies
-	// arguments to resolve them with, so every other decode skips the lookup entirely.
-	if (r_receiver_arguments != nullptr) {
-		const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
-		if (type_parameter_index.get_type() == Variant::INT) {
-			const int64_t ordinal = type_parameter_index;
-			ContainerType resolved;
-			const bool resolvable = r_receiver_arguments->arguments != nullptr &&
-					ordinal >= 0 && ordinal < r_receiver_arguments->arguments->size();
-			if (resolvable) {
-				resolved = (*r_receiver_arguments->arguments)[ordinal];
-			}
-			// `Type[T]` denotes a class handle for the argument, not an instance of it, and only an
-			// object-shaped argument has a handle form to describe.
-			const bool is_type_handle = descriptor.get("is_type_handle", false);
-			if (!resolvable || (is_type_handle && resolved.builtin_type != Variant::OBJECT)) {
-				r_receiver_arguments->resolved_every_parameter = false;
-				r_type = ContainerType();
-				return true;
-			}
-			resolved.is_type_handle = resolved.is_type_handle || is_type_handle;
-			r_type = resolved;
-			return true;
-		}
-	}
 	if (descriptor.get("is_self_type", false) && (p_frame_self.receiver != nullptr || p_frame_self.requires_receiver)) {
 		FSDataType self_position;
 		self_position.is_self_type = true;
@@ -482,7 +446,7 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {
 		ContainerType element_type;
-		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type, r_receiver_arguments)) {
+		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type)) {
 			return false;
 		}
 		type.element_types.push_back(element_type);
@@ -491,12 +455,100 @@ static bool _container_type_from_descriptor(const Variant &p_descriptor, const F
 	Array type_arguments = descriptor.get("type_arguments", Array());
 	for (int i = 0; i < type_arguments.size(); i++) {
 		ContainerType argument_type;
-		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type, r_receiver_arguments)) {
+		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type)) {
 			return false;
 		}
 		type.type_arguments.push_back(argument_type);
 	}
 	r_type = type;
+	return true;
+}
+
+// Rebuilds a descriptor as recursive evidence, resolving each `TYPE_PARAMETER` node against what the
+// frame's receiver reified for the declaring class's parameters.
+//
+// Evidence is tracked per node, exactly as a member binding's projection tracks it
+// (`_project_binding_data_type()` in `foundry_script.cpp`): a parameter the receiver never supplied
+// makes only that subtree `UNKNOWN`, so the concrete parts of the shape keep validating instead of
+// the whole slot degrading to untyped. A node no receiver can resolve at all -- a method-scope
+// parameter, recorded as ordinal -1 -- degrades the same way.
+//
+// Returns false only when a static frame needs a receiver for a `Self` node and has none, matching
+// `_container_type_from_descriptor`.
+static bool _projected_container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
+		const Vector<ProjectedContainerType> &p_receiver_arguments, ProjectedContainerType &r_projected, int p_depth) {
+	r_projected = ProjectedContainerType();
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return true;
+	}
+
+	Dictionary descriptor = p_descriptor;
+	const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
+	if (type_parameter_index.get_type() == Variant::INT) {
+		const int64_t ordinal = type_parameter_index;
+		if (ordinal < 0 || ordinal >= p_receiver_arguments.size()) {
+			return true;
+		}
+		ProjectedContainerType resolved = p_receiver_arguments[ordinal];
+		if (descriptor.get("is_type_handle", false)) {
+			// `Type[T]` denotes a class handle for the argument, not an instance of it, and only an
+			// object-shaped argument has a handle form to describe.
+			if (!resolved.is_known() || resolved.outer.builtin_type != Variant::OBJECT) {
+				return true;
+			}
+			resolved.outer.is_type_handle = true;
+		}
+		r_projected = resolved;
+		return true;
+	}
+
+	if (descriptor.get("is_nullable", false)) {
+		// `ContainerType` cannot express "this type or null", so evidence built here would reject the
+		// nulls the slot admits. Same deliberate limitation the member-binding projection has, confined
+		// to this node so siblings and ancestors keep their own evidence.
+		return true;
+	}
+
+	ContainerType outer;
+	if (!_container_type_from_descriptor(p_descriptor, p_frame_self, outer)) {
+		return false;
+	}
+	r_projected.state = ProjectedContainerType::EXACT;
+	r_projected.outer = outer;
+	r_projected.outer.element_types.clear();
+	r_projected.outer.type_arguments.clear();
+
+	const Array element_types = descriptor.get("element_types", Array());
+	for (int i = 0; i < element_types.size(); i++) {
+		ProjectedContainerType element_projected;
+		if (!_projected_container_type_from_descriptor(element_types[i], p_frame_self, p_receiver_arguments, element_projected, p_depth + 1)) {
+			return false;
+		}
+		r_projected.element_types.push_back(element_projected);
+	}
+	const Array type_arguments = descriptor.get("type_arguments", Array());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		ProjectedContainerType argument_projected;
+		if (!_projected_container_type_from_descriptor(type_arguments[i], p_frame_self, p_receiver_arguments, argument_projected, p_depth + 1)) {
+			return false;
+		}
+		r_projected.type_arguments.push_back(argument_projected);
+	}
+
+	for (const ProjectedContainerType &child : r_projected.element_types) {
+		if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+			r_projected.state = ProjectedContainerType::PARTIAL;
+			break;
+		}
+	}
+	if (r_projected.state == ProjectedContainerType::EXACT) {
+		for (const ProjectedContainerType &child : r_projected.type_arguments) {
+			if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+				r_projected.state = ProjectedContainerType::PARTIAL;
+				break;
+			}
+		}
+	}
 	return true;
 }
 
@@ -3257,61 +3309,36 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// its parameter nodes intact, and the receiver supplies the arguments: the leaf script maps
 				// every ancestor's parameters onto its own reification, so a method inherited by
 				// `IntBox extends Box[int]` validates against `int` without a per-specialization body.
-				Vector<ContainerType> receiver_arguments;
-				bool receiver_arguments_are_exact = false;
+				//
+				// An unspecialized receiver (`Box.new()`), or a chain step that never resolved, leaves a
+				// parameter with no argument. That degrades only the subtree naming it, so the concrete parts
+				// of the shape keep validating, matching how a member binding projects.
+				Vector<ProjectedContainerType> receiver_arguments;
 				if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
-					Vector<ProjectedContainerType> projected;
-					if (p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, projected)) {
-						receiver_arguments_are_exact = true;
-						receiver_arguments.resize(projected.size());
-						for (int i = 0; i < projected.size(); i++) {
-							// An unspecialized receiver (`Box.new()`) or a chain step that never resolved leaves a
-							// parameter without a definite argument. Only complete evidence is usable here: the
-							// shape is checked as one type, and a gap in it would describe a different type rather
-							// than a weaker one, rejecting values the slot legitimately holds.
-							if (projected[i].state != ProjectedContainerType::EXACT) {
-								receiver_arguments_are_exact = false;
-								break;
-							}
-							receiver_arguments.write[i] = projected[i].to_container_type();
-						}
-					}
+					p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
 				}
 
-				ReceiverTypeArguments receiver_type_arguments;
-				if (receiver_arguments_are_exact) {
-					receiver_type_arguments.arguments = &receiver_arguments;
-				} else {
-					receiver_type_arguments.resolved_every_parameter = false;
-				}
-
-				ContainerType expected_type;
-				if (unlikely(!_container_type_from_descriptor(*type_info, frame_self, expected_type, &receiver_type_arguments))) {
+				ProjectedContainerType expected;
+				if (unlikely(!_projected_container_type_from_descriptor(*type_info, frame_self, receiver_arguments, expected, 0))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
 
-				if (receiver_type_arguments.resolved_every_parameter) {
-					// Validated on a copy, and the original value is what gets stored. The slot itself stays
-					// erased, and a generic method returning `Array[T]` is retyped by its concrete *consumer*
-					// (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`); retyping it here instead would hand a gradual
-					// consumer a typed container the declaration never promised. The check is what this store
-					// adds, not a change of the value's runtime typing.
-					Variant validated = *src;
-					String expected_type_name;
-					if (!FoundryScript::validate_projected_type_write(ProjectedContainerType::exact(expected_type), false, validated, "variable", &expected_type_name)) {
+				// Validated on a copy, and the original value is what gets stored. The slot itself stays
+				// erased, and a generic method returning `Array[T]` is retyped by its concrete *consumer*
+				// (`OPCODE_ASSIGN_TYPED_ARRAY_CONVERT`); retyping it here instead would hand a gradual
+				// consumer a typed container the declaration never promised. The check is what this store
+				// adds, not a change of the value's runtime typing.
+				Variant validated = *src;
+				String expected_type_name;
+				if (!FoundryScript::validate_projected_type_write(expected, false, validated, "variable", &expected_type_name)) {
 #ifdef DEBUG_ENABLED
-						err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
-								_get_var_type(src), expected_type_name);
+					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
+							_get_var_type(src), expected_type_name);
 #endif // DEBUG_ENABLED
-						OPCODE_BREAK;
-					}
-					*dst = *src;
-				} else {
-					// No usable evidence for this receiver, so the slot stays gradual exactly like an erased
-					// member binding that resolves to nothing.
-					*dst = *src;
+					OPCODE_BREAK;
 				}
+				*dst = *src;
 
 				ip += 4;
 			}
