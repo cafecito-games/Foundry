@@ -1205,6 +1205,13 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
 	}
+	if (p_type.is_nullable) {
+		// A nullable node admits null, which no container type can express, so the runtime deliberately
+		// keeps no evidence for it or anything below it. Answering yes for such a slot would only make an
+		// enclosing lambda capture its receiver for a check that never happens, which costs a reference
+		// cycle and buys nothing.
+		return false;
+	}
 	if (p_type.kind == FSParser::DataType::TUPLE) {
 		// A tuple erases to an untyped Array that describes none of its slots, so no store into one can be
 		// checked against a receiver. Stopping here keeps this answer identical to the one code generation

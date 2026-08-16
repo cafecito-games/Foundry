@@ -884,6 +884,12 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 		return false;
 	}
 
+	if (p_type.is_nullable) {
+		// A nullable node admits null, which no container type can express, so the projection keeps no
+		// evidence for it or anything below it and a check emitted here would decide nothing.
+		return false;
+	}
+
 	if (p_type.kind == FSParser::DataType::TUPLE) {
 		// A tuple erases to a plain, untyped Array with no element metadata at all, so nothing describes
 		// its slots at run time. A check emitted for one would only assert "this is an Array" while
