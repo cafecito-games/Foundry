@@ -88,6 +88,37 @@ static Vector<String> filter_disassembly_lines(const Vector<String> &p_lines, co
 	return matches;
 }
 
+TEST_CASE("[FoundryScript][TupleLowering] A tuple slot store disassembles with its declared shape") {
+	// A tuple slot's address type is an erased, untyped Array, so the only place the declared shape
+	// survives compilation is this instruction's descriptor operand. Both a local's initializer and the
+	// return get one; a slot with no declared tuple type keeps the plain store.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func keep(value) -> (int, String):\n"
+			"\tvar kept: (int, String) = value\n"
+			"\treturn kept\n"
+			"\n"
+			"func passthrough(value) -> Array:\n"
+			"\tvar kept: Array = value\n"
+			"\treturn kept\n");
+
+	SUBCASE("Declared tuple slots carry the shape") {
+		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("keep"));
+		const Vector<String> store_lines = filter_disassembly_lines(lines, "assign typed tuple");
+		// One for the local's initializer, one for the return.
+		REQUIRE(store_lines.size() == 2);
+		for (const String &store_line : store_lines) {
+			CAPTURE(store_line);
+			CHECK(store_line.contains("assign typed tuple of arity 2"));
+			CHECK(store_line.contains("\"is_tuple\": true"));
+		}
+	}
+
+	SUBCASE("A plain Array slot keeps the ordinary store") {
+		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("passthrough"));
+		CHECK(filter_disassembly_lines(lines, "assign typed tuple").is_empty());
+	}
+}
+
 TEST_CASE("[FoundryScript][TupleLowering] Tuple construction disassembles as a dedicated instruction") {
 	Ref<FoundryScript> script = compile_bytecode_test_source(
 			"tuple Vec2(x: int, y: int)\n"

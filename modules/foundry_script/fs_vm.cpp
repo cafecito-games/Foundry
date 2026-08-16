@@ -1220,6 +1220,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_SCRIPT,                    \
 		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
 		&&OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,           \
+		&&OPCODE_ASSIGN_TYPED_TUPLE,                     \
 		&&OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,             \
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,        \
 		&&OPCODE_CAST_TO_BUILTIN,                        \
@@ -3354,6 +3355,44 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 				*dst = slot_is_erased_container ? *src : validated;
+
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_ASSIGN_TYPED_TUPLE) {
+				CHECK_SPACE(5);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+				GET_VARIANT_PTR(type_info, 2);
+				const int arity = _code_ptr[ip + 4];
+
+				// A tuple slot erases to a bare Array in the address type, so the declared shape reaches
+				// here as the same descriptor an `is` test is compiled against and is rebuilt the same way.
+				FSDataType tuple_type;
+				if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, tuple_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+
+				// The arity operand is the cheap rejection, exactly as in the type test: only a candidate
+				// of the right length pays for the per-element walk. A non-Array value falls through to the
+				// structural test, which is also what accepts null for a nullable slot.
+				const bool matches = src->get_type() == Variant::ARRAY
+						? VariantInternal::get_array(src)->size() == arity && tuple_type.is_type(*src)
+						: tuple_type.is_type(*src);
+				if (!matches) {
+#ifdef DEBUG_ENABLED
+					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
+							_get_var_type(src), tuple_type.get_source_type_name());
+#endif // DEBUG_ENABLED
+					OPCODE_BREAK;
+				}
+
+				// Tuple elements are invariant in both directions, so the test never widens and there is
+				// nothing to convert. Retyping the value would also destroy its read-only-Array identity,
+				// which is what gives a tuple its value semantics.
+				*dst = *src;
 
 				ip += 5;
 			}

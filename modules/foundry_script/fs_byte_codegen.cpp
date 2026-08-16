@@ -1560,6 +1560,17 @@ void FSByteCodeGenerator::write_assign_typed_class_parameter(const Address &p_ta
 	append(flags);
 }
 
+void FSByteCodeGenerator::write_assign_typed_tuple(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) {
+	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_TUPLE);
+	append(p_target);
+	append(p_source);
+	// Always the full descriptor: the `is_tuple` marker and the per-element nodes are what keep the
+	// shape recoverable, and the compact `script_type` fallback the other typed stores use cannot
+	// express either.
+	append(get_constant_pos(make_container_type_descriptor(p_expected_type)) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	append(p_expected_type.container_element_types.size());
+}
+
 void FSByteCodeGenerator::write_assign_typed_array_convert(const Address &p_target, const Address &p_source) {
 	const FSDataType element_type = _runtime_container_element_type(p_target.type.get_container_element_type(0));
 	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_ARRAY_CONVERT);

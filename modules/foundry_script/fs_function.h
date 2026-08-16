@@ -604,6 +604,12 @@ public:
 		// mentions a class-scope parameter, which erases like any other parameter and would otherwise
 		// take the value untested.
 		OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,
+		// Store validated against a tuple slot's declared shape. A tuple type slot erases to a plain,
+		// untyped Array, so the shape travels as a compiled descriptor operand instead: the same
+		// descriptor, arity operand, and structural test `OPCODE_TYPE_TEST_TUPLE` uses. The check never
+		// converts -- tuple elements are invariant and a tuple value is a read-only Array -- so a value
+		// that passes is stored exactly as it arrived.
+		OPCODE_ASSIGN_TYPED_TUPLE,
 		OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,
 		OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,
 		OPCODE_CAST_TO_BUILTIN,
