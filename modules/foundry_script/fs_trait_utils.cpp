@@ -64,6 +64,96 @@ Vector<StringName> fs_trait_identity_closure(const FSParser::ClassNode *p_trait)
 	return identities;
 }
 
+// Two nodes name the same trait declaration when they are the same node, or when they carry the same
+// non-empty fully qualified name — the per-declaration unique key, which is what lets a trait reached
+// through a depended parser match the node the caller already holds. Global class name is
+// deliberately not used: two distinct declarations may share one, and conflating them is a separate
+// diagnostic's job.
+static bool _same_trait_declaration(const FSParser::ClassNode *p_a, const FSParser::ClassNode *p_b) {
+	if (p_a == p_b) {
+		return true;
+	}
+	return p_a != nullptr && p_b != nullptr && !p_a->fqcn.is_empty() && p_a->fqcn == p_b->fqcn;
+}
+
+HashMap<StringName, FSParser::DataType> fs_trait_use_type_argument_bindings(
+		const FSParser::ClassNode *p_trait, const FSParser::ClassNode::TraitUse &p_trait_use) {
+	HashMap<StringName, FSParser::DataType> bindings;
+	if (p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return bindings;
+	}
+
+	const int count = MIN(p_trait->type_parameters.size(), p_trait_use.resolved_type_arguments.size());
+	for (int i = 0; i < count; i++) {
+		const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			bindings.insert(type_parameter->identifier->name, p_trait_use.resolved_type_arguments[i]);
+		}
+	}
+	return bindings;
+}
+
+static HashMap<StringName, FSParser::DataType> _trait_type_argument_bindings(
+		const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_trait, int p_depth) {
+	HashMap<StringName, FSParser::DataType> bindings;
+	// The analyzer rejects cyclic trait use, but the type relation and the editor refactoring surface
+	// can be handed partially resolved trees, where an unbounded recursion is a hang rather than a
+	// diagnostic.
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return bindings;
+	}
+	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return bindings;
+	}
+
+	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		const FSParser::ClassNode *used_trait = trait_use.resolved_trait;
+		if (used_trait == nullptr) {
+			continue;
+		}
+		if (_same_trait_declaration(used_trait, p_trait)) {
+			bindings = fs_trait_use_type_argument_bindings(p_trait, trait_use);
+			if (bindings.is_empty()) {
+				// A bare `uses Storage` on a generic trait supplies nothing, so it proves nothing about
+				// the trait's parameters. Keep looking: a later entry, or a supertrait hop, may still
+				// bind them.
+				continue;
+			}
+			return bindings;
+		}
+
+		bool reaches_trait = false;
+		for (const FSParser::ClassNode *supertrait : used_trait->resolved_traits) {
+			if (_same_trait_declaration(supertrait, p_trait)) {
+				reaches_trait = true;
+				break;
+			}
+		}
+		if (reaches_trait) {
+			// Compose the intermediate trait's binding of the target with this class's binding of the
+			// intermediate, so `class C: uses Storing[String]` over `trait Storing[T]: uses Keeper[T]`
+			// reports `Keeper`'s parameter as `String` rather than as `T`.
+			const HashMap<StringName, FSParser::DataType> inner =
+					_trait_type_argument_bindings(used_trait, p_trait, p_depth + 1);
+			if (inner.is_empty()) {
+				continue;
+			}
+			const HashMap<StringName, FSParser::DataType> outer =
+					_trait_type_argument_bindings(p_class, used_trait, p_depth + 1);
+			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
+				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
+			}
+			return bindings;
+		}
+	}
+	return bindings;
+}
+
+HashMap<StringName, FSParser::DataType> fs_trait_type_argument_bindings(
+		const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_trait) {
+	return _trait_type_argument_bindings(p_class, p_trait, 0);
+}
+
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include "fs_cache.h"

@@ -1198,6 +1198,56 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn 0\n"));
 	}
 
+	TEST_CASE("Override method specializes a transitively applied generic trait signature") {
+		const String source =
+				"trait Storage[T]:\n"
+				"\tabstract func take(value: T) -> T\n"
+				"trait Wrapper:\n"
+				"\tuses Storage[int]\n"
+				"class C uses Wrapper:\n"
+				"\tpass\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "take");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func take(value: int) -> int"));
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+	}
+
+	TEST_CASE("Override method specializes a generic trait reached past an argument-less use") {
+		// `uses Storage` supplies no arguments and must not stop the walk, or the generated stub takes
+		// the trait's own parameter `T` while the analyzer has already typed the member as `int`.
+		const String source =
+				"trait Storage[T]:\n"
+				"\tabstract func take(value: T) -> T\n"
+				"trait Wrapper:\n"
+				"\tuses Storage[int]\n"
+				"class C uses Storage, Wrapper:\n"
+				"\tpass\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "take");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func take(value: int) -> int"));
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+	}
+
 	TEST_CASE("Override method returns an unsigned zero for unsigned return types") {
 		const String source =
 				"abstract class Base:\n"

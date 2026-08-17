@@ -934,8 +934,6 @@ private:
 	FSParser::ClassNode *resolve_builtin_conformance_shim(FSParser::ConformanceNode *p_conformance, const FSParser::DataType &p_builtin_type);
 	bool validate_conformance(FSParser::ConformanceNode *p_conformance, FSParser::ClassNode *p_target,
 			FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution);
-	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,
-			const FSParser::ClassNode::TraitUse &p_trait_use);
 	FSParser::FunctionNode *find_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method);
 	// True once this analysis has run the conformance-index probe, so it runs at most once per file.
 	bool indexed_conformance_files_probed = false;
@@ -955,7 +953,6 @@ private:
 			String &r_source_file, StringName &r_trait_name);
 	bool find_trait_implementation(FSParser::ClassNode *p_class, const StringName &p_function_name,
 			TraitMethodImplementation &r_implementation);
-	HashMap<StringName, FSParser::DataType> trait_type_argument_substitution(FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait);
 	bool validate_trait_method_signature(FSParser::ClassNode *p_trait,
 			FSParser::ClassNode *p_implementing_class, FSParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
 			const HashMap<StringName, FSParser::DataType> &p_trait_substitution = HashMap<StringName, FSParser::DataType>());

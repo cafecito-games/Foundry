@@ -9834,51 +9834,6 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 	return true;
 }
 
-HashMap<StringName, FSParser::DataType> FSAnalyzer::trait_type_argument_substitution(FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait) {
-	HashMap<StringName, FSParser::DataType> bindings;
-	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
-		return bindings;
-	}
-	// Resolve `p_trait`'s use-site type arguments as seen from `p_class`. A directly-applied generic
-	// trait (`uses Container[int]`) binds its parameters here; a transitive generic supertrait
-	// (`uses Wrapper` where `Wrapper uses Storage[int]`) is bound by the intermediate trait that
-	// applies it, so we recurse through the intermediate and compose the two substitutions.
-	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
-		FSParser::ClassNode *used_trait = trait_use.resolved_trait;
-		if (used_trait == nullptr) {
-			continue;
-		}
-		if (used_trait == p_trait) {
-			if (trait_use.resolved_type_arguments.is_empty()) {
-				continue;
-			}
-			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
-			for (int i = 0; i < count; i++) {
-				const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
-				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
-				}
-			}
-			return bindings;
-		}
-		if (used_trait->resolved_traits.has(p_trait)) {
-			// `used_trait` (transitively) applies `p_trait`. First find how `used_trait` binds
-			// `p_trait`, then re-specialize those arguments with `p_class`'s binding of
-			// `used_trait`'s own parameters (`uses Wrapper[int]` forwarding `T` into `Storage[T]`).
-			HashMap<StringName, FSParser::DataType> inner = trait_type_argument_substitution(used_trait, p_trait);
-			if (inner.is_empty()) {
-				continue;
-			}
-			const HashMap<StringName, FSParser::DataType> outer = trait_type_argument_substitution(p_class, used_trait);
-			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
-				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
-			}
-			return bindings;
-		}
-	}
-	return bindings;
-}
-
 bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 		FSParser::ClassNode *p_implementing_class, FSParser::FunctionNode *p_required_function,
 		const TraitMethodImplementation &p_implementation,
@@ -10326,7 +10281,7 @@ void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p
 		}
 		resolve_class_interface(trait, p_class);
 
-		const HashMap<StringName, FSParser::DataType> substitutions = trait_type_argument_substitution(p_class, trait);
+		const HashMap<StringName, FSParser::DataType> substitutions = fs_trait_type_argument_bindings(p_class, trait);
 		for (const FSParser::ClassNode::Member &member : trait->members) {
 			if (member.type != FSParser::ClassNode::Member::VARIABLE || member.variable == nullptr ||
 					!member.variable->is_static) {
@@ -10427,7 +10382,7 @@ void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_
 		}
 		resolve_class_interface(trait, p_class);
 
-		const HashMap<StringName, FSParser::DataType> substitutions = trait_type_argument_substitution(p_class, trait);
+		const HashMap<StringName, FSParser::DataType> substitutions = fs_trait_type_argument_bindings(p_class, trait);
 		for (const FSParser::ClassNode::Member &member : trait->members) {
 			if (member.type != FSParser::ClassNode::Member::CONSTANT || member.constant == nullptr ||
 					member.constant->identifier == nullptr) {
@@ -10510,7 +10465,7 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 						implementation.function = class_member.function;
 						implementation.owner_class = p_class;
 						validate_trait_method_signature(trait, p_class, member.function, implementation,
-								trait_type_argument_substitution(p_class, trait));
+								fs_trait_type_argument_bindings(p_class, trait));
 					}
 					continue;
 				}
@@ -10534,7 +10489,7 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 							implementation.function = base_member.function;
 							implementation.owner_class = base_class;
 							validate_trait_method_signature(trait, p_class, member.function, implementation,
-									trait_type_argument_substitution(p_class, trait));
+									fs_trait_type_argument_bindings(p_class, trait));
 							inherited_method_shadows_trait = true;
 							break;
 						}
@@ -10573,7 +10528,7 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 				}
 
 				const FSParser::DataType trait_type = _substitute_type_parameters_and_self(
-						member.get_datatype(), trait_type_argument_substitution(p_class, trait), _self_type_for_class(p_class));
+						member.get_datatype(), fs_trait_type_argument_bindings(p_class, trait), _self_type_for_class(p_class));
 				const FSParser::DataType class_type = class_member.get_datatype();
 				if (!_trait_state_type_is_compatible(trait_type, class_type)) {
 					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with incompatible type. Expected "%s", got "%s".)",
@@ -10635,7 +10590,7 @@ void FSAnalyzer::validate_trait_requirements(FSParser::ClassNode *p_class) {
 			}
 
 			validate_trait_method_signature(trait, p_class, member.function, implementation,
-					trait_type_argument_substitution(p_class, trait));
+					fs_trait_type_argument_bindings(p_class, trait));
 		}
 	}
 }
@@ -11241,7 +11196,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 								continue;
 							}
 							constant_type = _substitute_type_parameters_and_self(
-									constant_type, trait_type_argument_substitution(owner, script_class),
+									constant_type, fs_trait_type_argument_bindings(owner, script_class),
 									_self_type_for_class(base_class));
 							break;
 						}

@@ -198,22 +198,6 @@ FSParser::ClassNode *FSAnalyzer::resolve_native_conformance_shim(FSParser::Confo
 	return shim;
 }
 
-HashMap<StringName, FSParser::DataType> FSAnalyzer::conformance_trait_substitution(FSParser::ClassNode *p_trait,
-		const FSParser::ClassNode::TraitUse &p_trait_use) {
-	HashMap<StringName, FSParser::DataType> bindings;
-	if (p_trait == nullptr || p_trait->type_parameters.is_empty() || p_trait_use.resolved_type_arguments.is_empty()) {
-		return bindings;
-	}
-	const int count = MIN(p_trait->type_parameters.size(), p_trait_use.resolved_type_arguments.size());
-	for (int i = 0; i < count; i++) {
-		const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
-		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-			bindings.insert(type_parameter->identifier->name, p_trait_use.resolved_type_arguments[i]);
-		}
-	}
-	return bindings;
-}
-
 FSAnalyzer::ConformanceVisibility::ConformanceVisibility(FSAnalyzer *p_analyzer) {
 	analyzer = p_analyzer;
 }
@@ -527,7 +511,7 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 		if (requirement_trait == p_trait) {
 			substitution = p_trait_substitution;
 		} else {
-			for (const KeyValue<StringName, FSParser::DataType> &entry : trait_type_argument_substitution(p_trait, requirement_trait)) {
+			for (const KeyValue<StringName, FSParser::DataType> &entry : fs_trait_type_argument_bindings(p_trait, requirement_trait)) {
 				substitution.insert(entry.key, FSParser::DataType::substitute(entry.value, p_trait_substitution));
 			}
 		}
@@ -813,7 +797,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				continue;
 			}
 
-			const HashMap<StringName, FSParser::DataType> substitution = conformance_trait_substitution(trait, trait_use);
+			const HashMap<StringName, FSParser::DataType> substitution = fs_trait_use_type_argument_bindings(trait, trait_use);
 			if (!validate_conformance(conformance, target, trait, substitution)) {
 				continue;
 			}

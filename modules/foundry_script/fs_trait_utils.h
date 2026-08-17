@@ -48,3 +48,22 @@ static _FORCE_INLINE_ StringName fs_trait_identity_name(const FSParser::ClassNod
 Vector<FSParser::ClassNode *> fs_trait_identity_closure_nodes(const FSParser::ClassNode *p_trait);
 Vector<StringName> fs_trait_identity_closure(const FSParser::ClassNode *p_trait);
 bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name);
+
+// One `uses` entry's binding of the trait it names: `p_trait`'s type parameters zipped against the
+// arguments the entry supplied. Empty when the entry supplied none, which states that this entry
+// proves nothing about the trait's parameters rather than that the trait has none.
+HashMap<StringName, FSParser::DataType> fs_trait_use_type_argument_bindings(
+		const FSParser::ClassNode *p_trait, const FSParser::ClassNode::TraitUse &p_trait_use);
+
+// How `p_class` binds `p_trait`'s type parameters, expressed in `p_class`'s own frame, following
+// both direct `uses` entries and transitive supertrait hops. Empty when `p_class` does not apply the
+// trait, or applies it without ever supplying type arguments.
+//
+// This is the single walker the analyzer, the compiler, the static type relation, and the editor
+// refactoring surface all use. A divergence here is not an inconsistency but an analyzer/compiler/
+// runtime split: a program that type-checks against one binding and executes against another.
+//
+// Only meaningful after analysis. `TraitUse::resolved_type_arguments` is populated by the analyzer,
+// so a consumer running before or without analysis sees every entry as argument-less.
+HashMap<StringName, FSParser::DataType> fs_trait_type_argument_bindings(
+		const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_trait);
