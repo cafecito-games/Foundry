@@ -1164,7 +1164,10 @@ arguments were never recorded.
   false for a value the declaration `var slot: Crate[int] = value` accepts. A guarded test is the way
   to demand the arguments.
 - The rule is the same for a class target and for a trait target, and the same in the analyzer and at
-  run time: a flow the analyzer accepts is a flow the runtime accepts.
+  run time. The two layers differ only in the evidence they can read: the analyzer reads the source's
+  static type, and the runtime reads the value's actual one. So a store whose source is a `Variant`
+  carries no static evidence, is accepted by the analyzer, and is asked again under the same rule when
+  it executes — where a value with conflicting arguments is rejected.
 - A **class-handle** declaration is the exception. `Type[Crate[int]]` demands evidence exactly as `is`
   does, so a raw `Crate` handle fails that store while a `Crate[int]` handle passes it. The gradual
   rule covers declarations whose type names a class or a trait, never one that names a class handle.
