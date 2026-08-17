@@ -1,5 +1,7 @@
 # A retroactively conformed builtin answers a specialized trait target from the arguments the
-# conformance declared, including when the value travels through a `Variant`-typed local.
+# conformance declared, including when the value travels through a `Variant`-typed local. A
+# statically typed test against a contradicted argument is decided by the analyzer instead and lives
+# in analyzer/errors/retroactive_conformance_test_rejects_conflicting_evidence.fs.
 extend int uses GenericStore[int]:
 	func store(_item: int) -> void:
 		pass
@@ -12,7 +14,6 @@ func test() -> void:
 	var n := 3
 	print("int is GenericStore: ", n is GenericStore)
 	print("int is GenericStore[int]: ", n is GenericStore[int])
-	print("int is GenericStore[String]: ", n is GenericStore[String])
 
 	var v: Variant = n
 	print("variant is GenericStore: ", v is GenericStore)

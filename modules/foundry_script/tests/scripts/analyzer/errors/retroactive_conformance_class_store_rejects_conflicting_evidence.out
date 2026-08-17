@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 18: Cannot assign a value of type RccTarget to variable "conflicting" with specified type RccKeeper[String].

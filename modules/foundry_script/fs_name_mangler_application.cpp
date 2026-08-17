@@ -2823,6 +2823,19 @@ struct FSNameManglerApplication::Transaction::Data {
 				}
 				conformance.trait_name =
 						StringName(rewrite_identity(String(conformance.trait_name)));
+				// A recorded trait argument names a script class by the same identities the target keys
+				// use, so it has to follow them through the rename or the static comparison would
+				// contradict itself in a mangled build.
+				for (FSConformanceRegistry::RecordedTypeArgument &argument :
+						conformance.trait_type_arguments) {
+					if (argument.kind !=
+							FSConformanceRegistry::RecordedTypeArgument::SCRIPT_CLASS) {
+						continue;
+					}
+					argument.script_fqcn = rewrite_identity(argument.script_fqcn);
+					argument.script_global_name =
+							rewrite_identity(argument.script_global_name);
+				}
 				FSConformanceRegistry::WitnessMap transformed_witnesses;
 				for (const KeyValue<StringName, FSParser::FunctionNode *> &witness :
 						conformance.witnesses) {

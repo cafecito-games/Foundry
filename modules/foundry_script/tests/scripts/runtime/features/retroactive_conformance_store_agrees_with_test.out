@@ -1,0 +1,6 @@
+FS_TEST_OK
+exact store: true
+exact is: true
+absent store: true
+absent is: false
+conflicting is: false

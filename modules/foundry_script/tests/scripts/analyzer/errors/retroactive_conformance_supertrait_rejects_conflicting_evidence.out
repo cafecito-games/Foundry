@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 21: Cannot assign a value of type RcfTarget to variable "conflicting" with specified type RcfSuper[String].

@@ -451,6 +451,140 @@ bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_cla
 	return false;
 }
 
+FSConformanceRegistry::RecordedTypeArgument FSConformanceRegistry::reduce_type_argument(const FSParser::DataType &p_type) {
+	RecordedTypeArgument recorded;
+	if (!p_type.is_set() || p_type.is_meta_type || p_type.is_type_handle_annotation) {
+		return recorded;
+	}
+	// A specialized generic or a typed container is a composite whose identity this flattened form
+	// cannot carry, so the whole position contributes no evidence rather than a widened one.
+	if (!p_type.type_arguments.is_empty() || !p_type.container_element_types.is_empty()) {
+		return recorded;
+	}
+
+	switch (p_type.kind) {
+		case FSParser::DataType::BUILTIN: {
+			if (p_type.has_method_signature) {
+				// A `Callable`/`Signal` carries a signature this form cannot compare.
+				return recorded;
+			}
+			recorded.kind = RecordedTypeArgument::BUILTIN;
+			recorded.builtin_type = p_type.builtin_type;
+			recorded.numeric_type = p_type.numeric_type;
+		} break;
+		case FSParser::DataType::NATIVE: {
+			if (p_type.native_type == StringName()) {
+				return recorded;
+			}
+			recorded.kind = RecordedTypeArgument::NATIVE_CLASS;
+			recorded.native_class = p_type.native_type;
+		} break;
+		case FSParser::DataType::CLASS: {
+			if (p_type.class_type == nullptr) {
+				return recorded;
+			}
+			const String global_name = String(p_type.class_type->get_global_name());
+			if (p_type.class_type->fqcn.is_empty() && global_name.is_empty()) {
+				return recorded;
+			}
+			recorded.kind = RecordedTypeArgument::SCRIPT_CLASS;
+			recorded.script_fqcn = p_type.class_type->fqcn;
+			recorded.script_global_name = global_name;
+		} break;
+		case FSParser::DataType::SCRIPT: {
+			const String global_name = p_type.script_type.is_valid()
+					? String(p_type.script_type->get_global_name())
+					: String();
+			if (!p_type.script_type.is_valid() && p_type.script_path.is_empty()) {
+				return recorded;
+			}
+			recorded.kind = RecordedTypeArgument::SCRIPT_CLASS;
+			recorded.script_fqcn = p_type.script_path;
+			recorded.script_global_name = global_name;
+			if (recorded.script_fqcn.is_empty() && recorded.script_global_name.is_empty()) {
+				return RecordedTypeArgument();
+			}
+		} break;
+		default:
+			// `VARIANT`, `TYPE_PARAMETER`, `ENUM`, `TUPLE`, and `UNION` all reduce to an absence of
+			// evidence: none of them has an identity this flattened form can compare with certainty.
+			return recorded;
+	}
+
+	recorded.is_nullable = p_type.is_nullable;
+	return recorded;
+}
+
+bool FSConformanceRegistry::_has_visible_conformance(const String &p_target_key, const StringName &p_trait_name) const {
+	const HashMap<StringName, String> *traits = index.getptr(p_target_key);
+	if (traits == nullptr) {
+		return false;
+	}
+	const String *source_file = traits->getptr(p_trait_name);
+	return source_file != nullptr && _is_visible(*source_file);
+}
+
+bool FSConformanceRegistry::_recorded_trait_arguments_for_key(const String &p_target_key,
+		const StringName &p_trait_name, Vector<RecordedTypeArgument> &r_arguments) const {
+	r_arguments.clear();
+	if (!_has_visible_conformance(p_target_key, p_trait_name)) {
+		return false;
+	}
+	const HashMap<StringName, String> *traits = index.getptr(p_target_key);
+	const Vector<Conformance> *entries = conformances_by_file.getptr(*traits->getptr(p_trait_name));
+	if (entries == nullptr) {
+		return false;
+	}
+	for (const Conformance &conformance : *entries) {
+		if (conformance.trait_name != p_trait_name || !conformance.target_keys.has(p_target_key)) {
+			continue;
+		}
+		if (conformance.trait_type_arguments.is_empty()) {
+			return false;
+		}
+		r_arguments = conformance.trait_type_arguments;
+		return true;
+	}
+	return false;
+}
+
+bool FSConformanceRegistry::get_recorded_trait_arguments(const String &p_target_key,
+		const StringName &p_trait_name, Vector<RecordedTypeArgument> &r_arguments) const {
+	r_arguments.clear();
+	if (p_target_key.is_empty() || p_trait_name == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	return _recorded_trait_arguments_for_key(p_target_key, p_trait_name, r_arguments);
+}
+
+bool FSConformanceRegistry::get_native_recorded_trait_arguments(const StringName &p_native_class,
+		const StringName &p_trait_name, Vector<RecordedTypeArgument> &r_arguments) const {
+	r_arguments.clear();
+	if (p_native_class == StringName() || p_trait_name == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	// The nearest conforming ancestor wins, matching how membership itself is answered. A hidden
+	// conformance does not shadow a visible one further up, for the same reason.
+	for (StringName cursor = p_native_class; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+		const String key = String(cursor);
+		if (_has_visible_conformance(key, p_trait_name)) {
+			return _recorded_trait_arguments_for_key(key, p_trait_name, r_arguments);
+		}
+	}
+	return false;
+}
+
+bool FSConformanceRegistry::get_builtin_recorded_trait_arguments(Variant::Type p_type,
+		const StringName &p_trait_name, Vector<RecordedTypeArgument> &r_arguments) const {
+	r_arguments.clear();
+	if (p_type == Variant::NIL || p_type == Variant::OBJECT || p_trait_name == StringName()) {
+		return false;
+	}
+	return get_recorded_trait_arguments(Variant::get_type_name(p_type), p_trait_name, r_arguments);
+}
+
 bool FSConformanceRegistry::_live_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const {
 	if (p_entry.type_arguments.is_empty()) {
 		return false;

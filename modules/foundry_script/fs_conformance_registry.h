@@ -61,6 +61,33 @@ public:
 	// conformance queries used by the type system never dereference it.
 	using WitnessMap = HashMap<StringName, FSParser::FunctionNode *>;
 
+	// One trait type argument as the declaration side can safely remember it. The registry is a
+	// process-global singleton that outlives the parse trees it describes, so it must not hold an
+	// `FSParser::DataType` (a borrowed `ClassNode *` plus an owning `Ref<Script>`) and cannot hold an
+	// `FSWeakContainerType` (whose `ObjectID` names a compiled script that does not exist yet at
+	// analysis time). This is a flattened identity: enough to answer "is this the same type as that
+	// one?" with certainty, and nothing else. Anything it cannot represent is `UNKNOWN`, which is an
+	// absence of evidence and never a wildcard.
+	struct RecordedTypeArgument {
+		enum Kind : uint8_t {
+			UNKNOWN,
+			BUILTIN,
+			NATIVE_CLASS,
+			SCRIPT_CLASS,
+		};
+		Kind kind = UNKNOWN;
+		bool is_nullable = false;
+		Variant::Type builtin_type = Variant::NIL;
+		NumericType numeric_type = NumericType::NONE;
+		StringName native_class;
+		String script_fqcn;
+		String script_global_name;
+	};
+
+	// The single reduction both sides of the comparison go through, so the recorded side and the
+	// expected side can never disagree about what a type is.
+	static RecordedTypeArgument reduce_type_argument(const FSParser::DataType &p_type);
+
 	struct Conformance {
 		// Alias keys the target can be looked up by (FQCN, global class name, script path). Registration
 		// drops any alias that does not identify the target, so what the registry stores may be narrower
@@ -82,6 +109,11 @@ public:
 		// A direct trait from the declaration or one of its implied supertraits. Implied entries retain
 		// the declaring conformance's source, index, and witness map.
 		StringName trait_name;
+		// The arguments this conformance supplied for `trait_name`, indexed by that trait's own
+		// type-parameter ordinals. Empty when the trait is not generic or the declaration supplied none,
+		// which is an absence of evidence, never a wildcard. Flattened rather than held as parse types
+		// because the registry outlives the parse tree the declaration came from.
+		Vector<RecordedTypeArgument> trait_type_arguments;
 		String source_file;
 		// Position of the declaring `ConformanceNode` in the source file's root-class conformance list.
 		// Lets a consumer re-find this conformance in a *live* parse tree instead of dereferencing the
@@ -192,6 +224,15 @@ private:
 	// membership index used by `is`/`as` and typed assignment checks.
 	HashMap<String, HashMap<StringName, RuntimeTraitEntry>> runtime_trait_index;
 
+	// The declaration-side arguments recorded for `p_target_key`'s visible conformance to
+	// `p_trait_name`. Callers must hold `mutex`.
+	bool _recorded_trait_arguments_for_key(const String &p_target_key, const StringName &p_trait_name,
+			Vector<RecordedTypeArgument> &r_arguments) const;
+
+	// True when `p_target_key` has a conformance to `p_trait_name` the caller is allowed to see.
+	// Callers must hold `mutex`.
+	bool _has_visible_conformance(const String &p_target_key, const StringName &p_trait_name) const;
+
 	// The live argument vector recorded for a runtime membership hit, or false when the entry records
 	// none or any argument script has been freed. Callers must hold `mutex`.
 	bool _live_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const;
@@ -235,6 +276,24 @@ public:
 	// True when the builtin value type `p_type` (keyed by `Variant::get_type_name`) declares an external
 	// conformance to `p_trait_name`. Builtins have no inheritance chain, so this is an exact-key lookup.
 	bool builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name, bool p_include_runtime = false) const;
+
+	// The type arguments a *visible declaration-side* conformance of `p_target_key` to `p_trait_name`
+	// recorded. False when no visible conformance exists or it recorded none -- both an absence of
+	// evidence, never a wildcard. Deliberately not the runtime store: the static type relation must
+	// answer the same way whether or not the declaring file has been compiled yet, and must not see a
+	// conformance whose membership it would deny.
+	bool get_recorded_trait_arguments(const String &p_target_key, const StringName &p_trait_name,
+			Vector<RecordedTypeArgument> &r_arguments) const;
+
+	// The same, for an engine class. Walks `ClassDB::get_parent_class`; the nearest conforming ancestor
+	// wins, matching `native_class_conforms()`.
+	bool get_native_recorded_trait_arguments(const StringName &p_native_class,
+			const StringName &p_trait_name, Vector<RecordedTypeArgument> &r_arguments) const;
+
+	// The same, for a builtin value type. Builtins have no inheritance chain, so this is an exact-key
+	// lookup.
+	bool get_builtin_recorded_trait_arguments(Variant::Type p_type, const StringName &p_trait_name,
+			Vector<RecordedTypeArgument> &r_arguments) const;
 
 	// The type arguments a *runtime-registered* conformance of `p_target_key` to `p_trait_name`
 	// supplied. False when no runtime record exists, when the record supplied no arguments, or when any
