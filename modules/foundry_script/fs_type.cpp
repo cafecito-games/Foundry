@@ -1224,7 +1224,24 @@ bool FSTypeCompatibility::callable_signature_rest_parameter_type(const FSParser:
 // "is there anything to decide", and a parameter bounded by a `final` class denotes exactly that
 // bound, so it is decidable without a receiver -- which is why `FSTypeCompatibility::check()` settles
 // such a destination against the bound in a static frame rather than refusing it.
-static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type, int p_depth, bool p_exempt_final_bound = false) {
+//
+// `p_nullable_is_expressible` says whether a nullable node at this position can still be evidence, and
+// is true only on the tuple spine: a tuple destination's own root, its elements, and recursively the
+// elements of a nested tuple element. There the shape travels as an `FSDataType` all the way to the
+// compiled descriptor, which keeps a tuple element's `is_nullable` on purpose (see
+// `fs_byte_codegen.cpp:299-308`), so "this type or null" is expressible. Everywhere else -- through a
+// non-tuple node's `container_element_types`, or through any `type_arguments` -- the shape becomes a
+// `ContainerType`, which has no such field, and evidence built for a nullable node there would reject
+// the nulls the destination legitimately admits. The flag is sticky-off, never sticky-on: a tuple
+// nested under a typed container or a type argument is analyzer-only, so traversal never re-enters the
+// expressible world once it has left it.
+//
+// The compiler's `_type_depends_on_declared_type_parameters()` in `fs_compiler.cpp` answers the same
+// question, and the two must stay in agreement: a "yes" there emits a check, and a "yes" here is what
+// makes an enclosing lambda capture its receiver, so a disagreement is either a silently missing check
+// or a capture taken for a check that never happens.
+static bool _depends_on_receiver_type_parameter(
+		const FSParser::DataType &p_type, bool p_nullable_is_expressible, int p_depth, bool p_exempt_final_bound = false) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
 	}
@@ -1236,11 +1253,11 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 		// travels beside the shape, which is exactly what makes it checkable.
 		return false;
 	}
-	if (p_type.is_nullable) {
-		// A nullable node admits null, which no container type can express, so the runtime deliberately
-		// keeps no evidence for it or anything below it. Answering yes for such a slot would only make an
-		// enclosing lambda capture its receiver for a check that never happens, which costs a reference
-		// cycle and buys nothing.
+	if (p_type.is_nullable && !p_nullable_is_expressible) {
+		// Off the tuple spine a nullable node admits null, which no container type can express, so the
+		// runtime deliberately keeps no evidence for it or anything below it. Answering yes for such a
+		// slot would only make an enclosing lambda capture its receiver for a check that never happens,
+		// which costs a reference cycle and buys nothing.
 		return false;
 	}
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
@@ -1264,21 +1281,29 @@ static bool _depends_on_receiver_type_parameter(const FSParser::DataType &p_type
 	// emitted for either would assert nothing while claiming to enforce the parameter. That is the
 	// opposite reading from `_destination_has_erased_type_parameter()`, which walks both because it
 	// answers "is this undecidable", where erasure is the reason to say yes.
+	const bool child_expressible = p_nullable_is_expressible && p_type.kind == FSParser::DataType::TUPLE;
 	for (const FSParser::DataType &element_type : p_type.container_element_types) {
-		if (_depends_on_receiver_type_parameter(element_type, p_depth + 1, p_exempt_final_bound)) {
+		if (_depends_on_receiver_type_parameter(element_type, child_expressible, p_depth + 1, p_exempt_final_bound)) {
 			return true;
 		}
 	}
 	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
-		if (_depends_on_receiver_type_parameter(type_argument, p_depth + 1, p_exempt_final_bound)) {
+		if (_depends_on_receiver_type_parameter(type_argument, false, p_depth + 1, p_exempt_final_bound)) {
 			return true;
 		}
 	}
 	return false;
 }
 
+// A tuple destination carries its shape to run time as a compiled descriptor, which is the one place a
+// nullable node stays evidence; every other declared shape lowers to a container type that cannot
+// express "or null".
+static bool _nullable_is_expressible_at_root(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::TUPLE;
+}
+
 bool FSTypeCompatibility::destination_depends_on_receiver_type_parameter(const FSParser::DataType &p_type) {
-	return _depends_on_receiver_type_parameter(p_type, 0);
+	return _depends_on_receiver_type_parameter(p_type, _nullable_is_expressible_at_root(p_type), 0);
 }
 
 // Two disjoint reasons make a destination undecidable, and the answer is the union of both because
@@ -1293,18 +1318,20 @@ bool FSTypeCompatibility::destination_depends_on_receiver_type_parameter(const F
 //
 // The second half is asked of `_depends_on_receiver_type_parameter()`, the traversal code generation
 // itself uses, rather than of the erasure walk, so a "yes" always names a slot that would have been
-// checked had a receiver existed. The two traversals differ: a nullable slot, a bare specialized
-// meta-type destination, a callable-signature slot and a union member are unchecked with a receiver
-// as well, so answering "undecidable" for them only in a static frame would make the static and the
-// instance frame disagree about the same declaration. Closing those shapes is the business of the
-// issues that own them, and it must close them for every frame at once. A leaf bounded by a `final`
+// checked had a receiver existed. The two traversals differ: a nullable node off the tuple spine, a
+// bare specialized meta-type destination, a callable-signature slot and a union member are unchecked
+// with a receiver as well, so answering "undecidable" for them only in a static frame would make the
+// static and the instance frame disagree about the same declaration. Closing those shapes is the
+// business of the issues that own them, and it must close them for every frame at once -- as the
+// nullable tuple element already was, which is why it is reported here too. A leaf bounded by a `final`
 // class is exempt from both halves at every depth: it denotes exactly its bound, which `check()`
 // settles a static-frame destination against instead of refusing it.
 bool FSTypeCompatibility::destination_is_undecidable_type_parameter(const FSParser::DataType &p_type, const Options &p_options) {
 	if (_destination_has_erased_type_parameter(p_type)) {
 		return true;
 	}
-	return !p_options.receiver_is_available && _depends_on_receiver_type_parameter(p_type, 0, true);
+	return !p_options.receiver_is_available &&
+			_depends_on_receiver_type_parameter(p_type, _nullable_is_expressible_at_root(p_type), 0, true);
 }
 
 bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide) {

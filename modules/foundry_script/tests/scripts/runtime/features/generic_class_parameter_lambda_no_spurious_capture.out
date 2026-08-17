@@ -1,6 +1,8 @@
 FS_TEST_OK
-~~ WARNING at line 123: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
-~~ WARNING at line 127: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 135: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 139: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 143: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 144: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
 true
 true
 true
@@ -10,4 +12,6 @@ true
 true
 5
 [6, 7]
+[8, <null>]
+[9, "nine"]
 lambda capture ok

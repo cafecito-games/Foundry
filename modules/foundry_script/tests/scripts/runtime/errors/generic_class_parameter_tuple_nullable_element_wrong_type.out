@@ -1,4 +1,13 @@
 FS_TEST_RUNTIME_ERROR
-~~ WARNING at line 15: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
->> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_nullable_element_wrong_type.fs:6 on OptionalPair.keep_optional(): Trying to assign a value of type "Array" to a variable of type "(int, String?)".
+~~ WARNING at line 42: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 43: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 44: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional_in_lambda()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 45: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 46: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_nullable_element_wrong_type.fs:7 on OptionalPair.keep_optional(): Trying to assign a value of type "Array" to a variable of type "(int, String?)".
 []
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_nullable_element_wrong_type.fs:13 on OnlyOptional.keep_optional(): Trying to assign a value of type "Array" to a variable of type "(int, String?)".
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_nullable_element_wrong_type.fs:20 on OnlyOptional.<anonymous lambda>(): Trying to assign a value of type "Array" to a variable of type "(int, String?)".
+<null>
+[1, <null>]
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_nullable_element_wrong_type.fs:27 on ConcreteOptionalKeeper.keep_optional(): Trying to assign a value of type "Array" to a variable of type "(int, String?)".
