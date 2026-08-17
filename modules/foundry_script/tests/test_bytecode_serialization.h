@@ -2598,6 +2598,59 @@ TEST_CASE("[FoundryScript][Bytecode][TypedRestParameter] A typed rest array surv
 	CHECK(call_error.expected == int(Variant::INT));
 }
 
+TEST_CASE("[FoundryScript][Bytecode][TupleLiteral] A const tuple's container element stays typed through bytecode") {
+	// A `const` tuple is folded into the constant pool at analysis time, so its container element has
+	// to be typed before the fold or the bytecode would carry an untyped Array forever. A script rebuilt
+	// from bytecode alone has to observe exactly what the source-built one does.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"const SLOT: (int, Array[int]) = (1, [2])\n"
+			"\n"
+			"func describe() -> Array:\n"
+			"\tvar element: Array[int] = SLOT[1]\n"
+			"\treturn [element.is_typed(), element.get_typed_builtin(), element.is_read_only(), element.size()]\n");
+
+	Callable::CallError original_error;
+	Variant original_owner = original->_new(nullptr, -1, original_error);
+	REQUIRE(original_error.error == Callable::CallError::CALL_OK);
+	Object *original_instance = original_owner;
+	REQUIRE(original_instance != nullptr);
+	const Array source_built = original_instance->callp(SNAME("describe"), nullptr, 0, original_error);
+	REQUIRE(original_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(source_built.size() == 4);
+	CHECK(bool(source_built[0]));
+	CHECK(int(source_built[1]) == int(Variant::INT));
+	CHECK(bool(source_built[2]));
+	CHECK(int(source_built[3]) == 1);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// A shipped game runs from bytecode alone, so remove the source before rebuilding the script.
+	const String script_path = original->get_script_path();
+	REQUIRE(DirAccess::remove_absolute(script_path) == OK);
+
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	REQUIRE(restored->is_valid());
+
+	Callable::CallError call_error;
+	Variant owner = restored->_new(nullptr, -1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	Object *instance = owner;
+	REQUIRE(instance != nullptr);
+
+	const Array bytecode_built = instance->callp(SNAME("describe"), nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	CHECK(bytecode_built == source_built);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

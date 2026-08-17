@@ -1,0 +1,6 @@
+FS_TEST_OK
+took [1, []] true
+rest [2, []] true
+rest [3, [4]] true
+default [1, []] true
+specialized [5, []] true

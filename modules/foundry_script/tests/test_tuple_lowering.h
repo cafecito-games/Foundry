@@ -158,6 +158,41 @@ TEST_CASE("[FoundryScript][TupleLowering] Tuple construction disassembles as a d
 	}
 }
 
+TEST_CASE("[FoundryScript][TupleLowering] A container element of a tuple literal is built typed") {
+	// A tuple store never converts, so the element has to be constructed already typed. The declared
+	// element type reaches the element's own construction instruction and nothing else: the tuple slot
+	// itself still stores through the erased Array carrier.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func declared() -> void:\n"
+			"\tvar slot: (int, Array[int]) = (1, [])\n"
+			"\tprint(slot)\n"
+			"\n"
+			"func undeclared() -> void:\n"
+			"\tvar slot := (1, [])\n"
+			"\tprint(slot)\n");
+
+	SUBCASE("The declared element type selects the typed construction") {
+		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("declared"));
+		const Vector<String> typed_array_lines = filter_disassembly_lines(lines, "make_typed_array");
+		REQUIRE(typed_array_lines.size() == 1);
+		CAPTURE(typed_array_lines[0]);
+		CHECK(typed_array_lines[0].contains("make_typed_array (int)"));
+		CHECK(filter_disassembly_lines(lines, "make_array").is_empty());
+
+		// The slot store keeps the erased carrier: this fix types the literal, it does not give the
+		// tuple slot a typed-container form.
+		const Vector<String> store_lines = filter_disassembly_lines(lines, "assign typed tuple");
+		REQUIRE(store_lines.size() == 1);
+		CHECK(store_lines[0].contains("assign typed tuple of arity 2"));
+	}
+
+	SUBCASE("An inferred declaration supplies no element type, so the literal is unchanged") {
+		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("undeclared"));
+		CHECK(filter_disassembly_lines(lines, "make_typed_array").is_empty());
+		CHECK(filter_disassembly_lines(lines, "make_array").size() == 1);
+	}
+}
+
 static FSFunction *tuple_test_function(const Ref<FoundryScript> &p_script, const StringName &p_function_name) {
 	const HashMap<StringName, FSFunction *> &functions = p_script->get_member_functions();
 	const HashMap<StringName, FSFunction *>::ConstIterator function = functions.find(p_function_name);
@@ -190,7 +225,7 @@ TEST_CASE("[FoundryScript][TupleLowering] A tuple parameter compiles its shape i
 		CHECK(tuple_argument.container_element_types[0].builtin_type == Variant::INT);
 		CHECK(tuple_argument.container_element_types[1].builtin_type == Variant::STRING);
 
-		// A neighbouring non-tuple parameter is untouched.
+		// A neighboring non-tuple parameter is untouched.
 		const FSDataType &array_argument = function->get_argument_type(1);
 		CHECK(array_argument.kind == FSDataType::BUILTIN);
 		CHECK(array_argument.builtin_type == Variant::ARRAY);
