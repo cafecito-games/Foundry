@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot assign a value of type Box[String] to variable "conflicting" with specified type Box[int].

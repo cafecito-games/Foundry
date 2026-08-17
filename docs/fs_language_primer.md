@@ -431,6 +431,10 @@ func measured() -> void:
 - Generic method calls infer type arguments when possible: `identity(10)`. Use explicit arguments when inference is
   ambiguous: `identity[int](10)`.
 - Generic class instances are reified at runtime. Generic methods are checked statically and erased at runtime.
+- A specialized declaration such as `var slot: Box[int] = value` always checks the value's class or trait identity, but
+  checks its type arguments only when the value carries them: an argument-erased `Box.new()` is stored, while a
+  `Box[String]` is rejected. `is` and `as` are stricter — `Box.new() is Box[int]` is `false` — so use a type test when
+  the arguments have to be proven.
 - Traits are nominal contracts. A class satisfies a trait by declaring `uses TraitName`; matching method names alone is
   not enough.
 - Custom annotation declarations are root-only and use `annotation name(...) targets METHOD, CLASS, VARIABLE`.
