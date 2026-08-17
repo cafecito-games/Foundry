@@ -2,3 +2,4 @@ FS_TEST_ANALYZER_ERROR
 >> ERROR at line 30: Cannot assign a value of type StringKeeperChild to variable "subclass_slot" with specified type Keeper[int].
 >> ERROR at line 32: Cannot assign a value of type StoringKeeper[String] to variable "supertrait_slot" with specified type Keeper[int].
 >> ERROR at line 34: Cannot assign a value of type IntKeeper to variable "fixed_slot" with specified type Keeper[String].
+>> ERROR at line 37: Cannot assign a value of type Keeper[String] to variable "narrow" with specified type Keeper[int].
