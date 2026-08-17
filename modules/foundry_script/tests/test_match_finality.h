@@ -402,6 +402,33 @@ func describe(level: Level) -> String:
 	CHECK(match_node->covers_subject_domain);
 }
 
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A Variant test closes a plain-enum match") {
+	// `is Variant` accepts every value, undeclared carrier integers included, so it is the one type
+	// test that closes an open plain-enum domain.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		level is Variant:
+			return str(level)
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_variant.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK(match_node->covers_subject_domain);
+}
+
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A plain-enum match keeps the no-match path for definite assignment") {
 	// Definite assignment must see the same open domain flow finality does: without an unguarded
 	// catch-all, a blank final assigned in every member branch is still not definitely assigned.

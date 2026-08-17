@@ -1459,10 +1459,10 @@ Rules:
   nullable subject is exhaustive only when a `null` pattern (or a wildcard) is also present.
 - A **plain enum is an open, integer-backed domain**. Its declared members name values; they are not
   proof that no other integer inhabits an enum-typed slot, since a cast such as `99 as Level` warns
-  and proceeds. A `match` over a plain enum is therefore exhaustive only with an unguarded wildcard
-  or bind branch: listing every member, handling extra integer literals, or testing
-  `value is Level` all leave the undeclared carrier values unhandled. Tagged unions and `bool`
-  remain closed domains.
+  and proceeds. A `match` over a plain enum is therefore exhaustive only through a branch that
+  cannot fail: an unguarded wildcard or bind, or an unguarded `value is Variant` test. Listing every
+  member, handling extra integer literals, or testing `value is Level` all leave the undeclared
+  carrier values unhandled. Tagged unions and `bool` remain closed domains.
 - An unguarded same-subject type-test pattern covers the whole subject when the tested type accepts
   every value the subject can hold, and the branch then counts exactly as a wildcard does. That is
   decided only where the subject's domain is closed: a non-nullable `bool` tested against `bool`, a
@@ -1473,8 +1473,8 @@ Rules:
 - Exhaustiveness is normative for flow analysis, not only for diagnostics: a `match` over a closed
   domain — a tagged union or `bool` — whose branches cover the whole domain and all terminate is
   itself terminating, so a value-returning function needs no trailing `return` after it. The same
-  holds for a `match` with an unguarded wildcard or bind branch, which is the only way a plain-enum
-  `match` becomes terminating.
+  holds for a `match` with a branch that cannot fail, which is the only way a plain-enum `match`
+  becomes terminating.
 
 ---
 

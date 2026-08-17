@@ -299,9 +299,9 @@ match value:
   `int | String` subject still leaves the rest of the domain uncovered.
 - A plain enum is an **open** domain: it is carried by an integer, and a cast such as `99 as Level`
   puts an undeclared value in an enum-typed slot with only a warning. Listing every declared member,
-  or testing `value is Level`, therefore does not make the `match` exhaustive — only an unguarded
-  `_` or bind branch does. Tagged unions and `bool` are closed domains and are covered by handling
-  every case or both values.
+  or testing `value is Level`, therefore does not make the `match` exhaustive — only a branch that
+  cannot fail does: an unguarded `_`, a bind, or `value is Variant`. Tagged unions and `bool` are
+  closed domains and are covered by handling every case or both values.
 
 ### Types
 

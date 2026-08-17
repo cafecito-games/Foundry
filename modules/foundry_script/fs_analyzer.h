@@ -757,7 +757,7 @@ private:
 	// each re-deriving the pattern's shape.
 	static bool match_branch_always_matches(const FSParser::MatchBranchNode *p_branch);
 	bool collect_uncovered_tagged_union_cases(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, Vector<String> &r_uncovered) const;
-	bool collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const;
+	bool collect_uncovered_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const;
 	const FSParser::MatchNode *find_non_covering_match_cause(const FSParser::SuiteNode *p_suite) const;
 	// `p_subject_errored` says the subject expression's own reduction already reported why its type is
 	// unknown. The fallback type it left behind is indistinguishable from a written-out `Variant`, so

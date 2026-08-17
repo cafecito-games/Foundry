@@ -1598,7 +1598,8 @@ public:
 		// every build configuration: flow finality decides whether a program compiles.
 		bool covers_subject_domain = false;
 		// Display name of the subject's domain and the comma-joined values it leaves uncovered. Only
-		// populated for the finite domains coverage is computed over; used by diagnostics.
+		// populated for the domains whose values are enumerated -- a tagged union, a plain enum, or
+		// `bool`; used by diagnostics.
 		String subject_domain_name;
 		String uncovered_domain_values;
 		// Set when the subject is a plain enum without an unguarded catch-all. A plain enum is backed

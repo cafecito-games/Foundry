@@ -5593,7 +5593,7 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	Vector<String> unhandled;
 	const bool coverage_is_provable = is_tagged_union
 			? collect_uncovered_tagged_union_cases(p_match, match_type, unhandled)
-			: collect_uncovered_finite_domain_values(p_match, match_type, domain_values, unhandled);
+			: collect_uncovered_domain_values(p_match, match_type, domain_values, unhandled);
 	if (coverage_is_provable) {
 		p_match->subject_domain_name = type_name;
 		p_match->covers_subject_domain = is_finite_domain && unhandled.is_empty();
@@ -5631,7 +5631,7 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 
 // Collects the values of a plain enum or `bool` domain that no unguarded, statically-constant pattern
 // covers, in declaration order. Returns false when a pattern makes coverage unprovable.
-bool FSAnalyzer::collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const {
+bool FSAnalyzer::collect_uncovered_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const {
 	if (p_domain_values.is_empty()) {
 		return false; // Nothing to check; claim no coverage.
 	}
