@@ -1754,6 +1754,26 @@ class ProgressStreamIdentityTests(WrapperHarness):
         self.assertEqual(run_end["status"], "success")
         self.assertFalse(run_end["binary_changed"])
 
+    def test_run_end_reports_unchanged_binary_when_the_build_resolves_a_renamed_one(self) -> None:
+        with scratch_directory() as root:
+            build_directory = root / "bin"
+            build_directory.mkdir()
+            renamed = build_directory / "foundry.macos.editor.dev.arm64.san"
+            renamed.write_bytes(b"already linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: `.' is up to date."])
+            _, _, progress_path, _ = self.run_wrapper(
+                root,
+                scons,
+                binary_path=build_directory / "foundry.macos.editor.dev.arm64",
+                extra_argv=["--invocation-id", "renamed-no-op"],
+            )
+            run_end = run_end_for(progress_events(progress_path), "renamed-no-op")
+        assert run_end is not None
+        self.assertEqual(run_end["status"], "success")
+        self.assertEqual(run_end["binary_path"], str(renamed))
+        self.assertEqual(run_end["binary_before"], run_end["binary_after"])
+        self.assertFalse(run_end["binary_changed"])
+
     def test_run_end_is_last_and_singular_under_test_phase(self) -> None:
         with scratch_directory() as root:
             binary_path = executable_stub(root / "foundry.macos.editor.dev.arm64", 0)

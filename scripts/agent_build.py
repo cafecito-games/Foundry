@@ -428,6 +428,26 @@ def binary_identity(path: Path | None) -> dict[str, object] | None:
     return {"path": str(path), "size": stats.st_size, "mtime_ns": stats.st_mtime_ns}
 
 
+def editor_binary_identities(target: BuildTarget) -> dict[str, dict[str, object]]:
+    """Pre-build identities of every editor binary the build could resolve to, keyed by path.
+
+    Build settings the wrapper cannot reconstruct rename the binary, so the file a run ends up
+    reporting is not always the one whose name the wrapper predicted. Recording the whole directory
+    keeps `binary_changed` an honest comparison of one path against its own earlier state.
+    """
+    identities: dict[str, dict[str, object]] = {}
+    candidates = [target.binary_path]
+    try:
+        candidates += sorted(target.binary_path.parent.glob(f"foundry.{target.scons_platform}.editor*"))
+    except OSError:
+        pass
+    for candidate in candidates:
+        identity = binary_identity(candidate)
+        if identity is not None:
+            identities[str(candidate)] = identity
+    return identities
+
+
 class ProgressReporter:
     def __init__(
         self,
@@ -620,7 +640,7 @@ class ResultContext:
         self.human_stream: TextIO = sys.stdout
         self.progress_path: Path | None = None
         self.progress_stdout_jsonl = False
-        self.binary_before: dict[str, object] | None = None
+        self.binaries_before: dict[str, dict[str, object]] = {}
         self.started = time.monotonic()
 
 
@@ -651,6 +671,7 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
     except OSError as exc:
         print(f"[agent-build] warning: could not append the result line to {context.log_path}: {exc}", file=sys.stderr)
     binary_after = binary_identity(binary_path)
+    binary_before = context.binaries_before.get(str(binary_path))
     try:
         append_progress_record(
             context.progress_path,
@@ -663,7 +684,8 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
             duration_ms=int((time.monotonic() - context.started) * 1000),
             binary_path=str(binary_path),
             binary_after=binary_after,
-            binary_changed=binary_after != context.binary_before,
+            binary_before=binary_before,
+            binary_changed=binary_after != binary_before,
         )
     except Exception as exc:
         print(f"[agent-build] warning: could not emit the run_end record: {exc}", file=sys.stderr)
@@ -1222,7 +1244,7 @@ def main(argv: list[str]) -> int:
     RESULT_CONTEXT.human_stream = human_stream
     RESULT_CONTEXT.progress_path = progress_path
     RESULT_CONTEXT.progress_stdout_jsonl = progress_stdout_jsonl
-    RESULT_CONTEXT.binary_before = None
+    RESULT_CONTEXT.binaries_before = {}
     RESULT_CONTEXT.started = time.monotonic()
 
     def fail_at_startup(exit_code: int, error: str) -> int:
@@ -1238,7 +1260,7 @@ def main(argv: list[str]) -> int:
     else:
         target_error = None
         RESULT_CONTEXT.binary_path = resolved_target.binary_path
-        RESULT_CONTEXT.binary_before = binary_identity(resolved_target.binary_path)
+        RESULT_CONTEXT.binaries_before = editor_binary_identities(resolved_target)
 
     git_commit, git_commit_error = read_git_commit()
 
@@ -1264,7 +1286,11 @@ def main(argv: list[str]) -> int:
             git_commit=git_commit,
             log_path=str(args.log),
             binary_path=str(resolved_target.binary_path) if resolved_target is not None else None,
-            binary_before=RESULT_CONTEXT.binary_before,
+            binary_before=(
+                RESULT_CONTEXT.binaries_before.get(str(resolved_target.binary_path))
+                if resolved_target is not None
+                else None
+            ),
         )
     except Exception as exc:
         print(f"[agent-build] warning: could not emit the run_start record: {exc}", file=sys.stderr)

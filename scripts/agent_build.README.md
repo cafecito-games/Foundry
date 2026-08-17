@@ -148,12 +148,16 @@ invocation can never be read as this one's. It carries `invocation_id`, `argv`, 
 `run_end` is the last record of every invocation, emitted exactly once alongside the `RESULT:` line
 and with the same `status` and `exit_code`, including when the run aborts during startup and when it
 runs tests. It carries `invocation_id`, `status`, `step`, `exit_code`, `duration_ms`, `binary_path`,
-`binary_after`, and `binary_changed`.
+`binary_before`, `binary_after`, and `binary_changed`.
 
 A binary identity block — `binary_before`, `binary_after`, and the `binary_after` on `build_summary` —
 is `{"path": ..., "size": ..., "mtime_ns": ...}`, or `null` when the file is absent. `binary_changed`
-is `binary_after != binary_before`. It is not a failure when it is `false`: a no-op incremental build
-legitimately leaves the binary untouched, and the field exists so a caller can decide.
+is `binary_after != binary_before`, and both are read from the *same* path: build settings the wrapper
+cannot reconstruct rename the binary, so the identity a run reports is compared against what that same
+file was before the build, not against the predicted name. `run_start`'s `binary_before` is the
+predicted path's pre-build identity; `run_end`'s is the reported path's. It is not a failure when
+`binary_changed` is `false`: a no-op incremental build legitimately leaves the binary untouched, and
+the field exists so a caller can decide.
 
 ### Waiting for a build from another process
 
