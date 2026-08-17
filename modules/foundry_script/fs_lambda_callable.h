@@ -58,6 +58,14 @@ class FSLambdaCallable : public CallableCustom {
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
 
 public:
+	// The callable as this type when it is one, so a caller can reach the compiled function this
+	// dispatches to. `CallableCustom` has no type discrimination of its own.
+	static const FSLambdaCallable *get_from_callable(const Callable &p_callable);
+	FSFunction *get_function() const { return function; }
+	// Captures are passed as the compiled function's leading parameters, so a caller reasoning about
+	// the function's own parameter numbering has to account for them.
+	int get_capture_count() const { return captures.size(); }
+
 	bool is_valid() const override;
 	uint32_t hash() const override;
 	String get_as_text() const override;
@@ -88,6 +96,14 @@ class FSLambdaSelfCallable : public CallableCustom {
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
 
 public:
+	// The callable as this type when it is one, so a caller can reach the compiled function this
+	// dispatches to. `CallableCustom` has no type discrimination of its own.
+	static const FSLambdaSelfCallable *get_from_callable(const Callable &p_callable);
+	FSFunction *get_function() const { return function; }
+	// Captures are passed as the compiled function's leading parameters, so a caller reasoning about
+	// the function's own parameter numbering has to account for them.
+	int get_capture_count() const { return captures.size(); }
+
 	bool is_valid() const override;
 	uint32_t hash() const override;
 	String get_as_text() const override;

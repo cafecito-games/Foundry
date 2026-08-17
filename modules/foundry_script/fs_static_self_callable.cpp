@@ -46,6 +46,36 @@ static bool _static_self_callable_receiver_is_live(const FSStaticSelfContext &p_
 	return p_receiver.is_fully_live();
 }
 
+const FSStaticSelfCallable *FSStaticSelfCallable::get_from_callable(const Callable &p_callable) {
+	if (!p_callable.is_custom()) {
+		return nullptr;
+	}
+	const CallableCustom *custom = p_callable.get_custom();
+	// The comparison function pointer doubles as the type witness, the established pattern for
+	// identifying a CallableCustom subclass without RTTI.
+	if (custom == nullptr || custom->get_compare_equal_func() != &FSStaticSelfCallable::compare_equal) {
+		return nullptr;
+	}
+	return static_cast<const FSStaticSelfCallable *>(custom);
+}
+
+const FSFunction *FSStaticSelfCallable::get_target_function() const {
+	// Lookup starts at the target class and walks its bases, which is the selection `call()` makes.
+	Ref<FoundryScript> script = resolve_target();
+	while (script.is_valid()) {
+		// A script that failed to reload keeps its old functions but is skipped by dispatch, so the
+		// selection has to skip it too.
+		if (script->is_valid()) {
+			HashMap<StringName, FSFunction *>::ConstIterator found = script->get_member_functions().find(method);
+			if (found) {
+				return found->value;
+			}
+		}
+		script = script->get_base();
+	}
+	return nullptr;
+}
+
 bool FSStaticSelfCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {
 	// Two callables extracted separately for one target, receiver, and method mean the same thing.
 	// Compared field by field rather than by hash, so two receivers whose display names coincide stay
