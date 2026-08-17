@@ -33,6 +33,7 @@
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_warning.h"
+#include "modules/foundry_script/tests/fs_test_warning_settings.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
@@ -120,32 +121,6 @@ static String generic_error_messages(const FSParser &p_parser) {
 }
 
 #ifdef DEBUG_ENABLED
-class GenericAnalyzerWarningSettingsScope {
-	Variant previous_enable;
-	Variant previous_level;
-	bool previous_ignore = false;
-
-public:
-	GenericAnalyzerWarningSettingsScope() {
-		previous_ignore = FSParser::is_ignoring_warnings();
-		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
-		const String setting = FSWarning::get_setting_path_from_code(FSWarning::UNSAFE_METHOD_ACCESS);
-		previous_level = ProjectSettings::get_singleton()->get_setting(setting, (int)FSWarning::IGNORE);
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
-		ProjectSettings::get_singleton()->set_setting(setting, (int)FSWarning::WARN);
-		FSParser::set_ignoring_warnings(false);
-		FSParser::update_project_settings();
-	}
-
-	~GenericAnalyzerWarningSettingsScope() {
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
-		ProjectSettings::get_singleton()->set_setting(
-				FSWarning::get_setting_path_from_code(FSWarning::UNSAFE_METHOD_ACCESS), previous_level);
-		FSParser::set_ignoring_warnings(previous_ignore);
-		FSParser::update_project_settings();
-	}
-};
-
 static int generic_count_warnings(const FSParser &p_parser, FSWarning::Code p_code) {
 	int count = 0;
 	for (const FSWarning &warning : p_parser.get_warnings()) {
@@ -1575,7 +1550,8 @@ TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Trait lookup continues pas
 
 #ifdef DEBUG_ENABLED
 TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Soft receivers warn for unflattenable trait members") {
-	GenericAnalyzerWarningSettingsScope warning_settings;
+	// `UNSAFE_METHOD_ACCESS` ships at `IGNORE`, so the override is what makes this case observable.
+	const WarningSettingsScope warning_settings({ { FSWarning::UNSAFE_METHOD_ACCESS, FSWarning::WARN } });
 	FSParser parser;
 	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_unflattenable_soft_receiver.notest.fs") == OK);
 

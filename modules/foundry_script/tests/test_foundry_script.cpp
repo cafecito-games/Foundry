@@ -31,6 +31,9 @@
 #include "test_foundry_script.h"
 
 #include "fs_temporary_project_tree.h"
+#ifdef DEBUG_ENABLED
+#include "fs_test_warning_settings.h"
+#endif
 
 #ifdef TOOLS_ENABLED
 #include "../editor/fs_docgen.h"
@@ -188,35 +191,9 @@ TEST_CASE("[Modules][FoundryScript] Language reserved words include namespace de
 }
 
 #ifdef DEBUG_ENABLED
-class DiagnosticRangeWarningSettingsScope {
-	Variant previous_enable;
-	Variant previous_unused_variable;
-	bool previous_ignore = false;
-
-public:
-	DiagnosticRangeWarningSettingsScope() {
-		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
-		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
-		previous_unused_variable = ProjectSettings::get_singleton()->get_setting(unused_variable_setting, (int)FSWarning::WARN);
-		previous_ignore = FSParser::is_ignoring_warnings();
-
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
-		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, (int)FSWarning::WARN);
-		FSParser::set_ignoring_warnings(false);
-		FSParser::update_project_settings();
-	}
-
-	~DiagnosticRangeWarningSettingsScope() {
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
-		ProjectSettings::get_singleton()->set_setting(
-				FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE), previous_unused_variable);
-		FSParser::set_ignoring_warnings(previous_ignore);
-		FSParser::update_project_settings();
-	}
-};
-
 TEST_CASE("[Modules][FoundryScript] diagnostic range validation is one-based and end-exclusive") {
-	DiagnosticRangeWarningSettingsScope warning_settings;
+	// `UNUSED_VARIABLE` ships at `WARN`, so the shipped defaults are enough here.
+	const WarningSettingsScope warning_settings;
 
 	SUBCASE("Unused variable warning carries the variable declaration range") {
 		const String source = "func diagnose() -> void:\n    var unused = 42\n";
@@ -6426,8 +6403,9 @@ TEST_CASE("[Modules][FoundryScript] Analyzer reports mixed namespace directories
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
 
-	const String warning_setting = FSWarning::get_setting_path_from_code(FSWarning::MIXED_NAMESPACE_DIRECTORY);
-	const Variant original_warning_setting = ProjectSettings::get_singleton()->get_setting(warning_setting);
+	// `MIXED_NAMESPACE_DIRECTORY` ships at `WARN`; the case cycles it deliberately through the scope so
+	// it also holds against an ambient project that disables warnings altogether.
+	WarningSettingsScope warning_settings;
 
 	TempScriptFile global_script("mixed_global_script.fs", R"(
 class_name MixedGlobalScript
@@ -6451,8 +6429,7 @@ extends Node
 	const String expected_directory = FoundryScript::canonicalize_path(namespaced_script.path).get_base_dir();
 	const String expected_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "<global>", "characters", and "ui".)", expected_directory);
 
-	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)FSWarning::WARN);
-	FSParser::update_project_settings();
+	warning_settings.set_level(FSWarning::MIXED_NAMESPACE_DIRECTORY, FSWarning::WARN);
 
 	FSParser warn_parser;
 	Error err = warn_parser.parse(R"(
@@ -6483,8 +6460,7 @@ extends Node
 		CHECK(has_parser_warning(global_trigger_parser, FSWarning::MIXED_NAMESPACE_DIRECTORY, expected_warning));
 	}
 
-	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)FSWarning::IGNORE);
-	FSParser::update_project_settings();
+	warning_settings.set_level(FSWarning::MIXED_NAMESPACE_DIRECTORY, FSWarning::IGNORE);
 	FSParser ignore_parser;
 	err = ignore_parser.parse(R"(
 namespace characters
@@ -6497,11 +6473,12 @@ extends Node
 		FSAnalyzer analyzer(&ignore_parser);
 		err = analyzer.analyze();
 		CHECK_EQ(err, OK);
+		// The positive control for this negative assertion is the `WARN` parse above: the same source
+		// and the same directory produce the warning, so an empty result here is `IGNORE` doing its job.
 		CHECK_EQ(count_parser_warnings(ignore_parser, FSWarning::MIXED_NAMESPACE_DIRECTORY), 0);
 	}
 
-	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)FSWarning::ERROR);
-	FSParser::update_project_settings();
+	warning_settings.set_level(FSWarning::MIXED_NAMESPACE_DIRECTORY, FSWarning::ERROR);
 	FSParser error_parser;
 	err = error_parser.parse(R"(
 namespace characters
@@ -6522,8 +6499,7 @@ extends Node
 	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", FSLanguage::get_singleton()->get_name(), namespaced_script.path, false, false, false);
 
 	const String expected_two_namespace_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "<global>" and "characters".)", expected_directory);
-	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)FSWarning::WARN);
-	FSParser::update_project_settings();
+	warning_settings.set_level(FSWarning::MIXED_NAMESPACE_DIRECTORY, FSWarning::WARN);
 	FSParser two_namespace_parser;
 	err = two_namespace_parser.parse(R"(
 namespace characters
@@ -6548,8 +6524,7 @@ extends Node
 	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", FSLanguage::get_singleton()->get_name(), namespaced_script.path, false, false, false);
 	ScriptServer::add_global_class("characters.SameNamespacePeer", "Node", FSLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false, false);
 
-	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)FSWarning::WARN);
-	FSParser::update_project_settings();
+	warning_settings.set_level(FSWarning::MIXED_NAMESPACE_DIRECTORY, FSWarning::WARN);
 	FSParser same_namespace_parser;
 	err = same_namespace_parser.parse(R"(
 namespace characters
@@ -6562,11 +6537,10 @@ extends Node
 		FSAnalyzer analyzer(&same_namespace_parser);
 		err = analyzer.analyze();
 		CHECK_EQ(err, OK);
+		// The positive control for this negative assertion is the mixed-namespace parse earlier in the
+		// case, run at the same `WARN` level: only the peer's namespace differs.
 		CHECK_EQ(count_parser_warnings(same_namespace_parser, FSWarning::MIXED_NAMESPACE_DIRECTORY), 0);
 	}
-
-	ProjectSettings::get_singleton()->set_setting(warning_setting, original_warning_setting);
-	FSParser::update_project_settings();
 }
 #endif // DEBUG_ENABLED
 
@@ -6791,8 +6765,7 @@ TEST_CASE("[Modules][FoundryScript] Analyzer reports mixed namespace directories
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
 
-	const String warning_setting = FSWarning::get_setting_path_from_code(FSWarning::MIXED_NAMESPACE_DIRECTORY);
-	const Variant original_warning_setting = ProjectSettings::get_singleton()->get_setting(warning_setting);
+	const WarningSettingsScope warning_settings;
 
 	TempScriptFile namespaced_class("mixed_trait_class.fs", R"(
 namespace characters
@@ -6809,9 +6782,6 @@ trait_name MixedDeclTrait
 
 	const String expected_directory = FoundryScript::canonicalize_path(namespaced_trait.path).get_base_dir();
 	const String expected_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "characters" and "combat".)", expected_directory);
-
-	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)FSWarning::WARN);
-	FSParser::update_project_settings();
 
 	// A `trait_name` declaration is a global script class, so analyzing it must surface the mixed-namespace warning.
 	FSParser trait_parser;
@@ -6865,11 +6835,10 @@ trait_name MixedDeclTrait
 		FSAnalyzer analyzer(&same_namespace_parser);
 		err = analyzer.analyze();
 		CHECK_EQ(err, OK);
+		// The positive control for this negative assertion is the mixed-namespace parse earlier in the
+		// case, run at the same `WARN` level: only the peer's namespace differs.
 		CHECK_EQ(count_parser_warnings(same_namespace_parser, FSWarning::MIXED_NAMESPACE_DIRECTORY), 0);
 	}
-
-	ProjectSettings::get_singleton()->set_setting(warning_setting, original_warning_setting);
-	FSParser::update_project_settings();
 }
 #endif // DEBUG_ENABLED
 

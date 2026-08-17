@@ -33,6 +33,7 @@
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_warning.h"
+#include "modules/foundry_script/tests/fs_test_warning_settings.h"
 
 #include "core/config/project_settings.h"
 #include "tests/test_macros.h"
@@ -40,48 +41,8 @@
 namespace FSTests {
 
 #ifdef DEBUG_ENABLED
-class AnalyzerWarningSettingsScope {
-	Variant previous_enable;
-	HashMap<String, Variant> previous_levels;
-
-public:
-	AnalyzerWarningSettingsScope() {
-		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
-		for (int i = 0; i < (int)FSWarning::WARNING_MAX; i++) {
-			if (i == FSWarning::UNTYPED_DECLARATION || i == FSWarning::INFERRED_DECLARATION) {
-				continue;
-			}
-			const String setting_path = FSWarning::get_setting_path_from_code((FSWarning::Code)i);
-			previous_levels[setting_path] = ProjectSettings::get_singleton()->get_setting(setting_path, (int)FSWarning::WARN);
-			ProjectSettings::get_singleton()->set_setting(setting_path, (int)FSWarning::WARN);
-		}
-		FSParser::update_project_settings();
-	}
-
-	~AnalyzerWarningSettingsScope() {
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
-		for (const KeyValue<String, Variant> &entry : previous_levels) {
-			ProjectSettings::get_singleton()->set_setting(entry.key, entry.value);
-		}
-		FSParser::update_project_settings();
-	}
-};
-#endif // DEBUG_ENABLED
-
-#ifdef DEBUG_ENABLED
-static int count_warnings_with_code(const FSParser &p_parser, FSWarning::Code p_code) {
-	int count = 0;
-	for (const FSWarning &warning : p_parser.get_warnings()) {
-		if (warning.code == p_code) {
-			count++;
-		}
-	}
-	return count;
-}
-
 TEST_CASE("[Modules][FoundryScript][Analyzer] @warning_ignore suppresses pending warnings after body analysis") {
-	AnalyzerWarningSettingsScope warning_settings;
+	const WarningSettingsScope warning_settings;
 
 	const char *source = R"(
 extends RefCounted
@@ -106,7 +67,7 @@ func test() -> void:
 }
 
 TEST_CASE("[Modules][FoundryScript][Analyzer] non-ignored pending warnings are applied after body analysis") {
-	AnalyzerWarningSettingsScope warning_settings;
+	const WarningSettingsScope warning_settings;
 
 	const char *source = R"(
 extends RefCounted
