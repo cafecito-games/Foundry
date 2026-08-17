@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 6: Cannot return value of type "(Base, int)" because the function return type is "(Self, int)".
+>> ERROR at line 7: Cannot return value of type "(Base, int)" because the function return type is "(Self, int)".
