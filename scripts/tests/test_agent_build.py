@@ -14,8 +14,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -25,8 +25,6 @@ assert _spec is not None and _spec.loader is not None
 agent_build: Any = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = agent_build
 _spec.loader.exec_module(agent_build)
-
-
 
 
 @contextlib.contextmanager
@@ -1078,9 +1076,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                                     )
 
         self.assertEqual(exit_code, 23)
-        payload = sole_build_summary(
-            [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
-        )
+        payload = sole_build_summary([json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()])
         self.assertEqual(payload["event"], "build_summary")
         self.assertEqual(payload["invocation_id"], "invocation-stdout")
         self.assertEqual(payload["cache_stats_status"], "disabled")

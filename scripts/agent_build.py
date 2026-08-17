@@ -1243,9 +1243,8 @@ def main(argv: list[str]) -> int:
             if build_failure_signals:
                 build_exit = BUILD_OUTPUT_FAILURE_EXIT_CODE
                 build_status = "failed"
-                build_error = (
-                    "the build command exited 0 but its output reported failures: "
-                    + "; ".join(f"{name}: {line}" for name, line in sorted(build_failure_signals.items()))
+                build_error = "the build command exited 0 but its output reported failures: " + "; ".join(
+                    f"{name}: {line}" for name, line in sorted(build_failure_signals.items())
                 )
                 print(f"[agent-build] {build_error}", file=sys.stderr)
             elif not target.binary_path.exists():
