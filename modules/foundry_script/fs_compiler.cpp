@@ -1794,9 +1794,30 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				arguments.write[i] = arg;
 			}
 
+			// A generic callee is compiled once with its method type parameters erased, so its own argument
+			// binding cannot check what the call site substituted. Every argument expression has already
+			// been evaluated above, in written order and exactly once, so validating here keeps evaluation
+			// order intact while still rejecting before dispatch.
+			HashSet<int> generic_checked_arguments;
+			for (const FSParser::CallNode::GenericArgumentCheck &check : call->generic_argument_checks) {
+				if (check.argument_index < 0 || check.argument_index >= arguments.size()) {
+					continue;
+				}
+				const FSDataType expected_type = _gdtype_from_datatype(check.substituted_type, codegen.script);
+				if (!expected_type.has_type()) {
+					continue;
+				}
+				FSCodeGenerator::Address checked_argument = codegen.add_temporary(expected_type);
+				argument_temporaries_to_pop++;
+				gen->write_validate_call_argument(checked_argument, arguments[check.argument_index], expected_type,
+						call->function_name, check.argument_index);
+				arguments.write[check.argument_index] = checked_argument;
+				generic_checked_arguments.insert(check.argument_index);
+			}
+
 			const int checked_argument_count = MIN(arguments.size(), call->resolved_parameter_types.size());
 			for (int i = 0; i < checked_argument_count; i++) {
-				if (call->synthesized_argument_indices.has(i)) {
+				if (call->synthesized_argument_indices.has(i) || generic_checked_arguments.has(i)) {
 					continue;
 				}
 				const FSDataType parameter_type = _gdtype_from_datatype(call->resolved_parameter_types[i], codegen.script);

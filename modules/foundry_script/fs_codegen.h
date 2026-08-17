@@ -141,6 +141,9 @@ public:
 	virtual void write_assign_typed_tuple(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) = 0;
 	// Retype a runtime-erased (untyped) array — the result of a generic method returning `Array[T]` —
 	// into the concrete typed array of the target, converting each element.
+	// Validates and converts one argument of a statically resolved generic call against the type the
+	// call site substituted for the callee's erased method type parameter, before the call is dispatched.
+	virtual void write_validate_call_argument(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, const StringName &p_callee_name, int p_argument_index) = 0;
 	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) = 0;
 	// Retype a runtime-erased (untyped) dictionary — the result of a generic method returning
 	// `Dictionary[K, V]` — into the concrete typed dictionary of the target, converting each entry.

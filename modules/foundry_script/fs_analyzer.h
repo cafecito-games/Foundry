@@ -402,6 +402,13 @@ private:
 	class CallSiteValidationContext {
 		FSAnalyzer *analyzer = nullptr;
 
+		// Records the call-site check a generic argument needs when the callee's declared destination is
+		// erased but the substitution closed it into a concrete, runtime-checkable type. Records nothing
+		// when the destination was already checkable in the callee, when the substitution stays open, or
+		// when the argument is statically typed and therefore already validated against the substitution.
+		void record_generic_argument_check(FSParser::CallNode *p_call, int p_argument_index,
+				const FSParser::DataType &p_declared_type, const FSParser::DataType &p_substituted_type) const;
+
 	public:
 		explicit CallSiteValidationContext(FSAnalyzer *p_analyzer);
 
