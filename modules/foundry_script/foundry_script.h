@@ -964,7 +964,8 @@ class FSProjectScripts;
 #ifdef TESTS_ENABLED
 namespace FSTests {
 class TestFSDeclarationIndexAccessor;
-}
+class TestFSLanguageFunctionListAccessor;
+} //namespace FSTests
 #endif // TESTS_ENABLED
 
 class FSLanguage : public ScriptLanguage {
@@ -1097,6 +1098,7 @@ class FSLanguage : public ScriptLanguage {
 
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSDeclarationIndexAccessor;
+	friend class FSTests::TestFSLanguageFunctionListAccessor;
 #endif // TESTS_ENABLED
 
 	friend class FSInstance;

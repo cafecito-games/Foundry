@@ -911,8 +911,11 @@ FSFunction::FSFunction() {
 	name = "<anonymous>";
 #ifdef DEBUG_ENABLED
 	{
-		MutexLock lock(FSLanguage::get_singleton()->mutex);
-		FSLanguage::get_singleton()->function_list.add(&function_list);
+		// Registration genuinely needs the language's list, so a function can only be created
+		// while the singleton is alive.
+		FSLanguage *language = FSLanguage::get_singleton();
+		MutexLock lock(language->mutex);
+		language->function_list.add(&function_list);
 	}
 #endif
 }
@@ -936,8 +939,18 @@ FSFunction::~FSFunction() {
 	return_type.script_type_ref = Ref<Script>();
 
 #ifdef DEBUG_ENABLED
-	MutexLock lock(FSLanguage::get_singleton()->mutex);
-	FSLanguage::get_singleton()->function_list.remove(&function_list);
+	// Unlink through this function's own node rather than through the language's list: that is
+	// correct whether or not `FSLanguage::finish()` already drained the list, and whether or not
+	// the language singleton still exists.
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (language == nullptr) {
+		// The singleton is gone, so its list went with it and no other thread can still be
+		// registering functions; there is no mutex left to take.
+		function_list.remove_from_list();
+	} else {
+		MutexLock lock(language->mutex);
+		function_list.remove_from_list();
+	}
 #endif
 }
 
