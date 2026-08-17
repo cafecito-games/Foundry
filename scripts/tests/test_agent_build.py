@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from collections.abc import Iterator
@@ -1637,11 +1638,13 @@ def long_running_fake_scons(
     pid_path: Path,
     artifact_path: Path,
     ignore_terminate: bool,
+    lifetime_seconds: float = 60.0,
 ) -> Path:
     """A stand-in SCons that keeps writing a build artifact until it is stopped.
 
     It reports its own pid, then prints one line so the wrapper's output loop is reached while the
-    child is still running — the state a real build is in when an agent interrupts it.
+    child is still running — the state a real build is in when an agent interrupts it. It also stops
+    on its own after `lifetime_seconds`, so a failing test cannot leave it running indefinitely.
     """
     script = directory / f"long_running_fake_scons_{'stubborn' if ignore_terminate else 'cooperative'}.py"
     script.write_text(
@@ -1655,11 +1658,59 @@ def long_running_fake_scons(
         + f"pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid()))\n"
         "print('scons: building targets ...')\n"
         "sys.stdout.flush()\n"
+        f"deadline = time.monotonic() + {lifetime_seconds!r}\n"
+        "for counter in itertools.count():\n"
+        f"    pathlib.Path({str(artifact_path)!r}).write_text(str(counter))\n"
+        "    time.sleep(0.02)\n"
+        "    if time.monotonic() > deadline:\n"
+        "        break\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+def artifact_state(path: Path) -> str | None:
+    """What the fake build has written so far, or None when it has not written anything yet."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def orphaning_fake_scons(directory: Path, *, pid_path: Path, artifact_path: Path) -> Path:
+    """A stand-in SCons that spawns a stubborn worker into its group and then exits itself.
+
+    A real build driver does the same: it exits when its compilers do, so treating the driver's exit
+    as proof the build stopped would let a straggling compiler keep writing objects.
+    """
+    worker = directory / "orphaning_fake_scons_worker.py"
+    worker.write_text(
+        "import itertools\n"
+        "import pathlib\n"
+        "import signal\n"
+        "import time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
         "for counter in itertools.count():\n"
         f"    pathlib.Path({str(artifact_path)!r}).write_text(str(counter))\n"
         "    time.sleep(0.02)\n"
         "    if counter > 3000:\n"
         "        break\n",
+        encoding="utf-8",
+    )
+    script = directory / "orphaning_fake_scons.py"
+    script.write_text(
+        "import pathlib\n"
+        "import subprocess\n"
+        "import sys\n"
+        "import time\n"
+        f"worker = subprocess.Popen([sys.executable, {str(worker)!r}])\n"
+        f"pathlib.Path({str(pid_path)!r}).write_text(str(worker.pid))\n"
+        f"artifact = pathlib.Path({str(artifact_path)!r})\n"
+        "deadline = time.monotonic() + 30\n"
+        "while not artifact.exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "print('scons: building targets ...')\n"
+        "sys.stdout.flush()\n",
         encoding="utf-8",
     )
     return script
@@ -1691,19 +1742,14 @@ class InterruptedBuildTests(WrapperHarness):
         self.addCleanup(kill_group)
         return pid
 
-    def run_interrupted(
+    def run_wrapper_interrupted_on_output(
         self,
         root: Path,
+        scons: Path,
         *,
-        ignore_terminate: bool,
         grace_seconds: float,
-    ) -> tuple[int, Path, Path, int, Path]:
+    ) -> tuple[int, Path, Path]:
         """Run the wrapper against a live fake build and interrupt it while output is streaming."""
-        pid_path = root / "child.pid"
-        artifact_path = root / "artifact"
-        scons = long_running_fake_scons(
-            root, pid_path=pid_path, artifact_path=artifact_path, ignore_terminate=ignore_terminate
-        )
         original_emit = agent_build.ProgressReporter.emit
         interrupted = False
 
@@ -1718,7 +1764,68 @@ class InterruptedBuildTests(WrapperHarness):
             with mock.patch.object(agent_build.ProgressReporter, "emit", emit_and_interrupt):
                 exit_code, log_path, progress_path, _ = self.run_wrapper(root, scons, entry=agent_build.run)
         self.assertTrue(interrupted, "the run was never interrupted")
+        return exit_code, log_path, progress_path
+
+    def run_interrupted(
+        self,
+        root: Path,
+        *,
+        ignore_terminate: bool,
+        grace_seconds: float,
+    ) -> tuple[int, Path, Path, int, Path]:
+        pid_path = root / "child.pid"
+        artifact_path = root / "artifact"
+        scons = long_running_fake_scons(
+            root, pid_path=pid_path, artifact_path=artifact_path, ignore_terminate=ignore_terminate
+        )
+        exit_code, log_path, progress_path = self.run_wrapper_interrupted_on_output(
+            root, scons, grace_seconds=grace_seconds
+        )
         return exit_code, log_path, progress_path, self.reap(pid_path), artifact_path
+
+    def test_a_worker_outliving_the_build_driver_is_still_stopped(self) -> None:
+        with scratch_directory() as root:
+            pid_path = root / "worker.pid"
+            artifact_path = root / "artifact"
+            scons = orphaning_fake_scons(root, pid_path=pid_path, artifact_path=artifact_path)
+            _, log_path, _ = self.run_wrapper_interrupted_on_output(root, scons, grace_seconds=0.5)
+            worker = self.reap(pid_path)
+            alive = process_is_alive(worker)
+            at_verdict = artifact_state(artifact_path)
+            time.sleep(0.5)
+            after_verdict = artifact_state(artifact_path)
+            line = self.result_line(log_path)
+        self.assertFalse(alive, "a worker outlived the wrapper because its build driver had exited")
+        self.assertEqual(after_verdict, at_verdict, "the worker kept writing after the run was declared over")
+        self.assertIn("child=killed", line)
+
+    def test_an_interrupt_right_after_the_launch_still_stops_the_build(self) -> None:
+        """The window between creating the build process and watching it must be guarded too."""
+        with scratch_directory() as root:
+            artifact_path = root / "artifact"
+            scons = long_running_fake_scons(
+                root,
+                pid_path=root / "child.pid",
+                artifact_path=artifact_path,
+                ignore_terminate=False,
+                lifetime_seconds=10.0,
+            )
+            original_start = threading.Thread.start
+
+            def start_and_interrupt(thread: threading.Thread) -> None:
+                original_start(thread)
+                raise KeyboardInterrupt
+
+            with mock.patch.object(threading.Thread, "start", start_and_interrupt):
+                exit_code, log_path, _, _ = self.run_wrapper(root, scons, entry=agent_build.run)
+            at_verdict = artifact_state(artifact_path)
+            time.sleep(1.0)
+            after_verdict = artifact_state(artifact_path)
+            line = self.result_line(log_path)
+        self.assertEqual(after_verdict, at_verdict, "a build interrupted right after its launch kept writing")
+        self.assertEqual(exit_code, 130)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
+        self.assertNotIn("child=none", line)
 
     def test_an_interrupted_build_leaves_no_running_child(self) -> None:
         with scratch_directory() as root:

@@ -525,27 +525,53 @@ def stream_output(pipe, output_queue: queue.Queue[str | None]) -> None:
         output_queue.put(None)
 
 
-def signal_child_group(proc: subprocess.Popen[str], signal_number: int) -> None:
+def child_group_id(proc: subprocess.Popen[str]) -> int | None:
+    """The child's process group, or None where the platform has none to address."""
+    if os.name == "nt":
+        return None
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        return None
+    # The child is expected to lead its own group; sharing the wrapper's would make a shutdown
+    # signal reach the wrapper itself.
+    return None if pgid == os.getpgrp() else pgid
+
+
+def signal_child_group(proc: subprocess.Popen[str], pgid: int | None, signal_number: int) -> None:
     """Signal the child's whole process group, so a build's compilers go with it.
 
     The child is started in its own session, so signaling only the child would leave the compiler
     processes it spawned running and still writing objects.
     """
-    if proc.poll() is not None:
-        return
-    try:
-        if os.name != "nt":
-            os.killpg(os.getpgid(proc.pid), signal_number)
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal_number)
             return
-    except (OSError, AttributeError):
-        pass
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
     try:
         if signal_number == getattr(signal, "SIGKILL", None):
             proc.kill()
         else:
             proc.terminate()
-    except OSError:
+    except (OSError, ValueError):
         pass
+
+
+def child_group_is_running(pgid: int | None) -> bool:
+    """Whether any process of the group is still there — a reaped leader proves nothing."""
+    if pgid is None:
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 def wait_for_child(proc: subprocess.Popen[str], timeout: float) -> int | None:
@@ -567,25 +593,53 @@ def wait_for_child(proc: subprocess.Popen[str], timeout: float) -> int | None:
             continue
 
 
-def terminate_child_group(proc: subprocess.Popen[str], *, grace_seconds: float | None = None) -> tuple[str, int | None]:
+def wait_for_child_group(pgid: int | None, timeout: float) -> bool:
+    """Wait up to `timeout` for the group to empty out, and report whether it did.
+
+    The build driver's own exit is not proof that the build stopped: a compiler it spawned can
+    outlive it and keep writing objects, so the group is what has to be observed gone.
+    """
+    deadline = time.monotonic() + timeout
+    while child_group_is_running(pgid):
+        if time.monotonic() >= deadline:
+            return False
+        try:
+            time.sleep(0.05)
+        except KeyboardInterrupt:
+            continue
+    return True
+
+
+def terminate_child_group(
+    proc: subprocess.Popen[str],
+    pgid: int | None,
+    *,
+    grace_seconds: float | None = None,
+) -> tuple[str, int | None]:
     """Stop an interrupted run's child process group and wait for it to actually be gone.
 
-    Returns the child's disposition and exit status: `exited` when it had already finished,
-    `terminated` when SIGTERM was enough, `killed` when SIGKILL was needed, and `escaped` when it
-    survived even that — the one case where later writes to the build tree are still possible.
+    Returns the group's disposition and the driver's exit status: `exited` when the build had
+    already finished on its own, `terminated` when SIGTERM was enough, `killed` when SIGKILL was
+    needed, and `escaped` when something survived even that — the one case where later writes to the
+    build tree are still possible.
     """
     grace = CHILD_TERMINATION_GRACE_SECONDS if grace_seconds is None else grace_seconds
-    if proc.poll() is not None:
+    if proc.poll() is not None and not child_group_is_running(pgid):
         return "exited", proc.returncode
-    signal_child_group(proc, signal.SIGTERM)
+
+    signal_child_group(proc, pgid, signal.SIGTERM)
+    started = time.monotonic()
     status = wait_for_child(proc, grace)
-    if status is not None:
+    if status is not None and wait_for_child_group(pgid, max(0.0, grace - (time.monotonic() - started))):
         return "terminated", status
-    signal_child_group(proc, getattr(signal, "SIGKILL", signal.SIGTERM))
-    status = wait_for_child(proc, grace)
-    if status is not None:
+
+    signal_child_group(proc, pgid, getattr(signal, "SIGKILL", signal.SIGTERM))
+    started = time.monotonic()
+    if status is None:
+        status = wait_for_child(proc, grace)
+    if status is not None and wait_for_child_group(pgid, max(0.0, grace - (time.monotonic() - started))):
         return "killed", status
-    return "escaped", None
+    return "escaped", status
 
 
 def run_logged_command(
@@ -629,28 +683,33 @@ def run_logged_command(
             if progress_path is not None:
                 write_status(log_file, f"[agent-build] progress: {progress_path}", stream=human_stream)
 
-            proc = subprocess.Popen(
-                command,
-                cwd=REPO_ROOT,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                start_new_session=os.name != "nt",
-            )
-            assert proc.stdout is not None
-
-            output_queue: queue.Queue[str | None] = queue.Queue()
-            reader = threading.Thread(target=stream_output, args=(proc.stdout, output_queue), daemon=True)
-            reader.start()
-
-            last_output = "(no output yet)"
-            output_index = 0
-            next_heartbeat = time.monotonic() + heartbeat if heartbeat > 0 else float("inf")
-            stream_done = False
-
+            proc: subprocess.Popen[str] | None = None
+            pgid: int | None = None
+            # Everything from process creation on is guarded: an interrupt landing between the
+            # launch and the output loop would otherwise leave the build running unattended.
             try:
+                proc = subprocess.Popen(
+                    command,
+                    cwd=REPO_ROOT,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    start_new_session=os.name != "nt",
+                )
+                pgid = child_group_id(proc)
+                assert proc.stdout is not None
+
+                output_queue: queue.Queue[str | None] = queue.Queue()
+                reader = threading.Thread(target=stream_output, args=(proc.stdout, output_queue), daemon=True)
+                reader.start()
+
+                last_output = "(no output yet)"
+                output_index = 0
+                next_heartbeat = time.monotonic() + heartbeat if heartbeat > 0 else float("inf")
+                stream_done = False
+
                 while not stream_done:
                     try:
                         item = output_queue.get(timeout=0.25)
@@ -683,9 +742,11 @@ def run_logged_command(
 
                 exit_code = proc.wait()
             except BaseException:
+                if proc is None:
+                    raise
                 # The child owns the build tree, so it has to be gone before the run is declared
                 # over; otherwise it keeps writing artifacts the terminal verdict has described.
-                disposition, child_status = terminate_child_group(proc)
+                disposition, child_status = terminate_child_group(proc, pgid)
                 RESULT_CONTEXT.child_disposition = disposition
                 RESULT_CONTEXT.child_exit_code = child_status
                 progress.emit(
