@@ -65,9 +65,13 @@ static Dictionary outcome_to_failure(const FSTestRunner::FixtureOutcome &p_outco
 // Runs one corpus pass. The runner owns the language for the pass, so each pass starts from
 // the same state the matching doctest case starts from.
 static void run_pass(const FSFixtureCLI::Options &p_options, bool p_binary_tokens, bool p_compiled_bytecode,
-		Vector<FSTestRunner::FixtureOutcome> &r_outcomes, bool &r_setup_ok) {
+		bool p_preceded_by_another_pass, Vector<FSTestRunner::FixtureOutcome> &r_outcomes, bool &r_setup_ok) {
 	FSTestRunner runner(p_options.corpus_dir, true, p_options.print_filenames, p_binary_tokens, p_compiled_bytecode);
 	runner.set_fixture_filters(p_options.patterns);
+	// A `#once-per-process` fixture reproduces its expected engine diagnostics only on its
+	// first run in the process. When the bytecode pass runs alone, nothing consumed them yet,
+	// so it must run those fixtures instead of skipping them as it does behind a plain pass.
+	runner.set_once_per_process_diagnostics_consumed(p_preceded_by_another_pass);
 
 	bool pass_setup_ok = false;
 	const Vector<FSTestRunner::FixtureOutcome> outcomes = runner.run_tests_collecting(pass_setup_ok);
@@ -82,13 +86,14 @@ Dictionary FSFixtureCLI::run(const Options &p_options, int &r_failed_count) {
 	Vector<FSTestRunner::FixtureOutcome> outcomes;
 	bool setup_ok = true;
 
-	if (p_options.passes != PASS_BYTECODE) {
-		run_pass(p_options, p_options.binary_tokens, false, outcomes, setup_ok);
+	const bool runs_text_pass = p_options.passes != PASS_BYTECODE;
+	if (runs_text_pass) {
+		run_pass(p_options, p_options.binary_tokens, false, false, outcomes, setup_ok);
 	}
 	// The bytecode round-trip is a separate pass over the same corpus, exactly as the doctest
 	// suite splits it into a second case: a fixture can pass one and fail the other.
 	if (setup_ok && p_options.passes != PASS_TEXT) {
-		run_pass(p_options, false, true, outcomes, setup_ok);
+		run_pass(p_options, false, true, runs_text_pass, outcomes, setup_ok);
 	}
 
 	Dictionary report;
@@ -161,7 +166,15 @@ int FSFixtureCLI::run_cli(const Options &p_options) {
 			wrote_output = false;
 		} else {
 			file->store_string(json);
+			// A truncated report that still exits zero would let automation accept a run it
+			// cannot actually read, so the write itself is checked, not just the open.
+			const Error write_error = file->get_error();
 			file->close();
+			if (write_error != OK) {
+				ERR_PRINT(vformat("Could not write fixture report output file %s (error %d).",
+						p_options.output_path, (int)write_error));
+				wrote_output = false;
+			}
 		}
 	}
 

@@ -539,7 +539,7 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 				// reproduces them, so the repeated compiled-bytecode pass skips them. The skip is
 				// pass-order independent: whichever corpus pass runs the fixture first consumes
 				// the once-only diagnostics, so exactly one non-skipping pass can ever match.
-				if (compiled_bytecode && directives.has("#once-per-process")) {
+				if (compiled_bytecode && once_per_process_diagnostics_consumed && directives.has("#once-per-process")) {
 					next = dir->get_next();
 					continue;
 				}
@@ -671,6 +671,10 @@ bool FSTestRunner::fixture_path_matches(const String &p_relative_path, const Vec
 
 void FSTestRunner::set_fixture_filters(const Vector<String> &p_patterns) {
 	fixture_filters = p_patterns;
+}
+
+void FSTestRunner::set_once_per_process_diagnostics_consumed(bool p_consumed) {
+	once_per_process_diagnostics_consumed = p_consumed;
 }
 
 void FSTestRunner::set_shard(int p_shard_index, int p_shard_total) {

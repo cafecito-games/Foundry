@@ -40,6 +40,8 @@
 
 #include "tests/test_macros.h"
 
+#include <cstdlib>
+
 namespace FSTests {
 
 #ifdef TOOLS_ENABLED
@@ -127,6 +129,68 @@ TEST_SUITE("[Modules][FoundryScript][FixtureSelection]") {
 				"The report must carry the produced output so a regression is diffable from data.");
 		CHECK_MESSAGE(String(failure["expected"]).contains("stale"),
 				"The report must carry the expected output so a regression is diffable from data.");
+	}
+
+	TEST_CASE("A once-per-process fixture runs in the pass that reaches it first") {
+		TemporaryProjectTree tree("fixture_selection_once_per_process");
+		tree.write_file("project.foundry",
+				"config_version=5\n\n[application]\n\nconfig/name=\"Fixture Selection Once Per Process\"\n");
+		tree.write_file("runtime/once_fixture.fs", "#once-per-process\nfunc test():\n\tprint(\"once\")\n");
+
+		{
+			FSTestRunner generator(tree.root, true, false);
+			REQUIRE_MESSAGE(generator.generate_outputs(), "The scratch corpus must produce expected output.");
+		}
+
+		FSFixtureCLI::Options options;
+		options.corpus_dir = tree.root;
+		options.patterns.push_back("once_fixture");
+
+		SUBCASE("Both passes let the plain pass consume the once-only diagnostics") {
+			int failed = -1;
+			const Dictionary report = FSFixtureCLI::run(options, failed);
+			CHECK_EQ(failed, 0);
+			REQUIRE_EQ(int(report["executed"]), 1);
+			const Array fixtures = report["fixtures"];
+			const Dictionary entry = fixtures[0];
+			CHECK_EQ(String(entry["pass"]), "text");
+		}
+
+		SUBCASE("A bytecode-only run still reaches the fixture") {
+			options.passes = FSFixtureCLI::PASS_BYTECODE;
+			int failed = -1;
+			const Dictionary report = FSFixtureCLI::run(options, failed);
+			CHECK_EQ(failed, 0);
+			REQUIRE_MESSAGE(int(report["executed"]) == 1,
+					"Nothing consumed the once-only diagnostics in this process, so the bytecode pass owns the fixture.");
+			const Array fixtures = report["fixtures"];
+			const Dictionary entry = fixtures[0];
+			CHECK_EQ(String(entry["pass"]), "bytecode");
+		}
+	}
+
+	TEST_CASE("An unwritable report path fails the run") {
+		TemporaryProjectTree tree("fixture_selection_report_path");
+		tree.write_file("project.foundry",
+				"config_version=5\n\n[application]\n\nconfig/name=\"Fixture Selection Report Path\"\n");
+		tree.write_file("runtime/reported_fixture.fs", "func test():\n\tprint(\"reported\")\n");
+
+		{
+			FSTestRunner generator(tree.root, true, false);
+			REQUIRE_MESSAGE(generator.generate_outputs(), "The scratch corpus must produce expected output.");
+		}
+
+		FSFixtureCLI::Options options;
+		options.corpus_dir = tree.root;
+		options.patterns.push_back("reported_fixture");
+		options.passes = FSFixtureCLI::PASS_TEXT;
+		options.output_path = tree.root.path_join("absent_directory/report.json");
+
+		ERR_PRINT_OFF;
+		const int status = FSFixtureCLI::run_cli(options);
+		ERR_PRINT_ON;
+		CHECK_MESSAGE(status != EXIT_SUCCESS,
+				"A passing run that could not produce its requested report must not exit successfully.");
 	}
 
 	TEST_CASE("A pattern that matches nothing executes nothing") {

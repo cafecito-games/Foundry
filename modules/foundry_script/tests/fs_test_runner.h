@@ -172,6 +172,9 @@ class FSTestRunner {
 	// Corpus-relative glob patterns selecting the fixtures to run. Empty means "the whole
 	// corpus". Only a run is ever filtered: fixture regeneration always walks everything.
 	Vector<String> fixture_filters;
+	// Whether another pass in this process already consumed the once-per-process engine
+	// diagnostics that some fixtures expect. Only the bytecode pass reads this.
+	bool once_per_process_diagnostics_consumed = true;
 
 	bool make_tests();
 	bool make_tests_for_dir(const String &p_dir);
@@ -219,6 +222,12 @@ public:
 	// path; any other pattern matches as a substring. Matching is case-insensitive, and an
 	// empty pattern list selects everything.
 	static bool fixture_path_matches(const String &p_relative_path, const Vector<String> &p_patterns);
+
+	// A fixture marked `#once-per-process` only reproduces its expected engine diagnostics on
+	// its first run in a process, so the bytecode pass skips it when an earlier pass already
+	// ran it. A process where the bytecode pass is the only pass has to run it instead, which
+	// is what clearing this reports.
+	void set_once_per_process_diagnostics_consumed(bool p_consumed);
 
 	// Keys of the fixtures this runner would execute, in run order. Backs the coverage that
 	// proves the fixture-level partition covers the corpus and never repeats a fixture.

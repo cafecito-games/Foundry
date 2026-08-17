@@ -935,9 +935,10 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (kind == Kind::TEST_BENCHMARK) {
 			leaf = "user-benchmark";
 		} else if (kind == Kind::TEST_FIXTURES) {
-			// A scoped fixture run is meant to be started while a full suite is running, so it
-			// gets its own leaf rather than recreating the suite's `user://` tree clean.
-			leaf = "user-fixtures";
+			// A scoped fixture run is meant to be started while a suite, or another scoped run,
+			// is already running, and this root is recreated clean. The leaf is therefore
+			// per-process: a shared one would erase a concurrent run's `user://` tree.
+			leaf = vformat("user-fixtures-%d", OS::get_singleton()->get_process_id());
 		} else if (cli_parse.invocation.test_shard_total > 1) {
 			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
 		} else {
@@ -1087,6 +1088,16 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			options.passes = FSTests::FSFixtureCLI::PASS_BYTECODE;
 		}
 		status = FSTests::FSFixtureCLI::run_cli(options);
+
+		// The per-process `user://` leaf is nobody else's to reuse, so this run removes its
+		// own rather than leaving one directory behind per invocation.
+		const String fixtures_user_root = OS::get_singleton()->get_user_data_root_override();
+		if (!fixtures_user_root.is_empty() && DirAccess::exists(fixtures_user_root)) {
+			Ref<DirAccess> fixtures_user_dir = DirAccess::open(fixtures_user_root);
+			if (fixtures_user_dir.is_valid() && fixtures_user_dir->erase_contents_recursive() == OK) {
+				DirAccess::remove_absolute(fixtures_user_root);
+			}
+		}
 #else
 		ERR_PRINT("foundry test fixtures requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
