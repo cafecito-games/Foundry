@@ -1331,9 +1331,14 @@ static bool _depends_on_receiver_type_parameter(
 		return false;
 	}
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+		// A static frame lowers the declaration to an `FSDataType`, which records "or null" and the
+		// class-handle layer at its own root as well as along the tuple spine. That is a wider world than
+		// `p_nullable_is_expressible` describes: that flag answers for the `ContainerType` a member slot's
+		// projection is built from, whose root cannot carry either wrapper.
+		const bool wrappers_are_expressible = p_depth == 0 || p_nullable_is_expressible;
 		FSParser::DataType resolved_bound;
 		if (p_exempt_final_bound && FSTypeCompatibility::resolve_final_class_bound(p_type, resolved_bound) &&
-				FSTypeCompatibility::final_class_bound_survives_lowering(resolved_bound, p_nullable_is_expressible)) {
+				FSTypeCompatibility::final_class_bound_survives_lowering(resolved_bound, wrappers_are_expressible)) {
 			// The exemption is withdrawn wherever the resolved bound stops surviving lowering: the caller
 			// clears the flag on the way through a wrapper that discards it, and a bound whose own nullable
 			// or class-handle layer no longer fits the position withdraws it here.

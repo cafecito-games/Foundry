@@ -5522,6 +5522,15 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A directly final-class-bo
 				make_array_of(handle_bounded), make_instance_frame_options()));
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
 				handle_bounded, make_instance_frame_options()));
+
+		// A static frame lowers the declaration to an `FSDataType`, which does record the handle layer at
+		// its own root, so the same bound still decides a bare class-scope destination there.
+		FSParser::DataType class_handle_bounded = make_class_type_parameter(SNAME("T"));
+		class_handle_bounded.type_parameter_bound.push_back(handle_bound);
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				class_handle_bounded, make_static_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_array_of(class_handle_bounded), make_static_frame_options()));
 	}
 	SUBCASE("unbounded and non-final bounds") {
 		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0), resolved));

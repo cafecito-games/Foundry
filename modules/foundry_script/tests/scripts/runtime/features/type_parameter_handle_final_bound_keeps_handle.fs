@@ -17,6 +17,14 @@ func nested[T: Type[HfbFactory]](factory: T) -> bool:
 	return kept[0] == HfbFactory
 
 
+class HfbHolder[T: Type[HfbFactory]]:
+	# A static frame has no receiver, so the resolved bound is the only thing that decides the store --
+	# and lowering states its handle layer, so a gradual source is checked rather than refused.
+	static func keep_static(factory: Variant) -> bool:
+		var kept: T = factory
+		return kept == HfbFactory
+
+
 func supply() -> Variant:
 	return HfbFactory
 
@@ -25,3 +33,4 @@ func test() -> void:
 	print(keep[Type[HfbFactory]](HfbFactory))
 	print(nested[Type[HfbFactory]](HfbFactory))
 	print(keep[Type[HfbFactory]](supply()))
+	print(HfbHolder[Type[HfbFactory]].keep_static(supply()))
