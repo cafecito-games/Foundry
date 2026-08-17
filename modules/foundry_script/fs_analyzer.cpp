@@ -6124,16 +6124,14 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 				const bool substitute_self_runtime_type = preserve_self_contract &&
 						!parser->current_class->is_trait &&
 						contains_self_element;
-				update_container_literal_element_types(p_return->return_value,
+				// Only the array and dictionary patchers check every element against the expected type,
+				// so only they can stand in for the `Self` return contract below. The tuple patcher
+				// reports nothing by design, and a literal whose form does not match the expected type
+				// is not patched at all, so neither may claim a validation that never happened.
+				const bool patcher_validated_elements = update_container_literal_element_types(p_return->return_value,
 						literal_expected_type,
 						false,
 						substitute_self_runtime_type);
-				// Only the array and dictionary patchers check every element against the expected type,
-				// so only they can stand in for the `Self` return contract below. The tuple patcher
-				// reports nothing by design, and a tuple literal it declined to patch at all would
-				// otherwise claim a validation that never happened.
-				const bool patcher_validated_elements = p_return->return_value->type == FSParser::Node::ARRAY ||
-						p_return->return_value->type == FSParser::Node::DICTIONARY;
 				self_container_literal_validated = patcher_validated_elements && substitute_self_runtime_type &&
 						parser->get_errors().size() == literal_errors_before;
 			}
@@ -6470,12 +6468,12 @@ bool FSAnalyzer::_is_container_literal(const FSParser::ExpressionNode *p_express
 // Routes a container literal to the patcher for its own form, given the type the position expects of
 // the whole expression. A literal written where nothing is declared, where the declaration is soft,
 // or where the declared type is a different form is left exactly as it was reduced.
-void FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode *p_expression,
+bool FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode *p_expression,
 		const FSParser::DataType &p_expected_type,
 		bool p_self_parameter_contract,
 		bool p_substitute_self_runtime_type) {
 	if (p_expression == nullptr || !p_expected_type.is_set() || !p_expected_type.is_hard_type()) {
-		return;
+		return false;
 	}
 
 	switch (p_expression->type) {
@@ -6486,6 +6484,7 @@ void FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode
 						p_expected_type.get_container_element_type(0),
 						p_self_parameter_contract,
 						p_substitute_self_runtime_type);
+				return true;
 			}
 		} break;
 		case FSParser::Node::DICTIONARY: {
@@ -6496,6 +6495,7 @@ void FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode
 						p_expected_type.get_container_element_type_or_variant(1),
 						p_self_parameter_contract,
 						p_substitute_self_runtime_type);
+				return true;
 			}
 		} break;
 		case FSParser::Node::TUPLE_LITERAL: {
@@ -6509,6 +6509,8 @@ void FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode
 		default:
 			break;
 	}
+
+	return false;
 }
 
 // A tuple store never converts, so every element of a tuple literal has to be built as the declared

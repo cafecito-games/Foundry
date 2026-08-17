@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Cannot return value of type "Array" because the function return type is "(Self, int)".
+>> ERROR at line 9: Cannot return value of type "Dictionary" because the function return type is "Array[Self]".
