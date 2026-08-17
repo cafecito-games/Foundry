@@ -171,6 +171,10 @@ static const char *call_argument_diagnostic_source =
 		"\t\tprint(captured, value)\n"
 		"\tcallback.call([1])\n"
 		"\n"
+		"func reject_script_handle_argument() -> void:\n"
+		"\tvar callback: Callable = take_int\n"
+		"\tcallback.call(Pair)\n"
+		"\n"
 		"func reject_class_handle_argument() -> void:\n"
 		"\tvar callback: Callable = take_int\n"
 		"\tcallback.call(RefCounted)\n"
@@ -243,11 +247,18 @@ TEST_CASE("[Modules][FoundryScript][CallArgumentDiagnostics] A rejected call arg
 	CHECK(class_handle.contains(R"(Argument 1 has type "RefCounted")"));
 	CHECK_FALSE(class_handle.contains("FSNativeClass"));
 
+	// A script class travels as the script resource, whose engine class is the resource type. The
+	// value is named by the class the script declares.
+	const String script_handle = collect_call_argument_diagnostic(original_instance, "reject_script_handle_argument");
+	CHECK(script_handle.contains(R"(Argument 1 has type "Pair")"));
+	CHECK_FALSE(script_handle.contains(R"(Argument 1 has type "FoundryScript")"));
+
 	// Nothing above may depend on the front end: the restored script answers from its compiled
 	// parameter descriptors alone and has to produce the identical text.
 	for (const char *method : { "reject_width", "reject_converted_width", "reject_specialization",
 				 "reject_handle", "reject_rest", "reject_bound", "reject_unbound",
-				 "reject_captured_lambda", "reject_class_handle_argument" }) {
+				 "reject_captured_lambda", "reject_class_handle_argument",
+				 "reject_script_handle_argument" }) {
 		CHECK(collect_call_argument_diagnostic(restored_instance, method) ==
 				collect_call_argument_diagnostic(original_instance, method));
 	}

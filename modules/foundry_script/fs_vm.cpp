@@ -1417,6 +1417,11 @@ static String _get_call_argument_value_type_name(const Variant *p_value) {
 										 Object::cast_to<FSSpecializedClassHandle>(object) != nullptr)) {
 			return _get_var_type(p_value);
 		}
+		// An unspecialized script class travels as the script resource itself, whose engine class is
+		// the resource type rather than the class the script declares.
+		if (Script *script = Object::cast_to<Script>(object)) {
+			return FoundryScript::debug_get_script_name(Ref<Script>(script));
+		}
 	}
 	return _script_boundary_value_type_name(p_value);
 }
