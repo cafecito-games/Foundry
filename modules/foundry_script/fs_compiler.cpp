@@ -5332,10 +5332,10 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
 // through the constant's name resolves it against the receiver, so a subclass of the implementer
 // builds its own specialization -- while the flattened constant is one slot in the implementer's pool
 // that every subclass reads. Folding the implementer in would make the constant assert a
-// specialization a subclass receiver contradicts. A `final` implementer admits exactly one receiver,
-// so `Self` denotes it for every read and folding it is honest. Projecting `Self` onto the receiver a
-// constant is read through would let both spellings agree in every case, but a receiver-dependent
-// constant is no longer a compile-time fold; that is the option not taken.
+// specialization a subclass receiver contradicts. A `final` non-generic implementer admits exactly one
+// receiver, so `Self` denotes it for every read and folding it is honest. Projecting `Self` onto the
+// receiver a constant is read through would let both spellings agree in every case, but a
+// receiver-dependent constant is no longer a compile-time fold; that is the option not taken.
 bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &p_argument, FoundryScript *p_owner, FSDataType &r_reified) {
 	if (flattened_trait_declaration == nullptr) {
 		return false;
@@ -5355,7 +5355,11 @@ bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &
 	FSDataType converted = _gdtype_from_datatype(p_argument, p_owner, true, true);
 	_substitute_binding_type_parameters(converted, flattened_trait_type_arguments, p_owner);
 	if (_baked_shape_references_self(converted)) {
-		if (p_owner == nullptr || !p_owner->is_final()) {
+		// A generic class has one receiver per specialization, so `Self` is no more foldable there than a
+		// forwarded parameter is. The analyzer already rejects an application that names such a class's own
+		// parameters -- which `Self` does, since it carries them as its arguments -- before this runs;
+		// spelling the condition out keeps the rule readable without depending on that distant check.
+		if (p_owner == nullptr || !p_owner->is_final() || p_owner->is_generic()) {
 			return false;
 		}
 		_resolve_baked_self_to_owner(converted, p_owner);

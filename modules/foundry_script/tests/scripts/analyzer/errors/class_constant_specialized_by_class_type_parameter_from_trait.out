@@ -1,3 +1,5 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 14: Constant "Aliased" flattened from trait "Aliasing" cannot be specialized by class type parameter "U": every specialization of "Forwarding" shares one constant.
->> ERROR at line 18: Constant "Aliased" flattened from trait "Aliasing" cannot be specialized by class type parameter "V": every specialization of "DependentForwarding" shares one constant.
+>> ERROR at line 15: Constant "Aliased" flattened from trait "Aliasing" cannot be specialized by class type parameter "U": every specialization of "Forwarding" shares one constant.
+>> ERROR at line 19: Constant "Aliased" flattened from trait "Aliasing" cannot be specialized by class type parameter "V": every specialization of "DependentForwarding" shares one constant.
+>> ERROR at line 23: Constant "Aliased" flattened from trait "Aliasing" cannot be specialized by class type parameter "W": every specialization of "ClosedSelf" shares one constant.
+>> ERROR at line 27: Constant "Aliased" flattened from trait "Aliasing" cannot be specialized by class type parameter "X": every specialization of "OpenSelf" shares one constant.
