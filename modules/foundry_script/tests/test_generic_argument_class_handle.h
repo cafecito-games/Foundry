@@ -194,6 +194,79 @@ TEST_CASE("[Modules][FoundryScript][Analyzer] A Callable built from a class-hand
 	CHECK(call_error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD);
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericArgumentHandle] A flattened trait constant folds Self only for a final implementer") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"\n"
+			"class Holder[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"trait Aliasing[V]:\n"
+			"\tconst Aliased = Holder[V]\n"
+			"\n"
+			"final class FinalBare:\n"
+			"\tuses Aliasing[Self]\n"
+			"\n"
+			"final class FinalNested:\n"
+			"\tuses Aliasing[Array[Self]]\n"
+			"\n"
+			"class OpenBare:\n"
+			"\tuses Aliasing[Self]\n"
+			"\n"
+			"class OpenNested:\n"
+			"\tuses Aliasing[Array[Self]]\n"
+			"\n"
+			"class Concrete:\n"
+			"\tuses Aliasing[int]\n");
+	REQUIRE(script.is_valid());
+
+	const auto implementer = [&script](const StringName &p_name) -> Ref<FoundryScript> {
+		const HashMap<StringName, Ref<FoundryScript>>::ConstIterator found = script->get_subclasses().find(p_name);
+		return found == script->get_subclasses().end() ? Ref<FoundryScript>() : found->value;
+	};
+	const auto folded_constant = [&implementer](const StringName &p_name) -> Variant {
+		const Ref<FoundryScript> owner = implementer(p_name);
+		if (owner.is_null()) {
+			return Variant();
+		}
+		const HashMap<StringName, Variant>::ConstIterator found = owner->get_constants().find(SNAME("Aliased"));
+		return found == owner->get_constants().end() ? Variant() : found->value;
+	};
+
+	// A `final` implementer admits exactly one receiver for `Self`, so the fold is honest at every
+	// nesting depth and the constant carries the full specialization.
+	const Ref<FoundryScript> final_bare_owner = implementer(SNAME("FinalBare"));
+	REQUIRE(final_bare_owner.is_valid());
+	FSSpecializedClassHandle *final_bare = Object::cast_to<FSSpecializedClassHandle>(folded_constant(SNAME("FinalBare")));
+	REQUIRE(final_bare != nullptr);
+	REQUIRE(final_bare->get_type_arguments().size() == 1);
+	CHECK(final_bare->get_type_arguments()[0].script.ptr() == final_bare_owner.ptr());
+
+	const Ref<FoundryScript> final_nested_owner = implementer(SNAME("FinalNested"));
+	REQUIRE(final_nested_owner.is_valid());
+	FSSpecializedClassHandle *final_nested = Object::cast_to<FSSpecializedClassHandle>(folded_constant(SNAME("FinalNested")));
+	REQUIRE(final_nested != nullptr);
+	REQUIRE(final_nested->get_type_arguments().size() == 1);
+	REQUIRE(final_nested->get_type_arguments()[0].element_types.size() == 1);
+	CHECK(final_nested->get_type_arguments()[0].element_types[0].script.ptr() == final_nested_owner.ptr());
+
+	// A non-final implementer shares the slot with every subclass, so no depth may be folded: the whole
+	// handle stays bare rather than asserting the implementer a subclass receiver would contradict.
+	const Variant open_bare = folded_constant(SNAME("OpenBare"));
+	CHECK(Object::cast_to<FSSpecializedClassHandle>(open_bare) == nullptr);
+	CHECK(Object::cast_to<FoundryScript>(open_bare) != nullptr);
+
+	const Variant open_nested = folded_constant(SNAME("OpenNested"));
+	CHECK(Object::cast_to<FSSpecializedClassHandle>(open_nested) == nullptr);
+	CHECK(Object::cast_to<FoundryScript>(open_nested) != nullptr);
+
+	// A concrete application names no receiver at all and keeps reifying, final or not.
+	FSSpecializedClassHandle *concrete = Object::cast_to<FSSpecializedClassHandle>(folded_constant(SNAME("Concrete")));
+	REQUIRE(concrete != nullptr);
+	REQUIRE(concrete->get_type_arguments().size() == 1);
+	CHECK(concrete->get_type_arguments()[0].builtin_type == Variant::INT);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED
