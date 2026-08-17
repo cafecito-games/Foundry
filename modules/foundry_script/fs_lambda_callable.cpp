@@ -34,6 +34,19 @@
 
 #include "core/templates/hashfuncs.h"
 
+const FSLambdaCallable *FSLambdaCallable::get_from_callable(const Callable &p_callable) {
+	if (!p_callable.is_custom()) {
+		return nullptr;
+	}
+	const CallableCustom *custom = p_callable.get_custom();
+	// The comparison function pointer doubles as the type witness, the established pattern for
+	// identifying a CallableCustom subclass without RTTI.
+	if (custom == nullptr || custom->get_compare_equal_func() != &FSLambdaCallable::compare_equal) {
+		return nullptr;
+	}
+	return static_cast<const FSLambdaCallable *>(custom);
+}
+
 bool FSLambdaCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {
 	// Lambda callables are only compared by reference.
 	return p_a == p_b;
@@ -184,6 +197,17 @@ FSLambdaCallable::FSLambdaCallable(Ref<FoundryScript> p_script, FSFunction *p_fu
 	}
 
 	h = (uint32_t)hash_murmur3_one_64((uint64_t)this);
+}
+
+const FSLambdaSelfCallable *FSLambdaSelfCallable::get_from_callable(const Callable &p_callable) {
+	if (!p_callable.is_custom()) {
+		return nullptr;
+	}
+	const CallableCustom *custom = p_callable.get_custom();
+	if (custom == nullptr || custom->get_compare_equal_func() != &FSLambdaSelfCallable::compare_equal) {
+		return nullptr;
+	}
+	return static_cast<const FSLambdaSelfCallable *>(custom);
 }
 
 bool FSLambdaSelfCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {

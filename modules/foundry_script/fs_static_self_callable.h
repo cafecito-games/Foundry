@@ -63,6 +63,14 @@ class FSStaticSelfCallable : public CallableCustom {
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
 
 public:
+	// The callable as this type when it is one, so a caller can reach the compiled function this
+	// dispatches to. `CallableCustom` has no type discrimination of its own.
+	static const FSStaticSelfCallable *get_from_callable(const Callable &p_callable);
+	// The function a dispatch would select right now, or null when the target class is gone or does
+	// not declare the method. Nothing is kept alive by this: the target is resolved through its id the
+	// same way `call()` resolves it.
+	const FSFunction *get_target_function() const;
+
 	uint32_t hash() const override;
 	String get_as_text() const override;
 	CompareEqualFunc get_compare_equal_func() const override;
