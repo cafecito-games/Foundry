@@ -1,0 +1,8 @@
+FS_TEST_RUNTIME_ERROR
+accepted: true
+>> SCRIPT ERROR at runtime/errors/gradual_typed_local_rejects_specialization.fs:34 on reject_conflicting_arguments(): Trying to assign value of type 'Pair[int, Node]' to a variable of type 'Pair[int, String]'.
+>> SCRIPT ERROR at runtime/errors/gradual_typed_local_rejects_specialization.fs:39 on reject_conflicting_projection(): Trying to assign value of type 'ConflictingPair' to a variable of type 'Pair[int, String]'.
+>> SCRIPT ERROR at runtime/errors/gradual_typed_local_rejects_specialization.fs:44 on reject_unrelated_class(): Trying to assign value of type 'Plain' to a variable of type 'Pair[int, String]'.
+>> SCRIPT ERROR at runtime/errors/gradual_typed_local_rejects_specialization.fs:49 on reject_conflicting_trait_arguments(): Trying to assign value of type 'StringHolder' to a variable of type 'Holder[int]'.
+>> SCRIPT ERROR at runtime/errors/gradual_typed_local_rejects_specialization.fs:54 on reject_nonconformer(): Trying to assign value of type 'Plain' to a variable of type 'Holder[int]'.
+done

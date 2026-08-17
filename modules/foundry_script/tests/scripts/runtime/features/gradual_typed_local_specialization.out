@@ -1,0 +1,14 @@
+FS_TEST_OK
+exact: true
+absent evidence: true
+projected subclass: true
+forwarded subclass: true
+unspecialized slot: true
+null: true
+declared conformance: true
+inherited conformance: true
+supertrait conformance: true
+forwarded conformance: true
+absent trait evidence: true
+retroactive conformance: true
+unspecialized trait slot: true
