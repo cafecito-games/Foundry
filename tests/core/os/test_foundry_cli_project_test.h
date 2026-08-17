@@ -32,6 +32,8 @@
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
+#include "core/math/math_funcs.h"
 #include "core/os/os.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
@@ -96,7 +98,8 @@ struct TemporaryNoMainSceneProject {
 
 static String foundry_test_scratch_root();
 
-static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exit_code) {
+static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exit_code,
+		const String &p_scratch_override = String()) {
 	Vector<uint8_t> stdout_bytes;
 	Vector<uint8_t> stderr_bytes;
 
@@ -109,8 +112,9 @@ static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exi
 	}
 	// A nested `test run` recreates its user-data directory on startup. Give it a
 	// process-owned scratch root so it cannot erase the still-running parent's `user://` tree.
-	environment["FOUNDRY_TEST_SCRATCH"] = foundry_test_scratch_root().path_join(
-			vformat("foundry-cli-subprocess-%d", OS::get_singleton()->get_process_id()));
+	environment["FOUNDRY_TEST_SCRATCH"] = p_scratch_override.is_empty()
+			? foundry_test_scratch_root().path_join(vformat("foundry-cli-subprocess-%d", OS::get_singleton()->get_process_id()))
+			: p_scratch_override;
 
 	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
 			OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
@@ -1175,6 +1179,135 @@ TEST_CASE("[FoundryCLI][Adapter] Terminating the runner preserves only complete 
 	CHECK_FALSE(report.contains("transport::second"));
 	CHECK_EQ(report.count("  ...\n"), 1);
 	CHECK(report.ends_with("  ...\n"));
+}
+
+// The corpus is a checked-in sibling of `tests/`, so resolve it from the checkout the
+// running binary was built from rather than from an ambient working directory.
+static String benchmark_corpus_path(const String &p_relative_case) {
+	return TestUtils::get_tests_dir().path_join("../modules/foundry_script/tests/benchmarks").path_join(p_relative_case).simplify_path();
+}
+
+static String benchmark_scratch_root(const String &p_suffix) {
+	const String root = foundry_test_scratch_root().path_join(
+			vformat("foundry-cli-benchmark-%d-%s", OS::get_singleton()->get_process_id(), p_suffix));
+	TemporaryNoMainSceneProject::remove_recursive(root);
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(root), OK);
+	return root;
+}
+
+// `_baseline` is one variant of roughly 150 ms of measured work; the whole corpus would
+// make these subprocess tests far too slow.
+TEST_CASE("[FoundryCLI][TestBenchmark] Benchmark writes the corpus JSON map and exits zero") {
+	const String scratch = benchmark_scratch_root("map");
+	const String output_path = scratch.path_join("bench.json");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back(benchmark_corpus_path("_baseline"));
+	arguments.push_back("--output");
+	arguments.push_back(output_path);
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	REQUIRE(FileAccess::exists(output_path));
+
+	Ref<JSON> json;
+	json.instantiate();
+	REQUIRE_EQ(json->parse(FileAccess::get_file_as_string(output_path)), OK);
+	const Dictionary results = json->get_data();
+	REQUIRE(results.has("foundry_script:_baseline/empty_loop"));
+	const double measured = results["foundry_script:_baseline/empty_loop"];
+	CHECK(Math::is_finite(measured));
+	CHECK_GT(measured, 0.0);
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
+TEST_CASE("[FoundryCLI][TestBenchmark] Benchmark profile pass writes the sidecar JSON") {
+	const String scratch = benchmark_scratch_root("profile");
+	const String output_path = scratch.path_join("bench.json");
+	const String profile_path = scratch.path_join("profile.json");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back(benchmark_corpus_path("_baseline"));
+	arguments.push_back("--output");
+	arguments.push_back(output_path);
+	// No `--profile`: the sidecar path alone must turn the profiling pass on.
+	arguments.push_back("--profile-output");
+	arguments.push_back(profile_path);
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	REQUIRE(FileAccess::exists(profile_path));
+
+	Ref<JSON> json;
+	json.instantiate();
+	REQUIRE_EQ(json->parse(FileAccess::get_file_as_string(profile_path)), OK);
+	const Dictionary profile = json->get_data();
+	CHECK_GE(profile.size(), 1);
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
+TEST_CASE("[FoundryCLI][TestBenchmark] A missing corpus directory fails the run") {
+	const String scratch = benchmark_scratch_root("missing");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back(scratch.path_join("does_not_exist"));
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 1);
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
+// A benchmark run recreates its user-data root clean on startup, so it must not share a
+// leaf with `test run`; otherwise measuring a corpus would erase a concurrent suite's
+// `user://` tree.
+TEST_CASE("[FoundryCLI][TestBenchmark] A benchmark run does not disturb a concurrent suite user directory") {
+	const String scratch = benchmark_scratch_root("user-leaf");
+	const String suite_leaf = scratch.path_join("user-unsharded");
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(suite_leaf), OK);
+	const String suite_sentinel = suite_leaf.path_join("suite-owned.txt");
+	{
+		Ref<FileAccess> sentinel = FileAccess::open(suite_sentinel, FileAccess::WRITE);
+		REQUIRE(sentinel.is_valid());
+		sentinel->store_string("suite-owned");
+	}
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back(benchmark_corpus_path("_baseline"));
+	arguments.push_back("--output");
+	arguments.push_back(scratch.path_join("bench.json"));
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(DirAccess::exists(scratch.path_join("user-benchmark")));
+	CHECK(FileAccess::exists(suite_sentinel));
+	if (FileAccess::exists(suite_sentinel)) {
+		CHECK_EQ(FileAccess::get_file_as_string(suite_sentinel), "suite-owned");
+	}
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
 }
 
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED

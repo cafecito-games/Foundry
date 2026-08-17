@@ -839,3 +839,17 @@ required_paths = [
   "tests/fixtures/headless_container/scripts/valid.fs",
   "docker/foundry-headless.Dockerfile",
 ]
+
+# ---------------------------------------------------------------------------
+# Benchmark corpus documentation: the only entry point to performance measurement.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "foundry-script-benchmark-docs-name-the-supported-command"
+reason = "The benchmark corpus documentation rotted into naming flags and binaries that no longer exist, leaving the only performance-measurement entry point undiscoverable. Pinning the supported command and forbidding the retired flag spelling keeps the doc honest without a bespoke checker."
+paths = [
+  "modules/foundry_script/tests/benchmarks/README.md",
+  "modules/foundry_script/tests/benchmarks/report.py",
+]
+required = ["foundry test benchmark"]
+forbidden = ["--foundry_script-benchmark"]

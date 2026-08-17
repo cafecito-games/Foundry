@@ -50,6 +50,7 @@ public:
 			TEST_RUN,
 			TEST_GENERATE_FIXTURES,
 			TEST_GENERATE_FORMAT_FIXTURES,
+			TEST_BENCHMARK,
 			TOOLING_SERVE,
 			DOCS_GENERATE_API,
 			DOCS_GENERATE_ENGINE,
@@ -108,6 +109,12 @@ public:
 		int test_progress_heartbeat_seconds = -1;
 
 		bool print_filenames = false;
+
+		// `test benchmark` artifact paths. Empty means "dump to stdout". The profile pass
+		// is opt-in through `--profile`, which `--profile-output` implies.
+		String benchmark_output;
+		bool benchmark_profile = false;
+		String benchmark_profile_output;
 
 		// Empty means "use the tooling host default" (6005 for LSP, 6006 for DAP).
 		// Otherwise a validated decimal port in [0, 65535], where 0 requests an

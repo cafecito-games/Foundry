@@ -160,6 +160,9 @@
 #include "modules/foundry_script/fs_lint.h"
 #include "modules/foundry_script/tests/fs_test_runner.h"
 #endif // TOOLS_ENABLED
+#ifdef TESTS_ENABLED
+#include "modules/foundry_script/tests/fs_benchmark_runner.h"
+#endif // TESTS_ENABLED
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 /* Static members */
@@ -898,7 +901,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 
 	using Kind = FoundryCLIParser::CLIInvocation::Kind;
 	const Kind kind = cli_parse.invocation.kind;
-	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES) {
+	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES && kind != Kind::TEST_BENCHMARK) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
@@ -921,9 +924,16 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (user_data_root.is_empty()) {
 			user_data_root = OS::get_singleton()->get_temp_path();
 		}
-		const String leaf = (cli_parse.invocation.test_shard_total > 1)
-				? vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total)
-				: "user-unsharded";
+		// `test benchmark` gets its own leaf so measuring a corpus alongside a running
+		// suite cannot erase that suite's `user://` tree when this root is recreated clean.
+		String leaf;
+		if (kind == Kind::TEST_BENCHMARK) {
+			leaf = "user-benchmark";
+		} else if (cli_parse.invocation.test_shard_total > 1) {
+			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
+		} else {
+			leaf = "user-unsharded";
+		}
 		user_data_root = user_data_root.simplify_path().path_join(leaf);
 
 		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
@@ -1053,6 +1063,15 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		ERR_PRINT("foundry test generate-format-fixtures requires an editor build.");
 		status = EXIT_FAILURE;
 #endif // TOOLS_ENABLED
+	} else if (kind == Kind::TEST_BENCHMARK) {
+		// The corpus is compiled and run through the script language, which the test
+		// harness does not initialize on its own.
+		FSLanguage::get_singleton()->init();
+		const String corpus = cli_parse.invocation.command_args.is_empty()
+				? String("modules/foundry_script/tests/benchmarks")
+				: cli_parse.invocation.command_args[0];
+		status = FSTests::FSBenchmarkRunner::run_cli(corpus, cli_parse.invocation.benchmark_output,
+				cli_parse.invocation.benchmark_profile, cli_parse.invocation.benchmark_profile_output);
 	}
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 

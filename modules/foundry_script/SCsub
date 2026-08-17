@@ -39,19 +39,22 @@ if not env["foundry_script_frontend"]:
     if env.editor_build:
         print(
             "Error: foundry_script_frontend=no is not supported for editor builds. "
-            "The editor requires the Foundry Script front-end."
+            "The editor requires the Foundry Script front-end; drop foundry_script_frontend=no "
+            "from the command line."
         )
         Exit(255)
     if env["tests"]:
         print(
             "Error: foundry_script_frontend=no is incompatible with tests=yes. "
-            "Foundry Script unit tests require the front-end (dev_mode=yes also implies tests=yes)."
+            "Foundry Script unit tests require the front-end (dev_mode=yes also implies tests=yes). "
+            "Export-template targets default foundry_script_frontend to no, so add "
+            "foundry_script_frontend=yes to build a test-enabled template, or drop tests=yes."
         )
         Exit(255)
     if env.get("use_fuzzer", False):
         print(
             "Error: foundry_script_frontend=no is incompatible with use_fuzzer=yes. "
-            "The Foundry Script fuzz harness requires the front-end."
+            "The Foundry Script fuzz harness requires the front-end; add foundry_script_frontend=yes."
         )
         Exit(255)
 
