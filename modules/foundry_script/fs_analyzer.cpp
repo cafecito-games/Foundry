@@ -12419,6 +12419,10 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 	for (int i = 0; i < expected_count; i++) {
 		const FSParser::DataType field_type = tuple_type.get_container_element_type(i);
 		FSParser::ExpressionNode *argument = p_call->arguments[i];
+		// A shorthand in field position takes its union from the field type, which is only known
+		// here, so it is qualified before the field's own check reads the argument's type. This is what
+		// makes a nested shorthand such as `Slot(.Ok(1), 2)` resolve.
+		resolve_contextual_enum_case(argument, field_type);
 		const FSParser::DataType argument_type = argument->get_datatype();
 		if (!argument_type.is_set()) {
 			continue;
