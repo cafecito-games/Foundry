@@ -675,6 +675,28 @@ def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
     return suffix
 
 
+def linked_editor_binaries(target: BuildTarget) -> list[Path]:
+    """Every editor binary the build directory holds for this platform.
+
+    Platform configuration adds suffixes the wrapper does not control (sanitizers, alternate
+    toolchains), so whether a final link happened is decided by pattern rather than by one
+    reconstructed filename.
+    """
+    try:
+        entries = target.binary_path.parent.glob(f"foundry.{target.scons_platform}.editor*")
+        return sorted(path for path in entries if path.is_file())
+    except OSError:
+        return []
+
+
+def resolve_linked_binary(target: BuildTarget) -> Path | None:
+    """The binary to run, or None when the choice is ambiguous."""
+    if target.binary_path.exists():
+        return target.binary_path
+    candidates = linked_editor_binaries(target)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
     scons_platform = host_scons_platform() if args.platform == "auto" else args.platform
     binary_path = REPO_ROOT / "bin" / f"foundry{binary_suffix(args, scons_platform)}"
@@ -1275,12 +1297,12 @@ def main(argv: list[str]) -> int:
                     f"{name}: {line}" for name, line in sorted(build_failure_signals.items())
                 )
                 print(f"[agent-build] {build_error}", file=sys.stderr)
-            elif not target.binary_path.exists():
+            elif not linked_editor_binaries(target):
                 build_exit = MISSING_BINARY_EXIT_CODE
                 build_status = "failed"
                 build_error = (
-                    f"the build command succeeded but produced no binary at {target.binary_path}; "
-                    "no final link occurred"
+                    "the build command succeeded but produced no editor binary in "
+                    f"{target.binary_path.parent}; no final link occurred"
                 )
                 print(f"[agent-build] {build_error}", file=sys.stderr)
     except OSError as exc:
@@ -1367,10 +1389,21 @@ def main(argv: list[str]) -> int:
     if build_exit != 0:
         return build_exit
 
+    linked_binary = resolve_linked_binary(target)
     if not args.test:
-        print(f"[agent-build] built binary: {target.binary_path}", file=human_stream)
+        built = linked_binary or ", ".join(str(path) for path in linked_editor_binaries(target))
+        print(f"[agent-build] built binary: {built}", file=human_stream)
         return 0
 
+    if linked_binary is None:
+        candidates = ", ".join(str(path) for path in linked_editor_binaries(target))
+        print(
+            f"[agent-build] cannot choose an editor binary to test; expected {target.binary_path}, found: {candidates}",
+            file=sys.stderr,
+        )
+        return MISSING_BINARY_EXIT_CODE
+
+    target = target._replace(binary_path=linked_binary)
     return run_logged_command(
         test_command(args, target),
         label="test",

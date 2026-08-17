@@ -1483,18 +1483,42 @@ class BinaryPathTests(unittest.TestCase):
             "foundry.macos.editor.dev.double.arm64.nothreads.probe",
         )
 
-    def test_the_post_build_check_accepts_a_renamed_binary(self) -> None:
+    def linked_target(self, root: Path, *names: str) -> Any:
+        binary_directory = root / "bin"
+        binary_directory.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (binary_directory / name).write_bytes(b"linked editor binary")
+        return agent_build.BuildTarget("macos", binary_directory / "foundry.macos.editor.dev.arm64", None)
+
+    def test_a_platform_suffixed_binary_counts_as_a_final_link(self) -> None:
         with scratch_directory() as root:
-            binary_path = root / "bin" / "foundry.macos.editor.dev.double.arm64"
-            binary_path.parent.mkdir(parents=True)
-            binary_path.write_bytes(b"linked editor binary")
-            args = agent_build.parse_args(
-                ["--platform", "macos", "--scons-arg", "arch=arm64", "--scons-arg", "precision=double"]
+            target = self.linked_target(root, "foundry.macos.editor.dev.arm64.san")
+            self.assertEqual(
+                [path.name for path in agent_build.linked_editor_binaries(target)],
+                ["foundry.macos.editor.dev.arm64.san"],
             )
-            with mock.patch.object(agent_build, "REPO_ROOT", root):
-                target = agent_build.resolve_build_target(args)
-            self.assertEqual(target.binary_path, binary_path)
-            self.assertTrue(target.binary_path.exists())
+            self.assertEqual(agent_build.resolve_linked_binary(target).name, "foundry.macos.editor.dev.arm64.san")
+
+    def test_an_empty_build_directory_has_no_linked_binary(self) -> None:
+        with scratch_directory() as root:
+            target = self.linked_target(root)
+            self.assertEqual(agent_build.linked_editor_binaries(target), [])
+            self.assertIsNone(agent_build.resolve_linked_binary(target))
+
+    def test_template_binaries_do_not_count_as_an_editor_link(self) -> None:
+        with scratch_directory() as root:
+            target = self.linked_target(root, "foundry.macos.template_debug.dev.arm64")
+            self.assertEqual(agent_build.linked_editor_binaries(target), [])
+
+    def test_the_expected_binary_wins_over_other_candidates(self) -> None:
+        with scratch_directory() as root:
+            target = self.linked_target(root, "foundry.macos.editor.dev.arm64", "foundry.macos.editor.dev.x86_64")
+            self.assertEqual(agent_build.resolve_linked_binary(target), target.binary_path)
+
+    def test_an_ambiguous_build_directory_resolves_to_nothing(self) -> None:
+        with scratch_directory() as root:
+            target = self.linked_target(root, "foundry.macos.editor.dev.arm64.san", "foundry.macos.editor.dev.x86_64")
+            self.assertIsNone(agent_build.resolve_linked_binary(target))
 
 
 class BuildFailureSignalScanTests(unittest.TestCase):

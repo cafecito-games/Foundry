@@ -152,14 +152,16 @@ verifies the result and fails when either check trips:
   `scons: *** `, `FAILED: `, `ninja: build stopped:`). This catches a build status masked by a shell
   or lost by a backend. Exit code `1`, `build_summary.status` `failed`, and the matching lines are
   recorded in `build_summary.build_failure_signals`.
-- no editor binary is present at the expected path, meaning no final link occurred. Exit code `127`
-  and `build_summary.status` `failed`.
+- no editor binary is present in `bin/`, meaning no final link occurred. Exit code `127` and
+  `build_summary.status` `failed`.
 
-The expected binary path follows the raw SCons settings that rename it (`arch`, `precision`,
-`threads`, `extra_suffix`, `dev_build`), so those builds are checked against the file they actually
-produce. A `--scons-arg` invocation that deliberately builds something other than the editor binary is
-still reported as a failure. Startup failures (missing SCons, Ninja, or ccache) also emit a
-`build_summary` with status `error`, so a waiter is never left without a verdict.
+The link check matches `bin/foundry.<platform>.editor*`, so build settings that rename the binary
+(`precision`, `extra_suffix`, sanitizers, alternate toolchains) are not mistaken for a failed build.
+A `--scons-arg` invocation that deliberately builds something other than an editor binary is still
+reported as a failure. When `--test` runs and the expected name is absent, the wrapper tests the sole
+editor binary it finds, and fails only when the choice is ambiguous. Startup failures (missing SCons,
+Ninja, or ccache) also emit a `build_summary` with status `error`, so a waiter is never left without a
+verdict.
 
 ## Benchmarks
 
