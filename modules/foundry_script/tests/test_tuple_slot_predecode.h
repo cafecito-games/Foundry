@@ -161,6 +161,23 @@ TEST_CASE("[FoundryScript][TupleStore] A shape that names the receiver keeps the
 	CHECK(predecode_test_function(crate->value, SNAME("concrete"))->get_predecoded_tuple_shape_count() == 1);
 }
 
+TEST_CASE("[FoundryScript][TupleStore] A key-typed Dictionary constant is never read as a descriptor") {
+	// Descriptors share the constant table with ordinary script data. A Dictionary keyed by anything but
+	// String reports a failure for every String-key lookup made on it, so such a constant has to be
+	// recognized as data before its keys are inspected.
+	BytecodeErrorRecorder recorder;
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"const KEYED = Dictionary({ 1: 1 }, TYPE_INT, &\"\", null, TYPE_INT, &\"\", null)\n"
+			"\n"
+			"func keep(value) -> void:\n"
+			"\tvar kept: (int, String) = value\n"
+			"\tprint(KEYED.size())\n");
+	CHECK_FALSE(recorder.messages.contains("TypedDictionary"));
+
+	// The tuple slot in the same function is still predecoded.
+	CHECK(predecode_test_function(script, SNAME("keep"))->get_predecoded_tuple_shape_count() == 1);
+}
+
 TEST_CASE("[FoundryScript][TupleStore] A parameter erased below a container leaves nothing to resolve") {
 	// `Array[T]` as a tuple element lowers to a bare Array: a tuple under a typed container carries no
 	// parameter node into the descriptor, so the shape a frame would rebuild is the erased one, and the

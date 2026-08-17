@@ -656,6 +656,12 @@ static bool _tuple_descriptor_is_receiver_independent(const Variant &p_descripto
 		return false;
 	}
 	const Dictionary descriptor = p_descriptor;
+	// A descriptor is always a plain, untyped Dictionary. A constant that is a *key-typed* Dictionary is
+	// script data, not a descriptor, and it must be rejected before any key is read: looking up a String
+	// key in a Dictionary keyed by something else is itself a reported failure.
+	if (descriptor.is_typed_key()) {
+		return false;
+	}
 	if (descriptor.get("type_parameter_index", Variant()).get_type() == Variant::INT) {
 		return false;
 	}
@@ -693,16 +699,15 @@ void FSFunction::_build_predecoded_tuple_shapes() {
 
 	for (int constant_index = 0; constant_index < _constant_count; constant_index++) {
 		const Variant &constant = _constants_ptr[constant_index];
-		if (constant.get_type() != Variant::DICTIONARY) {
+		// The classification runs first because it is also what establishes that every node reached from
+		// here is a plain Dictionary whose keys can be read at all.
+		if (!_tuple_descriptor_is_receiver_independent(constant, 0)) {
 			continue;
 		}
 		// Only a tuple slot's descriptor carries the `is_tuple` marker at its root, so no other constant
 		// is decoded here.
 		const Dictionary descriptor = constant;
 		if (!descriptor.get("is_tuple", false)) {
-			continue;
-		}
-		if (!_tuple_descriptor_is_receiver_independent(constant, 0)) {
 			continue;
 		}
 		FSDataType shape;
