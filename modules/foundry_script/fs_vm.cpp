@@ -310,7 +310,10 @@ static String _class_handle_value_type_name(const Variant *p_value) {
 		return "Type[" + String(Object::cast_to<FSNativeClass>(object)->get_name()) + "]";
 	}
 	if (Script *script = Object::cast_to<Script>(object)) {
-		return "Type[" + script->get_diagnostic_class_name() + "]";
+		// A script with no name of its own -- an uncompiled resource, say -- still has to render as
+		// something, so the engine class of the resource stands in rather than an empty `Type[]`.
+		const String script_name = script->get_diagnostic_class_name();
+		return "Type[" + (script_name.is_empty() ? String(script->get_class_name()) : script_name) + "]";
 	}
 	return String();
 }
