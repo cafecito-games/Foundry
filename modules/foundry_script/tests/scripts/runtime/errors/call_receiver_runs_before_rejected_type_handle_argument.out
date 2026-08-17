@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 17: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "accept()" requires the subtype "Type[Resource]" but the supertype "Variant" was provided.
+receiver ran
+>> SCRIPT ERROR at runtime/errors/call_receiver_runs_before_rejected_type_handle_argument.fs:17 on test(): Cannot pass a value of type "int" as argument 1 of "accept()"; expected "Type[Resource]".

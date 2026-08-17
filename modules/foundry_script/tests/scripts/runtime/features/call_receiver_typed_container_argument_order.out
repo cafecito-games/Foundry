@@ -1,0 +1,3 @@
+FS_TEST_OK
+took [1, 2]
+eval ["receiver", "argument"]

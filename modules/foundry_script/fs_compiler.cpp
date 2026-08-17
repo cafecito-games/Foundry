@@ -823,6 +823,64 @@ static StringName _native_class_name_of(const FSParser::IdentifierNode *p_identi
 	return p_identifier->name;
 }
 
+// A call is lowered in two phases so its callee receiver is evaluated before its arguments:
+// `a.f(b)` must run `a` and then `b`, the order they are written in. Only some of the lowering
+// forms have a receiver expression at all, and which form applies is decided by a long condition
+// chain, so the chain is evaluated exactly once into this plan and the emission phase dispatches
+// on `lowering` alone. Two independently maintained copies of that chain would be free to
+// disagree; one tag makes that unrepresentable.
+struct FSCallLoweringPlan {
+	enum Lowering {
+		LOWERING_ERROR,
+		LOWERING_ENUM_CALL,
+		LOWERING_PROXY_CONSTRUCT,
+		LOWERING_BUILTIN_CONSTRUCT,
+		LOWERING_VARIANT_UTILITY,
+		LOWERING_FOUNDRY_SCRIPT_UTILITY,
+		LOWERING_SUPER_CALL,
+		LOWERING_SELF_NATIVE_METHOD_BIND,
+		LOWERING_CLASS_CALL,
+		LOWERING_SELF_CALL,
+		LOWERING_SPECIALIZED_CONSTRUCT,
+		LOWERING_BUILTIN_TYPE_STATIC,
+		LOWERING_NATIVE_STATIC,
+		LOWERING_ATTRIBUTE_RECEIVER,
+		LOWERING_GENERIC_RECEIVER,
+		LOWERING_GENERIC_CLASS_CALL,
+		LOWERING_GENERIC_SELF_CALL,
+	};
+
+	Lowering lowering = LOWERING_ERROR;
+	// The evaluated callee receiver, for the forms that have one.
+	FSCodeGenerator::Address receiver;
+	// `create_proxy[T](...)`'s reified type argument, which stands in for a receiver.
+	FSCodeGenerator::Address proxy_type_argument;
+	// The declaring class a specialized construction must instantiate.
+	FSCodeGenerator::Address expected_base;
+	Vector<FSDataType> specialized_type_arguments;
+	// Resolved from the AST and, for receiver forms, from the already-evaluated receiver's type.
+	MethodBind *method = nullptr;
+	StringName native_class_name;
+	StringName attribute_name;
+	Variant::Type builtin_type = Variant::VARIANT_MAX;
+	bool has_receiver_temporary = false;
+};
+
+// The `MethodBind` behind `receiver.method(...)`, or null when the receiver's static type does not
+// pin one down and the call has to go through dynamic dispatch.
+static MethodBind *_receiver_method_bind(const FSCodeGenerator::Address &p_receiver, const StringName &p_function_name) {
+	StringName class_name;
+	if (p_receiver.type.kind == FSDataType::NATIVE) {
+		class_name = p_receiver.type.native_type;
+	} else {
+		class_name = p_receiver.type.native_type == StringName() ? p_receiver.type.script_type->get_instance_base_type() : p_receiver.type.native_type;
+	}
+	if (FSAnalyzer::class_exists(class_name) && ClassDB::has_method(class_name, p_function_name)) {
+		return ClassDB::get_method(class_name, p_function_name);
+	}
+	return nullptr;
+}
+
 FSCodeGenerator::Address FSCompiler::_emit_global_class_value(CodeGen &codegen, Error &r_error, const StringName &p_global_class, const FSParser::ExpressionNode *p_source) {
 	// A namespaced native class resolves to its class handle, which is reachable only by the
 	// canonical qualified name: it is deliberately not registered as a bare global.
@@ -1899,6 +1957,234 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				result = codegen.add_temporary(type);
 			}
 
+			// Evaluate the callee receiver before the arguments: `a.f(b)` runs `a` and then `b`, the
+			// order they are written in. Which expression is the receiver — or whether the form has
+			// one at all -- follows from the lowering form, so the whole form-selection chain is
+			// resolved here, once, and only the emission is left to the switch below.
+			FSCallLoweringPlan plan;
+			if (call->enum_call_kind != FSParser::CallNode::ENUM_CALL_NONE) {
+				if (call->callee->type != FSParser::Node::SUBSCRIPT) {
+					_set_error("Compiler bug (please report): enum function call has no receiver subscript.", call);
+					r_error = ERR_BUG;
+					return FSCodeGenerator::Address();
+				}
+				plan.lowering = FSCallLoweringPlan::LOWERING_ENUM_CALL;
+				const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
+				plan.receiver = _parse_expression(codegen, r_error, subscript->base);
+				if (r_error) {
+					return FSCodeGenerator::Address();
+				}
+			} else if (call->is_proxy_construct) {
+				// `create_proxy[T](handler)` lowers to `create_proxy_dynamic(T, handler)`. The
+				// type argument T (a trait/abstract type) yields the script the runtime uses to
+				// scan the proxied contract; the result is typed as T by the analyzer.
+				plan.lowering = FSCallLoweringPlan::LOWERING_PROXY_CONSTRUCT;
+				const FSParser::DataType call_datatype = call->get_datatype();
+				const bool forwards_class_type_parameter = call_datatype.is_type_parameter() &&
+						call_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS;
+
+				if (forwards_class_type_parameter) {
+					// T is the enclosing generic class's type parameter, reified onto this
+					// instance at construction (e.g. `Mock[Greeter].new()` binds T = Greeter).
+					// Materialize its bound script from the instance's reified type arguments.
+					plan.proxy_type_argument = codegen.add_temporary();
+					gen->write_get_type_parameter(plan.proxy_type_argument, call_datatype.type_parameter_index);
+				} else {
+					// T is statically resolved; compile the `[T]` type argument as a value to
+					// obtain its script.
+					const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
+					plan.proxy_type_argument = _parse_expression(codegen, r_error, subscript->index);
+					if (r_error) {
+						return FSCodeGenerator::Address();
+					}
+				}
+			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && FSParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
+				plan.lowering = FSCallLoweringPlan::LOWERING_BUILTIN_CONSTRUCT;
+				plan.builtin_type = FSParser::get_builtin_type(call->function_name);
+			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && Variant::has_utility_function(call->function_name)) {
+				// Variant utility function.
+				plan.lowering = FSCallLoweringPlan::LOWERING_VARIANT_UTILITY;
+			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && FSUtilityFunctions::function_exists(call->function_name)) {
+				// FoundryScript utility function.
+				plan.lowering = FSCallLoweringPlan::LOWERING_FOUNDRY_SCRIPT_UTILITY;
+			} else if (call->is_super) {
+				// Super call.
+				plan.lowering = FSCallLoweringPlan::LOWERING_SUPER_CALL;
+			} else if (call->callee->type == FSParser::Node::IDENTIFIER) {
+				// Self function call.
+				if (ClassDB::has_method(codegen.script->native->get_name(), call->function_name)) {
+					// Native method, use faster path.
+					plan.lowering = FSCallLoweringPlan::LOWERING_SELF_NATIVE_METHOD_BIND;
+					plan.method = ClassDB::get_method(codegen.script->native->get_name(), call->function_name);
+				} else if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static) || call->function_name == "new") {
+					plan.lowering = FSCallLoweringPlan::LOWERING_CLASS_CALL;
+				} else {
+					plan.lowering = FSCallLoweringPlan::LOWERING_SELF_CALL;
+				}
+			} else if (call->callee->type == FSParser::Node::SUBSCRIPT) {
+				const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
+
+				if (subscript->is_attribute) {
+					// Specialized generic construction: `Box[int].new(...)`. The callee base is
+					// itself an index subscript (`Box[int]`) carrying reified type arguments, which
+					// must be bound onto the new instance instead of going through a plain call.
+					const FSParser::SubscriptNode *specialization = nullptr;
+					if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr && subscript->base->type == FSParser::Node::SUBSCRIPT) {
+						const FSParser::SubscriptNode *candidate = static_cast<const FSParser::SubscriptNode *>(subscript->base);
+						// Only a specialized class meta-type (`Box[int]`) is a construction target. An indexed
+						// instance value (e.g. `array[0]` whose element type is `Box[int]`) also carries type
+						// arguments, but is not a class handle, so it must not be treated as one.
+						const FSParser::DataType candidate_type = candidate->get_datatype();
+						if (!candidate->is_attribute && candidate_type.is_meta_type && candidate_type.kind == FSParser::DataType::CLASS) {
+							specialization = candidate;
+						}
+					}
+					// Mechanism (b) for stored/aliased specialized class handles (#242): the construction target is
+					// the expression yielding the class object, and the reified arguments come from its static
+					// meta-type. For the direct `Box[int].new()` that is `Box` with `Box[int]`'s arguments; for an
+					// aliased handle (`const IntBox = Box[int]; IntBox.new()`, `var h = Box[int]; h.new()`) it is the
+					// handle expression itself, whose static type is the specialized meta-type. A handle widened to
+					// `FoundryScript`/`Object`/... carries no type arguments and falls through to plain construction.
+					const FSParser::ExpressionNode *specialized_base = nullptr;
+					FSParser::DataType specialized_static_type;
+					if (specialization != nullptr) {
+						const FSParser::DataType specialization_datatype = specialization->get_datatype();
+						if (!specialization_datatype.type_arguments.is_empty()) {
+							specialized_base = specialization->base;
+							specialized_static_type = specialization_datatype;
+							plan.specialized_type_arguments = _bake_construction_type_arguments(specialization_datatype.type_arguments, codegen);
+						}
+					} else if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr) {
+						const FSParser::DataType base_static = subscript->base->get_datatype();
+						if (base_static.is_set() && (base_static.is_meta_type || base_static.is_type_handle_annotation) &&
+								(base_static.kind == FSParser::DataType::CLASS || base_static.kind == FSParser::DataType::SCRIPT) &&
+								!base_static.type_arguments.is_empty()) {
+							// The handle's own type may be weakly inferred (an untyped `var h = Box[int]`), which would
+							// make `_gdtype_from_datatype(base_static)` discard the whole type. The reified arguments
+							// themselves are hard explicit types, so convert them individually instead, through the
+							// same baking the direct form uses so the two encodings agree.
+							specialized_base = subscript->base;
+							specialized_static_type = base_static;
+							plan.specialized_type_arguments = _bake_construction_type_arguments(base_static.type_arguments, codegen);
+						}
+					}
+
+					if (specialized_base != nullptr) {
+						FoundryScript *expected_class = nullptr;
+						if (specialized_static_type.kind == FSParser::DataType::CLASS && specialized_static_type.class_type != nullptr && main_script != nullptr) {
+							if (parser->has_class(specialized_static_type.class_type)) {
+								expected_class = main_script->find_class(specialized_static_type.class_type->fqcn);
+							} else {
+								Error err = OK;
+								Ref<FoundryScript> script = FSCache::get_shallow_script(specialized_static_type.script_path, err, codegen.script != nullptr ? codegen.script->path : String());
+								if (err == OK && script.is_valid()) {
+									expected_class = script->find_class(specialized_static_type.class_type->fqcn);
+								}
+							}
+						} else if (specialized_static_type.kind == FSParser::DataType::SCRIPT && specialized_static_type.script_type.is_valid()) {
+							expected_class = Object::cast_to<FoundryScript>(specialized_static_type.script_type.ptr());
+						}
+						if (expected_class != nullptr) {
+							plan.expected_base = codegen.add_constant(Ref<FoundryScript>(expected_class));
+						} else {
+							specialized_base = nullptr;
+						}
+					}
+
+					if (specialized_base != nullptr) {
+						// A specialized handle folded into a constant (e.g. `const IntBox = Box[int]`) bakes the
+						// analyzer's shallow, uncompiled class object; constructing from it would fail since the
+						// class never finishes compiling. Re-resolve it to the live class compiled in this unit —
+						// the same object the direct `Box[int].new()` form instantiates. A non-constant handle
+						// (`var h = Box[int]`) instead evaluates to its live runtime value, and anything not found
+						// in this unit (e.g. an already-compiled preloaded script) keeps its folded value.
+						plan.lowering = FSCallLoweringPlan::LOWERING_SPECIALIZED_CONSTRUCT;
+						FoundryScript *folded_class = nullptr;
+						if (specialized_base->is_constant && specialized_base->reduced_value.get_type() == Variant::OBJECT) {
+							folded_class = Object::cast_to<FoundryScript>(specialized_base->reduced_value);
+						}
+						FoundryScript *live_class = nullptr;
+						if (folded_class != nullptr && !folded_class->is_valid() && main_script != nullptr) {
+							live_class = main_script->find_class(folded_class->get_fully_qualified_name());
+						}
+						if (live_class != nullptr) {
+							plan.receiver = codegen.add_constant(Ref<FoundryScript>(live_class));
+						} else {
+							plan.receiver = _parse_expression(codegen, r_error, specialized_base);
+							if (r_error) {
+								return FSCodeGenerator::Address();
+							}
+						}
+					} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
+						// May be static built-in method call.
+						plan.lowering = FSCallLoweringPlan::LOWERING_BUILTIN_TYPE_STATIC;
+						plan.builtin_type = FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name);
+						plan.attribute_name = subscript->attribute->name;
+					} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
+							static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(_native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base))) &&
+							ClassDB::get_method(_native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base)), subscript->attribute->name) != nullptr) {
+						// It's a static native method call. A name ClassDB does not know is not one —
+						// it is a `static` witness from a retroactive conformance on this engine class,
+						// which has no `MethodBind` to encode. That falls through to the generic call
+						// below, where the class evaluates to its `FSNativeClass` and dispatches the
+						// witness. (Encoding a null `MethodBind` here would crash the VM.)
+						plan.lowering = FSCallLoweringPlan::LOWERING_NATIVE_STATIC;
+						plan.native_class_name = _native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base));
+						plan.attribute_name = subscript->attribute->name;
+						plan.method = ClassDB::get_method(plan.native_class_name, plan.attribute_name);
+					} else {
+						plan.lowering = FSCallLoweringPlan::LOWERING_ATTRIBUTE_RECEIVER;
+						plan.receiver = _parse_expression(codegen, r_error, subscript->base);
+						if (r_error) {
+							return FSCodeGenerator::Address();
+						}
+						if (!is_awaited && plan.receiver.type.kind != FSDataType::VARIANT && plan.receiver.type.kind != FSDataType::BUILTIN) {
+							// Native method, use faster path.
+							plan.method = _receiver_method_bind(plan.receiver, call->function_name);
+						}
+					}
+				} else if (!call->function_name.is_empty()) {
+					// A validated generic-method application: `name[TypeArgs](...)` (dispatched on
+					// `self`) or `receiver.method[TypeArgs](...)` (dispatched on the receiver). Type
+					// arguments are erased at runtime, so this compiles as an ordinary call. The
+					// analyzer rejects a genuine call on an index before codegen.
+					const FSParser::SubscriptNode *receiver_access = nullptr;
+					if (subscript->base != nullptr && subscript->base->type == FSParser::Node::SUBSCRIPT) {
+						const FSParser::SubscriptNode *candidate = static_cast<const FSParser::SubscriptNode *>(subscript->base);
+						if (candidate->is_attribute) {
+							receiver_access = candidate;
+						}
+					}
+					if (receiver_access != nullptr) {
+						// Dispatch on the receiver, mirroring an ordinary `receiver.method(...)` call.
+						plan.lowering = FSCallLoweringPlan::LOWERING_GENERIC_RECEIVER;
+						plan.receiver = _parse_expression(codegen, r_error, receiver_access->base);
+						if (r_error) {
+							return FSCodeGenerator::Address();
+						}
+						if (!is_awaited && plan.receiver.type.kind != FSDataType::VARIANT && plan.receiver.type.kind != FSDataType::BUILTIN) {
+							// Native method, use faster path.
+							plan.method = _receiver_method_bind(plan.receiver, call->function_name);
+						}
+					} else if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static)) {
+						plan.lowering = FSCallLoweringPlan::LOWERING_GENERIC_CLASS_CALL;
+					} else {
+						plan.lowering = FSCallLoweringPlan::LOWERING_GENERIC_SELF_CALL;
+					}
+				} else {
+					_set_error("Cannot call something that isn't a function.", call->callee);
+					r_error = ERR_COMPILATION_FAILED;
+					return FSCodeGenerator::Address();
+				}
+			} else {
+				_set_error("Compiler bug (please report): incorrect callee type in call node.", call->callee);
+				r_error = ERR_COMPILATION_FAILED;
+				return FSCodeGenerator::Address();
+			}
+
+			plan.has_receiver_temporary = plan.receiver.mode == FSCodeGenerator::Address::TEMPORARY ||
+					plan.proxy_type_argument.mode == FSCodeGenerator::Address::TEMPORARY;
+
 			// Evaluate the argument expressions, then bind them to the callee positionally. A
 			// canonicalized named call records the source (written) evaluation order so its
 			// side-effectful arguments run left to right as written even though `arguments` is in
@@ -1965,332 +2251,135 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				}
 			}
 
-			if (call->enum_call_kind != FSParser::CallNode::ENUM_CALL_NONE) {
-				if (call->callee->type != FSParser::Node::SUBSCRIPT) {
-					_set_error("Compiler bug (please report): enum function call has no receiver subscript.", call);
-					r_error = ERR_BUG;
-					return FSCodeGenerator::Address();
-				}
-				const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
-				FSCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
-				if (r_error) {
-					return FSCodeGenerator::Address();
-				}
-				gen->write_enum_call(result, base, arguments, StringName(call->enum_call_owner_script_path),
-						call->enum_call_owner_class, call->enum_call_enum_type, call->enum_call_function,
-						call->enum_call_kind == FSParser::CallNode::ENUM_CALL_STATIC, is_awaited);
-				if (base.mode == FSCodeGenerator::Address::TEMPORARY) {
-					gen->pop_temporary();
-				}
-			} else if (call->is_proxy_construct) {
-				// `create_proxy[T](handler)` lowers to `create_proxy_dynamic(T, handler)`. The
-				// type argument T (a trait/abstract type) yields the script the runtime uses to
-				// scan the proxied contract; the result is typed as T by the analyzer.
-				const FSParser::DataType call_datatype = call->get_datatype();
-				const bool forwards_class_type_parameter = call_datatype.is_type_parameter() &&
-						call_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS;
-
-				FSCodeGenerator::Address type_arg;
-				if (forwards_class_type_parameter) {
-					// T is the enclosing generic class's type parameter, reified onto this
-					// instance at construction (e.g. `Mock[Greeter].new()` binds T = Greeter).
-					// Materialize its bound script from the instance's reified type arguments.
-					type_arg = codegen.add_temporary();
-					gen->write_get_type_parameter(type_arg, call_datatype.type_parameter_index);
-				} else {
-					// T is statically resolved; compile the `[T]` type argument as a value to
-					// obtain its script.
-					const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
-					type_arg = _parse_expression(codegen, r_error, subscript->index);
-					if (r_error) {
-						return FSCodeGenerator::Address();
-					}
-				}
-
-				Vector<FSCodeGenerator::Address> proxy_arguments;
-				proxy_arguments.push_back(type_arg);
-				for (int i = 0; i < arguments.size(); i++) {
-					proxy_arguments.push_back(arguments[i]);
-				}
-				gen->write_call_foundry_script_utility(result, SNAME("create_proxy_dynamic"), proxy_arguments);
-				if (type_arg.mode == FSCodeGenerator::Address::TEMPORARY) {
-					gen->pop_temporary();
-				}
-			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && FSParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
-				gen->write_construct(result, FSParser::get_builtin_type(call->function_name), arguments, call->get_datatype().numeric_type);
-			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && Variant::has_utility_function(call->function_name)) {
-				// Variant utility function.
-				gen->write_call_utility(result, call->function_name, arguments);
-			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && FSUtilityFunctions::function_exists(call->function_name)) {
-				// FoundryScript utility function.
-				gen->write_call_foundry_script_utility(result, call->function_name, arguments);
-			} else {
-				// Regular function.
-				const FSParser::ExpressionNode *callee = call->callee;
-
-				if (call->is_super) {
-					// Super call.
-					gen->write_super_call(result, call->function_name, arguments);
-				} else {
-					if (callee->type == FSParser::Node::IDENTIFIER) {
-						// Self function call.
-						if (ClassDB::has_method(codegen.script->native->get_name(), call->function_name)) {
-							// Native method, use faster path.
-							FSCodeGenerator::Address self;
-							self.mode = FSCodeGenerator::Address::SELF;
-							MethodBind *method = ClassDB::get_method(codegen.script->native->get_name(), call->function_name);
-
-							if (_can_use_validate_call(method, arguments)) {
-								// Exact arguments, use validated call.
-								gen->write_call_method_bind_validated(result, self, method, arguments);
-							} else {
-								// Not exact arguments, but still can use method bind call.
-								gen->write_call_method_bind(result, self, method, arguments);
-							}
-						} else if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static) || call->function_name == "new") {
-							FSCodeGenerator::Address self;
-							self.mode = FSCodeGenerator::Address::CLASS;
-							if (is_awaited) {
-								gen->write_call_async(result, self, call->function_name, arguments);
-							} else {
-								gen->write_call(result, self, call->function_name, arguments);
-							}
+			// `receiver.method(...)` and `receiver.method[TypeArgs](...)` dispatch identically once the
+			// receiver has been evaluated: type arguments are erased at runtime.
+			auto write_receiver_dispatch = [&]() {
+				if (is_awaited) {
+					gen->write_call_async(result, plan.receiver, call->function_name, arguments);
+				} else if (plan.receiver.type.kind != FSDataType::VARIANT && plan.receiver.type.kind != FSDataType::BUILTIN) {
+					if (plan.method != nullptr) {
+						if (_can_use_validate_call(plan.method, arguments)) {
+							// Exact arguments, use validated call.
+							gen->write_call_method_bind_validated(result, plan.receiver, plan.method, arguments);
 						} else {
-							if (is_awaited) {
-								gen->write_call_self_async(result, call->function_name, arguments);
-							} else {
-								gen->write_call_self(result, call->function_name, arguments);
-							}
-						}
-					} else if (callee->type == FSParser::Node::SUBSCRIPT) {
-						const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
-
-						if (subscript->is_attribute) {
-							// Specialized generic construction: `Box[int].new(...)`. The callee base is
-							// itself an index subscript (`Box[int]`) carrying reified type arguments, which
-							// must be bound onto the new instance instead of going through a plain call.
-							const FSParser::SubscriptNode *specialization = nullptr;
-							if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr && subscript->base->type == FSParser::Node::SUBSCRIPT) {
-								const FSParser::SubscriptNode *candidate = static_cast<const FSParser::SubscriptNode *>(subscript->base);
-								// Only a specialized class meta-type (`Box[int]`) is a construction target. An indexed
-								// instance value (e.g. `array[0]` whose element type is `Box[int]`) also carries type
-								// arguments, but is not a class handle, so it must not be treated as one.
-								const FSParser::DataType candidate_type = candidate->get_datatype();
-								if (!candidate->is_attribute && candidate_type.is_meta_type && candidate_type.kind == FSParser::DataType::CLASS) {
-									specialization = candidate;
-								}
-							}
-							// Mechanism (b) for stored/aliased specialized class handles (#242): the construction target is
-							// the expression yielding the class object, and the reified arguments come from its static
-							// meta-type. For the direct `Box[int].new()` that is `Box` with `Box[int]`'s arguments; for an
-							// aliased handle (`const IntBox = Box[int]; IntBox.new()`, `var h = Box[int]; h.new()`) it is the
-							// handle expression itself, whose static type is the specialized meta-type. A handle widened to
-							// `FoundryScript`/`Object`/... carries no type arguments and falls through to plain construction.
-							const FSParser::ExpressionNode *specialized_base = nullptr;
-							FSCodeGenerator::Address expected_base;
-							Vector<FSDataType> specialized_type_arguments;
-							FSParser::DataType specialized_static_type;
-							if (specialization != nullptr) {
-								const FSParser::DataType specialization_datatype = specialization->get_datatype();
-								if (!specialization_datatype.type_arguments.is_empty()) {
-									specialized_base = specialization->base;
-									specialized_static_type = specialization_datatype;
-									specialized_type_arguments = _bake_construction_type_arguments(specialization_datatype.type_arguments, codegen);
-								}
-							} else if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr) {
-								const FSParser::DataType base_static = subscript->base->get_datatype();
-								if (base_static.is_set() && (base_static.is_meta_type || base_static.is_type_handle_annotation) &&
-										(base_static.kind == FSParser::DataType::CLASS || base_static.kind == FSParser::DataType::SCRIPT) &&
-										!base_static.type_arguments.is_empty()) {
-									// The handle's own type may be weakly inferred (an untyped `var h = Box[int]`), which would
-									// make `_gdtype_from_datatype(base_static)` discard the whole type. The reified arguments
-									// themselves are hard explicit types, so convert them individually instead, through the
-									// same baking the direct form uses so the two encodings agree.
-									specialized_base = subscript->base;
-									specialized_static_type = base_static;
-									specialized_type_arguments = _bake_construction_type_arguments(base_static.type_arguments, codegen);
-								}
-							}
-
-							if (specialized_base != nullptr) {
-								FoundryScript *expected_class = nullptr;
-								if (specialized_static_type.kind == FSParser::DataType::CLASS && specialized_static_type.class_type != nullptr && main_script != nullptr) {
-									if (parser->has_class(specialized_static_type.class_type)) {
-										expected_class = main_script->find_class(specialized_static_type.class_type->fqcn);
-									} else {
-										Error err = OK;
-										Ref<FoundryScript> script = FSCache::get_shallow_script(specialized_static_type.script_path, err, codegen.script != nullptr ? codegen.script->path : String());
-										if (err == OK && script.is_valid()) {
-											expected_class = script->find_class(specialized_static_type.class_type->fqcn);
-										}
-									}
-								} else if (specialized_static_type.kind == FSParser::DataType::SCRIPT && specialized_static_type.script_type.is_valid()) {
-									expected_class = Object::cast_to<FoundryScript>(specialized_static_type.script_type.ptr());
-								}
-								if (expected_class != nullptr) {
-									expected_base = codegen.add_constant(Ref<FoundryScript>(expected_class));
-								} else {
-									specialized_base = nullptr;
-								}
-							}
-
-							if (specialized_base != nullptr) {
-								// A specialized handle folded into a constant (e.g. `const IntBox = Box[int]`) bakes the
-								// analyzer's shallow, uncompiled class object; constructing from it would fail since the
-								// class never finishes compiling. Re-resolve it to the live class compiled in this unit —
-								// the same object the direct `Box[int].new()` form instantiates. A non-constant handle
-								// (`var h = Box[int]`) instead evaluates to its live runtime value, and anything not found
-								// in this unit (e.g. an already-compiled preloaded script) keeps its folded value.
-								FSCodeGenerator::Address base;
-								FoundryScript *folded_class = nullptr;
-								if (specialized_base->is_constant && specialized_base->reduced_value.get_type() == Variant::OBJECT) {
-									folded_class = Object::cast_to<FoundryScript>(specialized_base->reduced_value);
-								}
-								FoundryScript *live_class = nullptr;
-								if (folded_class != nullptr && !folded_class->is_valid() && main_script != nullptr) {
-									live_class = main_script->find_class(folded_class->get_fully_qualified_name());
-								}
-								if (live_class != nullptr) {
-									base = codegen.add_constant(Ref<FoundryScript>(live_class));
-								} else {
-									base = _parse_expression(codegen, r_error, specialized_base);
-									if (r_error) {
-										return FSCodeGenerator::Address();
-									}
-								}
-								gen->write_construct_specialized(result, base, expected_base, specialized_type_arguments, arguments);
-								if (base.mode == FSCodeGenerator::Address::TEMPORARY) {
-									gen->pop_temporary();
-								}
-							} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
-								// May be static built-in method call.
-								gen->write_call_builtin_type_static(result, FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
-							} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
-									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(_native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base))) &&
-									ClassDB::get_method(_native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base)), subscript->attribute->name) != nullptr) {
-								// It's a static native method call. A name ClassDB does not know is not one —
-								// it is a `static` witness from a retroactive conformance on this engine class,
-								// which has no `MethodBind` to encode. That falls through to the generic call
-								// below, where the class evaluates to its `FSNativeClass` and dispatches the
-								// witness. (Encoding a null `MethodBind` here would crash the VM.)
-								StringName class_name = _native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base));
-								MethodBind *method = ClassDB::get_method(class_name, subscript->attribute->name);
-								if (_can_use_validate_call(method, arguments)) {
-									// Exact arguments, use validated call.
-									gen->write_call_native_static_validated(result, method, arguments);
-								} else {
-									// Not exact arguments, use regular static call
-									gen->write_call_native_static(result, class_name, subscript->attribute->name, arguments);
-								}
-							} else {
-								FSCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
-								if (r_error) {
-									return FSCodeGenerator::Address();
-								}
-								if (is_awaited) {
-									gen->write_call_async(result, base, call->function_name, arguments);
-								} else if (base.type.kind != FSDataType::VARIANT && base.type.kind != FSDataType::BUILTIN) {
-									// Native method, use faster path.
-									StringName class_name;
-									if (base.type.kind == FSDataType::NATIVE) {
-										class_name = base.type.native_type;
-									} else {
-										class_name = base.type.native_type == StringName() ? base.type.script_type->get_instance_base_type() : base.type.native_type;
-									}
-									if (FSAnalyzer::class_exists(class_name) && ClassDB::has_method(class_name, call->function_name)) {
-										MethodBind *method = ClassDB::get_method(class_name, call->function_name);
-										if (_can_use_validate_call(method, arguments)) {
-											// Exact arguments, use validated call.
-											gen->write_call_method_bind_validated(result, base, method, arguments);
-										} else {
-											// Not exact arguments, but still can use method bind call.
-											gen->write_call_method_bind(result, base, method, arguments);
-										}
-									} else {
-										gen->write_call(result, base, call->function_name, arguments);
-									}
-								} else if (base.type.kind == FSDataType::BUILTIN) {
-									gen->write_call_builtin_type(result, base, base.type.builtin_type, call->function_name, arguments);
-								} else {
-									gen->write_call(result, base, call->function_name, arguments);
-								}
-								if (base.mode == FSCodeGenerator::Address::TEMPORARY) {
-									gen->pop_temporary();
-								}
-							}
-						} else if (!call->function_name.is_empty()) {
-							// A validated generic-method application: `name[TypeArgs](...)` (dispatched on
-							// `self`) or `receiver.method[TypeArgs](...)` (dispatched on the receiver). Type
-							// arguments are erased at runtime, so this compiles as an ordinary call. The
-							// analyzer rejects a genuine call on an index before codegen.
-							const FSParser::SubscriptNode *receiver_access = nullptr;
-							if (subscript->base != nullptr && subscript->base->type == FSParser::Node::SUBSCRIPT) {
-								const FSParser::SubscriptNode *candidate = static_cast<const FSParser::SubscriptNode *>(subscript->base);
-								if (candidate->is_attribute) {
-									receiver_access = candidate;
-								}
-							}
-							if (receiver_access != nullptr) {
-								// Dispatch on the receiver, mirroring an ordinary `receiver.method(...)` call.
-								FSCodeGenerator::Address base = _parse_expression(codegen, r_error, receiver_access->base);
-								if (r_error) {
-									return FSCodeGenerator::Address();
-								}
-								if (is_awaited) {
-									gen->write_call_async(result, base, call->function_name, arguments);
-								} else if (base.type.kind != FSDataType::VARIANT && base.type.kind != FSDataType::BUILTIN) {
-									// Native method, use faster path.
-									StringName class_name;
-									if (base.type.kind == FSDataType::NATIVE) {
-										class_name = base.type.native_type;
-									} else {
-										class_name = base.type.native_type == StringName() ? base.type.script_type->get_instance_base_type() : base.type.native_type;
-									}
-									if (FSAnalyzer::class_exists(class_name) && ClassDB::has_method(class_name, call->function_name)) {
-										MethodBind *method = ClassDB::get_method(class_name, call->function_name);
-										if (_can_use_validate_call(method, arguments)) {
-											gen->write_call_method_bind_validated(result, base, method, arguments);
-										} else {
-											gen->write_call_method_bind(result, base, method, arguments);
-										}
-									} else {
-										gen->write_call(result, base, call->function_name, arguments);
-									}
-								} else if (base.type.kind == FSDataType::BUILTIN) {
-									gen->write_call_builtin_type(result, base, base.type.builtin_type, call->function_name, arguments);
-								} else {
-									gen->write_call(result, base, call->function_name, arguments);
-								}
-								if (base.mode == FSCodeGenerator::Address::TEMPORARY) {
-									gen->pop_temporary();
-								}
-							} else if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static)) {
-								FSCodeGenerator::Address self;
-								self.mode = FSCodeGenerator::Address::CLASS;
-								if (is_awaited) {
-									gen->write_call_async(result, self, call->function_name, arguments);
-								} else {
-									gen->write_call(result, self, call->function_name, arguments);
-								}
-							} else if (is_awaited) {
-								gen->write_call_self_async(result, call->function_name, arguments);
-							} else {
-								gen->write_call_self(result, call->function_name, arguments);
-							}
-						} else {
-							_set_error("Cannot call something that isn't a function.", call->callee);
-							r_error = ERR_COMPILATION_FAILED;
-							return FSCodeGenerator::Address();
+							// Not exact arguments, but still can use method bind call.
+							gen->write_call_method_bind(result, plan.receiver, plan.method, arguments);
 						}
 					} else {
-						_set_error("Compiler bug (please report): incorrect callee type in call node.", call->callee);
-						r_error = ERR_COMPILATION_FAILED;
-						return FSCodeGenerator::Address();
+						gen->write_call(result, plan.receiver, call->function_name, arguments);
 					}
+				} else if (plan.receiver.type.kind == FSDataType::BUILTIN) {
+					gen->write_call_builtin_type(result, plan.receiver, plan.receiver.type.builtin_type, call->function_name, arguments);
+				} else {
+					gen->write_call(result, plan.receiver, call->function_name, arguments);
+				}
+			};
+
+			switch (plan.lowering) {
+				case FSCallLoweringPlan::LOWERING_ENUM_CALL: {
+					gen->write_enum_call(result, plan.receiver, arguments, StringName(call->enum_call_owner_script_path),
+							call->enum_call_owner_class, call->enum_call_enum_type, call->enum_call_function,
+							call->enum_call_kind == FSParser::CallNode::ENUM_CALL_STATIC, is_awaited);
+				} break;
+				case FSCallLoweringPlan::LOWERING_PROXY_CONSTRUCT: {
+					Vector<FSCodeGenerator::Address> proxy_arguments;
+					proxy_arguments.push_back(plan.proxy_type_argument);
+					for (int i = 0; i < arguments.size(); i++) {
+						proxy_arguments.push_back(arguments[i]);
+					}
+					gen->write_call_foundry_script_utility(result, SNAME("create_proxy_dynamic"), proxy_arguments);
+				} break;
+				case FSCallLoweringPlan::LOWERING_BUILTIN_CONSTRUCT: {
+					gen->write_construct(result, plan.builtin_type, arguments, call->get_datatype().numeric_type);
+				} break;
+				case FSCallLoweringPlan::LOWERING_VARIANT_UTILITY: {
+					gen->write_call_utility(result, call->function_name, arguments);
+				} break;
+				case FSCallLoweringPlan::LOWERING_FOUNDRY_SCRIPT_UTILITY: {
+					gen->write_call_foundry_script_utility(result, call->function_name, arguments);
+				} break;
+				case FSCallLoweringPlan::LOWERING_SUPER_CALL: {
+					gen->write_super_call(result, call->function_name, arguments);
+				} break;
+				case FSCallLoweringPlan::LOWERING_SELF_NATIVE_METHOD_BIND: {
+					FSCodeGenerator::Address self;
+					self.mode = FSCodeGenerator::Address::SELF;
+					if (_can_use_validate_call(plan.method, arguments)) {
+						// Exact arguments, use validated call.
+						gen->write_call_method_bind_validated(result, self, plan.method, arguments);
+					} else {
+						// Not exact arguments, but still can use method bind call.
+						gen->write_call_method_bind(result, self, plan.method, arguments);
+					}
+				} break;
+				case FSCallLoweringPlan::LOWERING_CLASS_CALL: {
+					FSCodeGenerator::Address self;
+					self.mode = FSCodeGenerator::Address::CLASS;
+					if (is_awaited) {
+						gen->write_call_async(result, self, call->function_name, arguments);
+					} else {
+						gen->write_call(result, self, call->function_name, arguments);
+					}
+				} break;
+				case FSCallLoweringPlan::LOWERING_SELF_CALL: {
+					if (is_awaited) {
+						gen->write_call_self_async(result, call->function_name, arguments);
+					} else {
+						gen->write_call_self(result, call->function_name, arguments);
+					}
+				} break;
+				case FSCallLoweringPlan::LOWERING_SPECIALIZED_CONSTRUCT: {
+					gen->write_construct_specialized(result, plan.receiver, plan.expected_base, plan.specialized_type_arguments, arguments);
+				} break;
+				case FSCallLoweringPlan::LOWERING_BUILTIN_TYPE_STATIC: {
+					gen->write_call_builtin_type_static(result, plan.builtin_type, plan.attribute_name, arguments);
+				} break;
+				case FSCallLoweringPlan::LOWERING_NATIVE_STATIC: {
+					if (_can_use_validate_call(plan.method, arguments)) {
+						// Exact arguments, use validated call.
+						gen->write_call_native_static_validated(result, plan.method, arguments);
+					} else {
+						// Not exact arguments, use regular static call
+						gen->write_call_native_static(result, plan.native_class_name, plan.attribute_name, arguments);
+					}
+				} break;
+				case FSCallLoweringPlan::LOWERING_ATTRIBUTE_RECEIVER: {
+					write_receiver_dispatch();
+				} break;
+				case FSCallLoweringPlan::LOWERING_GENERIC_RECEIVER: {
+					write_receiver_dispatch();
+				} break;
+				case FSCallLoweringPlan::LOWERING_GENERIC_CLASS_CALL: {
+					FSCodeGenerator::Address self;
+					self.mode = FSCodeGenerator::Address::CLASS;
+					if (is_awaited) {
+						gen->write_call_async(result, self, call->function_name, arguments);
+					} else {
+						gen->write_call(result, self, call->function_name, arguments);
+					}
+				} break;
+				case FSCallLoweringPlan::LOWERING_GENERIC_SELF_CALL: {
+					if (is_awaited) {
+						gen->write_call_self_async(result, call->function_name, arguments);
+					} else {
+						gen->write_call_self(result, call->function_name, arguments);
+					}
+				} break;
+				case FSCallLoweringPlan::LOWERING_ERROR: {
+					// The planning phase above returns directly for every call it rejects, so no
+					// unplanned call reaches emission.
+					_set_error("Compiler bug (please report): call lowering was not planned.", call);
+					r_error = ERR_BUG;
+					return FSCodeGenerator::Address();
 				}
 			}
 
 			for (int i = 0; i < argument_temporaries_to_pop; i++) {
+				gen->pop_temporary();
+			}
+			// The receiver was pushed before every argument and conversion temporary, so it is
+			// released last: `pop_temporary` is strictly LIFO over the temporary pool.
+			if (plan.has_receiver_temporary) {
 				gen->pop_temporary();
 			}
 			return result;

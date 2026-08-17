@@ -1,0 +1,3 @@
+FS_TEST_OK
+value 7
+eval ["receiver", "argument"]
