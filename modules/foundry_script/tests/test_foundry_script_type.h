@@ -5499,6 +5499,30 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A directly final-class-bo
 		self_bounded.type_parameter_bound.push_back(final_bound);
 		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(self_bounded, resolved));
 	}
+	SUBCASE("handle-shaped bound") {
+		// A bound written `Type[Label]` denotes a class handle even where the parameter is spelled bare,
+		// so the bound's own layer survives resolution and the position stays a handle position.
+		FSParser::DataType handle_bound;
+		handle_bound.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		handle_bound.kind = FSParser::DataType::CLASS;
+		handle_bound.builtin_type = Variant::OBJECT;
+		handle_bound.class_type = &final_class;
+		handle_bound.is_type_handle_annotation = true;
+
+		FSParser::DataType handle_bounded = make_method_type_parameter(SNAME("W"), 0);
+		handle_bounded.type_parameter_bound.push_back(handle_bound);
+		CHECK(FSTypeCompatibility::resolve_final_class_bound(handle_bounded, resolved));
+		CHECK(resolved.is_type_handle_annotation);
+
+		// A `ContainerType` has no field for that layer, so the bound stops being evidence below one and
+		// the position keeps its ordinary erasure.
+		CHECK(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, true));
+		CHECK_FALSE(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, false));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_array_of(handle_bounded), make_instance_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				handle_bounded, make_instance_frame_options()));
+	}
 	SUBCASE("unbounded and non-final bounds") {
 		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0), resolved));
 		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0, &open_class), resolved));

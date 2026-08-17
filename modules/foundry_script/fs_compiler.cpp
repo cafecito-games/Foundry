@@ -141,9 +141,13 @@ static bool _datatype_contains_erased_type_parameter(const FSParser::DataType &p
 		}
 		// A parameter bounded by a `final` class resolves to that bound before erasure, so a container or
 		// a specialization declared around one keeps real element metadata instead of collapsing to an
-		// untyped carrier.
+		// untyped carrier. This traversal only ever runs below such a slot, where the shape becomes a
+		// `ContainerType`, so a bound whose own nullable or class-handle layer cannot be recorded there
+		// keeps erasing: preserving it would demand an instance of the bound and reject the very handles
+		// and nulls the declaration exists for.
 		FSParser::DataType resolved_bound;
-		return !FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound);
+		return !FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound) ||
+				!FSTypeCompatibility::final_class_bound_survives_lowering(resolved_bound, false);
 	}
 	// A position substituted from `Self` is re-bound to the call frame's exact receiver before any
 	// argument is accepted, so the declaring class's own type parameters -- which substitution leaves

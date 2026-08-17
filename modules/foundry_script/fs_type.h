@@ -153,6 +153,14 @@ public:
 	// through it as well, so the two agree on which positions carry a real check.
 	static bool resolve_final_class_bound(const FSParser::DataType &p_type, FSParser::DataType &r_resolved);
 
+	// Whether lowering a position still states `p_resolved_bound`. Pass `p_wrappers_are_expressible =
+	// true` where the position travels as an `FSDataType` -- the declaration's own root and the tuple
+	// spine -- and false where it becomes a `ContainerType`, which records neither "or null" nor the
+	// class-handle layer. A bound carrying one of those wrappers is therefore evidence only in the
+	// former, so compiler lowering keeps ordinary erasure in the latter and the analyzer refuses a
+	// gradual source there.
+	static bool final_class_bound_survives_lowering(const FSParser::DataType &p_resolved_bound, bool p_wrappers_are_expressible);
+
 	// True when nothing at the destination can decide a value against `p_type`, so a store into it is
 	// neither justified statically nor verified at run time. Both the typed and the gradual paths ask
 	// this one question, which is what keeps them from answering differently for the same declaration.

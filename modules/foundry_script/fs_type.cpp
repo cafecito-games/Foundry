@@ -87,13 +87,26 @@ bool FSTypeCompatibility::resolve_final_class_bound(const FSParser::DataType &p_
 	FSParser::DataType resolved = p_type.type_parameter_bound[0];
 	resolved.type_source = p_type.type_source;
 	// Wrappers the parameter itself declared survive resolution: `T?` resolves to `Label?` and `Type[T]`
-	// to a class handle for `Label`, so the resolved shape lowers exactly as the position demanded.
+	// to a class handle for `Label`, so the resolved shape lowers exactly as the position demanded. The
+	// bound's own wrappers survive as well -- a bound written `Type[Label]` denotes a class handle even
+	// where the parameter is spelled bare -- so the two are combined rather than one replacing the other.
 	resolved.is_nullable = resolved.is_nullable || p_type.is_nullable;
-	resolved.is_meta_type = p_type.is_meta_type;
-	resolved.is_type_handle_annotation = p_type.is_type_handle_annotation;
-	resolved.is_coroutine = p_type.is_coroutine;
+	resolved.is_meta_type = resolved.is_meta_type || p_type.is_meta_type;
+	resolved.is_type_handle_annotation = resolved.is_type_handle_annotation || p_type.is_type_handle_annotation;
+	resolved.is_coroutine = resolved.is_coroutine || p_type.is_coroutine;
 	r_resolved = resolved;
 	return true;
+}
+
+bool FSTypeCompatibility::final_class_bound_survives_lowering(const FSParser::DataType &p_resolved_bound, bool p_wrappers_are_expressible) {
+	if (p_wrappers_are_expressible) {
+		return true;
+	}
+	// Off an `FSDataType` position the shape becomes a `ContainerType`, which records neither "or null"
+	// nor the class-handle layer. A resolved bound carrying either would be lowered as a plain instance
+	// of the bound and would reject the handles and nulls the declaration exists for, so the position
+	// keeps its ordinary erasure instead.
+	return !p_resolved_bound.is_nullable && !p_resolved_bound.is_type_handle_annotation && !p_resolved_bound.is_meta_type;
 }
 
 // Whether the runtime slot compiled for the position reached so far still states the bound a
@@ -101,9 +114,10 @@ bool FSTypeCompatibility::resolve_final_class_bound(const FSParser::DataType &p_
 // only there does compiler lowering emit a check against the resolved bound.
 //
 // `p_final_bound_is_representable` is sticky-off: once traversal crosses a wrapper whose lowering
-// discards the resolved type, nothing below it can regain evidence. `p_nullable_is_expressible` says
-// whether a nullable node here is still evidence, and holds on the tuple spine and at the root -- both
-// carry `is_nullable` to run time -- but not inside a `ContainerType`, which has no such field.
+// discards the resolved type, nothing below it can regain evidence. `p_wrappers_are_expressible` says
+// whether the position still travels as an `FSDataType` rather than as a `ContainerType`, which holds
+// at the root and along the tuple spine. Only an `FSDataType` records "or null" and the class-handle
+// layer, so a resolved bound carrying either is evidence there and nowhere else.
 //
 // Wrapping an erased parameter in a container creates no evidence for an *unbounded* parameter:
 // `Array[T]` compiles to a plain untyped Array, so a concrete `Array[int]` stored there is never
@@ -113,7 +127,7 @@ bool FSTypeCompatibility::resolve_final_class_bound(const FSParser::DataType &p_
 // bounded by a `final` class is different exactly where its bound survives lowering: as a typed
 // container element, as a specialized type argument, and along the tuple spine.
 static bool _destination_has_erased_type_parameter(const FSParser::DataType &p_type, int p_depth = 0,
-		bool p_final_bound_is_representable = true, bool p_nullable_is_expressible = true) {
+		bool p_final_bound_is_representable = true, bool p_wrappers_are_expressible = true) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		// A shape this deep cannot be reasoned about usefully; leave the decision to the rules that ran
 		// before this one rather than inventing a rejection here.
@@ -122,13 +136,20 @@ static bool _destination_has_erased_type_parameter(const FSParser::DataType &p_t
 
 	// A nullable node off the tuple spine lowers to a container slot that cannot say "or null", so the
 	// runtime keeps no evidence for it or for anything below it.
-	const bool representable = p_final_bound_is_representable && !(p_type.is_nullable && !p_nullable_is_expressible);
+	const bool representable = p_final_bound_is_representable && !(p_type.is_nullable && !p_wrappers_are_expressible);
 
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
 		if (!_is_erased_type_parameter(p_type)) {
 			return false;
 		}
-		return !(representable && _is_type_parameter_bounded_by_final_class(p_type));
+		FSParser::DataType resolved;
+		if (!FSTypeCompatibility::resolve_final_class_bound(p_type, resolved)) {
+			return true;
+		}
+		if (!FSTypeCompatibility::final_class_bound_survives_lowering(resolved, p_wrappers_are_expressible)) {
+			return true;
+		}
+		return !representable;
 	}
 
 	if (p_type.kind == FSParser::DataType::TUPLE) {
@@ -141,7 +162,7 @@ static bool _destination_has_erased_type_parameter(const FSParser::DataType &p_t
 			if (element.kind != FSParser::DataType::TYPE_PARAMETER && element.kind != FSParser::DataType::TUPLE) {
 				continue;
 			}
-			if (_destination_has_erased_type_parameter(element, p_depth + 1, representable, p_nullable_is_expressible)) {
+			if (_destination_has_erased_type_parameter(element, p_depth + 1, representable, p_wrappers_are_expressible)) {
 				return true;
 			}
 		}
@@ -1310,9 +1331,12 @@ static bool _depends_on_receiver_type_parameter(
 		return false;
 	}
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
-		if (p_exempt_final_bound && _is_type_parameter_bounded_by_final_class(p_type)) {
-			// The exemption is withdrawn wherever the resolved bound stops surviving lowering, which the
-			// caller reports by clearing the flag on the way down.
+		FSParser::DataType resolved_bound;
+		if (p_exempt_final_bound && FSTypeCompatibility::resolve_final_class_bound(p_type, resolved_bound) &&
+				FSTypeCompatibility::final_class_bound_survives_lowering(resolved_bound, p_nullable_is_expressible)) {
+			// The exemption is withdrawn wherever the resolved bound stops surviving lowering: the caller
+			// clears the flag on the way through a wrapper that discards it, and a bound whose own nullable
+			// or class-handle layer no longer fits the position withdraws it here.
 			return false;
 		}
 		// `@Self` is scoped to the class but is not reified per instance: it denotes the class the frame

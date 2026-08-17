@@ -1,0 +1,5 @@
+FS_TEST_OK
+~~ WARNING at line 27: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Type[HfbFactory]" but the supertype "Variant" was provided.
+true
+true
+true
