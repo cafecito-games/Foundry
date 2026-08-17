@@ -165,6 +165,16 @@ static const char *call_argument_diagnostic_source =
 		"\tvar callback: Callable = take_two\n"
 		"\tcallback.bind(\"bound\").call(1)\n"
 		"\n"
+		"func reject_captured_lambda() -> void:\n"
+		"\tvar captured: String = \"kept\"\n"
+		"\tvar callback := func(value: int) -> void:\n"
+		"\t\tprint(captured, value)\n"
+		"\tcallback.call([1])\n"
+		"\n"
+		"func reject_class_handle_argument() -> void:\n"
+		"\tvar callback: Callable = take_int\n"
+		"\tcallback.call(RefCounted)\n"
+		"\n"
 		"func reject_unbound() -> void:\n"
 		"\tvar callback: Callable = take_int\n"
 		"\tcallback.unbind(1).call([1], \"dropped\")\n";
@@ -220,10 +230,24 @@ TEST_CASE("[Modules][FoundryScript][CallArgumentDiagnostics] A rejected call arg
 	CHECK(unbound.contains(R"(Argument 1 has type "Array")"));
 	CHECK(unbound.contains(R"(the parameter requires "int")"));
 
+	// A lambda receives its captures as leading parameters and re-bases the reported index past them,
+	// so the parameter named here is the lambda's own, not the capture that precedes it.
+	const String captured_lambda = collect_call_argument_diagnostic(original_instance, "reject_captured_lambda");
+	CHECK(captured_lambda.contains(R"(Argument 1 has type "Array")"));
+	CHECK(captured_lambda.contains(R"(the parameter requires "int")"));
+	CHECK_FALSE(captured_lambda.contains(R"(the parameter requires "String")"));
+
+	// A class handle is a wrapper object, and the value is named by the class it denotes rather than
+	// by the wrapper's implementation class.
+	const String class_handle = collect_call_argument_diagnostic(original_instance, "reject_class_handle_argument");
+	CHECK(class_handle.contains(R"(Argument 1 has type "RefCounted")"));
+	CHECK_FALSE(class_handle.contains("FSNativeClass"));
+
 	// Nothing above may depend on the front end: the restored script answers from its compiled
 	// parameter descriptors alone and has to produce the identical text.
 	for (const char *method : { "reject_width", "reject_converted_width", "reject_specialization",
-				 "reject_handle", "reject_rest", "reject_bound", "reject_unbound" }) {
+				 "reject_handle", "reject_rest", "reject_bound", "reject_unbound",
+				 "reject_captured_lambda", "reject_class_handle_argument" }) {
 		CHECK(collect_call_argument_diagnostic(restored_instance, method) ==
 				collect_call_argument_diagnostic(original_instance, method));
 	}

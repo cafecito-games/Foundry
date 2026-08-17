@@ -1304,6 +1304,10 @@ static const FSFunction *_find_foundry_script_callee(Object *p_object, const Str
 	Ref<FoundryScript> script;
 	if (ScriptInstance *script_instance = p_object->get_script_instance()) {
 		script = script_instance->get_script();
+	} else if (FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(p_object)) {
+		// A static call through a specialized handle selects from the class the handle denotes; the
+		// arguments it carries do not change which implementation runs.
+		script = specialized_handle->get_specialized_script();
 	} else {
 		// A static call is made through the class itself, so the receiver is the script resource.
 		script = Ref<FoundryScript>(Object::cast_to<FoundryScript>(p_object));
@@ -1318,12 +1322,18 @@ static const FSFunction *_find_foundry_script_callee(Object *p_object, const Str
 	return nullptr;
 }
 
-static const FSFunction *_find_foundry_script_callee(const Callable &p_callable) {
+// The same, for a callable. `r_parameter_index_offset` is added to the reported argument index to
+// reach the callee's own parameter: a lambda prepends its captures to the argument list and then
+// re-bases the reported index past them, so the parameter that rejected sits that many positions
+// later than the caller was told.
+static const FSFunction *_find_foundry_script_callee(const Callable &p_callable, int &r_parameter_index_offset) {
 	if (p_callable.is_custom()) {
 		if (const FSLambdaCallable *lambda = FSLambdaCallable::get_from_callable(p_callable)) {
+			r_parameter_index_offset += lambda->get_capture_count();
 			return lambda->get_function();
 		}
 		if (const FSLambdaSelfCallable *lambda_self = FSLambdaSelfCallable::get_from_callable(p_callable)) {
+			r_parameter_index_offset += lambda_self->get_capture_count();
 			return lambda_self->get_function();
 		}
 		if (const FSStaticSelfCallable *static_self = FSStaticSelfCallable::get_from_callable(p_callable)) {
@@ -1334,7 +1344,7 @@ static const FSFunction *_find_foundry_script_callee(const Callable &p_callable)
 		// one whose parameters the arguments were checked against.
 		const Callable *base_callable = p_callable.get_base_comparator();
 		if (base_callable != nullptr && base_callable != &p_callable) {
-			return _find_foundry_script_callee(*base_callable);
+			return _find_foundry_script_callee(*base_callable, r_parameter_index_offset);
 		}
 		return nullptr;
 	}
@@ -1396,6 +1406,21 @@ static bool _get_call_argument_width_failure(const FSDataType &p_type, const Var
 	return true;
 }
 
+// Names the value a rejected argument carried. A class handle is a wrapper object, so naming it by
+// its implementation class would report `FSNativeClass` or `FSSpecializedClassHandle` for a value the
+// script wrote as a class; the general value naming already spells such a handle by the class it
+// denotes. Everything else is named by the specialization it carries.
+static String _get_call_argument_value_type_name(const Variant *p_value) {
+	if (p_value->get_type() == Variant::OBJECT) {
+		Object *object = p_value->get_validated_object();
+		if (object != nullptr && (object->is_class_ptr(FSNativeClass::get_class_ptr_static()) ||
+										 Object::cast_to<FSSpecializedClassHandle>(object) != nullptr)) {
+			return _get_var_type(p_value);
+		}
+	}
+	return _script_boundary_value_type_name(p_value);
+}
+
 // The message a rejected argument gets once the exact declaration is known. Both sides are named at
 // their full precision: the parameter from its compiled descriptor, the value from the specialization
 // it actually carries.
@@ -1414,10 +1439,10 @@ static String _get_declared_call_argument_error(const String &p_where, const FSD
 			? vformat(R"(the rest parameter element requires "%s")", expected)
 			: vformat(R"(the parameter requires "%s")", expected);
 	return vformat(R"(Invalid type in %s. Argument %d has type "%s", but %s.)",
-			p_where, p_argument_number, _script_boundary_value_type_name(p_value), requirement);
+			p_where, p_argument_number, _get_call_argument_value_type_name(p_value), requirement);
 }
 
-String FSFunction::_get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err, const FSFunction *p_callee, int p_callee_argument_offset) const {
+String FSFunction::_get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err, const FSFunction *p_callee, int p_parameter_index_offset) const {
 	switch (p_err.error) {
 		case Callable::CallError::CALL_OK:
 			return String();
@@ -1434,7 +1459,7 @@ String FSFunction::_get_call_error(const String &p_where, const Variant **p_argp
 			// target whose parameters exist only as a `Variant::Type`.
 			FSDataType declared_type;
 			bool declared_is_rest = false;
-			if (_get_declared_call_parameter(p_callee, p_err.argument - p_callee_argument_offset, declared_type, declared_is_rest)) {
+			if (_get_declared_call_parameter(p_callee, p_err.argument + p_parameter_index_offset, declared_type, declared_is_rest)) {
 				return _get_declared_call_argument_error(p_where, declared_type, declared_is_rest,
 						p_err.argument + 1, p_argptrs[p_err.argument]);
 			}
@@ -1482,8 +1507,10 @@ String FSFunction::_get_callable_call_error(const String &p_where, const Callabl
 		}
 		// The reconstruction above restores the argument list the callee saw, bound arguments
 		// included, so the reported index addresses the callee's own parameters directly.
-		return _get_call_error(p_where, (const Variant **)argptrs.ptr(), argptrs.size(), p_ret, p_err,
-				_find_foundry_script_callee(p_callable));
+		int parameter_index_offset = 0;
+		const FSFunction *callee = _find_foundry_script_callee(p_callable, parameter_index_offset);
+		return _get_call_error(p_where, (const Variant **)argptrs.ptr(), argptrs.size(), p_ret, p_err, callee,
+				parameter_index_offset);
 	}
 }
 
@@ -4533,15 +4560,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					bool is_callable = false;
 					const FSFunction *callee = _find_foundry_script_callee(base_obj, *methodname);
 					// A forwarding call names its real target in the first argument, so the reported
-					// index is shifted to address this instruction's argument list. The callee's own
-					// parameters start one position later.
-					int callee_argument_offset = 0;
+					// index is shifted to address this instruction's argument list, one position ahead
+					// of the callee's own parameter numbering.
+					int parameter_index_offset = 0;
 
 					if (methodstr == "call") {
 						if (argc >= 1 && base->get_type() != Variant::CALLABLE) {
 							methodstr = String(*argptrs[0]) + " (via call)";
 							callee = _find_foundry_script_callee(base_obj, StringName(argptrs[0]->operator String()));
-							callee_argument_offset = 1;
+							parameter_index_offset = -1;
 							if (err.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT) {
 								err.argument += 1;
 							}
@@ -4572,7 +4599,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					if (is_callable) {
 						err_text = _get_callable_call_error(vformat("function '%s'", methodstr), *base, argptrs, argc, temp_ret, err);
 					} else {
-						err_text = _get_call_error(vformat("function '%s' in base '%s'", methodstr, basestr), argptrs, argc, temp_ret, err, callee, callee_argument_offset);
+						err_text = _get_call_error(vformat("function '%s' in base '%s'", methodstr, basestr), argptrs, argc, temp_ret, err, callee, parameter_index_offset);
 					}
 					OPCODE_BREAK;
 				}

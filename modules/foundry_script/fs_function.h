@@ -1134,10 +1134,11 @@ private:
 
 	// Formats a rejected call for the script error log. `p_callee` is the Foundry Script function that
 	// rejected the call, when the caller can name one; its compiled parameter descriptors carry the
-	// declaration details `Callable::CallError` reduces to a carrier. `p_callee_argument_offset` is the
-	// index in `p_argptrs` at which the callee's own first argument sits, which is non-zero only where
-	// the reported index was shifted to address a forwarding call's argument list.
-	String _get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err, const FSFunction *p_callee = nullptr, int p_callee_argument_offset = 0) const;
+	// declaration details `Callable::CallError` reduces to a carrier. `p_parameter_index_offset` is added
+	// to the reported argument index to reach the callee's own parameter, which differs from it only
+	// where the index was re-based: a forwarding call counts the target's name as an argument, and a
+	// lambda's reported index has already been moved past the captures the callee declares first.
+	String _get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err, const FSFunction *p_callee = nullptr, int p_parameter_index_offset = 0) const;
 	String _get_callable_call_error(const String &p_where, const Callable &p_callable, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	Variant _get_default_variant_for_data_type(const FSDataType &p_data_type);
 	// Validates one incoming call argument against a compiled parameter/element type and writes the
