@@ -133,8 +133,31 @@ The wrapper collects ccache telemetry using a unique per-invocation `CCACHE_STAT
 worktrees do not race on statistics. Telemetry is best-effort: summaries report explicit status/errors,
 and telemetry never replaces the build result.
 
-Progress records cover wrapper command start, output, heartbeat, completion, and the final summary.
-They do not provide detailed visibility into every internal SCons or Ninja phase.
+Progress records cover an `invocation_start` marker, wrapper command start, output, heartbeat,
+completion, and the final `build_summary`. They do not provide detailed visibility into every internal
+SCons or Ninja phase.
+
+Unless `--append-progress` is given, the progress file is truncated and `invocation_start` is written
+before any other work, so a waiter can never match a `build_summary` left behind by an earlier
+invocation. Match `invocation_id` between `invocation_start` and `build_summary` when a waiter must be
+certain it is reading the run it launched.
+
+## Build verdict
+
+The wrapper's exit code reflects the build, not whatever the wrapper did last, and it never reports a
+success `build_summary` for a build that failed. After a build command exits `0` the wrapper still
+verifies the result and fails when either check trips:
+
+- the build output for this invocation contains failure evidence (`N error(s) generated.`,
+  `scons: *** `, `FAILED: `, `ninja: build stopped:`). This catches a build status masked by a shell
+  or lost by a backend. Exit code `1`, `build_summary.status` `failed`, and the matching lines are
+  recorded in `build_summary.build_failure_signals`.
+- no editor binary is present at the expected path, meaning no final link occurred. Exit code `127`
+  and `build_summary.status` `failed`.
+
+The second check means a `--scons-arg` invocation that deliberately builds something other than the
+editor binary is reported as a failure. Startup failures (missing SCons, Ninja, or ccache) also emit a
+`build_summary` with status `error`, so a waiter is never left without a verdict.
 
 ## Benchmarks
 

@@ -44,6 +44,17 @@ NINJA_OWNED_SCONS_KEYS = frozenset(
     }
 )
 TELEMETRY_TIMEOUT_SECONDS = 5.0
+# A build tool can print a fatal error and still exit 0: a shell that masks the child status, a
+# backend that loses it, or a wrapper that reports its own status instead. The build output is the
+# ground truth for whether compilation happened, so it is scanned before success is reported.
+BUILD_FAILURE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("scons-error", re.compile(r"^scons: \*\*\* ")),
+    ("ninja-edge-failure", re.compile(r"^FAILED: ")),
+    ("ninja-stopped", re.compile(r"^ninja: build stopped:")),
+    ("compiler-error", re.compile(r"\b\d+ errors? generated\.")),
+)
+BUILD_OUTPUT_FAILURE_EXIT_CODE = 1
+MISSING_BINARY_EXIT_CODE = 127
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
 DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
 DEFAULT_PROC_CGROUP = Path("/proc/self/cgroup")
@@ -576,6 +587,35 @@ def run_logged_command(
             return exit_code
 
 
+def log_size(log_path: Path) -> int:
+    try:
+        return log_path.stat().st_size
+    except OSError:
+        return 0
+
+
+def scan_build_failure_signals(log_path: Path, start_offset: int = 0) -> dict[str, str]:
+    """Failure evidence emitted by a build, keyed by signal name with the first matching line.
+
+    Only the region written by this invocation is scanned, so an appended log keeps evidence from
+    an earlier build out of the current verdict.
+    """
+    signals: dict[str, str] = {}
+    try:
+        with log_path.open("rb") as log_file:
+            log_file.seek(max(0, start_offset))
+            for raw_line in log_file:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                for name, pattern in BUILD_FAILURE_PATTERNS:
+                    if name not in signals and pattern.search(line):
+                        signals[name] = line
+    except OSError:
+        return signals
+    return signals
+
+
 def scons_prefix() -> list[str] | None:
     if importlib.util.find_spec("SCons") is not None:
         return [sys.executable, "-m", "SCons"]
@@ -1035,44 +1075,80 @@ def progress_path_from_args(args: argparse.Namespace) -> Path | None:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    try:
-        target = resolve_build_target(args)
-    except RuntimeError as exc:
-        print(f"[agent-build] {exc}", file=sys.stderr)
-        return 2
-
-    if scons_prefix() is None:
-        print(
-            "[agent-build] SCons is not available. Install SCons for python3 or make the `scons` executable "
-            "available in PATH.",
-            file=sys.stderr,
-        )
-        return 127
-
-    if args.backend == "ninja" and shutil.which("ninja") is None:
-        print(
-            "[agent-build] Ninja is required for --backend ninja but was not found in PATH. "
-            "Use --backend scons --compiler-cache none for the native fallback.",
-            file=sys.stderr,
-        )
-        return 127
-
-    compiler_cache = resolve_compiler_cache(args)
-    if compiler_cache == "ccache" and shutil.which("ccache") is None:
-        print(
-            "[agent-build] ccache is required for this build mode but was not found in PATH. "
-            "Use --backend scons --compiler-cache none for the native fallback.",
-            file=sys.stderr,
-        )
-        return 127
-
     progress_path = progress_path_from_args(args)
     progress_stdout_jsonl = args.progress_format == "jsonl"
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
+    invocation_id = new_invocation_id()
+
+    # Truncate before any slow work so a waiter cannot match a `build_summary` left behind by an
+    # earlier invocation and conclude that this build has already finished.
+    if progress_path is not None and not args.append_progress:
+        try:
+            progress_path.parent.mkdir(parents=True, exist_ok=True)
+            progress_path.write_text("", encoding="utf-8")
+        except OSError as exc:
+            print(f"[agent-build] warning: could not reset progress file {progress_path}: {exc}", file=sys.stderr)
+        args.append_progress = True
+    try:
+        append_progress_record(
+            progress_path,
+            "invocation_start",
+            stdout_jsonl=progress_stdout_jsonl,
+            invocation_id=invocation_id,
+            phase="build",
+            worktree=str(REPO_ROOT),
+            argv=list(argv),
+        )
+    except Exception as exc:
+        print(f"[agent-build] warning: could not emit invocation start: {exc}", file=sys.stderr)
+
+    def fail_before_build(exit_code: int, error: str) -> int:
+        print(f"[agent-build] {error}", file=sys.stderr)
+        try:
+            append_progress_record(
+                progress_path,
+                "build_summary",
+                stdout_jsonl=progress_stdout_jsonl,
+                invocation_id=invocation_id,
+                phase="build",
+                worktree=str(REPO_ROOT),
+                status="error",
+                error=error,
+                exit_code=exit_code,
+                log_path=str(args.log),
+            )
+        except Exception as exc:
+            print(f"[agent-build] warning: could not emit build summary: {exc}", file=sys.stderr)
+        return exit_code
+
+    try:
+        target = resolve_build_target(args)
+    except RuntimeError as exc:
+        return fail_before_build(2, str(exc))
+
+    if scons_prefix() is None:
+        return fail_before_build(
+            127,
+            "SCons is not available. Install SCons for python3 or make the `scons` executable available in PATH.",
+        )
+
+    if args.backend == "ninja" and shutil.which("ninja") is None:
+        return fail_before_build(
+            127,
+            "Ninja is required for --backend ninja but was not found in PATH. "
+            "Use --backend scons --compiler-cache none for the native fallback.",
+        )
+
+    compiler_cache = resolve_compiler_cache(args)
+    if compiler_cache == "ccache" and shutil.which("ccache") is None:
+        return fail_before_build(
+            127,
+            "ccache is required for this build mode but was not found in PATH. "
+            "Use --backend scons --compiler-cache none for the native fallback.",
+        )
 
     print(f"[agent-build] jobs: {args.jobs} (source: {args.jobs_source})", file=human_stream)
 
-    invocation_id = new_invocation_id()
     git_commit, git_commit_error = read_git_commit()
     stats_log_path = ccache_stats_log_path(invocation_id) if compiler_cache == "ccache" else None
     build_env = build_environment(args, compiler_cache, ccache_stats_log=stats_log_path)
@@ -1105,9 +1181,11 @@ def main(argv: list[str]) -> int:
         cache_stats_source = "disabled"
 
     build_started = time.monotonic()
+    build_log_offset = log_size(args.log) if args.append_log else 0
     build_exit: int | None = None
     build_status = "error"
     build_error: str | None = None
+    build_failure_signals: dict[str, str] = {}
     generation_exit: int | None = None
     if generation_command_args is not None:
         generation_status = "pending"
@@ -1159,6 +1237,25 @@ def main(argv: list[str]) -> int:
                 env=build_env,
             )
             build_status = "success" if build_exit == 0 else "failed"
+
+        if build_exit == 0:
+            build_failure_signals = scan_build_failure_signals(args.log, build_log_offset)
+            if build_failure_signals:
+                build_exit = BUILD_OUTPUT_FAILURE_EXIT_CODE
+                build_status = "failed"
+                build_error = (
+                    "the build command exited 0 but its output reported failures: "
+                    + "; ".join(f"{name}: {line}" for name, line in sorted(build_failure_signals.items()))
+                )
+                print(f"[agent-build] {build_error}", file=sys.stderr)
+            elif not target.binary_path.exists():
+                build_exit = MISSING_BINARY_EXIT_CODE
+                build_status = "failed"
+                build_error = (
+                    f"the build command succeeded but produced no binary at {target.binary_path}; "
+                    "no final link occurred"
+                )
+                print(f"[agent-build] {build_error}", file=sys.stderr)
     except OSError as exc:
         build_exit = 127
         build_error = f"{type(exc).__name__}: {exc}"
@@ -1204,6 +1301,7 @@ def main(argv: list[str]) -> int:
             "status": build_status,
             "error": build_error,
             "exit_code": build_exit,
+            "build_failure_signals": build_failure_signals or None,
             "cache_dir": cache_dir,
             "cache_policy": cache_policy,
             "cache_source": cache_source,
@@ -1241,16 +1339,6 @@ def main(argv: list[str]) -> int:
     assert build_exit is not None
     if build_exit != 0:
         return build_exit
-
-    if not target.binary_path.exists():
-        if args.test:
-            print(f"[agent-build] expected binary is missing after build: {target.binary_path}", file=sys.stderr)
-            return 127
-        print(
-            f"[agent-build] build command succeeded; expected binary is not present yet: {target.binary_path}",
-            file=human_stream,
-        )
-        return 0
 
     if not args.test:
         print(f"[agent-build] built binary: {target.binary_path}", file=human_stream)

@@ -8,11 +8,14 @@ import importlib.util
 import io
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 from unittest import mock
 
@@ -22,6 +25,30 @@ assert _spec is not None and _spec.loader is not None
 agent_build: Any = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = agent_build
 _spec.loader.exec_module(agent_build)
+
+
+
+
+@contextlib.contextmanager
+def scratch_directory() -> Iterator[Path]:
+    """A temporary directory rooted in the shared test scratch space when one is configured."""
+    scratch_root = os.environ.get("FOUNDRY_TEST_SCRATCH")
+    parent = Path(scratch_root) if scratch_root else None
+    if parent is not None:
+        parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=parent) as temporary:
+        yield Path(temporary)
+
+
+def progress_events(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def sole_build_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    summaries = [event for event in events if event["event"] == "build_summary"]
+    if len(summaries) != 1:
+        raise AssertionError(f"expected exactly one build_summary, found {len(summaries)}")
+    return summaries[0]
 
 
 class AgentBuildCharacterizationTests(unittest.TestCase):
@@ -858,7 +885,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(run_command.call_args.kwargs["invocation_id"], "invocation-1")
             self.assertFalse(stats_log_path.exists())
 
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertEqual(summary["event"], "build_summary")
             self.assertEqual(summary["invocation_id"], "invocation-1")
             self.assertEqual(summary["git_commit"], "deadbeef")
@@ -925,14 +952,14 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             generation_call, build_call = run_command.call_args_list
             self.assertEqual(generation_call.kwargs["label"], "generate")
             self.assertFalse(generation_call.kwargs["append_log"])
-            self.assertFalse(generation_call.kwargs["append_progress"])
+            self.assertTrue(generation_call.kwargs["append_progress"])
             self.assertEqual(build_call.kwargs["label"], "build")
             self.assertTrue(build_call.kwargs["append_log"])
             self.assertTrue(build_call.kwargs["append_progress"])
             self.assertEqual(generation_call.kwargs["invocation_id"], "invocation-ninja")
             self.assertEqual(build_call.kwargs["invocation_id"], "invocation-ninja")
 
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertEqual(
                 summary["build_command"],
                 ["/bin/ninja", "-f", os.path.relpath(state.file, agent_build.REPO_ROOT), "-j4"],
@@ -980,7 +1007,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(run_command.call_args.kwargs["label"], "build")
             self.assertTrue(run_command.call_args.kwargs["append_log"])
             self.assertTrue(run_command.call_args.kwargs["append_progress"])
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertIsNone(summary["generation_command"])
             self.assertEqual(summary["generation_status"], "skipped-existing")
 
@@ -1013,7 +1040,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 127)
             run_command.assert_not_called()
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertEqual(summary["generation_status"], "error")
             self.assertIn("FileExistsError", summary["generation_error"])
             self.assertEqual(summary["status"], "error")
@@ -1051,7 +1078,9 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                                     )
 
         self.assertEqual(exit_code, 23)
-        payload = json.loads(stdout.getvalue())
+        payload = sole_build_summary(
+            [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        )
         self.assertEqual(payload["event"], "build_summary")
         self.assertEqual(payload["invocation_id"], "invocation-stdout")
         self.assertEqual(payload["cache_stats_status"], "disabled")
@@ -1096,7 +1125,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                                         ]
                                     )
 
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
         self.assertEqual(exit_code, 127)
         self.assertEqual(summary["event"], "build_summary")
         self.assertEqual(summary["status"], "error")
@@ -1269,6 +1298,184 @@ class JobConcurrencyTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
                 agent_build.parse_args([])
         self.assertIn("FOUNDRY_BUILD_JOBS", stderr.getvalue())
+
+
+BROKEN_TRANSLATION_UNIT = "int main(void) { return undeclared_symbol; }\n"
+HEALTHY_TRANSLATION_UNIT = "int main(void) { return 0; }\n"
+
+
+class AgentBuildFailureDetectionTests(unittest.TestCase):
+    """The wrapper's exit code and summary must agree with what the build actually did."""
+
+    def run_wrapper(
+        self,
+        root: Path,
+        source_text: str,
+        *,
+        mask_failure: bool = False,
+        link_binary: bool = True,
+        extra_argv: list[str] | None = None,
+    ) -> tuple[int, list[dict[str, Any]], str]:
+        prefix = agent_build.scons_prefix()
+        if prefix is None:
+            self.skipTest("SCons is not available")
+        if shutil.which("cc") is None:
+            self.skipTest("no C compiler is available")
+
+        project = root / "project"
+        project.mkdir()
+        (project / "SConstruct").write_text(
+            'env = Environment()\nenv.Program("sample", "sample.c")\n', encoding="utf-8"
+        )
+        (project / "sample.c").write_text(source_text, encoding="utf-8")
+
+        binary_path = root / "foundry.macos.editor.dev.arm64"
+        if link_binary:
+            binary_path.write_bytes(b"linked editor binary")
+        log_path = root / "build.log"
+        progress_path = root / "progress.jsonl"
+
+        command = [*prefix, "-Q", "-C", str(project)]
+        if mask_failure:
+            command = ["/bin/sh", "-c", f"{shlex.join(command)}; exit 0"]
+
+        target = agent_build.BuildTarget("macos", binary_path, None)
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            with mock.patch.object(agent_build, "build_command", return_value=command):
+                with mock.patch.object(agent_build, "resolve_build_target", return_value=target):
+                    exit_code = agent_build.main(
+                        [
+                            "--jobs",
+                            "1",
+                            "--log",
+                            str(log_path),
+                            "--progress-file",
+                            str(progress_path),
+                            *(extra_argv or []),
+                        ]
+                    )
+        return exit_code, progress_events(progress_path), stderr.getvalue()
+
+    def test_broken_translation_unit_fails_the_wrapper(self) -> None:
+        with scratch_directory() as root:
+            exit_code, events, _ = self.run_wrapper(root, BROKEN_TRANSLATION_UNIT)
+        summary = sole_build_summary(events)
+        self.assertNotEqual(exit_code, 0)
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["exit_code"], exit_code)
+
+    def test_broken_translation_unit_fails_even_when_the_build_command_reports_success(self) -> None:
+        with scratch_directory() as root:
+            exit_code, events, stderr = self.run_wrapper(root, BROKEN_TRANSLATION_UNIT, mask_failure=True)
+        self.assertNotEqual(exit_code, 0)
+        summary = sole_build_summary(events)
+        self.assertEqual(exit_code, agent_build.BUILD_OUTPUT_FAILURE_EXIT_CODE)
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["exit_code"], exit_code)
+        self.assertEqual(
+            sorted(summary["build_failure_signals"]),
+            ["compiler-error", "scons-error"],
+        )
+        self.assertIn("exited 0 but its output reported failures", summary["error"])
+        self.assertIn("exited 0 but its output reported failures", stderr)
+
+    def test_healthy_build_still_succeeds(self) -> None:
+        with scratch_directory() as root:
+            exit_code, events, stderr = self.run_wrapper(root, HEALTHY_TRANSLATION_UNIT)
+        summary = sole_build_summary(events)
+        self.assertEqual(exit_code, 0, stderr)
+        self.assertEqual(summary["status"], "success")
+        self.assertEqual(summary["exit_code"], 0)
+        self.assertIsNone(summary["build_failure_signals"])
+
+    def test_build_without_a_linked_binary_fails(self) -> None:
+        with scratch_directory() as root:
+            exit_code, events, stderr = self.run_wrapper(root, HEALTHY_TRANSLATION_UNIT, link_binary=False)
+        self.assertNotEqual(exit_code, 0, stderr)
+        summary = sole_build_summary(events)
+        self.assertEqual(exit_code, agent_build.MISSING_BINARY_EXIT_CODE)
+        self.assertEqual(summary["status"], "failed")
+        self.assertIn("no final link occurred", summary["error"])
+        self.assertIn("no final link occurred", stderr)
+
+    def test_progress_file_never_serves_a_previous_invocation_summary(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            progress_path.write_text(
+                json.dumps({"version": 1, "event": "build_summary", "status": "success", "exit_code": 0}) + "\n",
+                encoding="utf-8",
+            )
+            exit_code, events, _ = self.run_wrapper(root, BROKEN_TRANSLATION_UNIT)
+        self.assertNotEqual(exit_code, 0)
+        self.assertEqual(events[0]["event"], "invocation_start")
+        summary = sole_build_summary(events)
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["invocation_id"], events[0]["invocation_id"])
+
+    def test_appended_progress_keeps_earlier_events(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            progress_path.write_text(
+                json.dumps({"version": 1, "event": "run_marker"}) + "\n",
+                encoding="utf-8",
+            )
+            _, events, _ = self.run_wrapper(root, HEALTHY_TRANSLATION_UNIT, extra_argv=["--append-progress"])
+        self.assertEqual(events[0]["event"], "run_marker")
+        self.assertEqual(events[1]["event"], "invocation_start")
+
+    def test_unavailable_build_tool_reports_a_failure_summary(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=None):
+                    exit_code = agent_build.main(
+                        ["--log", str(root / "build.log"), "--progress-file", str(progress_path)]
+                    )
+            events = progress_events(progress_path)
+        summary = sole_build_summary(events)
+        self.assertEqual(exit_code, 127)
+        self.assertEqual(summary["status"], "error")
+        self.assertEqual(summary["exit_code"], 127)
+        self.assertIn("SCons is not available", stderr.getvalue())
+
+
+class BuildFailureSignalScanTests(unittest.TestCase):
+    def test_only_the_current_invocation_region_is_scanned(self) -> None:
+        with scratch_directory() as root:
+            log_path = root / "build.log"
+            stale = "scons: *** [old.o] Error 1\n"
+            log_path.write_text(stale + "compiling everything\n", encoding="utf-8")
+            self.assertEqual(agent_build.scan_build_failure_signals(log_path, len(stale)), {})
+            self.assertIn("scons-error", agent_build.scan_build_failure_signals(log_path, 0))
+
+    def test_ninja_failure_output_is_recognized(self) -> None:
+        with scratch_directory() as root:
+            log_path = root / "build.log"
+            log_path.write_text(
+                "FAILED: core/foo.o\nninja: build stopped: subcommand failed.\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                sorted(agent_build.scan_build_failure_signals(log_path)),
+                ["ninja-edge-failure", "ninja-stopped"],
+            )
+
+    def test_ordinary_build_output_is_not_treated_as_failure(self) -> None:
+        with scratch_directory() as root:
+            log_path = root / "build.log"
+            log_path.write_text(
+                "cc -c -o core/error_generated.o core/error_generated.c\n"
+                "scons: warning: option is deprecated\n"
+                "[100%] Linking bin/foundry.macos.editor.dev.arm64\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(agent_build.scan_build_failure_signals(log_path), {})
+
+    def test_a_missing_log_reports_no_signals(self) -> None:
+        with scratch_directory() as root:
+            self.assertEqual(agent_build.scan_build_failure_signals(root / "absent.log"), {})
 
 
 if __name__ == "__main__":
