@@ -2973,7 +2973,15 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 		if (E) {
 			const FoundryScript::MemberInfo *member = &E->value;
 			Variant value = p_value;
-			if (member->type_argument_binding.kind != FoundryScript::TypeArgumentBinding::NONE) {
+			if (member->tuple_slot_shape.kind == FSDataType::TUPLE) {
+				// A tuple member whose declared type mentions a class parameter also carries a binding, but
+				// that binding is the same erased Array its slot type is and would enforce only the carrier.
+				// The recorded shape keeps the arity and every concrete element, so it is the stricter of the
+				// two and answers first; a parameter element stays gradual there, as it does in the slot.
+				if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+					return false;
+				}
+			} else if (member->type_argument_binding.kind != FoundryScript::TypeArgumentBinding::NONE) {
 				// The member is typed as a class generic parameter, erased to a Variant slot. Validate the
 				// write against the argument the binding resolves to: a concrete type fixed by an
 				// `extends Base[int]` specialization in the chain (FIXED), or the argument reified onto this

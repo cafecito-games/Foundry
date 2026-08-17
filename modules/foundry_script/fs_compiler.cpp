@@ -3056,6 +3056,17 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					}
 					gen->write_set_static_variable(temp, static_var_class, static_var_index);
 					gen->pop_temporary();
+				} else if (_slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
+					// A later store into a tuple slot is the same boundary its initializer was: without a
+					// check here the declared shape could be laundered away after the fact.
+					//
+					// A member reaches here too, unlike the receiver-relative store below. A member's slot
+					// erases to a bare Array, so without this the only in-body write path to a tuple member
+					// would be an unchecked `write_assign()`. Checked ahead of the class-parameter store
+					// because a tuple member's binding is that same erased Array and would enforce nothing
+					// but the carrier, while this shape keeps the arity and every concrete element and still
+					// resolves a parameter element against the receiver.
+					gen->write_assign_typed_tuple(target, to_assign, _tuple_slot_shape(assignment->assignee->get_datatype(), codegen));
 				} else if (member_type_parameter_slot >= 0) {
 					// Direct store into a `T`-typed member bypasses the setter/`set()` validation, so emit a
 					// store that validates the value against the binding the leaf script resolved for this
@@ -3069,16 +3080,6 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// The whole assigned value is a generic method returning an erased `Dictionary[K, V]`; retype
 					// the untyped runtime dictionary into the concrete typed-dictionary target.
 					gen->write_assign_typed_dictionary_convert(target, to_assign);
-				} else if (_slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
-					// A later store into a tuple slot is the same boundary its initializer was: without a
-					// check here the declared shape could be laundered away after the fact. Checked before
-					// the class-parameter store below so a tuple keeps its positional shape.
-					//
-					// A member reaches here too, unlike the receiver-relative store below. A member's slot
-					// erases to a bare Array with no binding of its own to be checked against, so without
-					// this the only in-body write path to a tuple member would be an unchecked
-					// `write_assign()`.
-					gen->write_assign_typed_tuple(target, to_assign, _tuple_slot_shape(assignment->assignee->get_datatype(), codegen));
 				} else if (!is_member && _slot_needs_receiver_validation(assignment->assignee->get_datatype(), codegen)) {
 					// A later store into a local whose declared type mentions a class parameter has to be
 					// checked at the same boundary its initializer was, or the slot could be laundered after
