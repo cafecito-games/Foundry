@@ -442,11 +442,17 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle names the 
 	REQUIRE(nested.is_valid());
 	CHECK(nested->get_type_name() == "Inner[String]");
 
-	// A script with neither a global nor a local class identity keeps the engine instance base.
+	// A script with neither a global nor a local class identity is named by its own file, which is the
+	// only identity such a script has. The rendered name is the file alone, never a full path, and never
+	// the engine instance base the script happens to inherit from.
+	CHECK(script->get_global_name() == StringName());
 	CHECK(script->get_local_name() == StringName());
 	Ref<FSSpecializedClassHandle> anonymous = FSSpecializedClassHandle::create(script, Vector<ContainerType>());
 	REQUIRE(anonymous.is_valid());
-	CHECK(anonymous->get_type_name() == "RefCounted");
+	const String script_file_name = script->get_fully_qualified_name().get_file();
+	REQUIRE_FALSE(script_file_name.is_empty());
+	CHECK(anonymous->get_type_name() == script_file_name);
+	CHECK(anonymous->get_type_name() != String(script->get_instance_base_type()));
 }
 
 TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle keeps a qualified global name") {
