@@ -45,6 +45,15 @@ NINJA_OWNED_SCONS_KEYS = frozenset(
         "ninja_file",
     }
 )
+SUPPORTED_SCONS_TARGETS = ("editor", "template_debug", "template_release")
+# The companion settings each target implies. Building a target with the wrong companions verifies a
+# different configuration than the one named, so the wrapper owns them instead of the caller.
+TARGET_COMPANION_SETTINGS: dict[str, dict[str, str]] = {
+    "editor": {"dev_mode": "yes", "dev_build": "yes", "tests": "yes"},
+    "template_debug": {"dev_mode": "no", "dev_build": "no", "tests": "no"},
+    "template_release": {"dev_mode": "no", "dev_build": "no", "tests": "no"},
+}
+COMPANION_SETTING_ORDER = ("dev_mode", "dev_build", "tests")
 TELEMETRY_TIMEOUT_SECONDS = 5.0
 RESULT_PREFIX = "[agent-build] RESULT:"
 RESULT_STATUSES = (
@@ -285,6 +294,7 @@ class BuildTarget(NamedTuple):
     scons_platform: str
     binary_path: Path
     default_display: str | None
+    scons_target: str = "editor"
 
 
 class NinjaState(NamedTuple):
@@ -436,8 +446,8 @@ def binary_identity(path: Path | None) -> dict[str, object] | None:
     return {"path": str(path), "size": stats.st_size, "mtime_ns": stats.st_mtime_ns}
 
 
-def editor_binary_identities(target: BuildTarget) -> dict[str, dict[str, object]]:
-    """Pre-build identities of every editor binary the build could resolve to, keyed by path.
+def built_binary_identities(target: BuildTarget) -> dict[str, dict[str, object]]:
+    """Pre-build identities of every binary this target's build could resolve to, keyed by path.
 
     Build settings the wrapper cannot reconstruct rename the binary, so the file a run ends up
     reporting is not always the one whose name the wrapper predicted. Recording the whole directory
@@ -446,7 +456,7 @@ def editor_binary_identities(target: BuildTarget) -> dict[str, dict[str, object]
     identities: dict[str, dict[str, object]] = {}
     candidates = [target.binary_path]
     try:
-        candidates += sorted(target.binary_path.parent.glob(f"foundry.{target.scons_platform}.editor*"))
+        candidates += sorted(target.binary_path.parent.glob(f"foundry.{target.scons_platform}.{target.scons_target}*"))
     except OSError:
         pass
     for candidate in candidates:
@@ -995,8 +1005,8 @@ def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
     Raw SCons arguments can rename the produced binary, and the wrapper has to look for the file
     the build actually writes rather than the default name.
     """
-    suffix = f".{scons_platform}.editor"
-    if _scons_boolean_setting(args, "dev_build") is not False:
+    suffix = f".{scons_platform}.{args.target}"
+    if _is_scons_true(effective_companion_setting(args, "dev_build")):
         suffix += ".dev"
     if _raw_scons_setting(args, "precision") == "double":
         suffix += ".double"
@@ -1010,7 +1020,7 @@ def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
 
 
 def resolve_linked_binary(target: BuildTarget) -> Path | None:
-    """The editor binary this build produced, or None when the build left none.
+    """The binary this build produced, or None when the build left none.
 
     Platform configuration appends suffixes the wrapper cannot reconstruct from its own arguments
     (sanitizers, fuzzer instrumentation, alternate toolchains), so an absent expected path falls back
@@ -1021,7 +1031,7 @@ def resolve_linked_binary(target: BuildTarget) -> Path | None:
     try:
         candidates = sorted(
             path
-            for path in target.binary_path.parent.glob(f"foundry.{target.scons_platform}.editor*")
+            for path in target.binary_path.parent.glob(f"foundry.{target.scons_platform}.{target.scons_target}*")
             if path.is_file()
         )
     except OSError:
@@ -1033,11 +1043,36 @@ def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
     scons_platform = host_scons_platform() if args.platform == "auto" else args.platform
     binary_path = REPO_ROOT / "bin" / f"foundry{binary_suffix(args, scons_platform)}"
     default_display = ":1" if scons_platform == "linuxbsd" else None
-    return BuildTarget(scons_platform=scons_platform, binary_path=binary_path, default_display=default_display)
+    return BuildTarget(
+        scons_platform=scons_platform,
+        binary_path=binary_path,
+        default_display=default_display,
+        scons_target=args.target,
+    )
 
 
-def build_modes(args: argparse.Namespace) -> list[str]:
-    return ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
+def target_companion_settings(args: argparse.Namespace) -> dict[str, str]:
+    """The companion settings implied by the selected target, before any `--scons-arg` override."""
+    settings = dict(TARGET_COMPANION_SETTINGS[args.target])
+    if args.dev_build:
+        settings["dev_mode"] = "no"
+    return settings
+
+
+def effective_companion_setting(args: argparse.Namespace, name: str) -> str:
+    """The value SCons will end up seeing for a companion setting.
+
+    `--scons-arg` is placed after the wrapper's own settings on the command line, so an explicit
+    override wins; the wrapper has to predict the same value to find the binary the build writes.
+    """
+    override = _raw_scons_setting(args, name)
+    return override if override is not None else target_companion_settings(args)[name]
+
+
+def wrapper_scons_settings(args: argparse.Namespace) -> list[str]:
+    """The target and its companion settings, in command order."""
+    companions = target_companion_settings(args)
+    return [f"target={args.target}", *(f"{name}={companions[name]}" for name in COMPANION_SETTING_ORDER)]
 
 
 def _raw_scons_setting(args: argparse.Namespace, name: str) -> str | None:
@@ -1049,11 +1084,15 @@ def _raw_scons_setting(args: argparse.Namespace, name: str) -> str | None:
     return value
 
 
+def _is_scons_true(value: str) -> bool:
+    return value.strip().lower() not in SCONS_FALSE_VALUES
+
+
 def _scons_boolean_setting(args: argparse.Namespace, name: str) -> bool | None:
     value = _raw_scons_setting(args, name)
     if value is None:
         return None
-    return value.strip().lower() not in SCONS_FALSE_VALUES
+    return _is_scons_true(value)
 
 
 def _resolve_build_input(value: str, repo_root: Path) -> Path:
@@ -1159,9 +1198,8 @@ def build_configuration_payload(
     return {
         "platform": target.scons_platform,
         "arch": arch_from_args(args),
-        "target": "editor",
-        "modes": build_modes(args),
-        "tests": True,
+        "target": args.target,
+        "settings": wrapper_scons_settings(args),
         "module_text_server_fb_enabled": True,
         "scons_arg": list(args.scons_arg),
         "build_description_fingerprint": build_description_fingerprint(args, repo_root),
@@ -1187,9 +1225,7 @@ def ninja_generation_command(args: argparse.Namespace, target: BuildTarget, stat
         raise RuntimeError("SCons is not available")
     return prefix + [
         f"platform={target.scons_platform}",
-        "target=editor",
-        *build_modes(args),
-        "tests=yes",
+        *wrapper_scons_settings(args),
         "module_text_server_fb_enabled=yes",
         "cache_path=",
         "c_compiler_launcher=ccache",
@@ -1228,9 +1264,7 @@ def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -
         raise RuntimeError("SCons is not available")
     command = prefix + [
         f"platform={target.scons_platform}",
-        "target=editor",
-        *build_modes(args),
-        "tests=yes",
+        *wrapper_scons_settings(args),
         "module_text_server_fb_enabled=yes",
     ]
     if compiler_cache == "none":
@@ -1336,6 +1370,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="SCons platform to build. Default: auto-detect from the host OS.",
     )
     parser.add_argument(
+        "--target",
+        choices=SUPPORTED_SCONS_TARGETS,
+        default="editor",
+        help=(
+            "SCons target to build, together with the companion settings it implies: editor is "
+            "dev_mode=yes dev_build=yes tests=yes, and both templates are dev_mode=no dev_build=no "
+            "tests=no. Default: editor."
+        ),
+    )
+    parser.add_argument(
         "--dev-build",
         action="store_true",
         help="Use faster dev_build=yes instead of the default CI-style dev_mode=yes build.",
@@ -1433,8 +1477,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.dev_mode and args.dev_build:
         parser.error("--dev-mode and --dev-build cannot be combined")
+    if _raw_scons_setting(args, "target") is not None:
+        parser.error(
+            "--scons-arg target=... is not accepted; select the target with "
+            f"--target {{{','.join(SUPPORTED_SCONS_TARGETS)}}}"
+        )
+    if args.dev_build and args.target != "editor":
+        parser.error(f"--dev-build applies to --target editor, not --target {args.target}")
     if args.test_case or args.test_suite:
         args.test = True
+    if args.test and not _is_scons_true(effective_companion_setting(args, "tests")):
+        parser.error(
+            f"--target {args.target} builds tests=no, so there is no test runner to run; "
+            "use --target editor or add --scons-arg tests=yes"
+        )
     try:
         job_selection = resolve_job_selection(args.jobs, os.environ, os.cpu_count())
     except ValueError as exc:
@@ -1496,7 +1552,7 @@ def main(argv: list[str]) -> int:
     else:
         target_error = None
         RESULT_CONTEXT.binary_path = resolved_target.binary_path
-        RESULT_CONTEXT.binaries_before = editor_binary_identities(resolved_target)
+        RESULT_CONTEXT.binaries_before = built_binary_identities(resolved_target)
 
     git_commit, git_commit_error = read_git_commit()
 
@@ -1517,6 +1573,7 @@ def main(argv: list[str]) -> int:
             compiler_cache=resolve_compiler_cache(args),
             platform=resolved_target.scons_platform if resolved_target is not None else args.platform,
             arch=arch_from_args(args),
+            target=args.target,
             jobs=args.jobs,
             jobs_source=args.jobs_source,
             git_commit=git_commit,
@@ -1683,6 +1740,7 @@ def main(argv: list[str]) -> int:
             "git_commit_error": git_commit_error,
             "platform": target.scons_platform,
             "arch": arch_from_args(args),
+            "target": target.scons_target,
             "jobs": args.jobs,
             "jobs_source": args.jobs_source,
             "build_command": build_command_args,
