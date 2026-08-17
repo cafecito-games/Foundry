@@ -269,7 +269,7 @@ func describe(flag: bool) -> String:
 	CHECK(parser.get_errors().is_empty());
 }
 
-static const char *OPEN_ENUM_ERROR = R"(Not all code paths return a value. The "match" over "Level" needs an unguarded "_" or bind branch: an enum-typed value can hold an integer outside the declared values.)";
+static const char *OPEN_ENUM_ERROR = R"(Not all code paths return a value. The "match" over "Level" leaves the undeclared values of its integer carrier unhandled; add an unguarded "_" or bind branch.)";
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A full plain-enum cover does not terminate") {
 	// A plain enum is carried by an integer that accepts undeclared values, so handling every declared

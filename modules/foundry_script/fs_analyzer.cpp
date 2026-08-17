@@ -4679,7 +4679,7 @@ void FSAnalyzer::resolve_function_body(FSParser::FunctionNode *p_function, bool 
 			if (incomplete_match != nullptr && incomplete_match->subject_domain_is_open_enum) {
 				// Naming the unhandled members would be misleading here: adding them still leaves the
 				// carrier's undeclared integers unhandled, so the fix is always a catch-all.
-				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" needs an unguarded "_" or bind branch: an enum-typed value can hold an integer outside the declared values.)", incomplete_match->subject_domain_name), p_function);
+				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" leaves the undeclared values of its integer carrier unhandled; add an unguarded "_" or bind branch.)", incomplete_match->subject_domain_name), p_function);
 			} else if (incomplete_match != nullptr) {
 				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" does not cover: %s.)", incomplete_match->subject_domain_name, incomplete_match->uncovered_domain_values), p_function);
 			} else {
