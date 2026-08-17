@@ -651,6 +651,10 @@ void Main::test_cleanup() {
 	ResourceSaver::remove_custom_savers();
 	PropertyListHelper::clear_base_helpers();
 
+	// Mirror `Main::cleanup()`: script languages must be finished before the modules that own
+	// them are uninitialized, so nothing they registered outlives the language singleton.
+	_cleanup_script_languages(_finish_script_languages, nullptr);
+
 #ifdef TOOLS_ENABLED
 	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_EDITOR);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_EDITOR);
