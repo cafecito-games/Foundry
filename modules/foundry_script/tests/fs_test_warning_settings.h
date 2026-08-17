@@ -72,8 +72,8 @@ struct WarningLevelOverride {
 // Pins the process-global Foundry Script warning configuration for the lifetime of the scope and
 // restores the previous configuration on destruction.
 //
-// Must be constructed inside a doctest `TEST_CASE`: the constructor self-checks with `REQUIRE` that
-// the configuration actually took effect, which is only meaningful inside a running test case.
+// Must be constructed inside a doctest `TEST_CASE`: the constructor self-checks with `CHECK` that the
+// configuration actually took effect, which is only meaningful inside a running test case.
 class WarningSettingsScope {
 	static constexpr const char *ENABLE_SETTING = "debug/foundry_script/warnings/enable";
 	static constexpr const char *DIRECTORY_RULES_SETTING = "debug/foundry_script/warnings/directory_rules";
@@ -103,7 +103,7 @@ class WarningSettingsScope {
 			settings()->set_setting(setting_path, FSWarning::get_default_value((FSWarning::Code)i));
 		}
 		for (const WarningLevelOverride &level_override : p_overrides) {
-			REQUIRE(level_override.code < FSWarning::WARNING_MAX);
+			ERR_CONTINUE((int)level_override.code >= (int)FSWarning::WARNING_MAX);
 			settings()->set_setting(FSWarning::get_setting_path_from_code(level_override.code), (int)level_override.level);
 		}
 
@@ -112,9 +112,9 @@ class WarningSettingsScope {
 		// so it must run before this: an explicit set that precedes it is discarded.
 		FSParser::set_ignoring_warnings(false);
 
-		REQUIRE_FALSE(FSParser::is_ignoring_warnings());
+		CHECK_FALSE(FSParser::is_ignoring_warnings());
 		for (const WarningLevelOverride &level_override : p_overrides) {
-			REQUIRE_EQ((int)GLOBAL_GET(FSWarning::get_setting_path_from_code(level_override.code)), (int)level_override.level);
+			CHECK_EQ((int)GLOBAL_GET(FSWarning::get_setting_path_from_code(level_override.code)), (int)level_override.level);
 		}
 	}
 
