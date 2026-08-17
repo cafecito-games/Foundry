@@ -965,7 +965,7 @@ class FSProjectScripts;
 namespace FSTests {
 class TestFSDeclarationIndexAccessor;
 class TestFSLanguageFunctionListAccessor;
-}
+} //namespace FSTests
 #endif // TESTS_ENABLED
 
 class FSLanguage : public ScriptLanguage {
