@@ -267,6 +267,74 @@ TEST_CASE("[Modules][FoundryScript][GenericArgumentHandle] A flattened trait con
 	CHECK(concrete->get_type_arguments()[0].builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericArgumentHandle] A Self written in a trait constant folds only for a final implementer") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"\n"
+			"class Holder[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"trait PlainAliasing:\n"
+			"\tconst Direct = Holder[Self]\n"
+			"\n"
+			"trait GenericAliasing[V]:\n"
+			"\tconst Direct = Holder[Self]\n"
+			"\n"
+			"final class FinalFromPlain:\n"
+			"\tuses PlainAliasing\n"
+			"\n"
+			"class OpenFromPlain:\n"
+			"\tuses PlainAliasing\n"
+			"\n"
+			"final class FinalFromGeneric:\n"
+			"\tuses GenericAliasing[int]\n"
+			"\n"
+			"class OpenFromGeneric:\n"
+			"\tuses GenericAliasing[int]\n"
+			"\n"
+			"class PlainSelf:\n"
+			"\tconst Direct = Holder[Self]\n");
+	REQUIRE(script.is_valid());
+
+	const auto implementer = [&script](const StringName &p_name) -> Ref<FoundryScript> {
+		const HashMap<StringName, Ref<FoundryScript>>::ConstIterator found = script->get_subclasses().find(p_name);
+		return found == script->get_subclasses().end() ? Ref<FoundryScript>() : found->value;
+	};
+	const auto folded_constant = [&implementer](const StringName &p_name) -> Variant {
+		const Ref<FoundryScript> owner = implementer(p_name);
+		if (owner.is_null()) {
+			return Variant();
+		}
+		const HashMap<StringName, Variant>::ConstIterator found = owner->get_constants().find(SNAME("Direct"));
+		return found == owner->get_constants().end() ? Variant() : found->value;
+	};
+	const auto check_folds_to_owner = [&implementer, &folded_constant](const StringName &p_name) {
+		const Ref<FoundryScript> owner = implementer(p_name);
+		REQUIRE(owner.is_valid());
+		FSSpecializedClassHandle *handle = Object::cast_to<FSSpecializedClassHandle>(folded_constant(p_name));
+		REQUIRE(handle != nullptr);
+		REQUIRE(handle->get_type_arguments().size() == 1);
+		CHECK(handle->get_type_arguments()[0].script.ptr() == owner.ptr());
+	};
+	const auto check_stays_bare = [&folded_constant](const StringName &p_name) {
+		const Variant folded = folded_constant(p_name);
+		CHECK(Object::cast_to<FSSpecializedClassHandle>(folded) == nullptr);
+		CHECK(Object::cast_to<FoundryScript>(folded) != nullptr);
+	};
+
+	// A `final` implementer admits exactly one receiver for the `Self` the trait wrote, so folding it is
+	// honest; a non-final one shares the slot with every subclass, so the handle carries no evidence.
+	// The trait's own genericity is irrelevant to the rule.
+	check_folds_to_owner(SNAME("FinalFromPlain"));
+	check_stays_bare(SNAME("OpenFromPlain"));
+	check_folds_to_owner(SNAME("FinalFromGeneric"));
+	check_stays_bare(SNAME("OpenFromGeneric"));
+
+	// An ordinary class's own `Self` constant means the declaring class receiver-independently, so it
+	// keeps its full specialization whether or not the class is final.
+	check_folds_to_owner(SNAME("PlainSelf"));
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED
