@@ -3043,7 +3043,13 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					}
 				} else if (is_static) {
 					FSCodeGenerator::Address temp = codegen.add_temporary(static_var_data_type);
-					if (assignment->use_conversion_assign) {
+					if (_slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
+						// A static member's slot erases to a bare Array exactly as an instance member's does, so
+						// the declared shape is checked on the way into the temporary that gets published. Ahead
+						// of the conversion store, because a tuple is never converted into: its elements are
+						// invariant and the shape is the whole of what the slot promises.
+						gen->write_assign_typed_tuple(temp, to_assign, _tuple_slot_shape(assignment->assignee->get_datatype(), codegen));
+					} else if (assignment->use_conversion_assign) {
 						gen->write_assign_with_conversion(temp, to_assign);
 					} else {
 						gen->write_assign(temp, to_assign);
