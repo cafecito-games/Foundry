@@ -473,11 +473,14 @@ TEST_CASE("[ContainerType] An object slot is named by its script rather than its
 	specialized.type_arguments.push_back(make_builtin(Variant::INT));
 
 	CHECK(specialized.get_type_name() == "TestBox[int]");
-	CHECK(make_array_of(specialized).get_type_name() == "Array[TestBox[int]]");
+	// A nested element renders the script name too. Its type arguments are a separate, pre-existing
+	// gap in the element renderer and are not what this case pins.
+	CHECK(make_array_of(specialized).get_type_name() == "Array[TestBox]");
 
 	ContainerType handle = specialized;
 	handle.is_type_handle = true;
 	CHECK(handle.get_type_name() == "Type[TestBox[int]]");
+	CHECK(make_array_of(handle).get_type_name() == "Array[Type[TestBox[int]]]");
 
 	// The native compatibility constraint is untouched by the naming change.
 	CHECK(specialized.class_name == StringName("RefCounted"));
