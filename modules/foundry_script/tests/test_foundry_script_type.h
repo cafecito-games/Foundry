@@ -5080,6 +5080,17 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A final-bounded parameter
 	CHECK_FALSE(FSTypeCompatibility::allows_runtime_narrowing(make_array_of(open_bounded), make_array_of(open_bound_value)));
 }
 
+// Builds a tuple whose positional element types are `p_elements`, the shape a tuple slot carries to
+// run time as a compiled descriptor.
+static FSParser::DataType make_tuple_of(const Vector<FSParser::DataType> &p_elements) {
+	FSParser::DataType tuple;
+	tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	tuple.kind = FSParser::DataType::TUPLE;
+	tuple.builtin_type = Variant::ARRAY;
+	tuple.container_element_types = p_elements;
+	return tuple;
+}
+
 // Builds a class-scoped type parameter, the shape a receiver reifies.
 static FSParser::DataType make_class_type_parameter(const StringName &p_name, int p_index = 0) {
 	FSParser::DataType parameter;
@@ -5137,6 +5148,53 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A class parameter in a ty
 		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
 		tuple.container_element_types.push_back(make_builtin_type(Variant::STRING));
 		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(tuple));
+	}
+	SUBCASE("nullable tuple element") {
+		// A tuple element keeps its own `is_nullable` in the compiled descriptor, so "this type or null"
+		// is expressible here and the element stays evidence even without a sibling parameter beside it.
+		FSParser::DataType nullable_parameter = parameter;
+		nullable_parameter.is_nullable = true;
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_tuple_of({ make_builtin_type(Variant::INT), nullable_parameter })));
+	}
+	SUBCASE("nullable tuple root") {
+		FSParser::DataType tuple = make_tuple_of({ make_builtin_type(Variant::INT), parameter });
+		tuple.is_nullable = true;
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(tuple));
+	}
+	SUBCASE("nested nullable tuple element") {
+		FSParser::DataType nullable_parameter = parameter;
+		nullable_parameter.is_nullable = true;
+		const FSParser::DataType inner = make_tuple_of({ make_builtin_type(Variant::STRING), nullable_parameter });
+		CHECK(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_tuple_of({ make_builtin_type(Variant::INT), inner })));
+	}
+	SUBCASE("nullable scalar") {
+		// Off the tuple spine the shape travels as a container type, which has no way to say "or null".
+		FSParser::DataType nullable_parameter = parameter;
+		nullable_parameter.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(nullable_parameter));
+	}
+	SUBCASE("nullable element of a typed container") {
+		FSParser::DataType nullable_parameter = parameter;
+		nullable_parameter.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_array_of(nullable_parameter)));
+	}
+	SUBCASE("nullable tuple element under a container") {
+		// Nullability is expressible on the tuple spine and nowhere else, and traversal never re-enters
+		// it: a tuple nested under a typed container is analyzer-only, so the element keeps no evidence.
+		FSParser::DataType nullable_parameter = parameter;
+		nullable_parameter.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_array_of(make_tuple_of({ make_builtin_type(Variant::INT), nullable_parameter }))));
+	}
+	SUBCASE("nullable tuple element under a type argument") {
+		FSParser::DataType nullable_parameter = parameter;
+		nullable_parameter.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_depends_on_receiver_type_parameter(
+				make_specialized_class_type(&holder,
+						{ make_tuple_of({ make_builtin_type(Variant::INT), nullable_parameter }) })));
 	}
 }
 

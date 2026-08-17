@@ -1,19 +1,21 @@
 FS_TEST_OK
-~~ WARNING at line 95: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 96: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 96: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 97: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_erased_element()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 98: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_nested()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 101: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 106: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 111: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_both()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 113: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_array()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 118: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_array()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 121: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 122: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 124: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 125: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
-~~ WARNING at line 130: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 102: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 103: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 103: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "replace()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 104: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_erased_element()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 105: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_nested()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 108: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 113: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 118: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_both()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 120: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_array()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 125: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_array()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 130: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "only_nullable()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 131: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "only_nullable()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 134: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 135: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_optional()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 137: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 138: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_via_trait()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 143: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
 [1, 2]
 [3, 4]
 [1, ["not an int", true]]
@@ -25,6 +27,8 @@ true
 [9, "anything"]
 [1, [2]]
 [1, [3]]
+[1, <null>]
+[2, "two"]
 [1, <null>]
 [2, "two"]
 [10, "ten"]

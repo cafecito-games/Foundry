@@ -894,8 +894,20 @@ static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *
 // same question, and the two must stay in agreement: a "yes" here emits a check, and a "yes" there is
 // also what makes an enclosing lambda capture its receiver, so a disagreement is either a silently
 // missing check or a capture taken for a check that never happens.
+//
+// `p_nullable_is_expressible` says whether a nullable node at this position can still be evidence,
+// and is true only on the tuple spine: a tuple slot's own root, its elements, and recursively the
+// elements of a nested tuple element. There the shape travels as an `FSDataType` all the way to the
+// compiled descriptor, which keeps a tuple element's `is_nullable` on purpose (see
+// `fs_byte_codegen.cpp:299-308`), so "this type or null" is expressible. Everywhere else -- through a
+// non-tuple node's `container_element_types`, or through any `type_arguments` -- the shape becomes a
+// `ContainerType`, which has no such field, and evidence built for a nullable node there would reject
+// the nulls the slot legitimately admits. The flag is sticky-off, never sticky-on: a tuple nested
+// under a typed container or a type argument is analyzer-only, so traversal never re-enters the
+// expressible world once it has left it.
 static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &p_type,
-		const Vector<FSParser::TypeParameterNode *> &p_type_parameters, bool &r_is_sound, int p_depth = 0) {
+		const Vector<FSParser::TypeParameterNode *> &p_type_parameters, bool &r_is_sound,
+		bool p_nullable_is_expressible, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		r_is_sound = false;
 		return false;
@@ -910,9 +922,10 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 		return false;
 	}
 
-	if (p_type.is_nullable) {
-		// A nullable node admits null, which no container type can express, so the projection keeps no
-		// evidence for it or anything below it and a check emitted here would decide nothing.
+	if (p_type.is_nullable && !p_nullable_is_expressible) {
+		// Off the tuple spine a nullable node admits null, which no container type can express, so the
+		// projection keeps no evidence for it or anything below it and a check emitted here would decide
+		// nothing.
 		return false;
 	}
 
@@ -932,12 +945,17 @@ static bool _type_depends_on_declared_type_parameters(const FSParser::DataType &
 		return true;
 	}
 
+	const bool child_expressible = p_nullable_is_expressible && p_type.kind == FSParser::DataType::TUPLE;
 	bool found = false;
 	for (const FSParser::DataType &element_type : p_type.container_element_types) {
-		found = _type_depends_on_declared_type_parameters(element_type, p_type_parameters, r_is_sound, p_depth + 1) || found;
+		found = _type_depends_on_declared_type_parameters(
+						element_type, p_type_parameters, r_is_sound, child_expressible, p_depth + 1) ||
+				found;
 	}
 	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
-		found = _type_depends_on_declared_type_parameters(type_argument, p_type_parameters, r_is_sound, p_depth + 1) || found;
+		found = _type_depends_on_declared_type_parameters(
+						type_argument, p_type_parameters, r_is_sound, false, p_depth + 1) ||
+				found;
 	}
 	return found;
 }
@@ -990,7 +1008,13 @@ bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_dec
 		return false;
 	}
 	bool is_sound = true;
-	return _type_depends_on_declared_type_parameters(p_declared_type, declaring_class->type_parameters, is_sound) && is_sound;
+	// A tuple slot carries its shape to run time as a compiled descriptor, which is the one place a
+	// nullable node stays evidence; every other declared shape lowers to a container type that cannot
+	// express "or null".
+	const bool nullable_is_expressible = p_declared_type.kind == FSParser::DataType::TUPLE;
+	return _type_depends_on_declared_type_parameters(
+				   p_declared_type, declaring_class->type_parameters, is_sound, nullable_is_expressible) &&
+			is_sound;
 }
 
 // Whether a function-body slot (a local, a later assignment, or a return) is declared as a tuple, and
@@ -1067,8 +1091,12 @@ Vector<FSDataType> FSCompiler::_bake_construction_type_arguments(const Vector<FS
 		bool preserve_type_parameters = false;
 		if (declaring_class != nullptr) {
 			bool is_sound = true;
-			preserve_type_parameters =
-					_type_depends_on_declared_type_parameters(argument, declaring_class->type_parameters, is_sound) && is_sound;
+			// A construction's type argument is not a slot: it is reified onto the instance and later read
+			// back through a container type, which cannot express "or null", so a nullable node here keeps
+			// erasing as it always has.
+			preserve_type_parameters = _type_depends_on_declared_type_parameters(
+											   argument, declaring_class->type_parameters, is_sound, false) &&
+					is_sound;
 		}
 
 		FSDataType converted = _gdtype_from_datatype(argument, p_codegen.script, argument.is_type_handle_annotation, preserve_type_parameters);
@@ -5561,7 +5589,11 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 					const Vector<FSParser::TypeParameterNode *> &declaring_type_parameters =
 							applied_trait != nullptr ? applied_trait->trait->type_parameters : p_class->type_parameters;
 					bool binding_is_sound = true;
-					if (_type_depends_on_declared_type_parameters(member_datatype, declaring_type_parameters, binding_is_sound) &&
+					// A member binding is projected through a container type, which cannot express "or
+					// null", so a nullable node in a member's declared shape keeps no evidence regardless of
+					// where it sits.
+					if (_type_depends_on_declared_type_parameters(
+								member_datatype, declaring_type_parameters, binding_is_sound, false) &&
 							binding_is_sound) {
 						FSDataType baked = _gdtype_from_datatype(member_datatype, p_script, true, true);
 						if (baked.has_type()) {

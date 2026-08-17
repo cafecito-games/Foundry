@@ -14,8 +14,8 @@ class Crate[T]:
 			return kept
 
 
-# A nullable slot gets none either: it admits null, which no container type can express, so the
-# runtime keeps no evidence for it.
+# A bare nullable slot gets none either: off the tuple spine the shape travels as a container type,
+# which cannot express "this type or null", so the runtime keeps no evidence for it.
 class NullableCrate[T]:
 	var keeper
 
@@ -86,6 +86,18 @@ class CheckedTupleCrate[T]:
 			return kept
 
 
+# A nullable tuple element is evidence on its own -- the compiled descriptor keeps its "or null" -- so
+# a lambda whose only receiver-relative slot is `(int, T?)` captures too, and the check it emits is
+# what accepts the null and rejects a wrongly typed value.
+class CheckedNullableTupleCrate[T]:
+	var keeper
+
+	func setup() -> void:
+		keeper = func(v):
+			var kept: (int, T?) = v
+			return kept
+
+
 func test() -> void:
 	var crate := Crate[String].new()
 	crate.setup()
@@ -125,4 +137,9 @@ func test() -> void:
 	var checked_tuple := CheckedTupleCrate[int].new()
 	checked_tuple.setup()
 	print(checked_tuple.keeper.call((6, 7)))
+
+	var checked_nullable_tuple := CheckedNullableTupleCrate[String].new()
+	checked_nullable_tuple.setup()
+	print(checked_nullable_tuple.keeper.call((8, null)))
+	print(checked_nullable_tuple.keeper.call((9, "nine")))
 	print("lambda capture ok")

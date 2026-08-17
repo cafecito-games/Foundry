@@ -26,6 +26,13 @@ class Crate[T]:
 		var kept: (int, (String, T)) = value
 		return kept
 
+	func only_nullable(value) -> void:
+		# A tuple element carries its own "or null" into the compiled descriptor, so a nullable element
+		# is evidence like any other and this slot is receiver-relative on its own -- it takes no
+		# sibling parameter element to make it one.
+		var kept: (int, T?) = value
+		print(kept)
+
 
 # An inherited body resolves against the leaf's specialization, not against the parameter the
 # declaring class left open.
@@ -61,9 +68,9 @@ class NestingCrate[U] extends ArrayCrate[Array[U]]:
 
 
 # A nullable element admits null whatever its parameter turns out to be, so the declared nullability
-# travels with the node and is applied after the receiver resolves it. A slot whose *only* parameter
-# element is nullable keeps no evidence at all -- the same limitation a nullable member binding has --
-# so it takes a sibling element to make this shape receiver-relative in the first place.
+# travels with the node and is applied after the receiver resolves it. Both spellings behave the same:
+# whether a sibling element names a parameter or not changes nothing about how the nullable one is
+# checked -- see `only_nullable()` above for the no-sibling case.
 class OptionalPair[K, V]:
 	func keep_optional(value) -> (K, V?):
 		var kept: (K, V?) = value
@@ -116,6 +123,12 @@ func test() -> void:
 	# to arrive already typed -- see `generic_class_parameter_tuple_untyped_container.fs`.
 	var typed_contents: Array[int] = [3]
 	print(ArrayCrate[Array[int]].new().keep_array(supply((1, typed_contents))))
+
+	# A slot whose only parameter element is nullable is receiver-relative on its own: `null` still
+	# passes, and a correctly typed value is accepted once the receiver resolves the element.
+	var string_crate := Crate[String].new()
+	string_crate.only_nullable(supply((1, null)))
+	string_crate.only_nullable(supply((2, "two")))
 
 	var optional := OptionalPair[int, String].new()
 	print(optional.keep_optional(supply((1, null))))

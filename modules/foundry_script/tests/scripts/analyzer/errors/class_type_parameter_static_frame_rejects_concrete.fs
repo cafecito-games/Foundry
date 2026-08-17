@@ -22,6 +22,20 @@ class Crate[T]:
 		var kept: (int, T) = (1, 5)
 		print(kept)
 
+	static func seeded_nullable_tuple() -> void:
+		# A nullable tuple element is receiver-relative on its own -- the descriptor expresses "this type
+		# or null" -- so a static frame has just as little to license this assignment with.
+		var kept: (int, T?) = (1, 5)
+		print(kept)
+
+	static func seeded_tuple_in_lambda() -> void:
+		# A lambda declared in a static frame is static too, so it has no receiver to resolve against
+		# and the slot is rejected there rather than compiled into a check that could never run.
+		var keeper := func():
+			var kept: (int, T?) = (1, 5)
+			return kept
+		print(keeper.call())
+
 	func instance_local() -> T:
 		# The same assignment inside an instance method is checked against this receiver's argument.
 		var kept: T = 5
@@ -33,4 +47,6 @@ func test():
 	print(Crate[int].seeded_return())
 	print(Crate[int].seeded_container([1, 2]))
 	Crate[int].seeded_tuple()
+	Crate[int].seeded_nullable_tuple()
+	Crate[int].seeded_tuple_in_lambda()
 	print(Crate[int].new().instance_local())
