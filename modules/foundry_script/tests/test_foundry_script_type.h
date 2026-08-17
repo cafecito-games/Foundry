@@ -5382,6 +5382,128 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A final-bounded parameter
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(class_bounded, make_static_frame_options()));
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(make_array_of(class_bounded), make_static_frame_options()));
 	}
+	SUBCASE("tuple spine element") {
+		// A tuple carries its element shape into the compiled descriptor, so the resolved bound is
+		// stated there exactly as it is for a bare declaration.
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_tuple_of({ make_builtin_type(Variant::INT), method_bounded }), make_static_frame_options()));
+	}
+	SUBCASE("nullable leaf") {
+		FSParser::DataType nullable = method_bounded;
+		nullable.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(nullable, make_static_frame_options()));
+	}
+}
+
+// The bound only decides a value where compiler lowering can still state it. Everywhere else the
+// exemption would claim a check the compiled slot never performs, which is exactly what made a gradual
+// source into such a position unsound.
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A final bound stops deciding where lowering discards it") {
+	FSParser::ClassNode final_class;
+	final_class.is_final = true;
+
+	FSParser::DataType final_bound;
+	final_bound.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	final_bound.kind = FSParser::DataType::CLASS;
+	final_bound.builtin_type = Variant::OBJECT;
+	final_bound.class_type = &final_class;
+
+	const FSParser::DataType method_bounded = make_method_type_parameter(SNAME("W"), 0, &final_class);
+	FSParser::DataType class_bounded = make_class_type_parameter(SNAME("T"));
+	class_bounded.type_parameter_bound.push_back(final_bound);
+
+	SUBCASE("nullable under a typed container") {
+		// A container type has no "or null" field, so nothing below the nullable node survives lowering.
+		FSParser::DataType nullable = method_bounded;
+		nullable.is_nullable = true;
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_array_of(nullable), make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_dictionary_of(make_builtin_type(Variant::STRING), nullable), make_instance_frame_options()));
+	}
+	SUBCASE("tuple under a typed container") {
+		// The container keeps a bare Array for its element, so the tuple's own element shape is gone.
+		const FSParser::DataType tuple = make_tuple_of({ make_builtin_type(Variant::INT), method_bounded });
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_array_of(tuple), make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_dictionary_of(make_builtin_type(Variant::STRING), tuple), make_instance_frame_options()));
+	}
+	SUBCASE("class-scope parameter in a tuple under a typed container") {
+		// Without a receiver the bound is the only thing left to decide the slot, and the container has
+		// discarded it.
+		const FSParser::DataType tuple = make_tuple_of({ make_builtin_type(Variant::INT), class_bounded });
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_array_of(tuple), make_static_frame_options()));
+	}
+	SUBCASE("callable signature slot") {
+		// A callable erases its whole signature at run time.
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_callable_with_parameter(method_bounded), make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_callable_returning(method_bounded), make_instance_frame_options()));
+	}
+	SUBCASE("union member") {
+		// A union erases to one untyped slot that does not record which alternative it holds.
+		FSParser::DataType union_type;
+		union_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		union_type.kind = FSParser::DataType::UNION;
+		union_type.union_members.push_back(make_builtin_type(Variant::INT));
+		union_type.union_members.push_back(method_bounded);
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(union_type, make_instance_frame_options()));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A directly final-class-bounded parameter resolves to its bound") {
+	FSParser::ClassNode final_class;
+	final_class.is_final = true;
+	FSParser::ClassNode open_class;
+
+	FSParser::DataType resolved;
+
+	SUBCASE("final bound") {
+		CHECK(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0, &final_class), resolved));
+		CHECK(resolved.kind == FSParser::DataType::CLASS);
+		CHECK(resolved.class_type == &final_class);
+		CHECK_FALSE(resolved.is_nullable);
+		CHECK_FALSE(resolved.is_type_handle_annotation);
+	}
+	SUBCASE("nullable parameter") {
+		FSParser::DataType nullable = make_method_type_parameter(SNAME("W"), 0, &final_class);
+		nullable.is_nullable = true;
+		CHECK(FSTypeCompatibility::resolve_final_class_bound(nullable, resolved));
+		CHECK(resolved.class_type == &final_class);
+		CHECK(resolved.is_nullable);
+	}
+	SUBCASE("type-handle parameter") {
+		FSParser::DataType handle = make_method_type_parameter(SNAME("W"), 0, &final_class);
+		handle.is_type_handle_annotation = true;
+		CHECK(FSTypeCompatibility::resolve_final_class_bound(handle, resolved));
+		CHECK(resolved.class_type == &final_class);
+		CHECK(resolved.is_type_handle_annotation);
+	}
+	SUBCASE("class-scope parameter") {
+		FSParser::DataType final_bound;
+		final_bound.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		final_bound.kind = FSParser::DataType::CLASS;
+		final_bound.builtin_type = Variant::OBJECT;
+		final_bound.class_type = &final_class;
+
+		FSParser::DataType class_bounded = make_class_type_parameter(SNAME("T"));
+		class_bounded.type_parameter_bound.push_back(final_bound);
+		CHECK(FSTypeCompatibility::resolve_final_class_bound(class_bounded, resolved));
+		CHECK(resolved.class_type == &final_class);
+
+		// `@Self` denotes the class the frame runs against and keeps its own lowering everywhere.
+		FSParser::DataType self_bounded = make_class_type_parameter(SNAME("@Self"));
+		self_bounded.type_parameter_bound.push_back(final_bound);
+		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(self_bounded, resolved));
+	}
+	SUBCASE("unbounded and non-final bounds") {
+		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0), resolved));
+		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0, &open_class), resolved));
+		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_builtin_type(Variant::INT), resolved));
+	}
 }
 
 // A destination the compiler emits no check for even with a receiver must get the same answer in a
