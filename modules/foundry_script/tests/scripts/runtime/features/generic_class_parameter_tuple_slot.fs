@@ -22,6 +22,13 @@ class Crate[T]:
 		var kept: (int, Array[T]) = value
 		return kept
 
+	func keep_erased_nullable_element(value) -> (int, Array[T]?):
+		# Making the same container nullable changes nothing about its element: the container is what
+		# erases, so this element takes an Array of anything -- and null besides -- while the `int` is
+		# still enforced. The nullable and non-nullable spellings answer alike.
+		var kept: (int, Array[T]?) = value
+		return kept
+
 	func keep_nested(value) -> (int, (String, T)):
 		var kept: (int, (String, T)) = value
 		return kept
@@ -119,6 +126,8 @@ func test() -> void:
 	print(crate.keep(supply((1, 2))))
 	print(crate.replace(supply((1, 2)), supply((3, 4))))
 	print(crate.keep_erased_element(supply((1, ["not an int", true]))))
+	print(crate.keep_erased_nullable_element(supply((1, ["not an int", true]))))
+	print(crate.keep_erased_nullable_element(supply((1, null))))
 	print(crate.keep_nested(supply((1, ("two", 3)))))
 
 	# The passing value is stored unchanged, keeping the read-only carrier a tuple value rests on.

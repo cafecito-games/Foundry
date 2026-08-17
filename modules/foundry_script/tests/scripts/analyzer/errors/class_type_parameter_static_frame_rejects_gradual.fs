@@ -49,6 +49,16 @@ class Crate[T]:
 		var kept: (int, T?) = value
 		print(kept)
 
+	static func gradual_container_tuple(value: Variant) -> void:
+		var kept: (int, Array[T]) = value
+		print(kept)
+
+	static func gradual_nullable_container_tuple(value: Variant) -> void:
+		# A container *declared* around a parameter is what erases, nullable or not, so both spellings
+		# answer alike: the slot would be validated against a receiver, and a static frame has none.
+		var kept: (int, Array[T]?) = value
+		print(kept)
+
 	static func inside_lambda(value: Variant):
 		# A lambda in a static frame has no receiver either, and the capture it would need to check the
 		# slot does not exist there.
@@ -74,5 +84,7 @@ func test():
 	Crate[int].concrete_literal_element()
 	Crate[int].gradual_tuple((1, 2))
 	Crate[int].gradual_nullable_tuple((1, 2))
+	Crate[int].gradual_container_tuple((1, [2]))
+	Crate[int].gradual_nullable_container_tuple((1, [2]))
 	print(Crate[int].inside_lambda(7))
 	print(Crate[int].new().instance_local(8))
