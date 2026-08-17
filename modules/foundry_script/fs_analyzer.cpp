@@ -11195,22 +11195,25 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				case FSParser::ClassNode::Member::CONSTANT: {
 					FSParser::DataType constant_type = member.get_datatype();
 					if (is_trait_interface_class && base_class != nullptr) {
-						// A constant reached through a generic trait is typed by the TRAIT's parameters, while
-						// the class that applied the trait flattened it in under the arguments it supplied.
-						// Substituting them here is what makes `Fixed.Aliased` a `Holder[int]` handle; leaving
-						// the parameter node in place lets every consumer erase it to `Variant`, a
-						// specialization no implementer applied and every slot that resolves the parameter
-						// rejects. Trait members stay reachable through inheritance, so the application is
-						// looked up along the receiver's own chain, exactly where the member was found.
+						// A constant reached through a trait is typed against the TRAIT's frame: a generic
+						// trait's own parameters, and `Self`. The class that applied the trait flattened the
+						// constant in under the arguments it supplied, and `Self` denotes the receiver the
+						// constant was read through. Substituting both here is what makes `Fixed.Aliased` a
+						// `Holder[int]` handle and `SubImpl.Direct` a `Holder[SubImpl]` one; leaving either node
+						// in place lets every consumer erase it, yielding a specialization no implementer
+						// applied and no typed slot accepts. Trait members stay reachable through inheritance,
+						// so the application is looked up along the receiver's own chain, exactly where the
+						// member was found. A non-generic trait binds no parameters at all, yet its constant
+						// still needs `Self` resolved, so the walk selects an owner by whether it applies the
+						// trait rather than by whether it produced any bindings.
 						for (FSParser::ClassNode *owner = base_class; owner != nullptr;
 								owner = owner->base_type.class_type) {
-							const HashMap<StringName, FSParser::DataType> substitutions =
-									trait_type_argument_substitution(owner, script_class);
-							if (substitutions.is_empty()) {
+							if (!owner->resolved_traits.has(script_class)) {
 								continue;
 							}
 							constant_type = _substitute_type_parameters_and_self(
-									constant_type, substitutions, _self_type_for_class(base_class));
+									constant_type, trait_type_argument_substitution(owner, script_class),
+									_self_type_for_class(base_class));
 							break;
 						}
 					}
