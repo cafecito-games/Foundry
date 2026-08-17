@@ -45,4 +45,11 @@ func test() -> void:
 
 	var resource: Resource = identity[Resource](untyped_resource())
 	Utils.check(resource != null)
+
+	# A statically typed supertype narrows into the substituted type on the promise of a run-time
+	# check, and that promise is kept here rather than at the erased destination.
+	var holder: Object = Resource.new()
+	var narrowed: Resource = identity[Resource](holder)
+	Utils.check(narrowed != null)
+
 	print("generic call argument shapes ok")

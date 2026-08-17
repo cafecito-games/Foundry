@@ -366,4 +366,41 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A resolved rest element 
 	CHECK(checks[1].substituted_type.builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A runtime-narrowed generic argument is marked for a call-site check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: Object) -> void:\n"
+			"\tidentity[Resource](value)\n",
+			"user://generic_argument_narrowed.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<FSParser::CallNode::GenericArgumentCheck> checks = call_site_generic_argument_checks(parser.get_tree(), SNAME("test"));
+	REQUIRE(checks.size() == 1);
+	CHECK(checks[0].argument_index == 0);
+	CHECK(checks[0].substituted_type.native_type == SNAME("Resource"));
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An upcast generic argument records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: Resource) -> void:\n"
+			"\tidentity[Object](value)\n",
+			"user://generic_argument_upcast.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
+}
+
 } // namespace FSTests

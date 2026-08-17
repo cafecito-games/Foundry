@@ -257,17 +257,23 @@ void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSPars
 		return;
 	}
 
-	// Only a gradual argument can launder a value through the erased parameter. A statically typed one
-	// was already validated against this same substituted type by the ordinary argument check, and
-	// converting it here would move a conversion the language performs at other boundaries into this
-	// one.
+	// A gradual argument can launder any value through the erased parameter, so it always needs the
+	// check. A statically typed one needs it exactly when the analyzer accepted it on the promise of a
+	// run-time check: `allows_runtime_narrowing()` is that promise, and an erased destination is the one
+	// place that never keeps it, so an `Object` holding a `Node` would otherwise reach a `T := Resource`
+	// parameter and come back out typed as a `Resource`. An argument the destination provably accepts
+	// needs nothing further, and a narrowing the relation itself refuses -- a declared integer width in
+	// particular -- is governed by the boundary that owns it rather than converted here.
 	const FSParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
 	if (argument == nullptr) {
 		return;
 	}
 	const FSParser::DataType argument_type = argument->get_datatype();
 	if (argument_type.is_set() && !argument_type.is_variant()) {
-		return;
+		if (FSTypeCompatibility::is_compatible(p_substituted_type, argument_type) ||
+				!FSTypeCompatibility::allows_runtime_narrowing(p_substituted_type, argument_type)) {
+			return;
+		}
 	}
 
 	FSParser::CallNode::GenericArgumentCheck check;

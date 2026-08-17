@@ -5,4 +5,5 @@ FS_TEST_OK
 ~~ WARNING at line 43: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "int?" but the supertype "Variant" was provided.
 ~~ WARNING at line 44: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "int?" but the supertype "Variant" was provided.
 ~~ WARNING at line 46: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "Resource" but the supertype "Variant" was provided.
+~~ WARNING at line 52: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "Resource" but the supertype "Object" was provided.
 generic call argument shapes ok
