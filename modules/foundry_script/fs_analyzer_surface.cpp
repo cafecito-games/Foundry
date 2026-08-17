@@ -2196,13 +2196,15 @@ bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::DataType &p_
 		}
 		inherited_arguments += inherited[i].to_string();
 		applied_arguments += p_applied_arguments[i].to_string();
-		if (!inherited[i].is_set() || !p_applied_arguments[i].is_set() ||
-				FSTypeCompatibility::names_any_type_parameter(inherited[i]) ||
-				FSTypeCompatibility::names_any_type_parameter(p_applied_arguments[i])) {
-			// A position left on an unreified type parameter proves nothing about the other side.
+		if (!inherited[i].is_set() || !p_applied_arguments[i].is_set()) {
 			continue;
 		}
-		conflicts = conflicts || !_datatype_alpha_equal(p_applied_arguments[i], inherited[i]);
+		// Both sides may be partially unknown, so they are compared component by component: two
+		// components left on an unreified parameter prove nothing about each other, while concrete
+		// components on both sides still contradict each other inside a composite argument.
+		conflicts = conflicts ||
+				FSTypeCompatibility::compare_open_arguments(p_applied_arguments[i], inherited[i]) ==
+						FSTypeCompatibility::ArgumentEvidence::CONFLICT;
 	}
 	if (!conflicts) {
 		return false;

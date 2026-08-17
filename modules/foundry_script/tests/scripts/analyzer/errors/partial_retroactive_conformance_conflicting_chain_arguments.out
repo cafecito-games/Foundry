@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 21: Trait "Keeper" is already applied with type arguments ("Pair[int, V]") by "PartialBase"; the conformance for "PartialChild" cannot record ("Pair[String, float]").

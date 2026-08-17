@@ -440,6 +440,9 @@ func measured() -> void:
 - A generic trait's type arguments are fixed by the first class in an inheritance chain that applies it. A subclass may
   re-apply the same trait only with the same arguments, and a retroactive `extend ... uses` conformance may not record
   arguments that differ from a binding already on the target's chain.
+- A composite trait argument is judged component by component: `uses Keeper[Pair[int, U]]` states its first component
+  and leaves the second open, so `Keeper[Pair[String, float]]` is rejected while `Keeper[Pair[int, String]]` is
+  accepted. An open component never erases the components beside it.
 - Custom annotation declarations are root-only and use `annotation name(...) targets METHOD, CLASS, VARIABLE`.
 
 ## Few-Shot Examples

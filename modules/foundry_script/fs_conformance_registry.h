@@ -68,6 +68,11 @@ public:
 	// analysis time). This is a flattened identity: enough to answer "is this the same type as that
 	// one?" with certainty, and nothing else. Anything it cannot represent is `UNKNOWN`, which is an
 	// absence of evidence and never a wildcard.
+	//
+	// A composite argument keeps its shape: `Array[int]` records the container's own identity plus one
+	// child per element, and `Pair[int, U]` records `Pair` plus a known `int` and an `UNKNOWN`. Each
+	// component carries its own certainty, so a contradiction in a known component is still seen even
+	// when a sibling is unrepresentable.
 	struct RecordedTypeArgument {
 		enum Kind : uint8_t {
 			UNKNOWN,
@@ -82,6 +87,11 @@ public:
 		StringName native_class;
 		String script_fqcn;
 		String script_global_name;
+		// Components of a composite argument, each recorded by the same reduction as its parent. An
+		// empty vector means the argument declared none, which is why arity is compared before the
+		// components are: a side that declared no components states nothing about them.
+		Vector<RecordedTypeArgument> type_arguments;
+		Vector<RecordedTypeArgument> container_element_types;
 	};
 
 	// The single reduction both sides of the comparison go through, so the recorded side and the

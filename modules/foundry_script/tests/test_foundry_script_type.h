@@ -588,6 +588,189 @@ TEST_CASE("[Modules][FoundryScript] Type compatibility projects trait arguments 
 	CHECK_FALSE(FSTypeCompatibility::check(fixture.keeper_of(Variant::INT), supertrait).compatible);
 }
 
+// A conformance whose trait argument is a composite naming a type parameter at depth: the first
+// component is fixed and the second is not, so the two must be judged separately.
+class PartialTraitArgumentFixture {
+public:
+	FSParser parser;
+	FSParser::ClassNode *keeper = nullptr;
+	FSParser::ClassNode *pair = nullptr;
+	FSParser::ClassNode *partial = nullptr;
+
+	PartialTraitArgumentFixture() {
+		const char *source = R"(
+trait Keeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+class Pair[A, B]:
+	pass
+
+
+class Partial[U]:
+	uses Keeper[Pair[int, U]]
+
+
+func test() -> void:
+	pass
+)";
+		REQUIRE_EQ(parser.parse(source, "user://partial_trait_argument.fs", false), OK);
+		FSAnalyzer analyzer(&parser);
+		REQUIRE_EQ(analyzer.analyze(), OK);
+
+		FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		keeper = find_member_class(tree, StringName("Keeper"));
+		pair = find_member_class(tree, StringName("Pair"));
+		partial = find_member_class(tree, StringName("Partial"));
+		REQUIRE(keeper != nullptr);
+		REQUIRE(pair != nullptr);
+		REQUIRE(partial != nullptr);
+	}
+
+	FSParser::DataType pair_of(const FSParser::DataType &p_first, const FSParser::DataType &p_second) const {
+		Vector<FSParser::DataType> arguments;
+		arguments.push_back(p_first);
+		arguments.push_back(p_second);
+		return make_specialized_class_type(pair, arguments);
+	}
+
+	FSParser::DataType keeper_of(const FSParser::DataType &p_argument) const {
+		Vector<FSParser::DataType> arguments;
+		arguments.push_back(p_argument);
+		return make_specialized_class_type(keeper, arguments);
+	}
+
+	// The raw conformer, which leaves `U` -- and therefore the second component of its binding -- on
+	// an unreified parameter.
+	FSParser::DataType raw_conformer() const {
+		return make_specialized_class_type(partial, Vector<FSParser::DataType>());
+	}
+};
+
+static FSParser::DataType make_trait_argument_type_parameter(const StringName &p_name, int p_index = 0) {
+	FSParser::DataType parameter;
+	parameter.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	parameter.kind = FSParser::DataType::TYPE_PARAMETER;
+	parameter.type_parameter_name = p_name;
+	parameter.type_parameter_index = p_index;
+	parameter.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_CLASS;
+	return parameter;
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A partially generic trait argument rejects on a known component") {
+	PartialTraitArgumentFixture fixture;
+
+	// `Keeper[Pair[int, U]]` fixes the first component, and `int` is not `String`.
+	const FSParser::DataType conflicting = fixture.keeper_of(
+			fixture.pair_of(make_builtin_type(Variant::STRING), make_builtin_type(Variant::FLOAT)));
+	CHECK_FALSE(FSTypeCompatibility::check(conflicting, fixture.raw_conformer()).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A partially generic trait argument accepts when known components agree") {
+	PartialTraitArgumentFixture fixture;
+
+	const FSParser::DataType agreeing = fixture.keeper_of(
+			fixture.pair_of(make_builtin_type(Variant::INT), make_builtin_type(Variant::FLOAT)));
+	CHECK(FSTypeCompatibility::check(agreeing, fixture.raw_conformer()).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An open component does not erase its siblings") {
+	PartialTraitArgumentFixture fixture;
+
+	// The two destinations differ only in the component the conformance fixes, so the relation must
+	// answer differently for them. Erasing the whole position on the open component answered the
+	// same for both.
+	const FSParser::DataType agreeing = fixture.keeper_of(
+			fixture.pair_of(make_builtin_type(Variant::INT), make_builtin_type(Variant::FLOAT)));
+	const FSParser::DataType conflicting = fixture.keeper_of(
+			fixture.pair_of(make_builtin_type(Variant::STRING), make_builtin_type(Variant::FLOAT)));
+	const bool agreeing_compatible = FSTypeCompatibility::check(agreeing, fixture.raw_conformer()).compatible;
+	const bool conflicting_compatible = FSTypeCompatibility::check(conflicting, fixture.raw_conformer()).compatible;
+	CHECK(agreeing_compatible);
+	CHECK_FALSE(conflicting_compatible);
+
+	// The open component is not evidence in either direction: a destination differing only there is
+	// still accepted.
+	const FSParser::DataType open_component_differs = fixture.keeper_of(
+			fixture.pair_of(make_builtin_type(Variant::INT), make_builtin_type(Variant::STRING)));
+	CHECK(FSTypeCompatibility::check(open_component_differs, fixture.raw_conformer()).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A wholly open trait argument proves nothing") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(
+					 make_trait_argument_type_parameter(SNAME("U")), make_builtin_type(Variant::INT)),
+			ArgumentEvidence::UNKNOWN);
+
+	// A bound admits every subtype of itself, so it is not evidence about the reified type either.
+	FSParser::DataType bounded = make_trait_argument_type_parameter(SNAME("U"));
+	bounded.type_parameter_bound.push_back(make_builtin_type(Variant::STRING));
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(bounded, make_builtin_type(Variant::INT)),
+			ArgumentEvidence::UNKNOWN);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A destination type parameter is compared literally") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	// The destination's argument is a statement by its author, so concrete evidence entering a
+	// `Keeper[X]` slot contradicts it rather than proving nothing.
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(
+					 make_builtin_type(Variant::INT), make_trait_argument_type_parameter(SNAME("X"))),
+			ArgumentEvidence::CONFLICT);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] Two open trait arguments conflict only on known components") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+	PartialTraitArgumentFixture fixture;
+
+	const FSParser::DataType v = make_trait_argument_type_parameter(SNAME("V"));
+	const FSParser::DataType w = make_trait_argument_type_parameter(SNAME("W"), 1);
+
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(
+					 fixture.pair_of(make_builtin_type(Variant::STRING), v),
+					 fixture.pair_of(make_builtin_type(Variant::INT), v)),
+			ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(
+					 fixture.pair_of(make_builtin_type(Variant::INT), v),
+					 fixture.pair_of(make_builtin_type(Variant::INT), v)),
+			ArgumentEvidence::MATCH);
+	// Two different parameters may still be instantiated identically, so they prove nothing about
+	// each other and must not reject a legitimate re-application.
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(
+					 fixture.pair_of(make_builtin_type(Variant::INT), w),
+					 fixture.pair_of(make_builtin_type(Variant::INT), v)),
+			ArgumentEvidence::UNKNOWN);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter-bearing union member degrades to unknown") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	// Union members are compared as a whole rather than traversed, so a parameter inside one leaves
+	// the node undecidable. Rejecting there would be stricter than the erasure this replaced along a
+	// dimension the comparison cannot reason about.
+	FSParser::DataType parameter_bearing_union;
+	parameter_bearing_union.kind = FSParser::DataType::UNION;
+	parameter_bearing_union.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	parameter_bearing_union.union_members.push_back(make_builtin_type(Variant::INT));
+	parameter_bearing_union.union_members.push_back(make_trait_argument_type_parameter(SNAME("U")));
+
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(
+					 parameter_bearing_union, make_builtin_type(Variant::INT)),
+			ArgumentEvidence::UNKNOWN);
+
+	// A union of concrete members carries its identity as usual.
+	FSParser::DataType concrete_union;
+	concrete_union.kind = FSParser::DataType::UNION;
+	concrete_union.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	concrete_union.union_members.push_back(make_builtin_type(Variant::INT));
+	concrete_union.union_members.push_back(make_builtin_type(Variant::STRING));
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(concrete_union, make_builtin_type(Variant::INT)),
+			ArgumentEvidence::CONFLICT);
+}
+
 TEST_CASE("[Modules][FoundryScript] Type compatibility checks callable and signal signatures") {
 	const FSParser::DataType callable_target = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);
 	const FSParser::DataType callable_source = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);

@@ -451,14 +451,13 @@ bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_cla
 	return false;
 }
 
-FSConformanceRegistry::RecordedTypeArgument FSConformanceRegistry::reduce_type_argument(const FSParser::DataType &p_type) {
+static FSConformanceRegistry::RecordedTypeArgument _reduce_type_argument(const FSParser::DataType &p_type, int p_depth) {
+	using RecordedTypeArgument = FSConformanceRegistry::RecordedTypeArgument;
 	RecordedTypeArgument recorded;
-	if (!p_type.is_set() || p_type.is_meta_type || p_type.is_type_handle_annotation) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return recorded;
 	}
-	// A specialized generic or a typed container is a composite whose identity this flattened form
-	// cannot carry, so the whole position contributes no evidence rather than a widened one.
-	if (!p_type.type_arguments.is_empty() || !p_type.container_element_types.is_empty()) {
+	if (!p_type.is_set() || p_type.is_meta_type || p_type.is_type_handle_annotation) {
 		return recorded;
 	}
 
@@ -512,7 +511,21 @@ FSConformanceRegistry::RecordedTypeArgument FSConformanceRegistry::reduce_type_a
 	}
 
 	recorded.is_nullable = p_type.is_nullable;
+	// A composite keeps its components rather than erasing the whole position: the components this
+	// form cannot represent reduce to `UNKNOWN` individually, so a known sibling stays comparable.
+	recorded.type_arguments.resize(p_type.type_arguments.size());
+	for (int i = 0; i < p_type.type_arguments.size(); i++) {
+		recorded.type_arguments.write[i] = _reduce_type_argument(p_type.type_arguments[i], p_depth + 1);
+	}
+	recorded.container_element_types.resize(p_type.container_element_types.size());
+	for (int i = 0; i < p_type.container_element_types.size(); i++) {
+		recorded.container_element_types.write[i] = _reduce_type_argument(p_type.container_element_types[i], p_depth + 1);
+	}
 	return recorded;
+}
+
+FSConformanceRegistry::RecordedTypeArgument FSConformanceRegistry::reduce_type_argument(const FSParser::DataType &p_type) {
+	return _reduce_type_argument(p_type, 0);
 }
 
 bool FSConformanceRegistry::_has_visible_conformance(const String &p_target_key, const StringName &p_trait_name) const {

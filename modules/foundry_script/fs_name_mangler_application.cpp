@@ -454,6 +454,22 @@ struct FSNameManglerApplication::Transaction::Data {
 		rewrite_data_type(r_binding.fixed);
 	}
 
+	// A recorded trait argument names a script class by the same identities the conformance target
+	// keys use, so it has to follow them through the rename -- at every depth, or a mangled build's
+	// static comparison would contradict itself about a component of a composite argument.
+	void rewrite_recorded_type_argument(FSConformanceRegistry::RecordedTypeArgument &r_argument) const {
+		if (r_argument.kind == FSConformanceRegistry::RecordedTypeArgument::SCRIPT_CLASS) {
+			r_argument.script_fqcn = rewrite_identity(r_argument.script_fqcn);
+			r_argument.script_global_name = rewrite_identity(r_argument.script_global_name);
+		}
+		for (FSConformanceRegistry::RecordedTypeArgument &type_argument : r_argument.type_arguments) {
+			rewrite_recorded_type_argument(type_argument);
+		}
+		for (FSConformanceRegistry::RecordedTypeArgument &element_type : r_argument.container_element_types) {
+			rewrite_recorded_type_argument(element_type);
+		}
+	}
+
 	static bool is_type_bearing_hint(PropertyHint p_hint) {
 		switch (p_hint) {
 			case PROPERTY_HINT_RESOURCE_TYPE:
@@ -2823,18 +2839,9 @@ struct FSNameManglerApplication::Transaction::Data {
 				}
 				conformance.trait_name =
 						StringName(rewrite_identity(String(conformance.trait_name)));
-				// A recorded trait argument names a script class by the same identities the target keys
-				// use, so it has to follow them through the rename or the static comparison would
-				// contradict itself in a mangled build.
 				for (FSConformanceRegistry::RecordedTypeArgument &argument :
 						conformance.trait_type_arguments) {
-					if (argument.kind !=
-							FSConformanceRegistry::RecordedTypeArgument::SCRIPT_CLASS) {
-						continue;
-					}
-					argument.script_fqcn = rewrite_identity(argument.script_fqcn);
-					argument.script_global_name =
-							rewrite_identity(argument.script_global_name);
+					rewrite_recorded_type_argument(argument);
 				}
 				FSConformanceRegistry::WitnessMap transformed_witnesses;
 				for (const KeyValue<StringName, FSParser::FunctionNode *> &witness :

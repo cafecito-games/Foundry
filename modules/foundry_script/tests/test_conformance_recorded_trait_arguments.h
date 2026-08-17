@@ -283,7 +283,9 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A recorded argument the r
 		handle.is_type_handle_annotation = true;
 		CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(recorded, handle));
 	}
-	SUBCASE("a typed container destination") {
+	SUBCASE("an unspecialized recorded side against a typed container destination") {
+		// A bare `Array` states nothing about the elements the destination declares, so the differing
+		// component count is an absence of evidence rather than a conflict.
 		FSParser::DataType typed_array = make_builtin(Variant::ARRAY);
 		typed_array.set_container_element_type(0, make_builtin(Variant::STRING));
 		RecordedTypeArgument array_recorded;
@@ -291,10 +293,23 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A recorded argument the r
 		array_recorded.builtin_type = Variant::ARRAY;
 		CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(array_recorded, typed_array));
 	}
-	SUBCASE("a specialized generic destination") {
-		FSParser::DataType specialized = make_builtin(Variant::STRING);
-		specialized.type_arguments.push_back(make_builtin(Variant::INT));
-		CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(recorded, specialized));
+	SUBCASE("a component the recorded form cannot identify") {
+		// The container's own identity agrees and its element has no flattened identity, so the
+		// composite as a whole contradicts nothing.
+		FSParser::DataType tuple_element;
+		tuple_element.kind = FSParser::DataType::TUPLE;
+		tuple_element.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		FSParser::DataType recorded_array_type = make_builtin(Variant::ARRAY);
+		recorded_array_type.set_container_element_type(0, tuple_element);
+		const RecordedTypeArgument array_recorded =
+				FSConformanceRegistry::reduce_type_argument(recorded_array_type);
+		REQUIRE_EQ(array_recorded.kind, RecordedTypeArgument::BUILTIN);
+		REQUIRE_EQ(array_recorded.container_element_types.size(), 1);
+		REQUIRE_EQ(array_recorded.container_element_types[0].kind, RecordedTypeArgument::UNKNOWN);
+
+		FSParser::DataType typed_array = make_builtin(Variant::ARRAY);
+		typed_array.set_container_element_type(0, make_builtin(Variant::STRING));
+		CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(array_recorded, typed_array));
 	}
 	SUBCASE("a callable destination") {
 		FSParser::DataType callable = make_builtin(Variant::CALLABLE);
@@ -304,6 +319,28 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A recorded argument the r
 		callable_recorded.builtin_type = Variant::CALLABLE;
 		CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(callable_recorded, callable));
 	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A composite recorded argument is compared component by component") {
+	FSParser::DataType recorded_array_type = make_builtin(Variant::ARRAY);
+	recorded_array_type.set_container_element_type(0, make_builtin(Variant::INT));
+	const RecordedTypeArgument recorded = FSConformanceRegistry::reduce_type_argument(recorded_array_type);
+	REQUIRE_EQ(recorded.kind, RecordedTypeArgument::BUILTIN);
+	REQUIRE_EQ(recorded.builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(recorded.container_element_types.size(), 1);
+	CHECK_EQ(recorded.container_element_types[0].kind, RecordedTypeArgument::BUILTIN);
+	CHECK_EQ(recorded.container_element_types[0].builtin_type, Variant::INT);
+
+	FSParser::DataType conflicting = make_builtin(Variant::ARRAY);
+	conflicting.set_container_element_type(0, make_builtin(Variant::STRING));
+	CHECK(FSTypeCompatibility::recorded_argument_conflicts(recorded, conflicting));
+
+	FSParser::DataType agreeing = make_builtin(Variant::ARRAY);
+	agreeing.set_container_element_type(0, make_builtin(Variant::INT));
+	CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(recorded, agreeing));
+
+	// A component states nothing when the destination declares none at all.
+	CHECK_FALSE(FSTypeCompatibility::recorded_argument_conflicts(recorded, make_builtin(Variant::ARRAY)));
 }
 
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A recorded builtin argument without a declared width agrees with both widths") {

@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 19: Trait "Keeper" is already applied with type arguments ("Pair[int, V]") by "Base"; "Child" cannot re-apply it with ("Pair[String, V]").

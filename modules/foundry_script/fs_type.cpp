@@ -572,37 +572,70 @@ static bool _recorded_script_identities_intersect(const FSConformanceRegistry::R
 	return false;
 }
 
-// True only when the recorded argument and the expected argument are both confidently identified and
-// name different types. Anything the two representations cannot compare with certainty is reported as
-// no evidence, never as a conflict: a false rejection here would break the gradual store rule this
-// whole relation rests on.
-static bool _recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
-		const FSParser::DataType &p_expected) {
+// True only when two recorded arguments are both confidently identified and name different types.
+// Anything this representation cannot compare with certainty is reported as no evidence, never as a
+// conflict: a false rejection here would break the gradual store rule this whole relation rests on.
+//
+// A composite is compared component by component, so `Array[int]` contradicts `Array[String]` while
+// `Array[SomeTuple]` -- whose element has no flattened identity -- still contradicts nothing.
+static bool _recorded_arguments_disagree(const FSConformanceRegistry::RecordedTypeArgument &p_left,
+		const FSConformanceRegistry::RecordedTypeArgument &p_right, int p_depth = 0) {
 	using RecordedTypeArgument = FSConformanceRegistry::RecordedTypeArgument;
-	if (p_recorded.kind == RecordedTypeArgument::UNKNOWN) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
 	}
-	const RecordedTypeArgument expected = FSConformanceRegistry::reduce_type_argument(p_expected);
-	if (expected.kind == RecordedTypeArgument::UNKNOWN) {
+	if (p_left.kind == RecordedTypeArgument::UNKNOWN || p_right.kind == RecordedTypeArgument::UNKNOWN) {
 		return false;
 	}
-	if (p_recorded.kind != expected.kind || p_recorded.is_nullable != expected.is_nullable) {
+	if (p_left.kind != p_right.kind || p_left.is_nullable != p_right.is_nullable) {
 		return true;
 	}
-	switch (p_recorded.kind) {
+	switch (p_left.kind) {
 		case RecordedTypeArgument::BUILTIN:
 			// Width-sensitive: `int` and `long` share the `Variant::INT` carrier and the runtime already
 			// tells them apart. A side that declared no width agrees with both.
-			return p_recorded.builtin_type != expected.builtin_type ||
-					!numeric_types_agree(p_recorded.numeric_type, expected.numeric_type);
+			if (p_left.builtin_type != p_right.builtin_type ||
+					!numeric_types_agree(p_left.numeric_type, p_right.numeric_type)) {
+				return true;
+			}
+			break;
 		case RecordedTypeArgument::NATIVE_CLASS:
-			return p_recorded.native_class != expected.native_class;
+			if (p_left.native_class != p_right.native_class) {
+				return true;
+			}
+			break;
 		case RecordedTypeArgument::SCRIPT_CLASS:
-			return !_recorded_script_identities_intersect(p_recorded, expected);
+			if (!_recorded_script_identities_intersect(p_left, p_right)) {
+				return true;
+			}
+			break;
 		case RecordedTypeArgument::UNKNOWN:
 			break;
 	}
+
+	// A differing component count is an absence of evidence, exactly like an unspecialized side: a
+	// bare `Array` states nothing about the elements an `Array[int]` declares.
+	if (p_left.type_arguments.size() == p_right.type_arguments.size()) {
+		for (int i = 0; i < p_left.type_arguments.size(); i++) {
+			if (_recorded_arguments_disagree(p_left.type_arguments[i], p_right.type_arguments[i], p_depth + 1)) {
+				return true;
+			}
+		}
+	}
+	if (p_left.container_element_types.size() == p_right.container_element_types.size()) {
+		for (int i = 0; i < p_left.container_element_types.size(); i++) {
+			if (_recorded_arguments_disagree(p_left.container_element_types[i], p_right.container_element_types[i],
+						p_depth + 1)) {
+				return true;
+			}
+		}
+	}
 	return false;
+}
+
+static bool _recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
+		const FSParser::DataType &p_expected) {
+	return _recorded_arguments_disagree(p_recorded, FSConformanceRegistry::reduce_type_argument(p_expected));
 }
 
 // True when the recorded vector contradicts the arguments the destination declares. An arity that
@@ -1245,12 +1278,14 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				if (_project_class_trait_arguments(p_source, p_target.class_type, projected)) {
 					if (projected.size() == p_target.type_arguments.size()) {
 						for (int i = 0; i < projected.size(); i++) {
-							if (!projected[i].is_set() || _datatype_names_any_type_parameter(projected[i])) {
-								// The conformance binds this position to something no value reifies -- an
-								// unbound parameter, or `Self` -- so it proves nothing here.
+							if (!projected[i].is_set()) {
 								continue;
 							}
-							if (!_datatype_invariant_equal(projected[i], p_target.type_arguments[i])) {
+							// Knownness is per component, not per position: a binding such as
+							// `Keeper[Pair[int, U]]` states its first component and leaves the second on an
+							// unreified parameter, so the first is compared and only the second stays open.
+							if (compare_projected_argument(projected[i], p_target.type_arguments[i]) ==
+									ArgumentEvidence::CONFLICT) {
 								result.compatible = false;
 								break;
 							}
@@ -1853,4 +1888,164 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 		}
 	}
 	return true;
+}
+
+// Sub-structure the evidence comparison below does not traverse: union members, whose identity is a
+// whole-vector comparison, and tagged-union case payloads, which it never reads. A type parameter
+// inside one of those makes the node itself unknown rather than comparable, which is what keeps the
+// per-component comparison strictly more precise than the whole-position erasure it replaced. Without
+// it, a parameter-bearing union member that used to erase its position would start rejecting along a
+// dimension this comparison cannot actually reason about.
+static bool _evidence_node_is_untraversably_open(const FSParser::DataType &p_type) {
+	for (const FSParser::DataType &member : p_type.union_members) {
+		if (_datatype_names_any_type_parameter(member)) {
+			return true;
+		}
+	}
+	for (const KeyValue<StringName, FSParser::DataType::EnumCasePayload> &payload : p_type.enum_case_payloads) {
+		for (const FSParser::DataType &field_type : payload.value.field_types) {
+			if (_datatype_names_any_type_parameter(field_type)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static FSTypeCompatibility::ArgumentEvidence _combine_evidence(FSTypeCompatibility::ArgumentEvidence p_current,
+		FSTypeCompatibility::ArgumentEvidence p_next) {
+	if (p_current == FSTypeCompatibility::ArgumentEvidence::CONFLICT ||
+			p_next == FSTypeCompatibility::ArgumentEvidence::CONFLICT) {
+		return FSTypeCompatibility::ArgumentEvidence::CONFLICT;
+	}
+	if (p_current == FSTypeCompatibility::ArgumentEvidence::UNKNOWN ||
+			p_next == FSTypeCompatibility::ArgumentEvidence::UNKNOWN) {
+		return FSTypeCompatibility::ArgumentEvidence::UNKNOWN;
+	}
+	return FSTypeCompatibility::ArgumentEvidence::MATCH;
+}
+
+// The tri-state twin of `_datatype_invariant_equal()`: the same shallow gate and per-kind identity,
+// the same recursion, but a node that names a type parameter reports no evidence for its own subtree
+// instead of erasing the whole position. `p_b_is_open` says whether the second side may report
+// unknown too; with it false the second side is a destination's own written argument and is compared
+// literally, so a concrete value entering a `Keeper[X]` slot stays a conflict.
+static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FSParser::DataType &p_a,
+		const FSParser::DataType &p_b, bool p_b_is_open, int p_depth) {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return ArgumentEvidence::UNKNOWN;
+	}
+	if (!p_a.is_set() || !p_b.is_set()) {
+		return ArgumentEvidence::UNKNOWN;
+	}
+
+	const bool a_is_parameter = p_a.kind == FSParser::DataType::TYPE_PARAMETER;
+	const bool b_is_parameter = p_b.kind == FSParser::DataType::TYPE_PARAMETER;
+	if (p_b_is_open && a_is_parameter && b_is_parameter) {
+		// Two open sides naming the same parameter agree wherever they are instantiated; naming
+		// different ones proves nothing, because the enclosing class may still instantiate them
+		// identically.
+		return _datatype_invariant_equal(p_a, p_b) ? ArgumentEvidence::MATCH : ArgumentEvidence::UNKNOWN;
+	}
+	// A bounded parameter still admits every subtype of its bound, so the bound is not evidence about
+	// the type actually reified there and the whole subtree stays open.
+	if (a_is_parameter || (p_b_is_open && b_is_parameter)) {
+		return ArgumentEvidence::UNKNOWN;
+	}
+	if (_evidence_node_is_untraversably_open(p_a) || (p_b_is_open && _evidence_node_is_untraversably_open(p_b))) {
+		return ArgumentEvidence::UNKNOWN;
+	}
+
+	if (p_a.kind != p_b.kind ||
+			p_a.is_nullable != p_b.is_nullable ||
+			p_a.is_meta_type != p_b.is_meta_type ||
+			p_a.is_type_handle_annotation != p_b.is_type_handle_annotation ||
+			p_a.has_method_signature != p_b.has_method_signature ||
+			p_a.signature_is_async != p_b.signature_is_async ||
+			p_a.container_element_types.size() != p_b.container_element_types.size() ||
+			p_a.type_arguments.size() != p_b.type_arguments.size() ||
+			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
+			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
+			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
+		return ArgumentEvidence::CONFLICT;
+	}
+
+	bool identical = false;
+	switch (p_a.kind) {
+		case FSParser::DataType::VARIANT:
+			identical = true;
+			break;
+		case FSParser::DataType::BUILTIN:
+			identical = p_a.builtin_type == p_b.builtin_type && numeric_types_agree(p_a.numeric_type, p_b.numeric_type);
+			break;
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::ENUM:
+			identical = p_a.native_type == p_b.native_type;
+			break;
+		case FSParser::DataType::SCRIPT:
+			identical = p_a.script_type == p_b.script_type;
+			break;
+		case FSParser::DataType::CLASS:
+			identical = p_a.class_type == p_b.class_type ||
+					(p_a.class_type != nullptr && p_b.class_type != nullptr &&
+							p_a.class_type->fqcn == p_b.class_type->fqcn);
+			break;
+		case FSParser::DataType::TYPE_PARAMETER:
+			identical = p_a.type_parameter_name == p_b.type_parameter_name &&
+					p_a.type_parameter_scope == p_b.type_parameter_scope &&
+					p_a.type_parameter_index == p_b.type_parameter_index;
+			break;
+		case FSParser::DataType::TUPLE:
+			identical = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path;
+			break;
+		case FSParser::DataType::UNION:
+			identical = p_a.union_members == p_b.union_members;
+			break;
+		case FSParser::DataType::RESOLVING:
+		case FSParser::DataType::UNRESOLVED:
+			break;
+	}
+	if (!identical) {
+		return ArgumentEvidence::CONFLICT;
+	}
+
+	ArgumentEvidence evidence = ArgumentEvidence::MATCH;
+	const Vector<FSParser::DataType> *a_slots[] = {
+		&p_a.type_parameter_bound,
+		&p_a.container_element_types,
+		&p_a.type_arguments,
+		&p_a.method_parameter_types,
+		&p_a.method_return_type,
+		&p_a.method_rest_parameter_type,
+	};
+	const Vector<FSParser::DataType> *b_slots[] = {
+		&p_b.type_parameter_bound,
+		&p_b.container_element_types,
+		&p_b.type_arguments,
+		&p_b.method_parameter_types,
+		&p_b.method_return_type,
+		&p_b.method_rest_parameter_type,
+	};
+	for (int slot = 0; slot < 6; slot++) {
+		for (int i = 0; i < a_slots[slot]->size(); i++) {
+			evidence = _combine_evidence(evidence,
+					_compare_datatype_evidence((*a_slots[slot])[i], (*b_slots[slot])[i], p_b_is_open, p_depth + 1));
+			if (evidence == ArgumentEvidence::CONFLICT) {
+				return evidence;
+			}
+		}
+	}
+	return evidence;
+}
+
+FSTypeCompatibility::ArgumentEvidence FSTypeCompatibility::compare_projected_argument(
+		const FSParser::DataType &p_projected, const FSParser::DataType &p_expected) {
+	return _compare_datatype_evidence(p_projected, p_expected, false, 0);
+}
+
+FSTypeCompatibility::ArgumentEvidence FSTypeCompatibility::compare_open_arguments(const FSParser::DataType &p_left,
+		const FSParser::DataType &p_right) {
+	return _compare_datatype_evidence(p_left, p_right, true, 0);
 }

@@ -1,5 +1,6 @@
-# A composite argument has no flattened identity the recorded form can compare with certainty, so it
-# contributes no evidence for its whole position and the store stays accepted.
+# A composite recorded argument keeps its components, so a conformance that recorded `Array[int]`
+# contradicts a destination declaring `Array[String]` even though the composite as a whole has no
+# single flattened identity.
 trait RclKeeper[T]:
 	abstract func keep(item: T) -> T
 
