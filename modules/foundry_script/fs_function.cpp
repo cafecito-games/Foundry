@@ -823,7 +823,21 @@ void FSFunction::setup_runtime_pointers() {
 
 	_lambdas_count = lambdas.size();
 	_lambdas_ptr = lambdas.is_empty() ? nullptr : lambdas.ptrw();
+
+	// Derived from the constants just published, so it is rebuilt whenever they are and can never
+	// describe a constant table the function no longer has.
+	_build_predecoded_tuple_shapes();
 }
+
+#ifdef TOOLS_ENABLED
+const FSDataType *FSFunction::get_predecoded_tuple_shape_for_constant(int p_constant_index) const {
+	if (p_constant_index < 0 || p_constant_index >= _predecoded_tuple_shape_index_count) {
+		return nullptr;
+	}
+	const int shape_index = _predecoded_tuple_shape_indices_ptr[p_constant_index];
+	return shape_index < 0 ? nullptr : &_predecoded_tuple_shapes_ptr[shape_index];
+}
+#endif // TOOLS_ENABLED
 
 struct _GDFKC {
 	int order = 0;

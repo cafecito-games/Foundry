@@ -638,6 +638,103 @@ static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const 
 	return true;
 }
 
+// Whether a descriptor decodes to the same shape no matter which frame executes the instruction.
+//
+// Exactly two node kinds are answered by the running frame: a `type_parameter_index` node resolves
+// against what the receiver reified for the declaring class, and an `is_self_type` node against the
+// frame's receiver. Either one anywhere in the tree -- at the root, in a tuple element, or below a
+// container node's element or type-argument list, which is where `_container_type_from_descriptor()`
+// keeps recursing -- makes the whole descriptor frame-dependent, because a shape is decoded whole.
+static bool _tuple_descriptor_is_receiver_independent(const Variant &p_descriptor, int p_depth) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		// Deeper than anything the compiler emits. The guard also terminates the walk on a
+		// self-referential Dictionary in untrusted compiled data, leaving that descriptor on the
+		// per-execution path rather than looping here.
+		return false;
+	}
+	if (p_descriptor.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	const Dictionary descriptor = p_descriptor;
+	// A descriptor is always a plain, untyped Dictionary. A constant that is a *key-typed* Dictionary is
+	// script data, not a descriptor, and it must be rejected before any key is read: looking up a String
+	// key in a Dictionary keyed by something else is itself a reported failure.
+	if (descriptor.is_typed_key()) {
+		return false;
+	}
+	if (descriptor.get("type_parameter_index", Variant()).get_type() == Variant::INT) {
+		return false;
+	}
+	if (descriptor.get("is_self_type", false)) {
+		return false;
+	}
+	const Array element_types = descriptor.get("element_types", Array());
+	for (int i = 0; i < element_types.size(); i++) {
+		if (!_tuple_descriptor_is_receiver_independent(element_types[i], p_depth + 1)) {
+			return false;
+		}
+	}
+	const Array type_arguments = descriptor.get("type_arguments", Array());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		if (!_tuple_descriptor_is_receiver_independent(type_arguments[i], p_depth + 1)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Decodes, once per function, every tuple descriptor constant whose shape cannot depend on the
+// running frame. The decode is the same call the store would make per execution, with the receiver
+// arguments and the frame binding that a frame-independent descriptor provably never consults, so a
+// predecoded shape is identical to the one the per-execution path would have rebuilt.
+//
+// Keyed by constant index, so two instructions compiled against the same slot shape -- a local's
+// initializer and the return that hands it back, say -- share one decoded answer.
+void FSFunction::_build_predecoded_tuple_shapes() {
+	_predecoded_tuple_shape_indices.clear();
+	_predecoded_tuple_shapes.clear();
+	_predecoded_tuple_shape_indices_ptr = nullptr;
+	_predecoded_tuple_shapes_ptr = nullptr;
+	_predecoded_tuple_shape_index_count = 0;
+
+	for (int constant_index = 0; constant_index < _constant_count; constant_index++) {
+		const Variant &constant = _constants_ptr[constant_index];
+		// The classification runs first because it is also what establishes that every node reached from
+		// here is a plain Dictionary whose keys can be read at all.
+		if (!_tuple_descriptor_is_receiver_independent(constant, 0)) {
+			continue;
+		}
+		// Only a tuple slot's descriptor carries the `is_tuple` marker at its root, so no other constant
+		// is decoded here.
+		const Dictionary descriptor = constant;
+		if (!descriptor.get("is_tuple", false)) {
+			continue;
+		}
+		FSDataType shape;
+		if (!_data_type_from_tuple_descriptor(constant, FrameSelfBinding(), Vector<ProjectedContainerType>(), shape)) {
+			// Only a `Self` node can fail, and none is reachable here; a descriptor that fails anyway keeps
+			// the per-execution path, which reports the error against the frame that ran it.
+			continue;
+		}
+		if (_predecoded_tuple_shape_indices.is_empty()) {
+			_predecoded_tuple_shape_indices.resize(_constant_count);
+			int *indices = _predecoded_tuple_shape_indices.ptrw();
+			for (int i = 0; i < _constant_count; i++) {
+				indices[i] = -1;
+			}
+		}
+		_predecoded_tuple_shape_indices.write[constant_index] = _predecoded_tuple_shapes.size();
+		_predecoded_tuple_shapes.push_back(shape);
+	}
+
+	if (_predecoded_tuple_shapes.is_empty()) {
+		return;
+	}
+	_predecoded_tuple_shape_indices_ptr = _predecoded_tuple_shape_indices.ptr();
+	_predecoded_tuple_shapes_ptr = _predecoded_tuple_shapes.ptr();
+	_predecoded_tuple_shape_index_count = _predecoded_tuple_shape_indices.size();
+}
+
 // A tuple value's canonical runtime carrier is what `OPCODE_CONSTRUCT_TUPLE` builds: an *untyped*,
 // *read-only* Array. That identity is what gives tuples their value semantics -- no aliasing
 // mutation, content hashing, usability as a Dictionary key -- and exactly one runtime representation
@@ -3472,6 +3569,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(type_info, 2);
 				const int arity = _code_ptr[ip + 4];
 
+				// A shape that names neither a type parameter nor `Self` anywhere is the same on every
+				// execution, so it was decoded once when the function was finalized and is used as is: no
+				// receiver projection, no descriptor walk, and no element vector built per store.
+				const FSDataType *predecoded_tuple_type = _predecoded_tuple_shape(_code_ptr[ip + 3]);
+
 				// A class type parameter is reified onto the instance, but a function body compiled once in
 				// the declaring class sees only the parameter. An element naming one therefore reaches here
 				// unresolved, and the receiver supplies the argument: the leaf script maps every ancestor's
@@ -3480,18 +3582,21 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				//
 				// An unspecialized receiver (`Crate.new()`), or a chain step that never resolved, leaves an
 				// element with no argument, and only that element degrades to accepting anything.
-				Vector<ProjectedContainerType> receiver_arguments;
-				if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
-					p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
-				}
+				FSDataType decoded_tuple_type;
+				if (predecoded_tuple_type == nullptr) {
+					Vector<ProjectedContainerType> receiver_arguments;
+					if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+						p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
+					}
 
-				// A tuple slot erases to a bare Array in the address type, so the declared shape reaches
-				// here as the same descriptor an `is` test is compiled against and is rebuilt the same way.
-				FSDataType tuple_type;
-				if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, receiver_arguments, tuple_type))) {
-					err_text = _missing_static_self_error(name);
-					OPCODE_BREAK;
+					// A tuple slot erases to a bare Array in the address type, so the declared shape reaches
+					// here as the same descriptor an `is` test is compiled against and is rebuilt the same way.
+					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, receiver_arguments, decoded_tuple_type))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
 				}
+				const FSDataType &tuple_type = predecoded_tuple_type != nullptr ? *predecoded_tuple_type : decoded_tuple_type;
 
 				// The arity operand is the cheap rejection, exactly as in the type test: only a candidate
 				// of the right length pays for the per-element walk. A non-Array value falls through to the

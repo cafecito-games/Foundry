@@ -1075,6 +1075,38 @@ private:
 	// Mirror of `has_self_referencing_signature()`, refreshed by `setup_runtime_pointers()`.
 	bool _references_self_types = false;
 
+	// A tuple slot's declared shape travels to run time as a descriptor constant, and rebuilding it on
+	// every store walks a Dictionary tree and allocates a fresh element vector. A descriptor whose whole
+	// tree names neither a type parameter nor `Self` decodes to the same shape on every execution, so it
+	// is decoded once here and shared by every instruction storing through that constant. A
+	// receiver-dependent descriptor has no frame-independent answer and keeps the per-execution path.
+	//
+	// `_predecoded_tuple_shape_indices` is indexed by constant index and holds an index into
+	// `_predecoded_tuple_shapes`, or -1 for a constant that is not a receiver-independent tuple
+	// descriptor. Both are derived, never serialized, and immutable once `setup_runtime_pointers()`
+	// finishes, so concurrent calls into the same function only ever read them.
+	Vector<int> _predecoded_tuple_shape_indices;
+	Vector<FSDataType> _predecoded_tuple_shapes;
+	const int *_predecoded_tuple_shape_indices_ptr = nullptr;
+	const FSDataType *_predecoded_tuple_shapes_ptr = nullptr;
+	int _predecoded_tuple_shape_index_count = 0;
+
+	void _build_predecoded_tuple_shapes();
+
+	// The predecoded shape for a tuple store's descriptor operand, or `nullptr` when the descriptor is
+	// receiver-dependent and the caller must decode it against the running frame.
+	_FORCE_INLINE_ const FSDataType *_predecoded_tuple_shape(int p_address) const {
+		if (((p_address & ADDR_TYPE_MASK) >> ADDR_BITS) != ADDR_TYPE_CONSTANT) {
+			return nullptr;
+		}
+		const int constant_index = p_address & ADDR_MASK;
+		if (constant_index >= _predecoded_tuple_shape_index_count) {
+			return nullptr;
+		}
+		const int shape_index = _predecoded_tuple_shape_indices_ptr[constant_index];
+		return shape_index < 0 ? nullptr : &_predecoded_tuple_shapes_ptr[shape_index];
+	}
+
 	static thread_local const FSStaticSelfContext *_current_static_self_context;
 
 	// Scoped installation of the running frame's static receiver descriptor. Restores the caller's
@@ -1171,6 +1203,12 @@ public:
 	_FORCE_INLINE_ const Vector<FSFunction *> &get_lambdas() const { return lambdas; }
 	_FORCE_INLINE_ const Vector<int> &get_default_argument_offsets() const { return default_arguments; }
 	_FORCE_INLINE_ int get_instruction_args_size() const { return _instruction_args_size; }
+
+	// How many of this function's descriptor constants were decoded once because their shape cannot
+	// depend on the running frame, and the shape decoded for a given constant (or `nullptr` when that
+	// constant is receiver-dependent or is not a tuple descriptor at all).
+	_FORCE_INLINE_ int get_predecoded_tuple_shape_count() const { return _predecoded_tuple_shapes.size(); }
+	const FSDataType *get_predecoded_tuple_shape_for_constant(int p_constant_index) const;
 #endif // TOOLS_ENABLED
 
 	// `p_static_self` describes the exact class handle a static call was made through. The pointed-to
