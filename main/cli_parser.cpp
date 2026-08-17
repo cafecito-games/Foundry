@@ -108,6 +108,12 @@ static bool require_value(CLIParseState &r_state, const String &p_option, String
 	return true;
 }
 
+// Value of an inline `--option=value` token. Everything after the *first* separator is
+// the value, so a filesystem path containing an equals sign survives intact.
+static String inline_option_value(const String &p_arg) {
+	return p_arg.substr(p_arg.find_char('=') + 1);
+}
+
 static void append_trust(PackedStringArray &r_args, bool p_trusted) {
 	if (p_trusted && !has_arg(r_args, "--foundry-build-trusted")) {
 		append(r_args, "--foundry-build-trusted");
@@ -789,7 +795,7 @@ static void parse_test_benchmark(CLIParseState &r_state) {
 					return;
 				}
 			} else {
-				r_state.result.invocation.benchmark_output = arg.get_slice("=", 1);
+				r_state.result.invocation.benchmark_output = inline_option_value(arg);
 				r_state.index++;
 			}
 		} else if (arg == "--profile") {
@@ -801,7 +807,7 @@ static void parse_test_benchmark(CLIParseState &r_state) {
 					return;
 				}
 			} else {
-				r_state.result.invocation.benchmark_profile_output = arg.get_slice("=", 1);
+				r_state.result.invocation.benchmark_profile_output = inline_option_value(arg);
 				r_state.index++;
 			}
 			// A sidecar path is meaningless without the pass that fills it.

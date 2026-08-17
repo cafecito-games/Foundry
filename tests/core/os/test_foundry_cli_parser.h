@@ -606,6 +606,19 @@ TEST_CASE("[FoundryCLIParser] Test benchmark profile output implies the profile 
 	CHECK_EQ(result.invocation.benchmark_profile_output, "profile.json");
 }
 
+TEST_CASE("[FoundryCLIParser] Test benchmark keeps an equals sign inside an inline artifact path") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+			"--output=/tmp/run=1/bench.json",
+			"--profile-output=/tmp/run=1/profile.json",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.benchmark_output, "/tmp/run=1/bench.json");
+	CHECK_EQ(result.invocation.benchmark_profile_output, "/tmp/run=1/profile.json");
+}
+
 TEST_CASE("[FoundryCLIParser] Test benchmark rejects a second corpus directory") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",
