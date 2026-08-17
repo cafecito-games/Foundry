@@ -1147,6 +1147,26 @@ container contents, so an empty `Crate[int]` and a full one answer alike.
   answers for its values, by the same rules.
 - `null` is never an instance or a class handle, so it fails every such test.
 
+##### Specialized types at a store boundary
+
+A store asks a weaker question than `is` does, and the two answers differ for a value whose type
+arguments were never recorded.
+
+- A specialized type in a **declaration** — a variable, constant, parameter, member, return type,
+  typed-container element, or tuple element — checks the value's nominal identity unconditionally and
+  its type arguments only against the evidence the value carries. A value whose arguments for that
+  class or trait are **absent** is accepted; a value whose arguments are **known and different** is
+  rejected.
+- This is the gradual rule, and it holds whether the source is a `Variant` or an ordinary
+  argument-erased static type: `var slot: Crate[int] = Crate.new()` is accepted, and so is the same
+  store reached through a `Variant`.
+- `is` and `as` are therefore **strictly stronger** than the declaration. `value is Crate[int]` is
+  false for a value the declaration `var slot: Crate[int] = value` accepts. A guarded test is the way
+  to demand the arguments.
+- The rule is the same for a class target and for a trait target, and the same in the analyzer and at
+  run time: a flow the analyzer accepts is a flow the runtime accepts, and evidence that contradicts
+  the declaration is rejected at both.
+
 #### `await`
 
 ```ebnf
