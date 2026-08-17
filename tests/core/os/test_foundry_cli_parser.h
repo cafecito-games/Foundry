@@ -619,6 +619,72 @@ TEST_CASE("[FoundryCLIParser] Test benchmark keeps an equals sign inside an inli
 	CHECK_EQ(result.invocation.benchmark_profile_output, "/tmp/run=1/profile.json");
 }
 
+TEST_CASE("[FoundryCLIParser] Test run keeps an equals sign inside an inline progress file path") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--progress-file=/tmp/run=1/progress.jsonl",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.test_progress_file, "/tmp/run=1/progress.jsonl");
+}
+
+TEST_CASE("[FoundryCLIParser] Test run validates the whole inline value of a constrained option") {
+	// Truncating at the second separator would let these malformed values pass validation.
+	FoundryCLIParser::ParseResult shard = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--shard=1/2=junk",
+	}));
+	CHECK_FALSE(shard.ok);
+	CHECK(shard.error.contains("1/2=junk"));
+
+	FoundryCLIParser::ParseResult format = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--progress-format=jsonl=junk",
+	}));
+	CHECK_FALSE(format.ok);
+	CHECK(format.error.contains("jsonl=junk"));
+
+	FoundryCLIParser::ParseResult heartbeat = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--progress-heartbeat-seconds=30=junk",
+	}));
+	CHECK_FALSE(heartbeat.ok);
+	CHECK(heartbeat.error.contains("30=junk"));
+}
+
+TEST_CASE("[FoundryCLIParser] Editor open keeps an equals sign inside an inline workflow path") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"open",
+			"--project",
+			"/tmp/project",
+			"--automation",
+			"--automation-run-workflow=/tmp/run=1/workflow.json",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.automation_run_workflow, "/tmp/run=1/workflow.json");
+}
+
+TEST_CASE("[FoundryCLIParser] Editor open validates the whole inline automation transport value") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"open",
+			"--automation-transport=mcp=junk",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("mcp=junk"));
+}
+
 TEST_CASE("[FoundryCLIParser] Test benchmark rejects a second corpus directory") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",
