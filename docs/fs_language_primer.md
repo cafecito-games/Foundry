@@ -300,8 +300,9 @@ match value:
 - A plain enum is an **open** domain: it is carried by an integer, and a cast such as `99 as Level`
   puts an undeclared value in an enum-typed slot with only a warning. Listing every declared member,
   or testing `value is Level`, therefore does not make the `match` exhaustive — only a branch that
-  cannot fail does: an unguarded `_`, a bind, or `value is Variant`. Tagged unions and `bool` are
-  closed domains and are covered by handling every case or both values.
+  cannot fail does: an unguarded `_`, a bind, `value is Variant`, or a test against the enum's whole
+  integer carrier (`value is long`), which the undeclared values pass too. Tagged unions and `bool`
+  are closed domains and are covered by handling every case or both values.
 
 ### Types
 

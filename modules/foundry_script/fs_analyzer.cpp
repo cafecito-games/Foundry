@@ -5457,13 +5457,31 @@ void FSAnalyzer::resolve_match(FSParser::MatchNode *p_match) {
 	check_match_exhaustiveness(p_match);
 }
 
+// True when `is T` accepts every value an integer carrier holds. `OPCODE_TYPE_TEST_BUILTIN` checks the
+// Variant carrier and then the value's magnitude, so only a descriptor that pins no width -- which
+// tests the carrier alone -- or the carrier's own 64-bit width admits the whole carrier. A narrower
+// width is a range test that some carrier values fail.
+static bool _type_test_covers_integer_carrier(const FSParser::DataType &p_test_type, Variant::Type p_carrier) {
+	if (p_carrier != Variant::INT && p_carrier != Variant::UINT) {
+		return false;
+	}
+	if (p_test_type.kind != FSParser::DataType::BUILTIN || p_test_type.builtin_type != p_carrier) {
+		return false;
+	}
+	return p_test_type.numeric_type == NumericType::NONE ||
+			p_test_type.numeric_type == numeric_type_wide_for_carrier(p_carrier);
+}
+
 // True when `value is T` on the match subject accepts every value the subject can hold, which makes
-// the branch always match. Deciding that needs a domain whose membership is settled statically, so it
-// is limited to the closed domains the exhaustiveness checker enumerates -- `bool` and a tagged union
-// tested against its own type -- plus `Variant`, which the compiler lowers to an unconditional true.
-// A partial test over an open domain, such as `is int` on an `int | String`
-// subject, is deliberately left uncovered: proving those needs the residual-set modeling match-arm
-// analysis still defers, and under-approximating here keeps every answer sound.
+// the branch always match. Deciding that needs a test whose acceptance is settled statically, which
+// holds in three shapes: `Variant`, which the compiler lowers to an unconditional true; a closed
+// domain the exhaustiveness checker enumerates, tested against its own type -- `bool` and a tagged
+// union; and a plain enum tested against the whole of its integer carrier, which admits the undeclared
+// values that keep that domain open. Every other test over an open domain is deliberately left
+// uncovered -- `value is Level` on a plain enum, which is a membership test over the declared values,
+// a narrower carrier width such as `value is int`, and a partial test such as `is int` on an
+// `int | String` subject: proving those needs the residual-set modeling match-arm analysis still
+// defers, and under-approximating here keeps every answer sound.
 static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_type, const FSParser::DataType &p_subject_type) {
 	if (!p_test_type.is_set() || !p_subject_type.is_set()) {
 		return false;
@@ -5482,11 +5500,13 @@ static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_ty
 	if (p_subject_type.kind == FSParser::DataType::ENUM) {
 		// A plain enum is an open domain: its runtime carrier is an integer, and a cast can put an
 		// undeclared integer in the slot (`99 as Level` warns and proceeds). Such a value fails the
-		// runtime membership test `value is Level` performs, so the test leaves a live no-match path
-		// and proves no coverage. A tagged union's case set is closed, so it still can.
+		// runtime membership test `value is Level` performs, so testing the enum's own type leaves a
+		// live no-match path. Testing the carrier itself is what closes the domain: every value the slot
+		// can hold is an integer of that carrier, undeclared ones included, so nothing escapes.
 		if (!p_subject_type.is_tagged_union) {
-			return false;
+			return _type_test_covers_integer_carrier(p_test_type, p_subject_type.builtin_type);
 		}
+		// A tagged union's case set is closed, so a test against the union's own type does cover it.
 		// `native_type` is what identifies an enum nominally (`Owner::Name`); `enum_type` is only its
 		// simple name, which two unrelated enums can share. `value is Message.Move` names one case, so
 		// it covers that case rather than the whole union.
