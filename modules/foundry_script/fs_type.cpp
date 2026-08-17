@@ -87,12 +87,6 @@ static bool _is_undecidable_type_parameter_target(const FSParser::DataType &p_ty
 // arguments, and for the parameter/return slots of a callable signature, so the leaf rule from a bare
 // `T` destination is applied to every leaf of the shape. A leaf bounded by a `final` class denotes
 // exactly that bound and stays decidable at any depth.
-//
-// A tuple node stops the walk. A tuple destination carries its own store check, which tests the
-// declared shape exactly as the `is` operator does and accepts any value in an element the compiler
-// cannot describe. That is the same allowance the test gives, so a parameter under a tuple is neither
-// more nor less decidable than the erased element the check already waves through, and answering
-// otherwise would make this rule stricter than the check it claims to describe.
 static bool _destination_has_erased_type_parameter(const FSParser::DataType &p_type, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		// A shape this deep cannot be reasoned about usefully; leave the decision to the rules that ran
@@ -100,12 +94,25 @@ static bool _destination_has_erased_type_parameter(const FSParser::DataType &p_t
 		return false;
 	}
 
-	if (p_type.kind == FSParser::DataType::TUPLE) {
-		return false;
-	}
-
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
 		return _is_erased_type_parameter(p_type) && !_is_type_parameter_bounded_by_final_class(p_type);
+	}
+
+	if (p_type.kind == FSParser::DataType::TUPLE) {
+		// A tuple destination is tested element by element, and a parameter named directly by an element
+		// decides that element. A container declared around a parameter inside a tuple is deliberately
+		// left alone: its runtime element typing belongs to its concrete consumer, which is why a
+		// concrete value is accepted into a `(int, Array[T])` destination today. Descending into one here
+		// would answer "undecidable" for a destination the compatibility rules accept.
+		for (const FSParser::DataType &element : p_type.container_element_types) {
+			if (element.kind != FSParser::DataType::TYPE_PARAMETER && element.kind != FSParser::DataType::TUPLE) {
+				continue;
+			}
+			if (_destination_has_erased_type_parameter(element, p_depth + 1)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	const Vector<FSParser::DataType> *nested_slots[] = {
@@ -1286,9 +1293,9 @@ bool FSTypeCompatibility::destination_depends_on_receiver_type_parameter(const F
 //
 // The second half is asked of `_depends_on_receiver_type_parameter()`, the traversal code generation
 // itself uses, rather than of the erasure walk, so a "yes" always names a slot that would have been
-// checked had a receiver existed. The two traversals differ: a tuple slot, a nullable slot, a bare
-// specialized meta-type destination and a callable-signature slot are unchecked with a receiver as
-// well, so answering "undecidable" for them only in a static frame would make the static and the
+// checked had a receiver existed. The two traversals differ: a nullable slot, a bare specialized
+// meta-type destination, a callable-signature slot and a union member are unchecked with a receiver
+// as well, so answering "undecidable" for them only in a static frame would make the static and the
 // instance frame disagree about the same declaration. Closing those shapes is the business of the
 // issues that own them, and it must close them for every frame at once. A leaf bounded by a `final`
 // class is exempt from both halves at every depth: it denotes exactly its bound, which `check()`

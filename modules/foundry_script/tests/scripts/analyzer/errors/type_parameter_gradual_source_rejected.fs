@@ -65,6 +65,15 @@ func dictionary_literal_key[T](value: Variant) -> void:
 	print(kept)
 
 
+# A tuple destination is tested element by element, so an element naming the parameter directly is
+# refused like a bare one. An element that is a container declared around the parameter is not: its
+# runtime element typing belongs to its concrete consumer, and a concrete value is accepted there, so
+# a gradual one stays accepted too. See `runtime/features/tuple_slot_runtime_check.fs`.
+func tuple_element[T](value: Variant) -> void:
+	var kept: (int, T) = value
+	print(kept)
+
+
 func weak_literal_element[T]() -> void:
 	var kept: Array[T] = [loose_int()]
 	print(kept)
@@ -81,4 +90,5 @@ func test():
 	array_literal_element[int]("nope")
 	dictionary_literal_value[int]("nope")
 	dictionary_literal_key[int]("nope")
+	tuple_element[int]((1, 2))
 	weak_literal_element[int]()

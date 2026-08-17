@@ -5225,6 +5225,30 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An erased parameter desti
 		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
 		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
 	}
+	SUBCASE("tuple element") {
+		// No receiver reifies a method-scope parameter, so a tuple element naming one stays unenforced
+		// even though the tuple's other elements are checked.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(parameter);
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
+	}
+	SUBCASE("container inside a tuple element") {
+		// The container's runtime element typing belongs to its concrete consumer, so the tuple check
+		// leaves it alone and a concrete value is accepted into it. The gradual answer has to match.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(make_array_of(parameter));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_instance_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
+	}
 	SUBCASE("no parameter named") {
 		const FSParser::DataType destination = make_array_of(make_dictionary_of(string_type, make_builtin_type(Variant::INT)));
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
@@ -5255,6 +5279,18 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A class parameter destina
 				make_array_of(make_dictionary_of(string_type, make_array_of(parameter)));
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
 		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("tuple element") {
+		// A tuple slot resolves its parameter elements against the receiver, so it answers exactly as a
+		// typed container does.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
 	}
 	SUBCASE("@Self") {
 		// `@Self` denotes the class the frame runs against, which a static frame has too.
@@ -5297,25 +5333,6 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An unchecked class-parame
 	FSParser::ClassNode holder;
 	const FSParser::DataType parameter = make_class_type_parameter(SNAME("T"));
 
-	SUBCASE("tuple slot") {
-		// `OPCODE_ASSIGN_TYPED_TUPLE` checks the declared shape and accepts any value in an element it
-		// cannot describe, so a parameter element -- of either scope -- is left as the check leaves it.
-		FSParser::DataType tuple;
-		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-		tuple.kind = FSParser::DataType::TUPLE;
-		tuple.builtin_type = Variant::ARRAY;
-		tuple.container_element_types.push_back(parameter);
-		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
-
-		FSParser::DataType erased_tuple;
-		erased_tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-		erased_tuple.kind = FSParser::DataType::TUPLE;
-		erased_tuple.builtin_type = Variant::ARRAY;
-		erased_tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
-		erased_tuple.container_element_types.push_back(make_array_of(make_method_type_parameter(SNAME("X"), 0)));
-		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(erased_tuple, make_instance_frame_options()));
-		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(erased_tuple, make_static_frame_options()));
-	}
 	SUBCASE("nullable slot") {
 		FSParser::DataType nullable = parameter;
 		nullable.is_nullable = true;
