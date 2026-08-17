@@ -1400,6 +1400,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Specialized class handles round-trip")
 	type_arguments.push_back(integer_argument);
 	const Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(box_script, type_arguments);
 	REQUIRE(handle.is_valid());
+	CHECK(handle->get_type_name() == "Box[int]");
 
 	BytecodeTestResolver resolver;
 	resolver.scripts.insert(box_script->get_script_path() + "::" + box_script->get_fully_qualified_name(), box_script);
@@ -1409,6 +1410,8 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Specialized class handles round-trip")
 	CHECK(decoded_handle->get_specialized_script() == box_script);
 	REQUIRE(decoded_handle->get_type_arguments().size() == 1);
 	CHECK(decoded_handle->get_type_arguments()[0] == integer_argument);
+	// A decoded handle must diagnose under the same name as the one built from source.
+	CHECK(decoded_handle->get_type_name() == handle->get_type_name());
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] A specialized handle with a freed type-argument script is refused") {

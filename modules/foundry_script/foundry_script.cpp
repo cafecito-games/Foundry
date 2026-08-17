@@ -197,7 +197,12 @@ String FSSpecializedClassHandle::get_type_name() const {
 	}
 	ContainerType type;
 	type.builtin_type = Variant::OBJECT;
-	type.class_name = script->get_instance_base_type();
+	// Display-only descriptor. An inner class has no global name, so without this the renderer would
+	// fall through to the engine instance base and spell `Box[int]` as `RefCounted[int]`. The local
+	// name belongs here and nowhere persistent: in a stored or validated descriptor `class_name` is
+	// also the native compatibility constraint, and a script-local class is not an engine class.
+	const StringName local_name = script->get_local_name();
+	type.class_name = local_name != StringName() ? local_name : script->get_instance_base_type();
 	type.script = script;
 	type.type_arguments = get_type_arguments();
 	return type.get_type_name();
