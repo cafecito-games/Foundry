@@ -294,12 +294,12 @@ static String _specialized_value_type_name(Object *p_object) {
 	return _specialized_script_type_name(evidence.script.ptr(), evidence.type_arguments);
 }
 
-// Names whatever a rejected value actually is. A scripted instance is named by its script and reified
-// arguments, so a specialization mismatch reads as `Pair[int, Node]` rather than as the bare class. An
-// object without a script instance is named by its engine class, which is the identity a retroactive
-// native conformance is recorded against; a builtin falls back to the generic value naming, since it
-// too can reach a trait through the conformance registry.
-static String _returned_value_type_name(const Variant *p_value) {
+// Names whatever a value rejected by a script-typed boundary actually is. A scripted instance is named
+// by its script and reified arguments, so a specialization mismatch reads as `Pair[int, Node]` rather
+// than as the bare class. An object without a script instance is named by its engine class, which is the
+// identity a retroactive native conformance is recorded against; a builtin falls back to the generic
+// value naming, since it too can reach a trait through the conformance registry.
+static String _script_boundary_value_type_name(const Variant *p_value) {
 	if (p_value->get_type() == Variant::OBJECT) {
 		Object *object = p_value->get_validated_object();
 		if (object != nullptr) {
@@ -3316,14 +3316,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(type, 2);
 				FSDataType expected_handle_type;
 				Script *base_type = nullptr;
-				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type))) {
+				Vector<ContainerType> expected_type_arguments;
+				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
 
 				GD_ERR_BREAK(!base_type);
-				FoundryScript *fs_base_type = Object::cast_to<FoundryScript>(base_type);
-				[[maybe_unused]] const bool is_trait_type = fs_base_type != nullptr && fs_base_type->is_trait_type();
 				[[maybe_unused]] const bool is_type_handle = _code_ptr[ip + 4];
 
 #ifdef DEBUG_ENABLED
@@ -3333,55 +3332,32 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 								"' to a variable of type '" + _get_type_handle_type_name(expected_handle_type, base_type) + "'.";
 						OPCODE_BREAK;
 					}
-				} else if (is_trait_type && src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
-					const StringName trait_name = fs_base_type->get_trait_type_name();
-					if (!FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name, true)) {
-						err_text = "Trying to assign value of type '" + Variant::get_type_name(src->get_type()) +
-								"' to a variable of type '" + base_type->get_path().get_file() + "'.";
-						OPCODE_BREAK;
-					}
-				} else if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
-					err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
-					OPCODE_BREAK;
-				} else if (src->get_type() == Variant::OBJECT) {
-					bool was_freed = false;
-					Object *val_obj = src->get_validated_object_with_check(was_freed);
-					if (!val_obj && was_freed) {
-						err_text = "Trying to assign invalid previously freed instance.";
-						OPCODE_BREAK;
-					}
+				} else {
+					// The declared specialization is part of the slot's type, so a nominally correct value
+					// whose reified arguments contradict it is not a value of that type -- the same question
+					// the member store, the call boundary and the return already ask. It is answered here by
+					// the shared structural relation rather than by a second, local rule: that relation owns
+					// the base-script chain walk, declared and inherited `uses`, supertraits, retroactive
+					// script, native and builtin conformance, and the gradual argument comparison in which
+					// only contradicting evidence rejects.
+					FSDataType expected_value_type = expected_handle_type;
+					expected_value_type.is_type_handle = false;
 
-					if (val_obj) { // src is not null
-						ScriptInstance *scr_inst = val_obj->get_script_instance();
-						bool valid = false;
-
-						if (is_trait_type) {
-							// A native object satisfies a trait-typed slot when its engine class was
-							// retroactively conformed, so a Foundry Script instance is not required here.
-							const StringName trait_name = fs_base_type->get_trait_type_name();
-							if (scr_inst != nullptr) {
-								Ref<Script> src_script = scr_inst->get_script();
-								valid = src_script.is_valid() && src_script->has_script_trait(trait_name);
-							}
-							if (!valid) {
-								valid = FSConformanceRegistry::get_singleton()->native_class_conforms(val_obj->get_class_name(), trait_name, true);
-							}
-						} else if (scr_inst != nullptr) {
-							Script *src_type = scr_inst->get_script().ptr();
-							while (src_type) {
-								if (src_type == base_type) {
-									valid = true;
-									break;
-								}
-								src_type = src_type->get_base_script().ptr();
-							}
-						}
-
-						if (!valid) {
-							err_text = "Trying to assign value of type '" + val_obj->get_class_name() +
-									"' to a variable of type '" + base_type->get_path().get_file() + "'.";
+					// The relation reports a freed instance as a plain mismatch, so the more precise
+					// diagnostic is taken first.
+					if (src->get_type() == Variant::OBJECT) {
+						bool was_freed = false;
+						src->get_validated_object_with_check(was_freed);
+						if (was_freed) {
+							err_text = "Trying to assign invalid previously freed instance.";
 							OPCODE_BREAK;
 						}
+					}
+
+					if (!expected_value_type.is_type(*src)) {
+						err_text = "Trying to assign value of type '" + _script_boundary_value_type_name(src) +
+								"' to a variable of type '" + _specialized_script_type_name(base_type, expected_type_arguments) + "'.";
+						OPCODE_BREAK;
 					}
 				}
 #endif // DEBUG_ENABLED
@@ -5564,7 +5540,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					if (!expected_value_type.is_type(*r)) {
 #ifdef DEBUG_ENABLED
 						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
-								_returned_value_type_name(r), _specialized_script_type_name(base_type, expected_type_arguments));
+								_script_boundary_value_type_name(r), _specialized_script_type_name(base_type, expected_type_arguments));
 #endif // DEBUG_ENABLED
 						OPCODE_BREAK;
 					}
