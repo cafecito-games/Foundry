@@ -1489,8 +1489,7 @@ static bool _get_call_argument_width_failure(const FSDataType &p_type, const Var
 static String _get_call_argument_value_type_name(const Variant *p_value) {
 	if (p_value->get_type() == Variant::OBJECT) {
 		Object *object = p_value->get_validated_object();
-		if (object != nullptr && (object->is_class_ptr(FSNativeClass::get_class_ptr_static()) ||
-										 Object::cast_to<FSSpecializedClassHandle>(object) != nullptr)) {
+		if (object != nullptr && (object->is_class_ptr(FSNativeClass::get_class_ptr_static()) || Object::cast_to<FSSpecializedClassHandle>(object) != nullptr)) {
 			return _get_var_type(p_value);
 		}
 		// An unspecialized script class travels as the script resource itself, whose engine class is
