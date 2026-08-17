@@ -1033,6 +1033,31 @@ static bool _baked_shape_needs_receiver(const FSDataType &p_type, int p_depth = 
 	return false;
 }
 
+// Whether a baked shape still names a type parameter of any kind. Stricter than
+// `_baked_shape_needs_receiver()`: a node no receiver could ever resolve -- a method-scope parameter,
+// or the `-1` sentinel a raw `extends`/`uses` step leaves behind -- is still unresolved evidence, and
+// a slot with no receiver at all that folded one would be recording the parameter's erasure as the
+// definite type `Variant`.
+static bool _baked_shape_contains_type_parameter(const FSDataType &p_type, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return true;
+	}
+	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
+		return true;
+	}
+	for (const FSDataType &element_type : p_type.container_element_types) {
+		if (_baked_shape_contains_type_parameter(element_type, p_depth + 1)) {
+			return true;
+		}
+	}
+	for (const FSDataType &type_argument : p_type.type_arguments) {
+		if (_baked_shape_contains_type_parameter(type_argument, p_depth + 1)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // Whether a function-body slot (a local, a later assignment, or a return) has to be validated against
 // the receiver instead of stored directly. A class type parameter is reified onto the instance, but a
 // function body is compiled once for the declaring class and sees only the parameter, which erases
@@ -1374,9 +1399,17 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						// the declaration's storage datatype when this identifier actually names a `const`
 						// member, so identity-first emission does not erase a specialization the populated
 						// constant-pool lookup below would otherwise have preserved.
-						const FSParser::DataType storage_type = in->constant_source != nullptr
+						FSParser::DataType storage_type = in->constant_source != nullptr
 								? _constant_storage_datatype(in->constant_source)
 								: identifier_type;
+						if (_datatype_contains_erased_type_parameter(storage_type) &&
+								!_datatype_contains_erased_type_parameter(identifier_type)) {
+							// The declaration was written against a generic trait's parameters, and the reference
+							// site is where the arguments the implementer applied are known -- analysis substituted
+							// them into this identifier's type. Fold from that instead, so naming the constant
+							// agrees with the specialization the implementer's own constant pool holds.
+							storage_type = identifier_type;
+						}
 						return codegen.add_constant(
 								_resolve_aliased_class_constant(in->reduced_value, storage_type, codegen.script));
 					}
@@ -5228,6 +5261,38 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
 	return _normalize_compiled_constant(p_value, 0);
 }
 
+// Reifies one type argument of a specialized class handle that a generic trait's member bound to a
+// constant. Such an argument names the TRAIT's parameters, and the arguments the implementer applied
+// are already published for the member being compiled, so substituting them resolves a concrete
+// application (`uses Keeper[int]`) into an ordinary reified type -- recursively, so a composite
+// argument works too. An argument that still stands for a parameter afterwards -- the implementer
+// forwarded its own, and one compiled function and one constant pool are shared by every
+// specialization of it -- has no honest constant form and is refused here.
+bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &p_argument, FoundryScript *p_owner, FSDataType &r_reified) {
+	if (flattened_trait_declaration == nullptr) {
+		return false;
+	}
+
+	// Only a node whose ordinal indexes the trait's parameter list, under the name declared at that
+	// ordinal, is sound to substitute the applied arguments into; anything else -- a method-scope
+	// parameter, or a parameter of some other class a referenced constant was declared against -- would
+	// be projected through an unrelated argument list.
+	bool is_sound = true;
+	const bool depends_on_trait_parameters = _type_depends_on_declared_type_parameters(
+			p_argument, flattened_trait_declaration->type_parameters, is_sound, false);
+	if (!depends_on_trait_parameters || !is_sound) {
+		return false;
+	}
+
+	FSDataType converted = _gdtype_from_datatype(p_argument, p_owner, true, true);
+	_substitute_binding_type_parameters(converted, flattened_trait_type_arguments, p_owner);
+	if (_baked_shape_contains_type_parameter(converted)) {
+		return false;
+	}
+	r_reified = converted;
+	return true;
+}
+
 Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value,
 		const FSParser::DataType &p_datatype, FoundryScript *p_owner) {
 	Variant resolved = _resolve_aliased_class_constant(p_value);
@@ -5244,12 +5309,19 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value,
 	Vector<ContainerType> type_arguments;
 	for (const FSParser::DataType &argument : p_datatype.type_arguments) {
 		if (_datatype_contains_erased_type_parameter(argument)) {
-			// A constant is one slot materialized with no receiver, so it cannot honestly claim the
-			// specialization a type parameter stands for. Baking the parameter's erasure in would record
-			// the definite evidence `Variant`, which every slot that really resolves the parameter then
-			// rejects. The bare unspecialized handle carries no evidence instead, and the analyzer rejects
-			// the declaration outright wherever it can see the class the parameter belongs to.
-			return resolved;
+			FSDataType reified;
+			if (!_reify_flattened_trait_type_argument(argument, p_owner, reified)) {
+				// A constant is one slot materialized with no receiver, so it cannot honestly claim the
+				// specialization a type parameter stands for. Keeping the parameter's erasure would record
+				// the definite evidence `Variant`, which every slot that really resolves the parameter then
+				// rejects. The bare unspecialized handle carries no evidence instead, and the analyzer rejects
+				// the declaration outright wherever it can see the class the parameter belongs to. The whole
+				// handle goes bare rather than only this position: a specialized handle has no representation
+				// for a partially known argument vector.
+				return resolved;
+			}
+			type_arguments.push_back(reified.to_container_type());
+			continue;
 		}
 		type_arguments.push_back(_gdtype_from_datatype(argument, p_owner).to_container_type());
 	}
@@ -5721,6 +5793,10 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				const FSParser::ConstantNode *constant = member.constant;
 				StringName name = constant->identifier->name;
 
+				// A constant flattened in from a generic trait is typed by the TRAIT's parameters, so the
+				// arguments this class applied have to be in scope for a specialized handle to be reified
+				// against them.
+				const FlattenedTraitScope constant_trait_scope(this, flattened_trait_arguments.getptr(members_to_compile[i]));
 				p_script->constants.insert(name,
 						_resolve_aliased_class_constant(constant->initializer->reduced_value,
 								_constant_storage_datatype(constant), p_script));

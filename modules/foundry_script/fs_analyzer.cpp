@@ -4676,7 +4676,11 @@ void FSAnalyzer::resolve_function_body(FSParser::FunctionNode *p_function, bool 
 			// When a trailing `match` is what leaves the fallthrough open, name the gap: the error is
 			// what stops the build, and warnings are not surfaced everywhere errors are.
 			const FSParser::MatchNode *incomplete_match = find_non_covering_match_cause(p_function->body);
-			if (incomplete_match != nullptr) {
+			if (incomplete_match != nullptr && incomplete_match->subject_domain_is_open_enum) {
+				// Naming the unhandled members would be misleading here: adding them still leaves the
+				// carrier's undeclared integers unhandled, so the fix is always a catch-all.
+				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" leaves the undeclared values of its integer carrier unhandled; add an unguarded "_" or bind branch.)", incomplete_match->subject_domain_name), p_function);
+			} else if (incomplete_match != nullptr) {
 				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" does not cover: %s.)", incomplete_match->subject_domain_name, incomplete_match->uncovered_domain_values), p_function);
 			} else {
 				push_error(R"(Not all code paths return a value.)", p_function);
@@ -4728,7 +4732,11 @@ const FSParser::MatchNode *FSAnalyzer::find_non_covering_match_cause(const FSPar
 	}
 
 	const FSParser::MatchNode *match_node = static_cast<const FSParser::MatchNode *>(last_statement);
-	if (match_node->uncovered_domain_values.is_empty() || match_node->branches.is_empty()) {
+	if (match_node->branches.is_empty()) {
+		return nullptr;
+	}
+	// An open plain-enum subject has its own diagnostic, which needs no uncovered value list.
+	if (match_node->uncovered_domain_values.is_empty() && !match_node->subject_domain_is_open_enum) {
 		return nullptr;
 	}
 	for (const FSParser::MatchBranchNode *branch : match_node->branches) {
@@ -5451,9 +5459,9 @@ void FSAnalyzer::resolve_match(FSParser::MatchNode *p_match) {
 
 // True when `value is T` on the match subject accepts every value the subject can hold, which makes
 // the branch always match. Deciding that needs a domain whose membership is settled statically, so it
-// is limited to the domains the exhaustiveness checker already enumerates -- `bool`, a plain enum, and
-// a tagged union tested against its own type -- plus `Variant`, which the compiler lowers to an
-// unconditional true. A partial test over an open domain, such as `is int` on an `int | String`
+// is limited to the closed domains the exhaustiveness checker enumerates -- `bool` and a tagged union
+// tested against its own type -- plus `Variant`, which the compiler lowers to an unconditional true.
+// A partial test over an open domain, such as `is int` on an `int | String`
 // subject, is deliberately left uncovered: proving those needs the residual-set modeling match-arm
 // analysis still defers, and under-approximating here keeps every answer sound.
 static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_type, const FSParser::DataType &p_subject_type) {
@@ -5472,19 +5480,20 @@ static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_ty
 		return false;
 	}
 	if (p_subject_type.kind == FSParser::DataType::ENUM) {
-		// A plain enum's domain is taken to be its declared value set, even though a cast can put an
-		// undeclared integer in the slot (`99 as Level` warns and proceeds) and such a value fails the
-		// runtime membership test. That is the same assumption the declared-value path already makes --
-		// a match listing every member is likewise treated as covering -- so both spellings of a full
-		// cover agree. Widening the domain model to undeclared integers is a separate concern.
-		//
+		// A plain enum is an open domain: its runtime carrier is an integer, and a cast can put an
+		// undeclared integer in the slot (`99 as Level` warns and proceeds). Such a value fails the
+		// runtime membership test `value is Level` performs, so the test leaves a live no-match path
+		// and proves no coverage. A tagged union's case set is closed, so it still can.
+		if (!p_subject_type.is_tagged_union) {
+			return false;
+		}
 		// `native_type` is what identifies an enum nominally (`Owner::Name`); `enum_type` is only its
 		// simple name, which two unrelated enums can share. `value is Message.Move` names one case, so
 		// it covers that case rather than the whole union.
 		return p_test_type.kind == FSParser::DataType::ENUM &&
 				p_test_type.enum_case_name == StringName() &&
 				p_subject_type.enum_case_name == StringName() &&
-				p_test_type.is_tagged_union == p_subject_type.is_tagged_union &&
+				p_test_type.is_tagged_union &&
 				p_test_type.native_type == p_subject_type.native_type &&
 				p_test_type.script_path == p_subject_type.script_path;
 	}
@@ -5516,6 +5525,7 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	p_match->uncovered_domain_values = String();
 	p_match->uncovered_case_names.clear();
 	p_match->uncovered_includes_null = false;
+	p_match->subject_domain_is_open_enum = false;
 
 	if (p_match->test == nullptr) {
 		return; // Parse error: `match` with no test expression.
@@ -5548,14 +5558,17 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	// `domain_values` maps each value's display name to its integer value.
 	// Iteration order follows insertion order (Godot HashMap), i.e. enum
 	// declaration order, so the unhandled list is deterministic.
+	// A plain enum is an open domain rather than a finite one: its declared members name values, but
+	// the integer carrier accepts undeclared values, so no set of value patterns closes the match. The
+	// members are still enumerated, because naming the unhandled ones is the useful diagnostic.
 	const bool is_tagged_union = match_type.is_tagged_union_type();
+	const bool is_plain_enum = match_type.kind == FSParser::DataType::ENUM && !match_type.is_tagged_union;
 	bool is_finite_domain = is_tagged_union;
 	HashMap<StringName, int64_t> domain_values;
 	String type_name;
 	if (is_tagged_union) {
 		type_name = match_type.enum_type;
-	} else if (match_type.kind == FSParser::DataType::ENUM && !match_type.is_tagged_union) {
-		is_finite_domain = true;
+	} else if (is_plain_enum) {
 		domain_values = match_type.enum_values;
 		type_name = match_type.enum_type;
 	} else if (match_type.kind == FSParser::DataType::BUILTIN && match_type.builtin_type == Variant::BOOL) {
@@ -5565,25 +5578,37 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 		type_name = "bool";
 	}
 
-	if (!is_finite_domain) {
+	if (!is_finite_domain && !is_plain_enum) {
 #ifdef DEBUG_ENABLED
 		parser->push_warning(p_match, FSWarning::MATCH_WITHOUT_DEFAULT);
 #endif // DEBUG_ENABLED
 		return;
 	}
 
+	if (is_plain_enum) {
+		p_match->subject_domain_name = type_name;
+		p_match->subject_domain_is_open_enum = true;
+	}
+
 	Vector<String> unhandled;
 	const bool coverage_is_provable = is_tagged_union
 			? collect_uncovered_tagged_union_cases(p_match, match_type, unhandled)
-			: collect_uncovered_finite_domain_values(p_match, match_type, domain_values, unhandled);
-	if (!coverage_is_provable) {
-		return; // Coverage could not be determined; the match is treated as non-covering.
+			: collect_uncovered_domain_values(p_match, match_type, domain_values, unhandled);
+	if (coverage_is_provable) {
+		p_match->subject_domain_name = type_name;
+		p_match->covers_subject_domain = is_finite_domain && unhandled.is_empty();
 	}
 
-	p_match->subject_domain_name = type_name;
-	p_match->covers_subject_domain = unhandled.is_empty();
-	if (unhandled.is_empty()) {
-		return;
+	const bool has_unhandled_values = coverage_is_provable && !unhandled.is_empty();
+#ifdef DEBUG_ENABLED
+	// A plain enum without a catch-all always leaves undeclared carrier values unhandled. When some
+	// declared members are unhandled too, the more specific NON_EXHAUSTIVE_MATCH below names them.
+	if (is_plain_enum && !has_unhandled_values) {
+		parser->push_warning(p_match, FSWarning::MATCH_WITHOUT_DEFAULT);
+	}
+#endif // DEBUG_ENABLED
+	if (!has_unhandled_values) {
+		return; // Coverage is settled, or could not be determined and the match stays non-covering.
 	}
 
 	// Structured coverage is published for tagged unions only, where each uncovered entry is a case
@@ -5606,7 +5631,7 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 
 // Collects the values of a plain enum or `bool` domain that no unguarded, statically-constant pattern
 // covers, in declaration order. Returns false when a pattern makes coverage unprovable.
-bool FSAnalyzer::collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const {
+bool FSAnalyzer::collect_uncovered_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const {
 	if (p_domain_values.is_empty()) {
 		return false; // Nothing to check; claim no coverage.
 	}
@@ -11146,7 +11171,28 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			FSParser::ClassNode::Member member = script_class->get_member(name);
 			switch (member.type) {
 				case FSParser::ClassNode::Member::CONSTANT: {
-					p_identifier->set_datatype(member.get_datatype());
+					FSParser::DataType constant_type = member.get_datatype();
+					if (is_trait_interface_class && base_class != nullptr) {
+						// A constant reached through a generic trait is typed by the TRAIT's parameters, while
+						// the class that applied the trait flattened it in under the arguments it supplied.
+						// Substituting them here is what makes `Fixed.Aliased` a `Holder[int]` handle; leaving
+						// the parameter node in place lets every consumer erase it to `Variant`, a
+						// specialization no implementer applied and every slot that resolves the parameter
+						// rejects. Trait members stay reachable through inheritance, so the application is
+						// looked up along the receiver's own chain, exactly where the member was found.
+						for (FSParser::ClassNode *owner = base_class; owner != nullptr;
+								owner = owner->base_type.class_type) {
+							const HashMap<StringName, FSParser::DataType> substitutions =
+									trait_type_argument_substitution(owner, script_class);
+							if (substitutions.is_empty()) {
+								continue;
+							}
+							constant_type = _substitute_type_parameters_and_self(
+									constant_type, substitutions, _self_type_for_class(base_class));
+							break;
+						}
+					}
+					p_identifier->set_datatype(constant_type);
 					p_identifier->is_constant = true;
 					p_identifier->reduced_value = member.constant->initializer->reduced_value;
 					p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;

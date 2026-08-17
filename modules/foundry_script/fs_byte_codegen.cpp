@@ -1431,7 +1431,10 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 		case FSDataType::SCRIPT:
 		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_target.type.script_type;
-			int idx = p_target.type.is_type_handle && !p_target.type.type_arguments.is_empty() ? get_container_type_pos(p_target.type) : get_constant_pos(script);
+			// A specialized destination travels as a container-type constant so the runtime check can
+			// compare the declared arguments; an unspecialized one keeps the cheaper bare-script
+			// constant. The type-handle form already did this, and the opcode reads both.
+			int idx = !p_target.type.type_arguments.is_empty() ? get_container_type_pos(p_target.type) : get_constant_pos(script);
 			idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
 			append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
