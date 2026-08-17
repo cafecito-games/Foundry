@@ -1011,7 +1011,10 @@ private:
 	// position that knows what it is building — a declaration, an assignment, a return, a cast, a call
 	// argument, a `for` list, a tuple or case field, and a nested element of any of those — routes
 	// through this one dispatcher, so a newly added literal form cannot be missed at some of them.
-	void update_container_literal_element_types(FSParser::ExpressionNode *p_expression,
+	// Returns whether an element-validating patcher ran, which is true only for an array or a dictionary
+	// literal whose expected type has the same form. The tuple patcher reports nothing by design, so a
+	// caller that wants to stand a patcher's reporting in for its own check has to know the difference.
+	bool update_container_literal_element_types(FSParser::ExpressionNode *p_expression,
 			const FSParser::DataType &p_expected_type,
 			bool p_self_parameter_contract = false,
 			bool p_substitute_self_runtime_type = false);
