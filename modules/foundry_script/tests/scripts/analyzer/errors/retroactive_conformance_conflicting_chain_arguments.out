@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 17: Trait "Keeper" is already applied with type arguments ("String") by "BaseKeeper"; the conformance for "ChildKeeper" cannot record ("int").

@@ -1,0 +1,11 @@
+FS_TEST_OK
+erased store: true
+erased test: false
+exact store: true
+exact test: true
+subclass store: true
+subclass test: true
+supertrait store: true
+supertrait test: true
+raw store: true
+raw test: true

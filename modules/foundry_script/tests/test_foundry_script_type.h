@@ -513,13 +513,13 @@ func test() -> void:
 		FSAnalyzer analyzer(&parser);
 		REQUIRE_EQ(analyzer.analyze(), OK);
 
-		FSParser::ClassNode *root = parser.get_tree();
-		REQUIRE(root != nullptr);
-		keeper = find_member_class(root, StringName("Keeper"));
-		forwarding_keeper = find_member_class(root, StringName("ForwardingKeeper"));
-		storing_keeper = find_member_class(root, StringName("StoringKeeper"));
-		self_keeper = find_member_class(root, StringName("SelfKeeper"));
-		string_keeper_child = find_member_class(root, StringName("StringKeeperChild"));
+		FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		keeper = find_member_class(tree, StringName("Keeper"));
+		forwarding_keeper = find_member_class(tree, StringName("ForwardingKeeper"));
+		storing_keeper = find_member_class(tree, StringName("StoringKeeper"));
+		self_keeper = find_member_class(tree, StringName("SelfKeeper"));
+		string_keeper_child = find_member_class(tree, StringName("StringKeeperChild"));
 		REQUIRE(keeper != nullptr);
 		REQUIRE(forwarding_keeper != nullptr);
 		REQUIRE(storing_keeper != nullptr);

@@ -1,0 +1,7 @@
+FS_TEST_RUNTIME_ERROR
+keeper
+keeper
+keeper
+keeper
+>> SCRIPT ERROR at analyzer/features/specialized_trait_store_accepts_absent_evidence.fs:24 on Passer.forward(): Trying to return value of type "ForwardingKeeper[String]" from a function whose return type is "Keeper[int]".
+>> SCRIPT ERROR at analyzer/features/specialized_trait_store_accepts_absent_evidence.fs:49 on test(): Invalid call. Nonexistent function 'label' in base 'Nil'.

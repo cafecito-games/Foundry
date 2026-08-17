@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 21: Cannot return value of type "ForwardingKeeper[String]" because the function return type is "Keeper[int]".
+>> ERROR at line 25: Invalid argument for "take()" function: argument 1 should be "Keeper[int]" but is "ForwardingKeeper[String]".
+>> ERROR at line 27: Value of type "ForwardingKeeper[String]" cannot be assigned to a variable of type "Keeper[int]".

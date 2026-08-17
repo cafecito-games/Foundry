@@ -46,5 +46,5 @@ func test() -> void:
 	var final_self_slot: Keeper[FinalSelfKeeper] = FinalSelfKeeper.new()
 	print(final_self_slot.label())
 
-	print(Passer[String].new().forward(ForwardingKeeper[String].new()).label())
-	print(pass_through(ForwardingKeeper[String].new()).label())
+	print(Passer[int].new().forward(ForwardingKeeper[int].new()).label())
+	print(pass_through(ForwardingKeeper[int].new()).label())
