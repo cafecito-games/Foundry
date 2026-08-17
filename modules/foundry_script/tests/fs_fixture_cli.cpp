@@ -32,6 +32,7 @@
 
 #include "fs_test_runner.h"
 
+#include "core/config/project_settings.h"
 #include "core/error/error_macros.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
@@ -146,6 +147,18 @@ Dictionary FSFixtureCLI::run(const Options &p_options, int &r_failed_count) {
 
 	r_failed_count = failed;
 	return report;
+}
+
+bool FSFixtureCLI::report_path_is_inside_root(const String &p_report_path, const String &p_user_data_root) {
+	if (p_report_path.is_empty() || p_user_data_root.is_empty()) {
+		return false;
+	}
+	const String root = p_user_data_root.simplify_path().trim_suffix("/");
+	const String report = ProjectSettings::get_singleton()->globalize_path(p_report_path).simplify_path();
+	// Compared with the separator attached so a sibling directory whose name merely starts with
+	// the root's name (`/scratch/user-fixtures-9` next to `/scratch/user-fixtures-91`) does not
+	// look contained.
+	return report == root || report.begins_with(root + "/");
 }
 
 int FSFixtureCLI::run_cli(const Options &p_options) {

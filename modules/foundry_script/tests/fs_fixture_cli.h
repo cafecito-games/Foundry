@@ -67,6 +67,11 @@ public:
 	// output, and is -1 when the corpus could not be collected at all.
 	static Dictionary run(const Options &p_options, int &r_failed_count);
 
+	// Whether a requested report path resolves inside a user-data root. `user://` report paths
+	// land in the per-process root the scoped run owns, and that root is removed after the run,
+	// so the caller has to keep the root when it holds the artifact it was asked to produce.
+	static bool report_path_is_inside_root(const String &p_report_path, const String &p_user_data_root);
+
 	// Process entry point: runs the selection, emits the report, and returns the exit code.
 	// A selection that matches no fixture is a scoping mistake, not an empty success, so it
 	// fails the same way an unmatched `test run --case` pattern does.

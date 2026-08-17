@@ -1090,9 +1090,12 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		status = FSTests::FSFixtureCLI::run_cli(options);
 
 		// The per-process `user://` leaf is nobody else's to reuse, so this run removes its
-		// own rather than leaving one directory behind per invocation.
+		// own rather than leaving one directory behind per invocation. A report written under
+		// that root is the artifact the run was asked to produce, so it keeps the root instead.
 		const String fixtures_user_root = OS::get_singleton()->get_user_data_root_override();
-		if (!fixtures_user_root.is_empty() && DirAccess::exists(fixtures_user_root)) {
+		const bool fixtures_report_inside_user_root =
+				FSTests::FSFixtureCLI::report_path_is_inside_root(options.output_path, fixtures_user_root);
+		if (!fixtures_report_inside_user_root && !fixtures_user_root.is_empty() && DirAccess::exists(fixtures_user_root)) {
 			Ref<DirAccess> fixtures_user_dir = DirAccess::open(fixtures_user_root);
 			if (fixtures_user_dir.is_valid() && fixtures_user_dir->erase_contents_recursive() == OK) {
 				DirAccess::remove_absolute(fixtures_user_root);
