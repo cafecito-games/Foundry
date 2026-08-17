@@ -133,35 +133,43 @@ The wrapper collects ccache telemetry using a unique per-invocation `CCACHE_STAT
 worktrees do not race on statistics. Telemetry is best-effort: summaries report explicit status/errors,
 and telemetry never replaces the build result.
 
-Progress records cover an `invocation_start` marker, wrapper command start, output, heartbeat,
-completion, and the final `build_summary`. They do not provide detailed visibility into every internal
-SCons or Ninja phase.
+Progress records cover wrapper command start, output, heartbeat, completion, and the final
+`build_summary`. They do not provide detailed visibility into every internal SCons or Ninja phase.
+`build_summary` describes the build step only: under `--test` it stays `success` when the build
+succeeded even if the tests then fail.
 
-Unless `--append-progress` is given, the progress file is truncated and `invocation_start` is written
-before any other work, so a waiter can never match a `build_summary` left behind by an earlier
-invocation. Match `invocation_id` between `invocation_start` and `build_summary` when a waiter must be
-certain it is reading the run it launched.
+### The RESULT line
 
-## Build verdict
+Every invocation writes exactly one terminal verdict line, always last, to both the human stream and
+the build log:
 
-The wrapper's exit code reflects the build, not whatever the wrapper did last, and it never reports a
-success `build_summary` for a build that failed. After a build command exits `0` the wrapper still
-verifies the result and fails when either check trips:
+```
+[agent-build] RESULT: <status> step=<step> exit_code=<n> binary=<path> binary_present=<yes|no> invocation=<uuid> log=<path>
+```
 
-- the build output for this invocation contains failure evidence (`N error(s) generated.`,
-  `scons: *** `, `FAILED: `, `ninja: build stopped:`). This catches a build status masked by a shell
-  or lost by a backend. Exit code `1`, `build_summary.status` `failed`, and the matching lines are
-  recorded in `build_summary.build_failure_signals`.
-- no editor binary is present in `bin/`, meaning no final link occurred. Exit code `127` and
-  `build_summary.status` `failed`.
+`<status>` is one of `success`, `build-failure`, `generation-failure`, `binary-missing`,
+`test-failure`, `tooling-missing`, `interrupted`; `<step>` is one of `startup`, `generate`, `build`,
+`test`.
 
-The link check matches `bin/foundry.<platform>.editor*`, so build settings that rename the binary
-(`precision`, `extra_suffix`, sanitizers, alternate toolchains) are not mistaken for a failed build.
-A `--scons-arg` invocation that deliberately builds something other than an editor binary is still
-reported as a failure. When `--test` runs and the expected name is absent, the wrapper tests the sole
-editor binary it finds, and fails only when the choice is ambiguous. Startup failures (missing SCons,
-Ninja, or ccache) also emit a `build_summary` with status `error`, so a waiter is never left without a
-verdict.
+Piping the wrapper into another command, launching it in the background, or appending any trailing
+command in the same shell invocation discards its exit code, so such callers must read the log's final
+`RESULT:` line (`tail -1 <log>`) rather than trusting an observed status of 0.
+
+The exit codes are exhaustive:
+
+| Exit | Meaning |
+|------|---------|
+| `0` | every step ran successfully and the expected editor binary exists |
+| SCons/Ninja child status | the build or Ninja-generation step failed |
+| test child status | the build succeeded and the test step failed |
+| `1` | the build reported success but the expected editor binary is absent |
+| `127` | required tooling (SCons, Ninja, ccache) or platform support is missing |
+| `130` | interrupted |
+
+A missing binary is a failure unconditionally, not only under `--test`: the wrapper always requests
+`target=editor`, so an invocation that produced nothing to run must not be mistaken for a validated
+build. An unchanged binary timestamp is never a failure, because a no-op incremental build
+legitimately leaves the binary untouched.
 
 ## Benchmarks
 

@@ -44,17 +44,20 @@ NINJA_OWNED_SCONS_KEYS = frozenset(
     }
 )
 TELEMETRY_TIMEOUT_SECONDS = 5.0
-# A build tool can print a fatal error and still exit 0: a shell that masks the child status, a
-# backend that loses it, or a wrapper that reports its own status instead. The build output is the
-# ground truth for whether compilation happened, so it is scanned before success is reported.
-BUILD_FAILURE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("scons-error", re.compile(r"^scons: \*\*\* ")),
-    ("ninja-edge-failure", re.compile(r"^FAILED: ")),
-    ("ninja-stopped", re.compile(r"^ninja: build stopped:")),
-    ("compiler-error", re.compile(r"\b\d+ errors? generated\.")),
+RESULT_PREFIX = "[agent-build] RESULT:"
+RESULT_STATUSES = (
+    "success",
+    "build-failure",
+    "generation-failure",
+    "binary-missing",
+    "test-failure",
+    "tooling-missing",
+    "interrupted",
 )
-BUILD_OUTPUT_FAILURE_EXIT_CODE = 1
-MISSING_BINARY_EXIT_CODE = 127
+RESULT_STEPS = ("startup", "generate", "build", "test")
+MISSING_BINARY_EXIT_CODE = 1
+TOOLING_MISSING_EXIT_CODE = 127
+INTERRUPTED_EXIT_CODE = 130
 # The falsy spellings SCons accepts for a boolean build setting.
 SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "off"})
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
@@ -589,33 +592,52 @@ def run_logged_command(
             return exit_code
 
 
-def log_size(log_path: Path) -> int:
-    try:
-        return log_path.stat().st_size
-    except OSError:
-        return 0
+class ResultContext:
+    """The values `emit_result` needs, kept current so an interrupt can still report a verdict."""
+
+    def __init__(self) -> None:
+        self.step = "startup"
+        self.exit_code = INTERRUPTED_EXIT_CODE
+        self.binary_path = Path()
+        self.invocation_id = ""
+        self.log_path = DEFAULT_LOG
+        self.human_stream: TextIO = sys.stdout
 
 
-def scan_build_failure_signals(log_path: Path, start_offset: int = 0) -> dict[str, str]:
-    """Failure evidence emitted by a build, keyed by signal name with the first matching line.
+RESULT_CONTEXT = ResultContext()
 
-    Only the region written by this invocation is scanned, so an appended log keeps evidence from
-    an earlier build out of the current verdict.
+
+def emit_result(
+    status: str,
+    *,
+    step: str,
+    exit_code: int,
+    binary_path: Path,
+    invocation_id: str,
+    log_path: Path,
+    human_stream: TextIO,
+) -> int:
+    """Write the single terminal verdict line and return the exit code the caller should use.
+
+    A process exit code is discarded by a pipe, a background launch, or any trailing command in the
+    same shell invocation, so the verdict is also written as the last line of the build log where a
+    caller can always recover it.
     """
-    signals: dict[str, str] = {}
+    assert status in RESULT_STATUSES, f"unknown result status {status!r}"
+    assert step in RESULT_STEPS, f"unknown result step {step!r}"
+    line = (
+        f"{RESULT_PREFIX} {status} step={step} exit_code={exit_code} binary={binary_path} "
+        f"binary_present={'yes' if binary_path.exists() else 'no'} invocation={invocation_id} log={log_path}"
+    )
+    human_stream.write(f"{line}\n")
+    human_stream.flush()
     try:
-        with log_path.open("rb") as log_file:
-            log_file.seek(max(0, start_offset))
-            for raw_line in log_file:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                for name, pattern in BUILD_FAILURE_PATTERNS:
-                    if name not in signals and pattern.search(line):
-                        signals[name] = line
-    except OSError:
-        return signals
-    return signals
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(f"{line}\n")
+    except OSError as exc:
+        print(f"[agent-build] warning: could not append the result line to {log_path}: {exc}", file=sys.stderr)
+    return exit_code
 
 
 def scons_prefix() -> list[str] | None:
@@ -673,28 +695,6 @@ def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
     if extra_suffix:
         suffix += f".{extra_suffix}"
     return suffix
-
-
-def linked_editor_binaries(target: BuildTarget) -> list[Path]:
-    """Every editor binary the build directory holds for this platform.
-
-    Platform configuration adds suffixes the wrapper does not control (sanitizers, alternate
-    toolchains), so whether a final link happened is decided by pattern rather than by one
-    reconstructed filename.
-    """
-    try:
-        entries = target.binary_path.parent.glob(f"foundry.{target.scons_platform}.editor*")
-        return sorted(path for path in entries if path.is_file())
-    except OSError:
-        return []
-
-
-def resolve_linked_binary(target: BuildTarget) -> Path | None:
-    """The binary to run, or None when the choice is ambiguous."""
-    if target.binary_path.exists():
-        return target.binary_path
-    candidates = linked_editor_binaries(target)
-    return candidates[0] if len(candidates) == 1 else None
 
 
 def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
@@ -1130,69 +1130,48 @@ def main(argv: list[str]) -> int:
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
     invocation_id = new_invocation_id()
 
-    # Truncate before any slow work so a waiter cannot match a `build_summary` left behind by an
-    # earlier invocation and conclude that this build has already finished.
-    if progress_path is not None and not args.append_progress:
-        try:
-            progress_path.parent.mkdir(parents=True, exist_ok=True)
-            progress_path.write_text("", encoding="utf-8")
-        except OSError as exc:
-            print(f"[agent-build] warning: could not reset progress file {progress_path}: {exc}", file=sys.stderr)
-        args.append_progress = True
-    try:
-        append_progress_record(
-            progress_path,
-            "invocation_start",
-            stdout_jsonl=progress_stdout_jsonl,
-            invocation_id=invocation_id,
-            phase="build",
-            worktree=str(REPO_ROOT),
-            argv=list(argv),
-        )
-    except Exception as exc:
-        print(f"[agent-build] warning: could not emit invocation start: {exc}", file=sys.stderr)
+    RESULT_CONTEXT.step = "startup"
+    RESULT_CONTEXT.exit_code = INTERRUPTED_EXIT_CODE
+    RESULT_CONTEXT.binary_path = Path()
+    RESULT_CONTEXT.invocation_id = invocation_id
+    RESULT_CONTEXT.log_path = args.log
+    RESULT_CONTEXT.human_stream = human_stream
 
-    def fail_before_build(exit_code: int, error: str) -> int:
+    def fail_at_startup(exit_code: int, error: str) -> int:
         print(f"[agent-build] {error}", file=sys.stderr)
-        try:
-            append_progress_record(
-                progress_path,
-                "build_summary",
-                stdout_jsonl=progress_stdout_jsonl,
-                invocation_id=invocation_id,
-                phase="build",
-                worktree=str(REPO_ROOT),
-                status="error",
-                error=error,
-                exit_code=exit_code,
-                log_path=str(args.log),
-            )
-        except Exception as exc:
-            print(f"[agent-build] warning: could not emit build summary: {exc}", file=sys.stderr)
-        return exit_code
+        return emit_result(
+            "tooling-missing",
+            step="startup",
+            exit_code=exit_code,
+            binary_path=RESULT_CONTEXT.binary_path,
+            invocation_id=invocation_id,
+            log_path=args.log,
+            human_stream=human_stream,
+        )
 
     try:
         target = resolve_build_target(args)
     except RuntimeError as exc:
-        return fail_before_build(2, str(exc))
+        return fail_at_startup(TOOLING_MISSING_EXIT_CODE, str(exc))
+    RESULT_CONTEXT.binary_path = target.binary_path
 
     if scons_prefix() is None:
-        return fail_before_build(
-            127,
+        return fail_at_startup(
+            TOOLING_MISSING_EXIT_CODE,
             "SCons is not available. Install SCons for python3 or make the `scons` executable available in PATH.",
         )
 
     if args.backend == "ninja" and shutil.which("ninja") is None:
-        return fail_before_build(
-            127,
+        return fail_at_startup(
+            TOOLING_MISSING_EXIT_CODE,
             "Ninja is required for --backend ninja but was not found in PATH. "
             "Use --backend scons --compiler-cache none for the native fallback.",
         )
 
     compiler_cache = resolve_compiler_cache(args)
     if compiler_cache == "ccache" and shutil.which("ccache") is None:
-        return fail_before_build(
-            127,
+        return fail_at_startup(
+            TOOLING_MISSING_EXIT_CODE,
             "ccache is required for this build mode but was not found in PATH. "
             "Use --backend scons --compiler-cache none for the native fallback.",
         )
@@ -1231,11 +1210,9 @@ def main(argv: list[str]) -> int:
         cache_stats_source = "disabled"
 
     build_started = time.monotonic()
-    build_log_offset = log_size(args.log) if args.append_log else 0
     build_exit: int | None = None
     build_status = "error"
     build_error: str | None = None
-    build_failure_signals: dict[str, str] = {}
     generation_exit: int | None = None
     if generation_command_args is not None:
         generation_status = "pending"
@@ -1251,6 +1228,7 @@ def main(argv: list[str]) -> int:
         if generation_command_args is not None:
             assert ninja_state is not None
             active_step = "generate"
+            RESULT_CONTEXT.step = active_step
             ninja_state.directory.mkdir(parents=True, exist_ok=True)
             generation_exit = run_logged_command(
                 generation_command_args,
@@ -1274,6 +1252,7 @@ def main(argv: list[str]) -> int:
 
         if build_exit is None:
             active_step = "build"
+            RESULT_CONTEXT.step = active_step
             build_exit = run_logged_command(
                 build_command_args,
                 label="build",
@@ -1288,23 +1267,6 @@ def main(argv: list[str]) -> int:
             )
             build_status = "success" if build_exit == 0 else "failed"
 
-        if build_exit == 0:
-            build_failure_signals = scan_build_failure_signals(args.log, build_log_offset)
-            if build_failure_signals:
-                build_exit = BUILD_OUTPUT_FAILURE_EXIT_CODE
-                build_status = "failed"
-                build_error = "the build command exited 0 but its output reported failures: " + "; ".join(
-                    f"{name}: {line}" for name, line in sorted(build_failure_signals.items())
-                )
-                print(f"[agent-build] {build_error}", file=sys.stderr)
-            elif not linked_editor_binaries(target):
-                build_exit = MISSING_BINARY_EXIT_CODE
-                build_status = "failed"
-                build_error = (
-                    "the build command succeeded but produced no editor binary in "
-                    f"{target.binary_path.parent}; no final link occurred"
-                )
-                print(f"[agent-build] {build_error}", file=sys.stderr)
     except OSError as exc:
         build_exit = 127
         build_error = f"{type(exc).__name__}: {exc}"
@@ -1350,7 +1312,6 @@ def main(argv: list[str]) -> int:
             "status": build_status,
             "error": build_error,
             "exit_code": build_exit,
-            "build_failure_signals": build_failure_signals or None,
             "cache_dir": cache_dir,
             "cache_policy": cache_policy,
             "cache_source": cache_source,
@@ -1386,25 +1347,33 @@ def main(argv: list[str]) -> int:
                 )
 
     assert build_exit is not None
-    if build_exit != 0:
-        return build_exit
 
-    linked_binary = resolve_linked_binary(target)
-    if not args.test:
-        built = linked_binary or ", ".join(str(path) for path in linked_editor_binaries(target))
-        print(f"[agent-build] built binary: {built}", file=human_stream)
-        return 0
-
-    if linked_binary is None:
-        candidates = ", ".join(str(path) for path in linked_editor_binaries(target))
-        print(
-            f"[agent-build] cannot choose an editor binary to test; expected {target.binary_path}, found: {candidates}",
-            file=sys.stderr,
+    def report(status: str, step: str, exit_code: int) -> int:
+        return emit_result(
+            status,
+            step=step,
+            exit_code=exit_code,
+            binary_path=target.binary_path,
+            invocation_id=invocation_id,
+            log_path=args.log,
+            human_stream=human_stream,
         )
-        return MISSING_BINARY_EXIT_CODE
 
-    target = target._replace(binary_path=linked_binary)
-    return run_logged_command(
+    if build_exit != 0:
+        if generation_status == "failed":
+            return report("generation-failure", "generate", build_exit)
+        return report("build-failure", "build", build_exit)
+
+    if not target.binary_path.exists():
+        print(f"[agent-build] expected binary is missing after build: {target.binary_path}", file=sys.stderr)
+        return report("binary-missing", "build", MISSING_BINARY_EXIT_CODE)
+
+    if not args.test:
+        print(f"[agent-build] built binary: {target.binary_path}", file=human_stream)
+        return report("success", "build", 0)
+
+    RESULT_CONTEXT.step = "test"
+    test_exit = run_logged_command(
         test_command(args, target),
         label="test",
         invocation_id=invocation_id,
@@ -1416,7 +1385,24 @@ def main(argv: list[str]) -> int:
         progress_stdout_jsonl=progress_stdout_jsonl,
         env=test_environment(args, target),
     )
+    return report("test-failure" if test_exit else "success", "test", test_exit)
+
+
+def run(argv: list[str]) -> int:
+    """Run the wrapper, turning an interrupt into a defined verdict instead of a traceback."""
+    try:
+        return main(argv)
+    except KeyboardInterrupt:
+        return emit_result(
+            "interrupted",
+            step=RESULT_CONTEXT.step,
+            exit_code=INTERRUPTED_EXIT_CODE,
+            binary_path=RESULT_CONTEXT.binary_path,
+            invocation_id=RESULT_CONTEXT.invocation_id,
+            log_path=RESULT_CONTEXT.log_path,
+            human_stream=RESULT_CONTEXT.human_stream,
+        )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(run(sys.argv[1:]))
