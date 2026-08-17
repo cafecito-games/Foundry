@@ -395,4 +395,78 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] Erasing distinct specialization
 	CHECK_EQ(source_dictionary.size(), 2);
 }
 
+TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle names the class the user wrote") {
+	ScopedClassHandleContainerLanguage language;
+
+	const char *source =
+			"class Box[T]:\n"
+			"\tpass\n"
+			"\n"
+			"class DerivedBox[T] extends Box[T]:\n"
+			"\tpass\n"
+			"\n"
+			"class Outer:\n"
+			"\tclass Inner[T]:\n"
+			"\t\tpass\n";
+
+	Ref<FoundryScript> script = compile_class_handle_container_source(source);
+	Ref<FoundryScript> box = class_handle_container_subclass(script, "Box");
+	Ref<FoundryScript> derived_box = class_handle_container_subclass(script, "DerivedBox");
+	Ref<FoundryScript> outer = class_handle_container_subclass(script, "Outer");
+	REQUIRE(box.is_valid());
+	REQUIRE(derived_box.is_valid());
+	REQUIRE(outer.is_valid());
+	Ref<FoundryScript> inner = class_handle_container_subclass(outer, "Inner");
+	REQUIRE(inner.is_valid());
+
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+
+	Ref<FSSpecializedClassHandle> int_box = FSSpecializedClassHandle::create(box, { int_argument });
+	Ref<FSSpecializedClassHandle> string_box = FSSpecializedClassHandle::create(box, { string_argument });
+	REQUIRE(int_box.is_valid());
+	REQUIRE(string_box.is_valid());
+	CHECK(int_box->get_type_name() == "Box[int]");
+	CHECK(string_box->get_type_name() == "Box[String]");
+
+	// A derived generic class is named by the class the handle actually represents, not by the base it
+	// forwards its argument to.
+	Ref<FSSpecializedClassHandle> derived = FSSpecializedClassHandle::create(derived_box, { int_argument });
+	REQUIRE(derived.is_valid());
+	CHECK(derived->get_type_name() == "DerivedBox[int]");
+
+	// A class nested more than one level deep renders by its leaf name; qualification of ambiguous
+	// siblings is a separate concern.
+	Ref<FSSpecializedClassHandle> nested = FSSpecializedClassHandle::create(inner, { string_argument });
+	REQUIRE(nested.is_valid());
+	CHECK(nested->get_type_name() == "Inner[String]");
+
+	// A script with neither a global nor a local class identity keeps the engine instance base.
+	CHECK(script->get_local_name() == StringName());
+	Ref<FSSpecializedClassHandle> anonymous = FSSpecializedClassHandle::create(script, Vector<ContainerType>());
+	REQUIRE(anonymous.is_valid());
+	CHECK(anonymous->get_type_name() == "RefCounted");
+}
+
+TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle keeps a qualified global name") {
+	ScopedClassHandleContainerLanguage language;
+
+	const char *source =
+			"class_name ClassHandleGlobalBox[T]\n";
+
+	Ref<FoundryScript> script = compile_class_handle_container_source(source);
+	REQUIRE(script->get_global_name() == StringName("ClassHandleGlobalBox"));
+
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
+
+	Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(script, { int_argument });
+	REQUIRE(handle.is_valid());
+	CHECK(handle->get_type_name() == "ClassHandleGlobalBox[int]");
+}
+
 } // namespace FSTests
