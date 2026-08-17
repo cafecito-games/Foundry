@@ -37,7 +37,7 @@
 #include "../fs_script_extensible_native_hooks.h"
 #include "../fs_warning.h"
 #include "fs_test_runner.h"
-#include "test_analyzer_finalization.h"
+#include "fs_test_warning_settings.h"
 
 #include "core/io/image.h"
 #include "core/io/json.h"
@@ -711,8 +711,12 @@ static void analyze_against_native_host(const char *p_source, const String &p_pa
 	REQUIRE_MESSAGE(analyze_result == OK, reported_errors);
 }
 
+// `NATIVE_METHOD_OVERRIDE` ships at `ERROR`, and an `ERROR`-level code becomes a parser error instead
+// of reaching `get_warnings()`, so the override to `WARN` is what makes the assertion observable.
+// The positive control for this negative assertion is the next case, which asserts that an unrelated
+// native override does produce the warning under the same scope.
 TEST_CASE("[Modules][FoundryScript][JsonMarshal] Implementing the hook is not a native-override warning") {
-	AnalyzerWarningSettingsScope warning_settings;
+	const WarningSettingsScope warning_settings({ { FSWarning::NATIVE_METHOD_OVERRIDE, FSWarning::WARN } });
 
 	const char *source = R"(
 extends FSJsonMarshalTestHost
@@ -730,7 +734,7 @@ func test() -> void:
 }
 
 TEST_CASE("[Modules][FoundryScript][JsonMarshal] An unrelated native override still warns") {
-	AnalyzerWarningSettingsScope warning_settings;
+	const WarningSettingsScope warning_settings({ { FSWarning::NATIVE_METHOD_OVERRIDE, FSWarning::WARN } });
 
 	const char *source = R"(
 extends FSJsonMarshalTestHost

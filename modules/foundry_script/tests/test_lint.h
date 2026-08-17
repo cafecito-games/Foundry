@@ -35,6 +35,7 @@
 #ifdef DEBUG_ENABLED
 #include "../fs_parser.h"
 #include "../fs_warning.h"
+#include "fs_test_warning_settings.h"
 #endif
 
 #include "core/config/project_settings.h"
@@ -141,36 +142,6 @@ static void check_diagnostic_basics(
 		CHECK_GE(p_diagnostic.range.end_column, p_diagnostic.range.start_column);
 	}
 }
-
-#ifdef DEBUG_ENABLED
-class LintWarningSettingsScope {
-	Variant previous_enable;
-	Variant previous_unused_variable;
-	bool previous_ignore = false;
-
-public:
-	LintWarningSettingsScope() {
-		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
-		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
-		previous_unused_variable = ProjectSettings::get_singleton()->get_setting(
-				unused_variable_setting,
-				(int)FSWarning::WARN);
-		previous_ignore = FSParser::is_ignoring_warnings();
-
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
-		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, (int)FSWarning::WARN);
-		FSParser::update_project_settings();
-	}
-
-	~LintWarningSettingsScope() {
-		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
-		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, previous_unused_variable);
-		FSParser::update_project_settings();
-		FSParser::set_ignoring_warnings(previous_ignore);
-	}
-};
-#endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing uses CI defaults") {
 	Vector<String> args;
@@ -590,7 +561,8 @@ TEST_CASE("[Modules][FoundryScript][Lint] SARIF serialization returns run with r
 
 #ifdef DEBUG_ENABLED
 TEST_CASE("[Modules][FoundryScript][Lint] Warnings become diagnostics") {
-	LintWarningSettingsScope warning_settings;
+	// `UNUSED_VARIABLE` ships at `WARN`, so the shipped defaults are enough here.
+	const WarningSettingsScope warning_settings;
 
 	const String source = "func run() -> void:\n\tvar unused := 1\n";
 	TemporaryLintTree tree("fs_lint_warning_diagnostics");

@@ -157,9 +157,12 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		CHECK(TestFSCacheAccessor::has_parser(path));
 
 		// Change an unrelated setting; the strict flags are unchanged, so nothing is invalidated and
-		// the cached parser is left in place.
+		// the cached parser is left in place. The warning flag is process-global and read by every
+		// warning-asserting test, so it is restored rather than left flipped for the rest of the run.
+		const Variant previous_warnings_enable = settings->get_setting("debug/foundry_script/warnings/enable", true);
 		settings->set_setting("debug/foundry_script/warnings/enable", true);
 		const bool invalidated = FSParser::invalidate_analysis_on_strict_settings_change();
+		settings->set_setting("debug/foundry_script/warnings/enable", previous_warnings_enable);
 		CHECK_FALSE(invalidated);
 		CHECK(TestFSCacheAccessor::has_parser(path));
 
