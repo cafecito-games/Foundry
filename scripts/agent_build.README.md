@@ -133,8 +133,48 @@ The wrapper collects ccache telemetry using a unique per-invocation `CCACHE_STAT
 worktrees do not race on statistics. Telemetry is best-effort: summaries report explicit status/errors,
 and telemetry never replaces the build result.
 
-Progress records cover wrapper command start, output, heartbeat, completion, and the final summary.
-They do not provide detailed visibility into every internal SCons or Ninja phase.
+Progress records cover wrapper command start, output, heartbeat, completion, and the final
+`build_summary`. They do not provide detailed visibility into every internal SCons or Ninja phase.
+`build_summary` describes the build step only: under `--test` it stays `success` when the build
+succeeded even if the tests then fail.
+
+### The RESULT line
+
+Every invocation writes exactly one terminal verdict line, always last, to both the human stream and
+the build log:
+
+```
+[agent-build] RESULT: <status> step=<step> exit_code=<n> binary=<path> binary_present=<yes|no> invocation=<uuid> log=<path>
+```
+
+`<status>` is one of `success`, `build-failure`, `generation-failure`, `binary-missing`,
+`test-failure`, `tooling-missing`, `interrupted`; `<step>` is one of `startup`, `generate`, `build`,
+`test`.
+
+Piping the wrapper into another command, launching it in the background, or appending any trailing
+command in the same shell invocation discards its exit code, so such callers must read the log's final
+`RESULT:` line (`tail -1 <log>`) rather than trusting an observed status of 0.
+
+The exit codes are exhaustive:
+
+| Exit | Meaning |
+|------|---------|
+| `0` | every step ran successfully and the expected editor binary exists |
+| SCons/Ninja child status | the build or Ninja-generation step failed |
+| test child status | the build succeeded and the test step failed |
+| `1` | the build reported success but the expected editor binary is absent |
+| `127` | required tooling (SCons, Ninja, ccache) or platform support is missing |
+| `130` | interrupted |
+
+A missing binary is a failure unconditionally, not only under `--test`: the wrapper always requests
+`target=editor`, so an invocation that produced nothing to run must not be mistaken for a validated
+build. Build settings rename the binary (`precision`, `extra_suffix`, sanitizers, alternate
+toolchains), so when the expected name is absent the wrapper falls back to the sole editor binary in
+the same directory and reports that path; only a directory with no editor binary, or an ambiguous one,
+is `binary-missing`. An unchanged binary timestamp is never a failure, because a no-op incremental
+build legitimately leaves the binary untouched.
+
+A test command that cannot be launched at all reports `test-failure` with exit code `127`.
 
 ## Benchmarks
 

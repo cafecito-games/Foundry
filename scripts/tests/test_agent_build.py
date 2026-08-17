@@ -8,10 +8,12 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -22,6 +24,30 @@ assert _spec is not None and _spec.loader is not None
 agent_build: Any = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = agent_build
 _spec.loader.exec_module(agent_build)
+
+RESULT_PREFIX = agent_build.RESULT_PREFIX
+
+
+@contextlib.contextmanager
+def scratch_directory() -> Iterator[Path]:
+    """A temporary directory rooted in the shared test scratch space when one is configured."""
+    scratch_root = os.environ.get("FOUNDRY_TEST_SCRATCH")
+    parent = Path(scratch_root) if scratch_root else None
+    if parent is not None:
+        parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=parent) as temporary:
+        yield Path(temporary)
+
+
+def progress_events(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def sole_build_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    summaries = [event for event in events if event["event"] == "build_summary"]
+    if len(summaries) != 1:
+        raise AssertionError(f"expected exactly one build_summary, found {len(summaries)}")
+    return summaries[0]
 
 
 class AgentBuildCharacterizationTests(unittest.TestCase):
@@ -749,36 +775,47 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
 
     def test_missing_ccache_returns_actionable_failure(self) -> None:
         stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
-                with mock.patch.object(agent_build.shutil, "which", return_value=None):
-                    exit_code = agent_build.main(["--compiler-cache", "ccache"])
+        stdout = io.StringIO()
+        with scratch_directory() as root:
+            log_path = root / "build.log"
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build.shutil, "which", return_value=None):
+                        exit_code = agent_build.main(
+                            ["--compiler-cache", "ccache", "--no-progress-file", "--log", str(log_path)]
+                        )
+            result_line = log_path.read_text(encoding="utf-8").strip()
         self.assertEqual(exit_code, 127)
         self.assertEqual(
             stderr.getvalue(),
             "[agent-build] ccache is required for this build mode but was not found in PATH. "
             "Use --backend scons --compiler-cache none for the native fallback.\n",
         )
+        self.assertTrue(result_line.startswith(f"{RESULT_PREFIX} tooling-missing step=startup exit_code=127"))
+        self.assertEqual(stdout.getvalue().strip(), result_line)
 
     def test_missing_ninja_returns_actionable_failure(self) -> None:
         stderr = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(stderr):
-            with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
-                with mock.patch.object(
-                    agent_build.shutil,
-                    "which",
-                    side_effect=lambda executable: "/bin/ccache" if executable == "ccache" else None,
-                ):
-                    with mock.patch.object(agent_build, "run_logged_command", return_value=23):
+        with scratch_directory() as root:
+            log_path = root / "build.log"
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(
+                        agent_build.shutil,
+                        "which",
+                        side_effect=lambda executable: "/bin/ccache" if executable == "ccache" else None,
+                    ):
                         exit_code = agent_build.main(
-                            ["--backend", "ninja", "--log", str(Path(tmp) / "build.log"), "--no-progress-file"]
+                            ["--backend", "ninja", "--log", str(log_path), "--no-progress-file"]
                         )
+            result_line = log_path.read_text(encoding="utf-8").strip()
         self.assertEqual(exit_code, 127)
         self.assertEqual(
             stderr.getvalue(),
             "[agent-build] Ninja is required for --backend ninja but was not found in PATH. "
             "Use --backend scons --compiler-cache none for the native fallback.\n",
         )
+        self.assertTrue(result_line.startswith(f"{RESULT_PREFIX} tooling-missing step=startup exit_code=127"))
 
     def test_main_passes_normalized_ccache_environment_to_build(self) -> None:
         polluted = {
@@ -858,7 +895,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(run_command.call_args.kwargs["invocation_id"], "invocation-1")
             self.assertFalse(stats_log_path.exists())
 
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertEqual(summary["event"], "build_summary")
             self.assertEqual(summary["invocation_id"], "invocation-1")
             self.assertEqual(summary["git_commit"], "deadbeef")
@@ -932,7 +969,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(generation_call.kwargs["invocation_id"], "invocation-ninja")
             self.assertEqual(build_call.kwargs["invocation_id"], "invocation-ninja")
 
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertEqual(
                 summary["build_command"],
                 ["/bin/ninja", "-f", os.path.relpath(state.file, agent_build.REPO_ROOT), "-j4"],
@@ -980,7 +1017,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(run_command.call_args.kwargs["label"], "build")
             self.assertTrue(run_command.call_args.kwargs["append_log"])
             self.assertTrue(run_command.call_args.kwargs["append_progress"])
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertIsNone(summary["generation_command"])
             self.assertEqual(summary["generation_status"], "skipped-existing")
 
@@ -1013,7 +1050,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 127)
             run_command.assert_not_called()
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
             self.assertEqual(summary["generation_status"], "error")
             self.assertIn("FileExistsError", summary["generation_error"])
             self.assertEqual(summary["status"], "error")
@@ -1051,7 +1088,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                                     )
 
         self.assertEqual(exit_code, 23)
-        payload = json.loads(stdout.getvalue())
+        payload = sole_build_summary([json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()])
         self.assertEqual(payload["event"], "build_summary")
         self.assertEqual(payload["invocation_id"], "invocation-stdout")
         self.assertEqual(payload["cache_stats_status"], "disabled")
@@ -1096,7 +1133,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                                         ]
                                     )
 
-            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            summary = sole_build_summary(progress_events(progress_path))
         self.assertEqual(exit_code, 127)
         self.assertEqual(summary["event"], "build_summary")
         self.assertEqual(summary["status"], "error")
@@ -1269,6 +1306,299 @@ class JobConcurrencyTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
                 agent_build.parse_args([])
         self.assertIn("FOUNDRY_BUILD_JOBS", stderr.getvalue())
+
+
+class BinaryPathTests(unittest.TestCase):
+    """The wrapper must look for the file SCons actually writes."""
+
+    def binary_name(self, argv: list[str]) -> str:
+        args = agent_build.parse_args(["--platform", "macos", "--scons-arg", "arch=arm64", *argv])
+        return agent_build.resolve_build_target(args).binary_path.name
+
+    def test_default_editor_binary_name(self) -> None:
+        self.assertEqual(self.binary_name([]), "foundry.macos.editor.dev.arm64")
+
+    def test_double_precision_changes_the_binary_name(self) -> None:
+        self.assertEqual(
+            self.binary_name(["--scons-arg", "precision=double"]),
+            "foundry.macos.editor.dev.double.arm64",
+        )
+
+    def test_disabled_threads_change_the_binary_name(self) -> None:
+        self.assertEqual(
+            self.binary_name(["--scons-arg", "threads=no"]),
+            "foundry.macos.editor.dev.arm64.nothreads",
+        )
+
+    def test_extra_suffix_changes_the_binary_name(self) -> None:
+        self.assertEqual(
+            self.binary_name(["--scons-arg", "extra_suffix=probe"]),
+            "foundry.macos.editor.dev.arm64.probe",
+        )
+
+    def test_overridden_dev_build_drops_the_dev_marker(self) -> None:
+        self.assertEqual(self.binary_name(["--scons-arg", "dev_build=no"]), "foundry.macos.editor.arm64")
+
+    def test_every_name_altering_setting_combines(self) -> None:
+        self.assertEqual(
+            self.binary_name(
+                [
+                    "--scons-arg",
+                    "precision=double",
+                    "--scons-arg",
+                    "threads=false",
+                    "--scons-arg",
+                    "extra_suffix=probe",
+                ]
+            ),
+            "foundry.macos.editor.dev.double.arm64.nothreads.probe",
+        )
+
+
+def fake_scons(directory: Path, *, exit_code: int, lines: list[str]) -> Path:
+    """A stand-in SCons that prints the given output and exits with the given status."""
+    payload = json.dumps({"lines": list(lines), "exit_code": exit_code})
+    script = directory / f"fake_scons_{abs(hash(payload)) % 10**8}.py"
+    script.write_text(
+        "import json\n"
+        "import sys\n"
+        f"payload = json.loads({payload!r})\n"
+        "for line in payload['lines']:\n"
+        "    print(line)\n"
+        "sys.exit(payload['exit_code'])\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+def executable_stub(path: Path, exit_code: int) -> Path:
+    """An executable file that exits with the given status, standing in for a built binary."""
+    path.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+SHADOW_DIAGNOSTIC = [
+    "modules/foundry_script/tests/test_foundry_script_type.h:516:24: error: declaration shadows a "
+    "variable in namespace FSTests [-Werror,-Wshadow]",
+    "1 error generated.",
+    "scons: *** [test.o] Error 1",
+]
+
+
+class ResultContractTests(unittest.TestCase):
+    """The wrapper's exit code and its terminal RESULT: line must agree with what the build did."""
+
+    def run_wrapper(
+        self,
+        root: Path,
+        scons: Path,
+        *,
+        extra_argv: list[str] | None = None,
+        binary_path: Path | None = None,
+        which=None,
+    ) -> tuple[int, Path, Path, str]:
+        binary_path = binary_path if binary_path is not None else root / "foundry.macos.editor.dev.arm64"
+        log_path = root / "build.log"
+        progress_path = root / "progress.jsonl"
+        target = agent_build.BuildTarget("macos", binary_path, None)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+            with mock.patch.object(agent_build, "scons_prefix", return_value=[sys.executable, str(scons)]):
+                with mock.patch.object(agent_build, "resolve_build_target", return_value=target):
+                    with contextlib.ExitStack() as stack:
+                        if which is not None:
+                            stack.enter_context(mock.patch.object(agent_build.shutil, "which", side_effect=which))
+                        exit_code = agent_build.main(
+                            [
+                                "--jobs",
+                                "1",
+                                "--log",
+                                str(log_path),
+                                "--progress-file",
+                                str(progress_path),
+                                *(extra_argv or []),
+                            ]
+                        )
+        return exit_code, log_path, progress_path, stdout.getvalue()
+
+    def result_line(self, log_path: Path) -> str:
+        lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        self.assertTrue(lines, "the build log is empty")
+        return lines[-1]
+
+    def result_lines(self, log_path: Path) -> list[str]:
+        return [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.startswith(RESULT_PREFIX)]
+
+    def test_failed_build_exits_with_the_scons_child_status(self) -> None:
+        with scratch_directory() as root:
+            scons = fake_scons(root, exit_code=2, lines=SHADOW_DIAGNOSTIC)
+            exit_code, _, _, _ = self.run_wrapper(root, scons)
+        self.assertEqual(exit_code, 2)
+
+    def test_failed_build_summary_reports_failure(self) -> None:
+        with scratch_directory() as root:
+            scons = fake_scons(root, exit_code=2, lines=SHADOW_DIAGNOSTIC)
+            _, _, progress_path, _ = self.run_wrapper(root, scons)
+            events = progress_events(progress_path)
+        summary = sole_build_summary(events)
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["exit_code"], 2)
+        self.assertNotIn("success", [event.get("status") for event in events])
+
+    def test_failed_build_writes_a_build_failure_result_line(self) -> None:
+        with scratch_directory() as root:
+            scons = fake_scons(root, exit_code=2, lines=SHADOW_DIAGNOSTIC)
+            exit_code, log_path, _, stdout = self.run_wrapper(root, scons)
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 2)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} build-failure"), line)
+        self.assertIn("step=build", line)
+        self.assertIn("exit_code=2", line)
+        self.assertIn("binary_present=no", line)
+        self.assertIn(line, stdout)
+
+    def test_successful_build_without_expected_binary_fails(self) -> None:
+        with scratch_directory() as root:
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(root, scons)
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 1)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} binary-missing"), line)
+        self.assertIn("exit_code=1", line)
+        self.assertIn("binary_present=no", line)
+
+    def test_successful_build_with_binary_reports_success(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, progress_path, _ = self.run_wrapper(root, scons, binary_path=binary_path)
+            summary = sole_build_summary(progress_events(progress_path))
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} success"), line)
+        self.assertIn("binary_present=yes", line)
+        self.assertEqual(summary["status"], "success")
+
+    def test_failing_tests_after_a_successful_build_report_test_failure(self) -> None:
+        with scratch_directory() as root:
+            binary_path = executable_stub(root / "foundry.macos.editor.dev.arm64", 7)
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, progress_path, _ = self.run_wrapper(
+                root, scons, binary_path=binary_path, extra_argv=["--test"]
+            )
+            summary = sole_build_summary(progress_events(progress_path))
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 7)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} test-failure"), line)
+        self.assertIn("step=test", line)
+        self.assertEqual(summary["status"], "success")
+
+    def test_ninja_build_failure_exits_with_the_ninja_child_status(self) -> None:
+        if shutil.which("ninja") is None:
+            self.skipTest("Ninja is not available")
+        with scratch_directory() as root:
+            state = agent_build.NinjaState(root / "state", root / "state" / "build.ninja")
+            state.directory.mkdir(parents=True)
+            state.file.write_text(
+                "rule fail\n  command = sh -c 'exit 1'\n  description = fail\nbuild all: fail\ndefault all\n",
+                encoding="utf-8",
+            )
+            scons = fake_scons(root, exit_code=0, lines=[])
+            with mock.patch.object(agent_build, "resolve_ninja_state", return_value=state):
+                exit_code, log_path, _, _ = self.run_wrapper(root, scons, extra_argv=["--backend", "ninja"])
+                line = self.result_line(log_path)
+        self.assertEqual(exit_code, 1)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} build-failure"), line)
+
+    def test_ninja_generation_failure_reports_generation_failure(self) -> None:
+        with scratch_directory() as root:
+            state = agent_build.NinjaState(root / "state", root / "state" / "build.ninja")
+            scons = fake_scons(root, exit_code=3, lines=["scons: *** generation failed"])
+            with mock.patch.object(agent_build, "resolve_ninja_state", return_value=state):
+                exit_code, log_path, progress_path, _ = self.run_wrapper(
+                    root,
+                    scons,
+                    extra_argv=["--backend", "ninja"],
+                    which=lambda executable: f"/usr/bin/{executable}",
+                )
+                summary = sole_build_summary(progress_events(progress_path))
+                line = self.result_line(log_path)
+        self.assertEqual(exit_code, 3)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} generation-failure"), line)
+        self.assertIn("step=generate", line)
+        self.assertEqual(summary["generation_status"], "failed")
+
+    def test_a_platform_suffixed_binary_satisfies_the_link_check(self) -> None:
+        with scratch_directory() as root:
+            build_directory = root / "bin"
+            build_directory.mkdir()
+            (build_directory / "foundry.macos.editor.dev.arm64.san").write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(
+                root, scons, binary_path=build_directory / "foundry.macos.editor.dev.arm64"
+            )
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} success"), line)
+        self.assertIn("binary=" + str(build_directory / "foundry.macos.editor.dev.arm64.san"), line)
+        self.assertIn("binary_present=yes", line)
+
+    def test_an_ambiguous_build_directory_still_reports_binary_missing(self) -> None:
+        with scratch_directory() as root:
+            build_directory = root / "bin"
+            build_directory.mkdir()
+            (build_directory / "foundry.macos.editor.dev.arm64.san").write_bytes(b"one")
+            (build_directory / "foundry.macos.editor.dev.x86_64").write_bytes(b"another")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(
+                root, scons, binary_path=build_directory / "foundry.macos.editor.dev.arm64"
+            )
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 1)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} binary-missing"), line)
+
+    def test_an_unlaunchable_test_command_still_reports_a_result(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            binary_path.chmod(0o644)
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(root, scons, binary_path=binary_path, extra_argv=["--test"])
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 127)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} test-failure"), line)
+        self.assertIn("step=test", line)
+
+    def test_result_line_is_emitted_exactly_once(self) -> None:
+        with scratch_directory() as root:
+            failing = fake_scons(root, exit_code=2, lines=SHADOW_DIAGNOSTIC)
+            _, failure_log, _, _ = self.run_wrapper(root, failing)
+            self.assertEqual(len(self.result_lines(failure_log)), 1)
+
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            passing = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            _, success_log, _, _ = self.run_wrapper(
+                root, passing, binary_path=binary_path, extra_argv=["--log", str(root / "success.log")]
+            )
+            self.assertEqual(len(self.result_lines(success_log)), 1)
+
+    def test_an_interrupt_reports_a_defined_verdict(self) -> None:
+        with scratch_directory() as root:
+            log_path = root / "build.log"
+            agent_build.RESULT_CONTEXT.step = "build"
+            agent_build.RESULT_CONTEXT.binary_path = root / "foundry.macos.editor.dev.arm64"
+            agent_build.RESULT_CONTEXT.invocation_id = "invocation-interrupt"
+            agent_build.RESULT_CONTEXT.log_path = log_path
+            agent_build.RESULT_CONTEXT.human_stream = io.StringIO()
+            with mock.patch.object(agent_build, "main", side_effect=KeyboardInterrupt):
+                exit_code = agent_build.run([])
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 130)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
+        self.assertIn("exit_code=130", line)
 
 
 if __name__ == "__main__":
