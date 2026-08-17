@@ -1,0 +1,4 @@
+FS_TEST_OK
+optional element 1 false
+optional element 2 true
+gradual anything same=true

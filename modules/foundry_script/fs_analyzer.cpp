@@ -17222,13 +17222,24 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 		if (element == nullptr) {
 			return false;
 		}
+		const FSParser::DataType element_type = element->get_datatype();
 		if (_datatype_contains_self_type_parameter(expected_element)) {
+			// The admissions that do not need identity -- `null` for a nullable element, a `final` class's
+			// single binding, a value the analyzer substituted itself -- answer the same question one
+			// nesting level down, so an element consults them before identity is required of it.
+			if (_datatype_matches_self_parameter_contract(expected_element, element_type)) {
+				continue;
+			}
 			if (!self_parameter_satisfied_by_receiver_identity(expected_element, element, p_call)) {
 				return false;
 			}
 			continue;
 		}
-		const FSParser::DataType element_type = element->get_datatype();
+		// A hard `Variant` position takes any value, gradual ones included, exactly as ordinary argument
+		// validation does -- and warning-free there too, so nothing is suppressed by answering here.
+		if (expected_element.is_hard_type() && expected_element.is_variant()) {
+			continue;
+		}
 		if (!element_type.is_hard_type() || !is_type_compatible(expected_element, element_type, true)) {
 			return false;
 		}
