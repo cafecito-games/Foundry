@@ -231,6 +231,8 @@ class FSCompiler {
 	Variant _resolve_aliased_class_constant(const Variant &p_value);
 	Variant _resolve_aliased_class_constant(const Variant &p_value, const FSParser::DataType &p_datatype,
 			FoundryScript *p_owner);
+	bool _reify_flattened_trait_type_argument(const FSParser::DataType &p_argument, FoundryScript *p_owner,
+			FSDataType &r_reified);
 	Variant _normalize_compiled_constant(const Variant &p_value, int p_depth);
 	ContainerType _normalize_compiled_container_type(const ContainerType &p_type, int p_depth);
 	// Re-resolve a still-open type-argument binding one level through a subclass's `extends Base[args]`

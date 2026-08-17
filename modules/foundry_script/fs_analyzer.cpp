@@ -11171,7 +11171,28 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			FSParser::ClassNode::Member member = script_class->get_member(name);
 			switch (member.type) {
 				case FSParser::ClassNode::Member::CONSTANT: {
-					p_identifier->set_datatype(member.get_datatype());
+					FSParser::DataType constant_type = member.get_datatype();
+					if (is_trait_interface_class && base_class != nullptr) {
+						// A constant reached through a generic trait is typed by the TRAIT's parameters, while
+						// the class that applied the trait flattened it in under the arguments it supplied.
+						// Substituting them here is what makes `Fixed.Aliased` a `Holder[int]` handle; leaving
+						// the parameter node in place lets every consumer erase it to `Variant`, a
+						// specialization no implementer applied and every slot that resolves the parameter
+						// rejects. Trait members stay reachable through inheritance, so the application is
+						// looked up along the receiver's own chain, exactly where the member was found.
+						for (FSParser::ClassNode *owner = base_class; owner != nullptr;
+								owner = owner->base_type.class_type) {
+							const HashMap<StringName, FSParser::DataType> substitutions =
+									trait_type_argument_substitution(owner, script_class);
+							if (substitutions.is_empty()) {
+								continue;
+							}
+							constant_type = _substitute_type_parameters_and_self(
+									constant_type, substitutions, _self_type_for_class(base_class));
+							break;
+						}
+					}
+					p_identifier->set_datatype(constant_type);
 					p_identifier->is_constant = true;
 					p_identifier->reduced_value = member.constant->initializer->reduced_value;
 					p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
