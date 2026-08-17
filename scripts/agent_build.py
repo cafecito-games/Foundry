@@ -1643,8 +1643,32 @@ def main(argv: list[str]) -> int:
     return report("test-failure" if test_exit else "success", "test", test_exit)
 
 
+def raise_interrupt(signal_number: int, frame: object) -> None:
+    """Route a supervisor's stop signal into the wrapper's ordinary interrupt path."""
+    raise KeyboardInterrupt(f"signal {signal_number}")
+
+
+def install_stop_signal_handlers() -> dict[int, Any]:
+    """Handle the signals a supervisor stops a build with, and report what they replaced.
+
+    A stop signal is delivered to the wrapper alone — its build runs in a separate session — so
+    without a handler the wrapper dies leaving the build running and no verdict written at all.
+    """
+    previous: dict[int, Any] = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            previous[number] = signal.signal(number, raise_interrupt)
+        except (OSError, ValueError):
+            continue
+    return previous
+
+
 def run(argv: list[str]) -> int:
     """Run the wrapper, turning an interrupt into a defined verdict instead of a traceback."""
+    previous_handlers = install_stop_signal_handlers()
     try:
         return main(argv)
     except KeyboardInterrupt:
@@ -1654,6 +1678,12 @@ def run(argv: list[str]) -> int:
             exit_code=INTERRUPTED_EXIT_CODE,
             context=RESULT_CONTEXT,
         )
+    finally:
+        for number, handler in previous_handlers.items():
+            try:
+                signal.signal(number, handler)
+            except (OSError, ValueError):
+                pass
 
 
 if __name__ == "__main__":

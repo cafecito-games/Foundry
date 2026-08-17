@@ -235,13 +235,18 @@ A test command that cannot be launched at all reports `test-failure` with exit c
 
 ### Interrupting a run
 
-The build and test children run in their own session, so an interrupt delivered to the wrapper does
-not reach them. On `KeyboardInterrupt` the wrapper therefore signals the child's whole process group
-with `SIGTERM`, waits for it, escalates to `SIGKILL` after a bounded grace period, and only then
-writes its terminal verdict. Interrupting a build consequently ends it: nothing is left compiling into
+The build and test children run in their own session, so a signal delivered to the wrapper does not
+reach them. On interrupt the wrapper therefore signals the child's whole process group with
+`SIGTERM`, waits for it, escalates to `SIGKILL` after a bounded grace period, and only then writes
+its terminal verdict. Interrupting a build consequently ends it: nothing is left compiling into
 `bin/` or the object tree behind a run that has already been declared over, so the identity the
-verdict reports stays true and a restarted build cannot race a cancelled one. Further interrupts
-arriving during the shutdown do not abandon the wait.
+verdict reports stays true and a restarted build cannot race a stopped one. Further signals arriving
+during the shutdown do not abandon the wait.
+
+`SIGTERM` and `SIGHUP` take the same path as `Ctrl-C`, because a supervisor canceling a build sends
+one of those rather than typing at a terminal. Either way the run ends `interrupted` with exit code
+`130` and one `RESULT:` line. Only `SIGKILL` to the wrapper still orphans a build, since no process
+can handle it.
 
 ## Benchmarks
 

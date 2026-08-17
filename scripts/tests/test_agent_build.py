@@ -29,6 +29,7 @@ sys.modules[_spec.name] = agent_build
 _spec.loader.exec_module(agent_build)
 
 RESULT_PREFIX = agent_build.RESULT_PREFIX
+INTERRUPT_SUBJECT = Path(__file__).resolve().parent / "agent_build_interrupt_subject.py"
 
 
 @contextlib.contextmanager
@@ -1767,6 +1768,41 @@ class InterruptedBuildTests(WrapperHarness):
         self.assertIn("child=exited", line)
         self.assertEqual(terminal[0]["child_disposition"], "exited")
         self.assertEqual(terminal[0]["child_exit_code"], 0)
+
+    def test_a_stop_signal_ends_the_build_and_still_reports_a_verdict(self) -> None:
+        """A supervisor's SIGTERM must take the build down with it, not orphan it silently."""
+        with scratch_directory() as root:
+            pid_path = root / "child.pid"
+            artifact_path = root / "artifact"
+            scons = long_running_fake_scons(
+                root, pid_path=pid_path, artifact_path=artifact_path, ignore_terminate=False
+            )
+            wrapper = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(INTERRUPT_SUBJECT),
+                    str(scons),
+                    str(root / "build.log"),
+                    str(root / "progress.jsonl"),
+                    str(root / "foundry.macos.editor.dev.arm64"),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.addCleanup(wrapper.kill)
+            deadline = time.monotonic() + 30
+            while not pid_path.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertTrue(pid_path.exists(), "the fake build never started")
+            pid = self.reap(pid_path)
+            wrapper.terminate()
+            wrapper.wait(timeout=30)
+            alive = process_is_alive(pid)
+            line = self.result_line(root / "build.log")
+        self.assertFalse(alive, "a stopped wrapper left its build running")
+        self.assertEqual(wrapper.returncode, 130)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
+        self.assertIn("child=terminated", line)
 
     def test_a_run_that_never_started_a_child_reports_none(self) -> None:
         with scratch_directory() as root:
