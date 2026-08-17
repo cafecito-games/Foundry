@@ -158,6 +158,73 @@ TEST_CASE("[FoundryScript][TupleLowering] Tuple construction disassembles as a d
 	}
 }
 
+static FSFunction *tuple_test_function(const Ref<FoundryScript> &p_script, const StringName &p_function_name) {
+	const HashMap<StringName, FSFunction *> &functions = p_script->get_member_functions();
+	const HashMap<StringName, FSFunction *>::ConstIterator function = functions.find(p_function_name);
+	REQUIRE(function != functions.end());
+	REQUIRE(function->value != nullptr);
+	return function->value;
+}
+
+TEST_CASE("[FoundryScript][TupleLowering] A tuple parameter compiles its shape into the call boundary") {
+	// The shape has to reach `FSFunction::argument_types` and nowhere else: a parameter's compiled type
+	// is also its codegen address type, and no `write_assign*` has a `TUPLE` case.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func take(pair: (int, String), plain: Array) -> void:\n"
+			"\tprint(pair, plain)\n"
+			"\n"
+			"func rest_of_tuples(...values: Array[(int, String)]) -> void:\n"
+			"\tprint(values)\n"
+			"\n"
+			"func rest_of_ints(...values: Array[int]) -> void:\n"
+			"\tprint(values)\n");
+
+	SUBCASE("A fixed tuple parameter validates against the declared shape") {
+		FSFunction *function = tuple_test_function(script, SNAME("take"));
+		REQUIRE(function->get_argument_count() == 2);
+
+		const FSDataType &tuple_argument = function->get_argument_type(0);
+		CHECK(tuple_argument.kind == FSDataType::TUPLE);
+		CHECK(tuple_argument.builtin_type == Variant::ARRAY);
+		REQUIRE(tuple_argument.container_element_types.size() == 2);
+		CHECK(tuple_argument.container_element_types[0].builtin_type == Variant::INT);
+		CHECK(tuple_argument.container_element_types[1].builtin_type == Variant::STRING);
+
+		// A neighbouring non-tuple parameter is untouched.
+		const FSDataType &array_argument = function->get_argument_type(1);
+		CHECK(array_argument.kind == FSDataType::BUILTIN);
+		CHECK(array_argument.builtin_type == Variant::ARRAY);
+		CHECK(array_argument.container_element_types.is_empty());
+	}
+
+	SUBCASE("Binding a parameter emits no store, so the slot type stays erased") {
+		// The shape is enforced by the boundary, not by an instruction: a `TUPLE`-kind address type
+		// would change how the body is lowered, and this is what proves it was not handed one.
+		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("take"));
+		CHECK(filter_disassembly_lines(lines, "assign typed tuple").is_empty());
+	}
+
+	SUBCASE("A tuple rest element validates against the declared shape") {
+		FSFunction *function = tuple_test_function(script, SNAME("rest_of_tuples"));
+		const FSDataType &rest_type = function->get_rest_parameter_type();
+		// The collected array itself stays a bare Array: a tuple has no typed-container form, so
+		// typing the collection from this element would reject every legal element.
+		CHECK(rest_type.kind == FSDataType::BUILTIN);
+		CHECK(rest_type.builtin_type == Variant::ARRAY);
+		REQUIRE(rest_type.container_element_types.size() == 1);
+		CHECK(rest_type.container_element_types[0].kind == FSDataType::TUPLE);
+		CHECK(rest_type.container_element_types[0].container_element_types.size() == 2);
+	}
+
+	SUBCASE("A non-tuple rest element keeps its typed-container element") {
+		FSFunction *function = tuple_test_function(script, SNAME("rest_of_ints"));
+		const FSDataType &rest_type = function->get_rest_parameter_type();
+		REQUIRE(rest_type.container_element_types.size() == 1);
+		CHECK(rest_type.container_element_types[0].kind == FSDataType::BUILTIN);
+		CHECK(rest_type.container_element_types[0].builtin_type == Variant::INT);
+	}
+}
+
 } // namespace FSTests
 
 #endif // defined(TOOLS_ENABLED) && defined(DEBUG_ENABLED)

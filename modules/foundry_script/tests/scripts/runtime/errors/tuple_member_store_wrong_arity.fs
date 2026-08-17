@@ -15,5 +15,6 @@ func test() -> void:
 	var holder := Holder.new()
 	holder.store(supply((1, "one")))
 	print(holder.field)
+	# The store fails inside `store()`, which aborts that frame; the member keeps the value it had.
 	holder.store(supply((1, 2, 3)))
-	print("unreachable")
+	print(holder.field)

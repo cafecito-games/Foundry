@@ -11,5 +11,6 @@ func supply(value: Variant) -> Variant:
 
 
 func test() -> void:
-	Holder.new().store(supply((1, RefCounted.new())))
-	print("unreachable")
+	var holder := Holder.new()
+	holder.store(supply((1, RefCounted.new())))
+	print(holder.field)

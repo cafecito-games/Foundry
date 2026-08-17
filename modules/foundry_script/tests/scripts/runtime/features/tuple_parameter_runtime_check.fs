@@ -20,7 +20,11 @@ class Receiver extends RefCounted:
 		print("took ", pair)
 
 	func carrier(pair: (int, String)) -> void:
-		report_carrier(pair)
+		# Reaching a tuple's carrier takes a deliberate unsafe cast, since a tuple type is not an Array
+		# type to the analyzer.
+		var value: Variant = pair
+		var carrier_array := value as Array
+		print("read_only=", carrier_array.is_read_only(), " typed=", carrier_array.is_typed())
 
 	func nested(pair: (int, (String, bool))) -> void:
 		print("nested ", pair)
@@ -48,13 +52,6 @@ class Receiver extends RefCounted:
 
 	static func static_take(pair: (int, String)) -> void:
 		print("static took ", pair)
-
-
-# Reaching a tuple's carrier takes a deliberate unsafe cast, since a tuple type is not an Array type
-# to the analyzer.
-func report_carrier(value: Variant) -> void:
-	var carrier := value as Array
-	print("read_only=", carrier.is_read_only(), " typed=", carrier.is_typed())
 
 
 func supply(value: Variant) -> Variant:
@@ -97,8 +94,8 @@ func test() -> void:
 
 	# A method type parameter is erased in the compiled shape, so the second element takes anything
 	# while the declared arity and the concrete `int` still hold.
-	receiver.generic(supply((14, "fourteen")))
-	receiver.generic(supply((15, true)))
+	receiver.generic[String](supply((14, "fourteen")))
+	receiver.generic[bool](supply((15, true)))
 
 	# A rest tail of tuples collects into an untyped array whose elements are each validated.
 	receiver.rest((16, "sixteen"), (17, "seventeen"))

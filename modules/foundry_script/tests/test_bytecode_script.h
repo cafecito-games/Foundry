@@ -231,6 +231,7 @@ public:
 			CHECK(actual_member.setter == member.value.setter);
 			CHECK(actual_member.getter == member.value.getter);
 			CHECK(actual_member.data_type == member.value.data_type);
+			CHECK(actual_member.tuple_slot_shape == member.value.tuple_slot_shape);
 			CHECK(actual_member.property_info.type == member.value.property_info.type);
 			CHECK(actual_member.property_info.name == member.value.property_info.name);
 			CHECK(actual_member.property_info.hint == member.value.property_info.hint);
@@ -3714,6 +3715,77 @@ TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Union met
 	CHECK_FALSE(bool(bytecode_instance_call(instance, SNAME("has_value"), none_arguments)));
 
 	CHECK(int(bytecode_instance_call(instance, SNAME("nested_total"), Vector<Variant>())) == 7);
+
+	restored->clear();
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects") {
+	// The shape lives only in `argument_types` and in `MemberInfo::tuple_slot_shape`; neither is
+	// recoverable from the erased Array carrier, so a bytecode-loaded script would silently accept
+	// what the source-built one rejects if either failed to round-trip.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"var field: (int, String) = (0, \"zero\")\n"
+			"\n"
+			"func take(pair: (int, String)) -> String:\n"
+			"\treturn str(pair)\n"
+			"\n"
+			"func collect(...values: Array[(int, String)]) -> int:\n"
+			"\treturn values.size()\n");
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	TestFSBytecodeScriptAccessor::check_member_tables_match(original, restored);
+
+	const HashMap<StringName, FSFunction *> &functions = restored->get_member_functions();
+	const HashMap<StringName, FSFunction *> &original_functions = original->get_member_functions();
+	const HashMap<StringName, FSFunction *>::ConstIterator take = functions.find(SNAME("take"));
+	const HashMap<StringName, FSFunction *>::ConstIterator original_take = original_functions.find(SNAME("take"));
+	REQUIRE(take != functions.end());
+	REQUIRE(original_take != original_functions.end());
+	CHECK(take->value->get_argument_type(0) == original_take->value->get_argument_type(0));
+	CHECK(take->value->get_argument_type(0).kind == FSDataType::TUPLE);
+
+	const HashMap<StringName, FSFunction *>::ConstIterator collect = functions.find(SNAME("collect"));
+	const HashMap<StringName, FSFunction *>::ConstIterator original_collect = original_functions.find(SNAME("collect"));
+	REQUIRE(collect != functions.end());
+	REQUIRE(original_collect != original_functions.end());
+	CHECK(collect->value->get_rest_parameter_type() == original_collect->value->get_rest_parameter_type());
+
+	// The reloaded script enforces the same boundary the source-built one does.
+	const Variant instance_variant = bytecode_new_instance(restored);
+	Object *instance = instance_variant;
+
+	Array accepted;
+	accepted.push_back(1);
+	accepted.push_back("one");
+	accepted.make_read_only();
+	Vector<Variant> accepted_arguments;
+	accepted_arguments.push_back(accepted);
+	CHECK(String(bytecode_instance_call(instance, SNAME("take"), accepted_arguments)) == "[1, \"one\"]");
+
+	Array rejected;
+	rejected.push_back(1);
+	rejected.push_back(2);
+	rejected.push_back(3);
+	rejected.make_read_only();
+	const Variant rejected_argument = rejected;
+	const Variant *rejected_pointer = &rejected_argument;
+	Callable::CallError call_error;
+	ERR_PRINT_OFF;
+	instance->callp(SNAME("take"), &rejected_pointer, 1, call_error);
+	ERR_PRINT_ON;
+	CHECK(call_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+
+	// A reflective member write is validated against the reloaded shape too.
+	bool write_valid = false;
+	instance->set(SNAME("field"), accepted, &write_valid);
+	CHECK(write_valid);
+	CHECK(Array(instance->get(SNAME("field"))) == accepted);
+	write_valid = false;
+	instance->set(SNAME("field"), rejected, &write_valid);
+	CHECK_FALSE(write_valid);
+	CHECK(Array(instance->get(SNAME("field"))) == accepted);
 
 	restored->clear();
 }

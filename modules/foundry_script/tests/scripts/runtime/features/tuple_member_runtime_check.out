@@ -1,0 +1,8 @@
+FS_TEST_OK
+~~ WARNING at line 14: (UNSAFE_CAST) Casting "Variant" to "Array" is unsafe.
+[1, "one"]
+read_only=true typed=false
+[2, "two"]
+read_only=true typed=false
+[3, "three"]
+read_only=true typed=false

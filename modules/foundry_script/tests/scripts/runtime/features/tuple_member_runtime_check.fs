@@ -7,13 +7,12 @@ class Holder extends RefCounted:
 	func store(value: Variant) -> void:
 		field = value
 
+	# Reaching a tuple's carrier takes a deliberate unsafe cast, since a tuple type is not an Array
+	# type to the analyzer.
 	func report() -> void:
-		report_carrier(field)
-
-
-func report_carrier(value: Variant) -> void:
-	var carrier := value as Array
-	print("read_only=", carrier.is_read_only(), " typed=", carrier.is_typed())
+		var value: Variant = field
+		var carrier := value as Array
+		print("read_only=", carrier.is_read_only(), " typed=", carrier.is_typed())
 
 
 func supply(value: Variant) -> Variant:

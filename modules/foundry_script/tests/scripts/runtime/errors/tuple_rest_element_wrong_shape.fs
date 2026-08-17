@@ -7,7 +7,8 @@ class Receiver extends RefCounted:
 
 
 func test() -> void:
-	var callback: Callable = Receiver.new().take
+	var receiver := Receiver.new()
+	var callback: Callable = receiver.take
 	callback.call((1, "one"), (2, "two"))
 	callback.call((1, "one"), (2, 3, 4))
 	print("unreachable")

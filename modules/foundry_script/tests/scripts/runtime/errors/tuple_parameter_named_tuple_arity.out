@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+took [1.0, 2.0]
+>> SCRIPT ERROR at runtime/errors/tuple_parameter_named_tuple_arity.fs:15 on test(): Invalid type in function 'RefCounted::take (Callable)'. The array of argument 1 (Array) does not have the same element type as the expected typed array argument.

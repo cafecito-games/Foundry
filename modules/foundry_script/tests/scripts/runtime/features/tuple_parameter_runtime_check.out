@@ -1,0 +1,38 @@
+FS_TEST_OK
+~~ WARNING at line 26: (UNSAFE_CAST) Casting "Variant" to "Array" is unsafe.
+~~ WARNING at line 73: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take()" requires the subtype "(int, String)" but the supertype "Variant" was provided.
+~~ WARNING at line 77: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "carrier()" requires the subtype "(int, String)" but the supertype "Variant" was provided.
+~~ WARNING at line 78: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "carrier()" requires the subtype "(int, String)" but the supertype "Variant" was provided.
+~~ WARNING at line 79: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "carrier()" requires the subtype "(int, String)" but the supertype "Variant" was provided.
+~~ WARNING at line 82: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "nested()" requires the subtype "(int, (String, bool))" but the supertype "Variant" was provided.
+~~ WARNING at line 83: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "maybe()" requires the subtype "(int, String)?" but the supertype "Variant" was provided.
+~~ WARNING at line 84: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "maybe()" requires the subtype "(int, String)?" but the supertype "Variant" was provided.
+~~ WARNING at line 85: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "nullable_element()" requires the subtype "(int, String?)" but the supertype "Variant" was provided.
+~~ WARNING at line 86: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "nullable_element()" requires the subtype "(int, String?)" but the supertype "Variant" was provided.
+~~ WARNING at line 87: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "named()" requires the subtype "Vec2" but the supertype "Variant" was provided.
+~~ WARNING at line 88: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "named()" requires the subtype "Vec2" but the supertype "Variant" was provided.
+~~ WARNING at line 89: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "trait_element()" requires the subtype "(int, Marker)" but the supertype "Variant" was provided.
+~~ WARNING at line 93: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "container_element()" requires the subtype "(int, Array[int])" but the supertype "Variant" was provided.
+~~ WARNING at line 97: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "generic()" requires the subtype "(int, String)" but the supertype "Variant" was provided.
+~~ WARNING at line 98: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "generic()" requires the subtype "(int, bool)" but the supertype "Variant" was provided.
+took [1, "one"]
+static took [2, "two"]
+lambda took [3, "three"]
+took [4, "four"]
+read_only=true typed=false
+read_only=true typed=false
+read_only=true typed=false
+nested [8, ["eight", true]]
+maybe <null>
+maybe [9, "nine"]
+nullable element [10, <null>]
+nullable element [11, "eleven"]
+named [1.5, 2.5]
+named [3.5, 4.5]
+trait element true
+container element [13, [1, 2]]
+generic [14, "fourteen"]
+generic [15, true]
+rest [[16, "sixteen"], [17, "seventeen"]]
+rest []
+[0.5, 1.5]
