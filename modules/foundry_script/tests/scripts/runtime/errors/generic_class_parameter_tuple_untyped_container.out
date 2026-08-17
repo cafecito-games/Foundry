@@ -1,4 +1,12 @@
 FS_TEST_RUNTIME_ERROR
-~~ WARNING at line 16: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
->> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_untyped_container.fs:7 on Crate.keep(): Trying to assign a value of type "Array" to a variable of type "(int, Array[int])".
-[]
+~~ WARNING at line 42: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_resolved()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 43: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_literal()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 45: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_declared_container()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 46: (UNSAFE_CAST) Casting "Variant" to "Array" is unsafe.
+~~ WARNING at line 47: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep_scalar()" requires the subtype "Variant" but the supertype "Variant" was provided.
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_untyped_container.fs:13 on Crate.keep_resolved(): Trying to assign a value of type "Array" to a variable of type "(int, Array[int])". Tuple element 1 expects "Array[int]", but the value is "Array": a tuple store never converts, so a container element has to arrive already typed.
+resolved element: <null>
+>> SCRIPT ERROR at runtime/errors/generic_class_parameter_tuple_untyped_container.fs:26 on keep_literal(): Trying to assign a value of type "Array" to a variable of type "(int, Array[int])". Tuple element 1 expects "Array[int]", but the value is "Array": a tuple store never converts, so a container element has to arrive already typed.
+literal element: <null>
+declared container element: [2] typed: false
+scalar slot: [2] typed: true

@@ -143,6 +143,48 @@ static String _get_var_type(const Variant *p_var) {
 	return basestr;
 }
 
+// The extra clause a rejected tuple store adds when exactly one element failed, and failed only on
+// its container element typing. Naming the whole tuple type leaves the reader unable to tell that the
+// arity and every other element agreed and that the offending element was merely untyped, which is the
+// one failure the declaration's spelling cannot explain by itself. Any other shape of failure is left
+// to the plain message, and nothing is reported when more than one element disagrees, since the clause
+// would then be describing only part of the story.
+static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type, const Variant &p_value) {
+	if (p_value.get_type() != Variant::ARRAY) {
+		return String();
+	}
+	const Array array = p_value;
+	if (array.size() != p_tuple_type.container_element_types.size()) {
+		return String();
+	}
+
+	int failed_element = -1;
+	for (int i = 0; i < p_tuple_type.container_element_types.size(); i++) {
+		const FSDataType &element_type = p_tuple_type.container_element_types[i];
+		const Variant element = array[i];
+		if (element_type.is_type(element)) {
+			continue;
+		}
+		// The carrier already agrees and the declaration asks for element typing, so the element test
+		// had nothing left to reject but the value's own element type.
+		const bool container_element_typing_only = element_type.kind == FSDataType::BUILTIN &&
+				(element_type.builtin_type == Variant::ARRAY || element_type.builtin_type == Variant::DICTIONARY) &&
+				element.get_type() == element_type.builtin_type &&
+				!element_type.container_element_types.is_empty();
+		if (!container_element_typing_only || failed_element != -1) {
+			return String();
+		}
+		failed_element = i;
+	}
+	if (failed_element == -1) {
+		return String();
+	}
+
+	return vformat(R"( Tuple element %d expects "%s", but the value is "%s": a tuple store never converts, so a container element has to arrive already typed.)",
+			failed_element, p_tuple_type.container_element_types[failed_element].get_source_type_name(),
+			_get_var_type(&array[failed_element]));
+}
+
 void FSFunction::_profile_native_call(uint64_t p_t_taken, const String &p_func_name, const String &p_instance_class_name) {
 	HashMap<String, Profile::NativeProfile>::Iterator inner_prof = profile.native_calls.find(p_func_name);
 	if (inner_prof) {
@@ -3488,8 +3530,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						: tuple_type.is_type(*src);
 				if (!matches) {
 #ifdef DEBUG_ENABLED
-					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
-							_get_var_type(src), tuple_type.get_source_type_name());
+					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".%s)",
+							_get_var_type(src), tuple_type.get_source_type_name(),
+							_tuple_store_container_element_hint(tuple_type, *src));
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
