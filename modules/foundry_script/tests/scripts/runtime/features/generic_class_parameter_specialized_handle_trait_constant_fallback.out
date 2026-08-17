@@ -2,5 +2,7 @@ FS_TEST_OK
 true
 false
 true
+true
 false
+true
 trait constant fallback ok
