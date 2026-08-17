@@ -237,9 +237,12 @@ func test() -> void:
 	# assert a specialization either receiver contradicts.
 	var direct_built: Variant = DirectSelf.Direct.new()
 	print(direct_built is Holder[DirectSelf])
+	# A statically typed slot accepts the construction form, which the erased `Holder[Self]` static type
+	# made impossible before the receiver substitution.
 	var typed_direct: Holder[SubDirectSelf] = SubDirectSelf.Direct.new()
-	print(typed_direct is Holder[SubDirectSelf])
-	print(typed_direct is Holder[DirectSelf])
+	var typed_direct_value: Variant = typed_direct
+	print(typed_direct_value is Holder[SubDirectSelf])
+	print(typed_direct_value is Holder[DirectSelf])
 	var direct_stored: Variant = DirectSelf.Direct
 	print(direct_stored == Holder)
 	print(direct_stored == Holder[DirectSelf])

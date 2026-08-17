@@ -1084,6 +1084,36 @@ static bool _baked_shape_references_self(const FSDataType &p_type, int p_depth =
 	return false;
 }
 
+// Whether a constant a function body names is one the compiled class flattens in from an applied
+// trait rather than one it declares itself. Such a declaration belongs to the trait's frame, so a
+// `Self` it writes has to fold by the same rule the flattened member fold uses; otherwise naming the
+// constant inside the trait's own default method body disagrees with reading it off the implementer.
+static bool _constant_flattened_from_trait(const FSParser::ClassNode *p_class, const FSParser::ConstantNode *p_constant) {
+	if (p_class == nullptr || p_constant == nullptr || p_constant->identifier == nullptr) {
+		return false;
+	}
+	const StringName name = p_constant->identifier->name;
+	// An explicit declaration anywhere on the inheritance chain shadows a same-named trait member, which
+	// is the rule `_collect_flattened_trait_members()` applies when deciding what is flattened at all.
+	for (const FSParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
+		if (owner->has_member(name)) {
+			return false;
+		}
+	}
+	for (const FSParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
+		for (const FSParser::ClassNode *trait : owner->resolved_traits) {
+			if (trait == nullptr || !trait->has_member(name)) {
+				continue;
+			}
+			const FSParser::ClassNode::Member member = trait->get_member(name);
+			if (member.type == FSParser::ClassNode::Member::CONSTANT && member.constant == p_constant) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 // Whether a declared type, or anything nested in it, writes `Self`. The parser counterpart of
 // `_baked_shape_references_self()`, asked before conversion so a `Self` a trait declared can be routed
 // to the trait-relative fold. Only the unresolved `@Self` node counts: a position analysis already
@@ -1496,7 +1526,8 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 							storage_type = identifier_type;
 						}
 						return codegen.add_constant(
-								_resolve_aliased_class_constant(in->reduced_value, storage_type, codegen.script));
+								_resolve_aliased_class_constant(in->reduced_value, storage_type, codegen.script,
+										_constant_flattened_from_trait(codegen.class_node, in->constant_source)));
 					}
 
 					// Try class constants.
@@ -4328,24 +4359,6 @@ static HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> _fl
 	return members;
 }
 
-// Every member a class flattens in from an applied trait, generic or not. `_flattened_trait_arguments()`
-// answers a narrower question -- which members carry a trait's applied type arguments -- and therefore
-// skips a non-generic trait, which has none. A non-generic trait's member is still declared against the
-// trait's frame, so anything that must be read trait-relatively (a `Self` the trait wrote) needs this
-// wider signal instead.
-static HashSet<const FSParser::ClassNode::Member *> _trait_flattened_members(const FSParser::ClassNode *p_class) {
-	HashSet<const FSParser::ClassNode::Member *> members;
-	for (const FSParser::ClassNode *trait : p_class->resolved_traits) {
-		if (trait == nullptr) {
-			continue;
-		}
-		for (const FSParser::ClassNode::Member &member : trait->members) {
-			members.insert(&member);
-		}
-	}
-	return members;
-}
-
 // Whether a class has static data of its own or flattens static data in from an
 // applied trait. Trait static data is recompiled into the implementer, so it must be
 // accounted for wherever the class's own static data is.
@@ -5411,13 +5424,19 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
 // declaring class receiver-independently and folding it is already correct.
 bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &p_argument, FoundryScript *p_owner,
 		bool p_flattened_from_trait, FSDataType &r_reified) {
-	const bool references_self = p_flattened_from_trait && _datatype_references_self(p_argument);
-	if (flattened_trait_declaration == nullptr) {
-		// No trait parameter list to project through, so only a `Self` the trait wrote itself is left to
-		// resolve here.
-		if (!references_self) {
+	if (p_flattened_from_trait && _datatype_references_self(p_argument)) {
+		// A `Self` the trait wrote governs the whole handle whatever else the argument names, so the
+		// finality gate is decided here rather than through the trait-parameter gate below. That gate
+		// deliberately reports a `@Self` node as unsound -- projecting `Self` through a trait's applied
+		// argument list would validate against an unrelated type -- which is exactly the judgement this
+		// rule replaces: `Self` resolves against the owner during conversion, never through the applied
+		// arguments, and any trait parameter written alongside it is still substituted below and re-checked
+		// before the fold is accepted.
+		if (p_owner == nullptr || !p_owner->is_final() || p_owner->is_generic()) {
 			return false;
 		}
+	} else if (flattened_trait_declaration == nullptr) {
+		return false;
 	} else {
 		// Only a node whose ordinal indexes the trait's parameter list, under the name declared at that
 		// ordinal, is sound to substitute the applied arguments into; anything else -- a method-scope
@@ -5426,7 +5445,7 @@ bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &
 		bool is_sound = true;
 		const bool depends_on_trait_parameters = _type_depends_on_declared_type_parameters(
 				p_argument, flattened_trait_declaration->type_parameters, is_sound, false);
-		if (!is_sound || (!depends_on_trait_parameters && !references_self)) {
+		if (!depends_on_trait_parameters || !is_sound) {
 			return false;
 		}
 	}
@@ -5794,7 +5813,17 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	const Vector<const FSParser::ClassNode::Member *> members_to_compile = collect_effective_members(p_class);
 	const HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> flattened_trait_arguments =
 			_flattened_trait_arguments(p_class);
-	const HashSet<const FSParser::ClassNode::Member *> trait_flattened_members = _trait_flattened_members(p_class);
+	// `_flattened_trait_arguments()` answers a narrower question -- which members carry a trait's applied
+	// type arguments -- and so skips a non-generic trait, which has none. A `Self` a non-generic trait
+	// wrote is still trait-relative, so the constant fold needs the wider "came in from a trait" set too.
+	HashSet<const FSParser::ClassNode::Member *> trait_flattened_members;
+	{
+		Vector<const FSParser::ClassNode::Member *> flattened;
+		_collect_flattened_trait_members(p_class, flattened);
+		for (const FSParser::ClassNode::Member *flattened_member : flattened) {
+			trait_flattened_members.insert(flattened_member);
+		}
+	}
 
 	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr && p_class->enum_file_decl->identifier != nullptr) {
 		const FSParser::EnumNode *enum_n = p_class->enum_file_decl;
