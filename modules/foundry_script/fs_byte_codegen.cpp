@@ -2766,7 +2766,10 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 			case FSDataType::FOUNDRY_SCRIPT:
 			case FSDataType::SCRIPT: {
 				Variant script = function->return_type.script_type;
-				int script_idx = function->return_type.is_type_handle && !function->return_type.type_arguments.is_empty() ? get_container_type_pos(function->return_type) : get_constant_pos(script);
+				// A specialized return type travels as a container-type constant so the runtime check can
+				// compare the declared arguments; an unspecialized one keeps the cheaper bare-script
+				// constant. The type-handle form already did this, and the opcode reads both.
+				int script_idx = !function->return_type.type_arguments.is_empty() ? get_container_type_pos(function->return_type) : get_constant_pos(script);
 				script_idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_SCRIPT);

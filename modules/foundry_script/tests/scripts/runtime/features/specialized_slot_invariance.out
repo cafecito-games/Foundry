@@ -1,0 +1,14 @@
+FS_TEST_OK
+~~ WARNING at line 99: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 100: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 101: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+correctly specialized: top-level is=true, nested is=true
+wrongly specialized: top-level is=false, nested is=false
+unspecialized: top-level is=false, nested is=false
+subclass fixing the arguments: top-level is=true, nested is=true
+member store: good=true wrong=false raw=true subclass=true
+static member store: good=true wrong=false raw=true subclass=true
+call boundary: good=took true raw=took true subclass=took true
+typed return: good=true raw=true subclass=true
+tuple element store: good=true raw=true subclass=true
+specialized slot invariance ok

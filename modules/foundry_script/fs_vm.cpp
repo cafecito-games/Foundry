@@ -250,173 +250,60 @@ static bool _type_handle_test_matches(const FSDataType &p_expected_type, const V
 	return p_expected_type.is_type(p_value);
 }
 
-// What a runtime value knows about its own specialization. `script` is the value's actual leaf script
-// and `type_arguments` are the arguments reified against THAT leaf's parameters, which is the form the
-// inheritance projection table consumes. Both value kinds a script `is`/`as` can see -- an instance and
-// a class handle -- reduce to this, so the relation below never has to know which one it was given.
-struct RuntimeSpecializationEvidence {
-	Ref<Script> script;
-	Vector<ContainerType> type_arguments;
-};
-
-// The evidence an object carries as a script instance. A raw `Crate.new()` reports its script with an
-// empty argument vector, which is an absence of evidence rather than a claim of anything.
-static RuntimeSpecializationEvidence _instance_specialization_evidence(Object *p_object) {
-	RuntimeSpecializationEvidence evidence;
-	if (p_object == nullptr) {
-		return evidence;
-	}
-	ScriptInstance *script_instance = p_object->get_script_instance();
-	if (script_instance == nullptr) {
-		return evidence;
-	}
-	evidence.script = script_instance->get_script();
-	script_instance->get_reified_type_arguments(evidence.type_arguments);
-	return evidence;
-}
-
-// The evidence a value carries as a class handle. A specialized handle reports the arguments it was
-// created with; a bare `Script` resource denotes the class it defines and is always unspecialized, so
-// it reports none.
-static RuntimeSpecializationEvidence _class_handle_specialization_evidence(Object *p_object) {
-	RuntimeSpecializationEvidence evidence;
-	if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(p_object)) {
-		evidence.script = class_handle->get_represented_script();
-		class_handle->get_represented_type_arguments(evidence.type_arguments);
-	} else if (Script *script = Object::cast_to<Script>(p_object)) {
-		evidence.script = Ref<Script>(script);
-	}
-	return evidence;
-}
-
-// The one invariant specialization relation behind every script `is` and `as`, for instances and class
-// handles alike. The caller has already answered the nominal question; this answers only whether the
-// value's reified arguments are the target's, for the target's base.
+// The one invariant specialization relation behind every script `is` and `as` lives on `FSDataType`
+// (`fs_function.cpp`), because the structural predicate `is_type()` answers with it too: a specialized
+// script slot enforces its arguments at every boundary, and a second copy here is how the top-level and
+// nested answers drifted apart in the first place. These wrappers only pin the strictness mode.
 //
-// A specialized target demands positive evidence. The value's own arguments are projected onto the
-// tested base through the leaf's per-ancestor binding table, so a subclass that fixes or forwards a base
-// argument proves that base's specialization; every projected position must then be completely known
-// and invariantly equal to the target's argument, recursively. Anything short of that -- a raw
-// instance, a bare script handle, a partially resolved chain, a differing arity -- fails. This is
-// deliberately stricter than the gradual rule assignment uses, because a successful test narrows the
-// value to the specialization and the branch body then reads it at that type.
-//
-// A trait target uses the very same relation: the binding table records a `uses Trait[args]` clause
-// alongside the `extends` chain, so a conforming class, a subclass of one, and a class reaching the
-// trait through a supertrait all project onto the trait's parameters. A value that conforms only
-// through a retroactive conformance has no such binding table entry, so it answers from the arguments
-// that conformance recorded instead (see `_retroactive_conformance_matches`), through the identical
-// comparison below.
-//
-// The comparison itself, once evidence has been projected onto the target's parameters: same arity,
-// every position completely known, invariantly equal to the target's argument, recursively.
-static bool _projected_arguments_match(const Vector<ContainerType> &p_expected_arguments,
-		const Vector<ProjectedContainerType> &p_projected) {
-	if (p_projected.size() != p_expected_arguments.size()) {
-		return false;
-	}
-	for (int i = 0; i < p_expected_arguments.size(); i++) {
-		// `PARTIAL` evidence leaves some subtree unproven, which a narrowing test cannot accept.
-		if (p_projected[i].state != ProjectedContainerType::EXACT) {
-			return false;
-		}
-		if (p_projected[i].conflicts_with_expected(p_expected_arguments[i])) {
-			return false;
-		}
-	}
-	return true;
-}
-
-// A recorded conformance argument vector is already expressed against the trait's own parameters, so
-// it needs no projection: every position is exact evidence exactly as it was declared.
-static Vector<ProjectedContainerType> _exact_projection(const Vector<ContainerType> &p_arguments) {
-	Vector<ProjectedContainerType> projected;
-	projected.resize(p_arguments.size());
-	for (int i = 0; i < p_arguments.size(); i++) {
-		projected.write[i] = ProjectedContainerType::exact(p_arguments[i]);
-	}
-	return projected;
-}
-
+// `is`/`as` narrow: a successful test lets the guarded body read the value at the specialization, so
+// every projected position must be positive, complete evidence. Every store is gradual instead, which
+// keeps the store laxer than the test.
 static bool _specialization_matches(const Vector<ContainerType> &p_expected_arguments,
-		const Ref<Script> &p_expected_script, const RuntimeSpecializationEvidence &p_actual) {
-	if (p_expected_arguments.is_empty()) {
-		return true;
-	}
-	if (p_expected_script.is_null() || p_actual.script.is_null()) {
-		return false;
-	}
-
-	Vector<ProjectedContainerType> projected;
-	if (!p_actual.script->project_type_arguments_onto_base(p_expected_script, p_actual.type_arguments, projected)) {
-		// A leaf with no binding table entry for the base can still answer for itself: its own reified
-		// vector is already expressed against that base's parameters.
-		if (p_actual.script.ptr() != p_expected_script.ptr()) {
-			return false;
-		}
-		for (const ContainerType &argument : p_actual.type_arguments) {
-			projected.push_back(ProjectedContainerType::exact(argument));
-		}
-	}
-
-	return _projected_arguments_match(p_expected_arguments, projected);
+		const Ref<Script> &p_expected_script, const FSRuntimeSpecializationEvidence &p_actual) {
+	return FSDataType::specialization_matches(p_expected_arguments, p_expected_script, p_actual, true);
 }
 
-// The specialized answer for a value that satisfies a trait only through a retroactive conformance
-// (`extend Target uses Trait[args]`). The conformance recorded the arguments it declared against the
-// trait's own parameters, so they need no projection; they go through the same comparison a declared
-// `uses` clause does, so the two paths cannot drift.
-//
-// Sources are consulted in the order a value's identities narrow: its own Foundry Script class (and
-// its bases), then its engine class (and its ancestors), then — for a builtin value, which has no
-// object at all — its builtin type. A class cannot both declare `uses Trait` and be retroactively
-// conformed to it, so this never competes with declared evidence.
-static bool _retroactive_conformance_matches(const Vector<ContainerType> &p_expected_arguments,
-		const StringName &p_trait_name, Object *p_object, const Variant &p_value) {
-	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
-	Vector<ContainerType> recorded_arguments;
-
-	if (p_object != nullptr) {
-		ScriptInstance *script_instance = p_object->get_script_instance();
-		if (script_instance != nullptr) {
-			const Ref<Script> instance_script = script_instance->get_script();
-			const FoundryScript *fs_instance_script = Object::cast_to<FoundryScript>(instance_script.ptr());
-			if (fs_instance_script != nullptr &&
-					fs_instance_script->get_retroactive_trait_type_arguments(p_trait_name, recorded_arguments)) {
-				return _projected_arguments_match(p_expected_arguments,
-						_exact_projection(recorded_arguments));
-			}
-		}
-		if (registry->get_native_conformance_type_arguments(p_object->get_class_name(), p_trait_name, recorded_arguments)) {
-			return _projected_arguments_match(p_expected_arguments, _exact_projection(recorded_arguments));
-		}
-		return false;
-	}
-
-	if (p_value.get_type() != Variant::NIL && p_value.get_type() != Variant::OBJECT &&
-			registry->get_builtin_conformance_type_arguments(p_value.get_type(), p_trait_name, recorded_arguments)) {
-		return _projected_arguments_match(p_expected_arguments, _exact_projection(recorded_arguments));
-	}
-	return false;
-}
-
-// The specialized answer for a trait target, from whichever evidence the value carries: the binding
-// table a declared `uses Trait[args]` fills, or the arguments a retroactive conformance recorded.
 static bool _trait_specialization_matches(const Vector<ContainerType> &p_expected_arguments,
 		const Ref<Script> &p_expected_script, const StringName &p_trait_name,
 		Object *p_object, const Variant &p_value) {
-	if (_specialization_matches(p_expected_arguments, p_expected_script,
-				_instance_specialization_evidence(p_object))) {
-		return true;
-	}
-	return _retroactive_conformance_matches(p_expected_arguments, p_trait_name, p_object, p_value);
+	return FSDataType::trait_specialization_matches(p_expected_arguments, p_expected_script, p_trait_name,
+			p_object, p_value, true);
 }
+
+#ifdef DEBUG_ENABLED
+// Names a specialized script type for a diagnostic, so a message can distinguish `Pair` from
+// `Pair[int, String]` instead of naming both by the class alone.
+static String _specialized_script_type_name(Script *p_script, const Vector<ContainerType> &p_arguments) {
+	const String script_name = FoundryScript::debug_get_script_name(Ref<Script>(p_script));
+	if (p_arguments.is_empty()) {
+		return script_name;
+	}
+	String arguments;
+	for (int i = 0; i < p_arguments.size(); i++) {
+		if (i > 0) {
+			arguments += ", ";
+		}
+		arguments += p_arguments[i].get_type_name();
+	}
+	return script_name + "[" + arguments + "]";
+}
+
+// The same, for the specialization a runtime value carries. An unspecialized value names its class.
+static String _specialized_value_type_name(Object *p_object) {
+	const FSRuntimeSpecializationEvidence evidence = FSRuntimeSpecializationEvidence::from_instance(p_object);
+	return _specialized_script_type_name(evidence.script.ptr(), evidence.type_arguments);
+}
+#endif // DEBUG_ENABLED
 
 // A script-typed `is`/`as` whose target is a class handle (`Type[Crate[int]]`). The nominal answer
 // comes from the descriptor layer with the arguments stripped, and the arguments then go through the
 // same relation an instance test uses, so the two runtime forms cannot disagree.
 static bool _script_type_handle_matches(const FSDataType &p_expected_type,
 		const Vector<ContainerType> &p_expected_arguments, const Variant &p_value) {
+	// The arguments are stripped deliberately, and must stay stripped: a type-handle `is_type()` answers
+	// through `ContainerTypeValidate`, which compares arguments under the gradual store rule. An `is`
+	// test needs the narrowing rule, so it asks the nominal question here and the specialization
+	// question separately below.
 	FSDataType nominal_type = p_expected_type;
 	nominal_type.type_arguments.clear();
 	if (!nominal_type.is_type(p_value)) {
@@ -429,7 +316,7 @@ static bool _script_type_handle_matches(const FSDataType &p_expected_type,
 			? p_expected_type.script_type_ref
 			: Ref<Script>(p_expected_type.script_type);
 	return _specialization_matches(p_expected_arguments, expected_script,
-			_class_handle_specialization_evidence(p_value.get_validated_object()));
+			FSRuntimeSpecializationEvidence::from_class_handle(p_value.get_validated_object()));
 }
 
 // The `is` form of the above: null and a freed handle are answered before any specialization work.
@@ -2484,7 +2371,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						err_text = _missing_static_self_error(name);
 						OPCODE_BREAK;
 					}
-					result = VariantInternal::get_array(value)->size() == arity && tuple_type.is_type(*value);
+					// Narrowing: an `is` test answers about the value's own specialization, so a script-typed
+					// element demands positive evidence exactly as the identically spelled top-level test
+					// does. `OPCODE_ASSIGN_TYPED_TUPLE` deliberately keeps the gradual default instead.
+					result = VariantInternal::get_array(value)->size() == arity && tuple_type.is_type(*value, false, true);
 				} else if (value->get_type() == Variant::NIL) {
 					// A nullable tuple type accepts null; the flag travels on the descriptor.
 					FSDataType tuple_type;
@@ -2695,7 +2585,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						// instance was actually created with; a raw target asks only the nominal one above.
 						if (result && !expected_type_arguments.is_empty()) {
 							result = _specialization_matches(expected_type_arguments, Ref<Script>(script_type),
-									_instance_specialization_evidence(object));
+									FSRuntimeSpecializationEvidence::from_instance(object));
 						}
 					}
 				}
@@ -3613,6 +3503,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// The arity operand is the cheap rejection, exactly as in the type test: only a candidate
 				// of the right length pays for the per-element walk. A non-Array value falls through to the
 				// structural test, which is also what accepts null for a nullable slot.
+				//
+				// The narrowing flag stays at its default here, unlike `OPCODE_TYPE_TEST_TUPLE`: a store
+				// rejects a script-typed element only on evidence that contradicts the declared
+				// specialization, so an unspecialized value is written the way every other store in the
+				// language accepts it. The store therefore stays laxer than the test, never stricter.
 				const bool matches = src->get_type() == Variant::ARRAY
 						? VariantInternal::get_array(src)->size() == arity && tuple_type.is_type(*src)
 						: tuple_type.is_type(*src);
@@ -3882,7 +3777,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// specialization yields null rather than relabelling the object.
 					if (valid && !expected_type_arguments.is_empty()) {
 						valid = _specialization_matches(expected_type_arguments, Ref<Script>(base_type),
-								_instance_specialization_evidence(src_obj));
+								FSRuntimeSpecializationEvidence::from_instance(src_obj));
 					}
 				}
 
@@ -5608,7 +5503,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(type, 1);
 				FSDataType expected_handle_type;
 				Script *base_type = nullptr;
-				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type))) {
+				Vector<ContainerType> expected_type_arguments;
+				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
@@ -5667,6 +5563,20 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 #ifdef DEBUG_ENABLED
 							err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
 									FoundryScript::debug_get_script_name(ret_obj->get_script_instance()->get_script()), FoundryScript::debug_get_script_name(Ref<FoundryScript>(base_type)));
+#endif // DEBUG_ENABLED
+							OPCODE_BREAK;
+						}
+
+						// A specialized return type asks the same invariant question about the returned
+						// value's reified arguments that the member store and the call boundary ask, under
+						// the gradual store rule: only evidence that contradicts the declared specialization
+						// rejects. The emptiness guard keeps a non-generic return free of any of this work.
+						if (!expected_type_arguments.is_empty() &&
+								!FSDataType::specialization_matches(expected_type_arguments, Ref<Script>(base_type),
+										FSRuntimeSpecializationEvidence::from_instance(ret_obj), false)) {
+#ifdef DEBUG_ENABLED
+							err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
+									_specialized_value_type_name(ret_obj), _specialized_script_type_name(base_type, expected_type_arguments));
 #endif // DEBUG_ENABLED
 							OPCODE_BREAK;
 						}

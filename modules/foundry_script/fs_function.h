@@ -56,6 +56,23 @@ class FSNameManglerApplication;
 class FSNameManglerAnalysis;
 #endif
 
+// What a runtime value knows about its own specialization. `script` is the value's actual leaf script
+// and `type_arguments` are the arguments reified against THAT leaf's parameters, which is the form the
+// inheritance projection table consumes. Both value kinds a script test can see -- an instance and a
+// class handle -- reduce to this, so the relation never has to know which one it was given.
+struct FSRuntimeSpecializationEvidence {
+	Ref<Script> script;
+	Vector<ContainerType> type_arguments;
+
+	// The evidence an object carries as a script instance. A raw `Crate.new()` reports its script with
+	// an empty argument vector, which is an absence of evidence rather than a claim of anything.
+	static FSRuntimeSpecializationEvidence from_instance(Object *p_object);
+	// The evidence a value carries as a class handle. A specialized handle reports the arguments it was
+	// created with; a bare `Script` resource denotes the class it defines and is always unspecialized,
+	// so it reports none.
+	static FSRuntimeSpecializationEvidence from_class_handle(Object *p_object);
+};
+
 class FSDataType {
 public:
 	Vector<FSDataType> container_element_types;
@@ -136,7 +153,42 @@ public:
 	static bool _native_class_conforms_to_trait(const StringName &p_native_class, const StringName &p_trait);
 	static bool _builtin_type_conforms_to_trait(Variant::Type p_builtin_type, const StringName &p_trait);
 
-	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const {
+	// The one specialization relation behind every script-typed boundary: the `is` operator, the tuple
+	// element test, the member and return stores, the dynamic call boundary and the proxy. The caller
+	// has already answered the nominal question; this answers only whether the value's reified
+	// arguments are the expected ones, for the expected base.
+	//
+	// The value's own arguments are expressed against ITS leaf's parameters, so they are first projected
+	// onto `p_expected_script`'s parameters through the leaf's per-ancestor binding table: a subclass
+	// that fixes or forwards a base argument thereby proves that base's specialization.
+	//
+	// `p_narrowing` selects the rule, and the two differ deliberately. A narrowing comparison -- the
+	// `is` operator, whose success narrows the value and lets the guarded body read it at the
+	// specialization -- demands positive evidence: same arity, every projected position `EXACT`, none
+	// conflicting. A gradual comparison -- every store -- rejects only a position that is known and
+	// conflicts, so a raw instance, an unspecialized leaf or an unresolved chain step carries no
+	// evidence and is accepted. That is the rule `ContainerTypeValidate::_internal_validate_object()`
+	// already applies to a typed container, and it is what keeps the store laxer than the test.
+	static bool specialization_matches(const Vector<ContainerType> &p_expected_arguments,
+			const Ref<Script> &p_expected_script, const FSRuntimeSpecializationEvidence &p_actual,
+			bool p_narrowing);
+
+	// The same relation for a trait target, from whichever evidence the value carries: the binding table
+	// a declared `uses Trait[args]` clause fills, or the arguments a retroactive `extend ... uses
+	// Trait[args]` recorded. Gradual acceptance is reached only when neither source has anything to say.
+	static bool trait_specialization_matches(const Vector<ContainerType> &p_expected_arguments,
+			const Ref<Script> &p_expected_script, const StringName &p_trait_name, Object *p_object,
+			const Variant &p_value, bool p_narrowing);
+
+	// True when `p_object`'s reified specialization satisfies this type's `type_arguments`, under the
+	// rule `p_narrowing` selects. Only reached when `type_arguments` is non-empty, so a non-generic slot
+	// pays nothing for it.
+	bool _script_specialization_matches(Object *p_object, const Variant &p_value, bool p_narrowing) const;
+
+	// `p_narrowing` is threaded down from the `is` operator through the `TUPLE` element recursion; every
+	// store leaves it at the default. It selects the specialization rule only: a declared integer width
+	// is fully observable on the value, so the `BUILTIN` branch enforces it in both modes.
+	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false, bool p_narrowing = false) const {
 		if (is_nullable && p_variant.get_type() == Variant::NIL) {
 			return true;
 		}
@@ -201,7 +253,13 @@ public:
 					return true;
 				}
 				if (is_script_trait && p_variant.get_type() != Variant::OBJECT) {
-					return _builtin_type_conforms_to_trait(p_variant.get_type(), script_trait);
+					if (!_builtin_type_conforms_to_trait(p_variant.get_type(), script_trait)) {
+						return false;
+					}
+					if (type_arguments.is_empty()) {
+						return true;
+					}
+					return _script_specialization_matches(nullptr, p_variant, p_narrowing);
 				}
 				if (p_variant.get_type() != Variant::OBJECT) {
 					return false;
@@ -215,12 +273,19 @@ public:
 
 				Ref<Script> base = obj && obj->get_script_instance() ? obj->get_script_instance()->get_script() : nullptr;
 				if (is_script_trait) {
-					if (base.is_valid() && (base->has_script_trait(script_trait) || _script_conforms_to_trait(base, script_trait))) {
-						return true;
+					bool conforms = base.is_valid() && (base->has_script_trait(script_trait) || _script_conforms_to_trait(base, script_trait));
+					if (!conforms) {
+						// A native object (no Foundry Script instance), or a scripted object whose engine base
+						// class was retroactively conformed, satisfies a trait-typed slot via the registry.
+						conforms = _native_class_conforms_to_trait(obj->get_class_name(), script_trait);
 					}
-					// A native object (no Foundry Script instance), or a scripted object whose engine base
-					// class was retroactively conformed, satisfies a trait-typed slot via the registry.
-					return _native_class_conforms_to_trait(obj->get_class_name(), script_trait);
+					if (!conforms || type_arguments.is_empty()) {
+						return conforms;
+					}
+					// A specialized trait slot asks a second, invariant question about the arguments the
+					// value's implementer conformed with. `Keeper[int]` and `Keeper[String]` are the same
+					// trait nominally and different types here.
+					return _script_specialization_matches(obj, p_variant, p_narrowing);
 				}
 
 				bool valid = false;
@@ -231,7 +296,16 @@ public:
 					}
 					base = base->get_base_script();
 				}
-				return valid;
+				if (!valid || type_arguments.is_empty()) {
+					return valid;
+				}
+				// The declared specialization is part of the type, so a nominally correct value whose
+				// reified arguments are someone else's is not a value of it. There is no conversion
+				// fallback to guard against here the way the `BUILTIN` branch has: an object reaches this
+				// answer as itself, and a caller that retries through `Variant::construct(OBJECT, ...)`
+				// reconstructs the same object with the same script instance and the same reified
+				// arguments, so the retest reproduces this answer rather than rescuing the value.
+				return _script_specialization_matches(obj, p_variant, p_narrowing);
 			} break;
 			case TUPLE: {
 				// Named identity is erased at runtime, so the test is structural: an Array of the
@@ -254,7 +328,7 @@ public:
 							(element_type.kind == NATIVE || element_type.kind == SCRIPT || element_type.kind == FOUNDRY_SCRIPT)) {
 						return false;
 					}
-					if (!element_type.is_type(element)) {
+					if (!element_type.is_type(element, false, p_narrowing)) {
 						return false;
 					}
 				}

@@ -35,6 +35,8 @@
 #include "fs_script_test_execution.h"
 #include "fs_script_test_guard.h"
 
+#include "core/object/class_handle.h"
+
 bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const StringName &p_trait) {
 	if (p_base.is_null() || p_trait == StringName()) {
 		return false;
@@ -78,6 +80,186 @@ bool FSDataType::_builtin_type_conforms_to_trait(Variant::Type p_builtin_type, c
 		return false;
 	}
 	return FSConformanceRegistry::get_singleton()->builtin_type_conforms(p_builtin_type, p_trait, true);
+}
+
+FSRuntimeSpecializationEvidence FSRuntimeSpecializationEvidence::from_instance(Object *p_object) {
+	FSRuntimeSpecializationEvidence evidence;
+	if (p_object == nullptr) {
+		return evidence;
+	}
+	ScriptInstance *script_instance = p_object->get_script_instance();
+	if (script_instance == nullptr) {
+		return evidence;
+	}
+	evidence.script = script_instance->get_script();
+	script_instance->get_reified_type_arguments(evidence.type_arguments);
+	return evidence;
+}
+
+FSRuntimeSpecializationEvidence FSRuntimeSpecializationEvidence::from_class_handle(Object *p_object) {
+	FSRuntimeSpecializationEvidence evidence;
+	if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(p_object)) {
+		evidence.script = class_handle->get_represented_script();
+		class_handle->get_represented_type_arguments(evidence.type_arguments);
+	} else if (Script *script = Object::cast_to<Script>(p_object)) {
+		evidence.script = Ref<Script>(script);
+	}
+	return evidence;
+}
+
+// Projects what the value knows onto the expected base's parameters. Returns false when no source of
+// evidence applies at all, which is the one case the strictness mode decides: a narrowing test has
+// nothing to narrow on and fails, a store has nothing to reject on and accepts.
+static bool _project_specialization_evidence(const Ref<Script> &p_expected_script,
+		const FSRuntimeSpecializationEvidence &p_actual, Vector<ProjectedContainerType> &r_projected) {
+	if (p_expected_script.is_null() || p_actual.script.is_null()) {
+		return false;
+	}
+	if (p_actual.script->project_type_arguments_onto_base(p_expected_script, p_actual.type_arguments, r_projected)) {
+		return true;
+	}
+	// A leaf with no binding table entry for the base can still answer for itself: its own reified
+	// vector is already expressed against that base's parameters.
+	if (p_actual.script.ptr() != p_expected_script.ptr()) {
+		return false;
+	}
+	for (const ContainerType &argument : p_actual.type_arguments) {
+		r_projected.push_back(ProjectedContainerType::exact(argument));
+	}
+	return true;
+}
+
+// The comparison itself, once evidence has been projected onto the expected parameters. Narrowing:
+// same arity, every position completely known, invariantly equal, recursively -- `PARTIAL` evidence
+// leaves some subtree unproven, which a narrowing test cannot accept. Gradual: only a known position
+// that contradicts the expected argument rejects, and a position the projection never reached says
+// nothing either way.
+static bool _projected_arguments_satisfy(const Vector<ContainerType> &p_expected_arguments,
+		const Vector<ProjectedContainerType> &p_projected, bool p_narrowing) {
+	if (p_narrowing) {
+		if (p_projected.size() != p_expected_arguments.size()) {
+			return false;
+		}
+		for (int i = 0; i < p_expected_arguments.size(); i++) {
+			if (p_projected[i].state != ProjectedContainerType::EXACT) {
+				return false;
+			}
+			if (p_projected[i].conflicts_with_expected(p_expected_arguments[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	for (int i = 0; i < p_projected.size() && i < p_expected_arguments.size(); i++) {
+		if (p_projected[i].conflicts_with_expected(p_expected_arguments[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A recorded conformance argument vector is already expressed against the trait's own parameters, so
+// it needs no projection: every position is exact evidence exactly as it was declared.
+static Vector<ProjectedContainerType> _exact_projection(const Vector<ContainerType> &p_arguments) {
+	Vector<ProjectedContainerType> projected;
+	projected.resize(p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		projected.write[i] = ProjectedContainerType::exact(p_arguments[i]);
+	}
+	return projected;
+}
+
+// The arguments a retroactive conformance (`extend Target uses Trait[args]`) recorded for `p_value`,
+// if any. Sources are consulted in the order a value's identities narrow: its own Foundry Script class
+// (and its bases), then its engine class (and its ancestors), then -- for a builtin value, which has no
+// object at all -- its builtin type. A class cannot both declare `uses Trait` and be retroactively
+// conformed to it, so this never competes with declared evidence.
+static bool _find_retroactive_conformance_arguments(const StringName &p_trait_name, Object *p_object,
+		const Variant &p_value, Vector<ContainerType> &r_recorded_arguments) {
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	if (registry == nullptr) {
+		return false;
+	}
+
+	if (p_object != nullptr) {
+		ScriptInstance *script_instance = p_object->get_script_instance();
+		if (script_instance != nullptr) {
+			const Ref<Script> instance_script = script_instance->get_script();
+			const FoundryScript *fs_instance_script = Object::cast_to<FoundryScript>(instance_script.ptr());
+			if (fs_instance_script != nullptr &&
+					fs_instance_script->get_retroactive_trait_type_arguments(p_trait_name, r_recorded_arguments)) {
+				return true;
+			}
+		}
+		return registry->get_native_conformance_type_arguments(p_object->get_class_name(), p_trait_name, r_recorded_arguments);
+	}
+
+	return p_value.get_type() != Variant::NIL && p_value.get_type() != Variant::OBJECT &&
+			registry->get_builtin_conformance_type_arguments(p_value.get_type(), p_trait_name, r_recorded_arguments);
+}
+
+bool FSDataType::specialization_matches(const Vector<ContainerType> &p_expected_arguments,
+		const Ref<Script> &p_expected_script, const FSRuntimeSpecializationEvidence &p_actual,
+		bool p_narrowing) {
+	if (p_expected_arguments.is_empty()) {
+		return true;
+	}
+	Vector<ProjectedContainerType> projected;
+	if (!_project_specialization_evidence(p_expected_script, p_actual, projected)) {
+		return !p_narrowing;
+	}
+	return _projected_arguments_satisfy(p_expected_arguments, projected, p_narrowing);
+}
+
+bool FSDataType::trait_specialization_matches(const Vector<ContainerType> &p_expected_arguments,
+		const Ref<Script> &p_expected_script, const StringName &p_trait_name, Object *p_object,
+		const Variant &p_value, bool p_narrowing) {
+	if (p_expected_arguments.is_empty()) {
+		return true;
+	}
+
+	bool had_evidence = false;
+	Vector<ProjectedContainerType> projected;
+	if (_project_specialization_evidence(p_expected_script, FSRuntimeSpecializationEvidence::from_instance(p_object), projected)) {
+		had_evidence = true;
+		if (_projected_arguments_satisfy(p_expected_arguments, projected, p_narrowing)) {
+			return true;
+		}
+	}
+
+	Vector<ContainerType> recorded_arguments;
+	if (_find_retroactive_conformance_arguments(p_trait_name, p_object, p_value, recorded_arguments)) {
+		had_evidence = true;
+		if (_projected_arguments_satisfy(p_expected_arguments, _exact_projection(recorded_arguments), p_narrowing)) {
+			return true;
+		}
+	}
+
+	// A narrowing test has already failed against everything the value could show. A store rejects only
+	// on evidence, so it accepts precisely when neither source produced any.
+	return !p_narrowing && !had_evidence;
+}
+
+bool FSDataType::_script_specialization_matches(Object *p_object, const Variant &p_value, bool p_narrowing) const {
+	Vector<ContainerType> expected_arguments;
+	expected_arguments.resize(type_arguments.size());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		expected_arguments.write[i] = type_arguments[i].to_container_type();
+	}
+
+	const Ref<Script> expected_script = script_type_ref.is_valid()
+			? script_type_ref
+			: Ref<Script>(script_type);
+
+	if (is_script_trait) {
+		return trait_specialization_matches(expected_arguments, expected_script, script_trait, p_object, p_value, p_narrowing);
+	}
+	return specialization_matches(expected_arguments, expected_script,
+			is_type_handle
+					? FSRuntimeSpecializationEvidence::from_class_handle(p_object)
+					: FSRuntimeSpecializationEvidence::from_instance(p_object),
+			p_narrowing);
 }
 
 static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type) {
