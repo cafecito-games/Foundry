@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 25: Cannot return value of type "RcdTarget" because the function return type is "RcdKeeper[String]".
+>> ERROR at line 29: Invalid argument for "accept()" function: argument 1 should be "RcdKeeper[String]" but is "RcdTarget".
+>> ERROR at line 31: Value of type "RcdTarget" cannot be assigned to a variable of type "RcdKeeper[String]".

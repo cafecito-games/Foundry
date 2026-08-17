@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Cannot assign a value of type RcxTarget to variable "conflicting" with specified type RcxKeeper[String].

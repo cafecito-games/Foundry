@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 23: Expression is of type "RceTarget" so it can't be of type "RceKeeper[String]".
+>> ERROR at line 25: Expression is of type "int" so it can't be of type "RceKeeper[String]".
+>> ERROR at line 26: Invalid cast. Cannot convert from "RceTarget" to "RceKeeper[String]".

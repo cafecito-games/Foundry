@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 14: Cannot assign a value of type int to variable "conflicting" with specified type RcbKeeper[String].

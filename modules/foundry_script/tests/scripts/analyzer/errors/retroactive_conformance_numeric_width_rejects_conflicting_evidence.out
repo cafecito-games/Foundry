@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 17: Cannot assign a value of type RchTarget to variable "conflicting" with specified type RchKeeper[long].
