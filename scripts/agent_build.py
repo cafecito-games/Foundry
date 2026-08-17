@@ -697,6 +697,26 @@ def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
     return suffix
 
 
+def resolve_linked_binary(target: BuildTarget) -> Path | None:
+    """The editor binary this build produced, or None when the build left none.
+
+    Platform configuration appends suffixes the wrapper cannot reconstruct from its own arguments
+    (sanitizers, fuzzer instrumentation, alternate toolchains), so an absent expected path falls back
+    to the sole editor binary in the same directory rather than declaring a successful build broken.
+    """
+    if target.binary_path.exists():
+        return target.binary_path
+    try:
+        candidates = sorted(
+            path
+            for path in target.binary_path.parent.glob(f"foundry.{target.scons_platform}.editor*")
+            if path.is_file()
+        )
+    except OSError:
+        return None
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
     scons_platform = host_scons_platform() if args.platform == "auto" else args.platform
     binary_path = REPO_ROOT / "bin" / f"foundry{binary_suffix(args, scons_platform)}"
@@ -1364,27 +1384,34 @@ def main(argv: list[str]) -> int:
             return report("generation-failure", "generate", build_exit)
         return report("build-failure", "build", build_exit)
 
-    if not target.binary_path.exists():
+    linked_binary = resolve_linked_binary(target)
+    if linked_binary is None:
         print(f"[agent-build] expected binary is missing after build: {target.binary_path}", file=sys.stderr)
         return report("binary-missing", "build", MISSING_BINARY_EXIT_CODE)
+    target = target._replace(binary_path=linked_binary)
+    RESULT_CONTEXT.binary_path = linked_binary
 
     if not args.test:
-        print(f"[agent-build] built binary: {target.binary_path}", file=human_stream)
+        print(f"[agent-build] built binary: {linked_binary}", file=human_stream)
         return report("success", "build", 0)
 
     RESULT_CONTEXT.step = "test"
-    test_exit = run_logged_command(
-        test_command(args, target),
-        label="test",
-        invocation_id=invocation_id,
-        log_path=args.log,
-        heartbeat=args.heartbeat,
-        append_log=True,
-        progress_path=progress_path,
-        append_progress=True,
-        progress_stdout_jsonl=progress_stdout_jsonl,
-        env=test_environment(args, target),
-    )
+    try:
+        test_exit = run_logged_command(
+            test_command(args, target),
+            label="test",
+            invocation_id=invocation_id,
+            log_path=args.log,
+            heartbeat=args.heartbeat,
+            append_log=True,
+            progress_path=progress_path,
+            append_progress=True,
+            progress_stdout_jsonl=progress_stdout_jsonl,
+            env=test_environment(args, target),
+        )
+    except OSError as exc:
+        print(f"[agent-build] failed to start the test command: {exc}", file=sys.stderr)
+        return report("test-failure", "test", TOOLING_MISSING_EXIT_CODE)
     return report("test-failure" if test_exit else "success", "test", test_exit)
 
 

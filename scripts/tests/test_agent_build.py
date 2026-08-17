@@ -1530,6 +1530,47 @@ class ResultContractTests(unittest.TestCase):
         self.assertIn("step=generate", line)
         self.assertEqual(summary["generation_status"], "failed")
 
+    def test_a_platform_suffixed_binary_satisfies_the_link_check(self) -> None:
+        with scratch_directory() as root:
+            build_directory = root / "bin"
+            build_directory.mkdir()
+            (build_directory / "foundry.macos.editor.dev.arm64.san").write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(
+                root, scons, binary_path=build_directory / "foundry.macos.editor.dev.arm64"
+            )
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} success"), line)
+        self.assertIn("binary=" + str(build_directory / "foundry.macos.editor.dev.arm64.san"), line)
+        self.assertIn("binary_present=yes", line)
+
+    def test_an_ambiguous_build_directory_still_reports_binary_missing(self) -> None:
+        with scratch_directory() as root:
+            build_directory = root / "bin"
+            build_directory.mkdir()
+            (build_directory / "foundry.macos.editor.dev.arm64.san").write_bytes(b"one")
+            (build_directory / "foundry.macos.editor.dev.x86_64").write_bytes(b"another")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(
+                root, scons, binary_path=build_directory / "foundry.macos.editor.dev.arm64"
+            )
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 1)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} binary-missing"), line)
+
+    def test_an_unlaunchable_test_command_still_reports_a_result(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            binary_path.chmod(0o644)
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            exit_code, log_path, _, _ = self.run_wrapper(root, scons, binary_path=binary_path, extra_argv=["--test"])
+            line = self.result_line(log_path)
+        self.assertEqual(exit_code, 127)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} test-failure"), line)
+        self.assertIn("step=test", line)
+
     def test_result_line_is_emitted_exactly_once(self) -> None:
         with scratch_directory() as root:
             failing = fake_scons(root, exit_code=2, lines=SHADOW_DIAGNOSTIC)

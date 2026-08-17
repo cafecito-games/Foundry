@@ -168,8 +168,13 @@ The exit codes are exhaustive:
 
 A missing binary is a failure unconditionally, not only under `--test`: the wrapper always requests
 `target=editor`, so an invocation that produced nothing to run must not be mistaken for a validated
-build. An unchanged binary timestamp is never a failure, because a no-op incremental build
-legitimately leaves the binary untouched.
+build. Build settings rename the binary (`precision`, `extra_suffix`, sanitizers, alternate
+toolchains), so when the expected name is absent the wrapper falls back to the sole editor binary in
+the same directory and reports that path; only a directory with no editor binary, or an ambiguous one,
+is `binary-missing`. An unchanged binary timestamp is never a failure, because a no-op incremental
+build legitimately leaves the binary untouched.
+
+A test command that cannot be launched at all reports `test-failure` with exit code `127`.
 
 ## Benchmarks
 
