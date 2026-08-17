@@ -35,6 +35,7 @@
 #include "core/error/error_macros.h"
 #include "core/string/print_string.h"
 #include "core/string/ustring.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 namespace FSTests {
@@ -172,9 +173,13 @@ class FSTestRunner {
 	// Corpus-relative glob patterns selecting the fixtures to run. Empty means "the whole
 	// corpus". Only a run is ever filtered: fixture regeneration always walks everything.
 	Vector<String> fixture_filters;
-	// Whether another pass in this process already consumed the once-per-process engine
-	// diagnostics that some fixtures expect. Only the bytecode pass reads this.
+	// Whether an earlier pass in this process is assumed to have run the whole corpus, and so
+	// to have consumed the once-per-process engine diagnostics some fixtures expect. Only the
+	// bytecode pass reads this.
 	bool once_per_process_diagnostics_consumed = true;
+	// Corpus-relative paths an earlier pass in this process actually ran. Consulted by the
+	// bytecode pass when it is not assuming a full preceding pass.
+	HashSet<String> fixtures_already_run;
 
 	bool make_tests();
 	bool make_tests_for_dir(const String &p_dir);
@@ -225,9 +230,15 @@ public:
 
 	// A fixture marked `#once-per-process` only reproduces its expected engine diagnostics on
 	// its first run in a process, so the bytecode pass skips it when an earlier pass already
-	// ran it. A process where the bytecode pass is the only pass has to run it instead, which
-	// is what clearing this reports.
+	// ran it. Set means "assume an earlier pass ran the whole corpus", which is what the
+	// doctest suite's ordered pair of cases guarantees; clearing it defers to the fixtures
+	// reported through `set_fixtures_already_run()`.
 	void set_once_per_process_diagnostics_consumed(bool p_consumed);
+
+	// Corpus-relative paths an earlier pass in this process already ran. Lets the bytecode
+	// pass skip exactly the `#once-per-process` fixtures whose diagnostics were consumed
+	// instead of every one of them.
+	void set_fixtures_already_run(const HashSet<String> &p_relative_paths);
 
 	// Keys of the fixtures this runner would execute, in run order. Backs the coverage that
 	// proves the fixture-level partition covers the corpus and never repeats a fixture.

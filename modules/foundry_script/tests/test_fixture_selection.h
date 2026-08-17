@@ -169,6 +169,34 @@ TEST_SUITE("[Modules][FoundryScript][FixtureSelection]") {
 		}
 	}
 
+	TEST_CASE("A text-only once-per-process fixture the binary-token pass skipped still runs") {
+		TemporaryProjectTree tree("fixture_selection_textonly_once");
+		tree.write_file("project.foundry",
+				"config_version=5\n\n[application]\n\nconfig/name=\"Fixture Selection Text Only\"\n");
+		tree.write_file("runtime/once.textonly.fs", "#once-per-process\nfunc test():\n\tprint(\"once\")\n");
+
+		{
+			FSTestRunner generator(tree.root, true, false);
+			REQUIRE_MESSAGE(generator.generate_outputs(), "The scratch corpus must produce expected output.");
+		}
+
+		FSFixtureCLI::Options options;
+		options.corpus_dir = tree.root;
+		options.patterns.push_back("once.textonly");
+		// The plain pass tokenizes from a buffer here, which excludes `.textonly.fs` fixtures,
+		// so nothing consumed the once-only diagnostics before the bytecode pass.
+		options.binary_tokens = true;
+
+		int failed = -1;
+		const Dictionary report = FSFixtureCLI::run(options, failed);
+		CHECK_EQ(failed, 0);
+		REQUIRE_MESSAGE(int(report["executed"]) == 1,
+				"A fixture no earlier pass ran must not be skipped by the bytecode pass too.");
+		const Array fixtures = report["fixtures"];
+		const Dictionary entry = fixtures[0];
+		CHECK_EQ(String(entry["pass"]), "bytecode");
+	}
+
 	TEST_CASE("A report path is recognized as living inside the run's user-data root") {
 		CHECK(FSFixtureCLI::report_path_is_inside_root("/scratch/user-fixtures-9/report.json", "/scratch/user-fixtures-9"));
 		CHECK(FSFixtureCLI::report_path_is_inside_root("/scratch/user-fixtures-9/nested/report.json", "/scratch/user-fixtures-9/"));
