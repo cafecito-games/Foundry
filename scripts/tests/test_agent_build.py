@@ -1365,6 +1365,142 @@ class BinaryPathTests(unittest.TestCase):
         )
 
 
+class BuildTargetSelectionTests(unittest.TestCase):
+    """`--target` must carry the companion settings the named configuration actually requires."""
+
+    def build_command(self, argv: list[str]) -> list[str]:
+        args = agent_build.parse_args(["--platform", "macos", "--scons-arg", "arch=arm64", *argv])
+        target = agent_build.resolve_build_target(args)
+        with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+            return agent_build.build_command(args, target)
+
+    def parse_error(self, argv: list[str]) -> str:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            agent_build.parse_args(argv)
+        self.assertEqual(raised.exception.code, 2)
+        return stderr.getvalue().splitlines()[-1]
+
+    def settings(self, command: list[str], key: str) -> list[str]:
+        return [argument for argument in command if argument.startswith(f"{key}=")]
+
+    def test_release_target_builds_the_release_configuration(self) -> None:
+        command = self.build_command(["--target", "template_release"])
+        for setting in ("target=template_release", "dev_mode=no", "dev_build=no", "tests=no"):
+            self.assertIn(setting, command)
+        self.assertNotIn("dev_mode=yes", command)
+        self.assertNotIn("tests=yes", command)
+
+    def test_default_target_keeps_the_strict_editor_configuration(self) -> None:
+        command = self.build_command([])
+        for setting in ("target=editor", "dev_mode=yes", "dev_build=yes", "tests=yes"):
+            self.assertIn(setting, command)
+
+    def test_dev_build_shortcut_drops_strict_mode_without_changing_the_target(self) -> None:
+        command = self.build_command(["--dev-build"])
+        self.assertIn("target=editor", command)
+        self.assertIn("dev_mode=no", command)
+        self.assertIn("dev_build=yes", command)
+
+    def test_target_selects_the_binary_the_build_writes(self) -> None:
+        names = {}
+        for target in agent_build.SUPPORTED_SCONS_TARGETS:
+            args = agent_build.parse_args(["--platform", "macos", "--scons-arg", "arch=arm64", "--target", target])
+            names[target] = agent_build.resolve_build_target(args).binary_path.name
+        self.assertEqual(
+            names,
+            {
+                "editor": "foundry.macos.editor.dev.arm64",
+                "template_debug": "foundry.macos.template_debug.arm64",
+                "template_release": "foundry.macos.template_release.arm64",
+            },
+        )
+
+    def test_an_explicit_scons_arg_overrides_the_companion_setting(self) -> None:
+        command = self.build_command(["--target", "template_release", "--scons-arg", "tests=yes"])
+        self.assertEqual(self.settings(command, "tests"), ["tests=no", "tests=yes"])
+
+    def test_an_explicit_dev_build_override_renames_the_release_binary(self) -> None:
+        args = agent_build.parse_args(
+            ["--platform", "macos", "--scons-arg", "arch=arm64", "--target", "template_release"]
+        )
+        overridden = agent_build.parse_args(
+            [
+                "--platform",
+                "macos",
+                "--scons-arg",
+                "arch=arm64",
+                "--target",
+                "template_release",
+                "--scons-arg",
+                "dev_build=yes",
+            ]
+        )
+        self.assertEqual(
+            agent_build.resolve_build_target(args).binary_path.name, "foundry.macos.template_release.arm64"
+        )
+        self.assertEqual(
+            agent_build.resolve_build_target(overridden).binary_path.name,
+            "foundry.macos.template_release.dev.arm64",
+        )
+
+    def test_the_target_is_not_spellable_as_a_raw_scons_argument(self) -> None:
+        message = self.parse_error(["--scons-arg", "target=template_release"])
+        self.assertTrue(
+            message.endswith(
+                "error: --scons-arg target=... is not accepted; select the target with "
+                "--target {editor,template_debug,template_release}"
+            ),
+            message,
+        )
+
+    def test_the_dev_build_shortcut_is_rejected_for_a_template_target(self) -> None:
+        message = self.parse_error(["--target", "template_release", "--dev-build"])
+        self.assertTrue(
+            message.endswith("error: --dev-build applies to --target editor, not --target template_release")
+        )
+
+    def test_a_testless_target_rejects_a_post_build_test_run(self) -> None:
+        for argv in (
+            ["--target", "template_release", "--test"],
+            ["--target", "template_release", "--case", "*FoundryCLI*"],
+            ["--scons-arg", "tests=no", "--test"],
+        ):
+            with self.subTest(argv=argv):
+                self.assertIn("there is no test runner to run", self.parse_error(argv))
+
+    def test_a_testless_target_accepts_a_test_run_once_tests_are_enabled(self) -> None:
+        args = agent_build.parse_args(["--target", "template_release", "--scons-arg", "tests=yes", "--test"])
+        self.assertTrue(args.test)
+
+    def test_a_sole_renamed_binary_is_resolved_for_the_selected_target(self) -> None:
+        with scratch_directory() as root:
+            (root / "foundry.macos.editor.dev.arm64").write_bytes(b"editor")
+            release = root / "foundry.macos.template_release.arm64.sanitized"
+            release.write_bytes(b"release")
+            target = agent_build.BuildTarget(
+                "macos", root / "foundry.macos.template_release.arm64", None, "template_release"
+            )
+            self.assertEqual(agent_build.resolve_linked_binary(target), release)
+
+    def test_ninja_state_is_specific_to_the_target(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        editor = agent_build.parse_args(["--backend", "ninja"])
+        release = agent_build.parse_args(["--backend", "ninja", "--target", "template_release"])
+        editor_state = agent_build.resolve_ninja_state(editor, target, repo_root=Path("/work/Foundry"))
+        release_state = agent_build.resolve_ninja_state(release, target, repo_root=Path("/work/Foundry"))
+        self.assertNotEqual(editor_state, release_state)
+
+    def test_ninja_generation_uses_the_selected_target(self) -> None:
+        args = agent_build.parse_args(["--backend", "ninja", "--target", "template_release"])
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.template_release.arm64"), None)
+        state = agent_build.NinjaState(Path("/work/.ninja/config"), Path("/work/.ninja/config/build.ninja"))
+        with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+            command = agent_build.ninja_generation_command(args, target, state)
+        for setting in ("target=template_release", "dev_mode=no", "dev_build=no", "tests=no"):
+            self.assertIn(setting, command)
+
+
 def fake_scons(directory: Path, *, exit_code: int, lines: list[str]) -> Path:
     """A stand-in SCons that prints the given output and exits with the given status."""
     payload = json.dumps({"lines": list(lines), "exit_code": exit_code})
@@ -2246,6 +2382,43 @@ class ProgressStreamIdentityTests(WrapperHarness):
         self.assertEqual(run_end_for(records, "second"), records[-1])
         self.assertEqual(run_end_for(records, "first"), records[2])
         self.assertIsNone(run_end_for(records, "third"))
+
+
+def recording_fake_scons(directory: Path, binary_path: Path, arguments_path: Path) -> Path:
+    """A stand-in SCons that records the arguments it was given and writes the binary."""
+    script = directory / "recording_fake_scons.py"
+    script.write_text(
+        "import json\n"
+        "import pathlib\n"
+        "import sys\n"
+        f"pathlib.Path({str(arguments_path)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+        f"pathlib.Path({str(binary_path)!r}).write_bytes(b'binary')\n"
+        "print('scons: done building targets.')\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+class TargetSelectionRunTests(WrapperHarness):
+    """A whole run with `--target` must hand SCons the configuration the flag names."""
+
+    def test_release_target_run_passes_the_release_configuration_to_scons(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.template_release.arm64"
+            arguments_path = root / "scons-arguments.json"
+            scons = recording_fake_scons(root, binary_path, arguments_path)
+            exit_code, log_path, _, _ = self.run_wrapper(
+                root,
+                scons,
+                binary_path=binary_path,
+                extra_argv=["--target", "template_release"],
+            )
+            arguments = json.loads(arguments_path.read_text(encoding="utf-8"))
+            result_line = self.result_line(log_path)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("RESULT: success", result_line)
+        for setting in ("target=template_release", "dev_mode=no", "dev_build=no", "tests=no"):
+            self.assertIn(setting, arguments)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,41 @@ workspace is actually allowed to use, and shares SCons objects through `$HOME/.s
 `--dev-build` omits `dev_mode=yes` for faster iteration only; rerun the default native strict build
 before handoff.
 
+## Build target
+
+`--target` selects the SCons target and the companion settings that target implies, so a
+configuration is named once instead of spelled out as four coupled settings that are easy to get
+subtly wrong:
+
+| `--target`         | SCons settings                                          |
+| ------------------ | ------------------------------------------------------- |
+| `editor` (default) | `target=editor dev_mode=yes dev_build=yes tests=yes`     |
+| `template_debug`   | `target=template_debug dev_mode=no dev_build=no tests=no` |
+| `template_release` | `target=template_release dev_mode=no dev_build=no tests=no` |
+
+Verifying the release configuration CI gates on is therefore one flag:
+
+```sh
+python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 --target template_release
+```
+
+The target also decides the binary the wrapper looks for and reports
+(`bin/foundry.<platform>.template_release.<arch>` for the command above), so a `RESULT:` line and a
+`run_end` record always describe the configuration that was actually built.
+
+Rules where `--target` meets the raw escape hatch:
+
+- An explicit `--scons-arg` for a companion setting wins, because it is placed after the wrapper's
+  own settings on the command line. `--target template_release --scons-arg tests=yes` builds a
+  release binary with the test runner compiled in, and the wrapper predicts the resulting binary
+  name accordingly.
+- `--scons-arg target=...` is rejected. The target has a first-class flag, and two spellings for one
+  setting is exactly the silent-mismatch risk this flag exists to remove.
+- `--dev-build` applies to `--target editor` only.
+- `--test` requires a build that has tests. `--target template_release --test` is rejected rather
+  than running a binary with no test runner in it; add `--scons-arg tests=yes` if that is what you
+  want.
+
 ## Build concurrency
 
 The job count is resolved in this order, highest precedence first:
