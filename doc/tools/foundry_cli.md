@@ -132,7 +132,10 @@ no fixture fails with a non-zero exit code rather than reporting an empty pass.
 The corpus runs in two passes — the plain pass and the compiled-bytecode
 round-trip — mirroring the two doctest cases. `--pass text` or `--pass bytecode`
 runs only one of them. The class index always covers the whole corpus, so a
-scoped run resolves the same global classes a full run does.
+scoped run resolves the same global classes a full run does. Traversal order is
+preserved, but a scoped run executes only the fixtures it selected, so a fixture
+that depends on state a sibling left behind is still worth confirming in a full
+corpus run.
 
 The result is a JSON report: run-level `executed`/`passed`/`failed` counts, one
 compact entry per execution under `fixtures`, and a `failures` array carrying the
