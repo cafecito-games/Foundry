@@ -625,6 +625,9 @@
 		<member name="debug/foundry_script/warnings/onready_with_export" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the [code]@onready[/code] annotation is used together with the [code]@export[/code] annotation, since it may not behave as expected.
 		</member>
+		<member name="debug/foundry_script/warnings/open_enum_match_without_default" type="int" setter="" getter="" default="1">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] statement over a plain (integer-backed) enum has no unguarded [code]_[/code] wildcard or bind branch. Such an enum's carrier can also hold values outside its declared members, so handling every declared member does not close the match.
+		</member>
 		<member name="debug/foundry_script/warnings/redundant_await" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a function that is not a coroutine is called with await.
 		</member>

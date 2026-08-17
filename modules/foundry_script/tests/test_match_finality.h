@@ -875,5 +875,132 @@ func describe(value: bool) -> String:
 #endif // DEBUG_ENABLED
 }
 
+#ifdef DEBUG_ENABLED
+static Vector<FSWarning> collect_match_warnings(const FSParser &p_parser) {
+	Vector<FSWarning> match_warnings;
+	for (const FSWarning &warning : p_parser.get_warnings()) {
+		if (warning.code == FSWarning::NON_EXHAUSTIVE_MATCH ||
+				warning.code == FSWarning::MATCH_WITHOUT_DEFAULT ||
+				warning.code == FSWarning::OPEN_ENUM_MATCH_WITHOUT_DEFAULT) {
+			match_warnings.push_back(warning);
+		}
+	}
+	return match_warnings;
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A fully covered plain enum warns about its open carrier") {
+	// A `void` function has no missing-return error to surface the live no-match path, so the warning is
+	// the only diagnostic. It names no unhandled values, because none of the declared members is missing.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func handle(level: Level) -> void:
+	match level:
+		Level.LOW:
+			print("low")
+		Level.HIGH:
+			print("high")
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_open_enum_full.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+	const Vector<FSWarning> match_warnings = collect_match_warnings(parser);
+	REQUIRE(match_warnings.size() == 1);
+	CHECK(match_warnings[0].code == FSWarning::OPEN_ENUM_MATCH_WITHOUT_DEFAULT);
+	CHECK(match_warnings[0].get_message().contains("Level"));
+	CHECK_FALSE(match_warnings[0].get_message().contains("does not handle"));
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A partly covered plain enum names the unhandled members") {
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	MEDIUM = 1
+	HIGH = 2
+
+func handle(level: Level) -> void:
+	match level:
+		Level.MEDIUM:
+			print("medium")
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_open_enum_partial.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+	const Vector<FSWarning> match_warnings = collect_match_warnings(parser);
+	REQUIRE(match_warnings.size() == 1);
+	CHECK(match_warnings[0].code == FSWarning::OPEN_ENUM_MATCH_WITHOUT_DEFAULT);
+	CHECK(match_warnings[0].get_message().contains("does not handle: LOW, HIGH"));
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A closed plain-enum match warns about nothing") {
+	// A full-carrier test admits every value the enum's slot can hold, so the match is not open.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func handle(level: Level) -> void:
+	match level:
+		level is long:
+			print("carrier")
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_open_enum_carrier.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+	CHECK(collect_match_warnings(parser).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A bool subject keeps the shared non-exhaustive warning") {
+	FSParser parser;
+	const String source = R"(
+func handle(flag: bool) -> void:
+	match flag:
+		true:
+			print("t")
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_bool_warning.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+	const Vector<FSWarning> match_warnings = collect_match_warnings(parser);
+	REQUIRE(match_warnings.size() == 1);
+	CHECK(match_warnings[0].code == FSWarning::NON_EXHAUSTIVE_MATCH);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A tagged union keeps the shared non-exhaustive warning") {
+	FSParser parser;
+	const String source = R"(
+enum Message:
+	Move(distance: int)
+	Stop
+
+func handle(message: Message) -> void:
+	match message:
+		Message.Stop:
+			print("stop")
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_tagged_union_warning.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+	const Vector<FSWarning> match_warnings = collect_match_warnings(parser);
+	REQUIRE(match_warnings.size() == 1);
+	CHECK(match_warnings[0].code == FSWarning::NON_EXHAUSTIVE_MATCH);
+}
+#endif // DEBUG_ENABLED
+
 } // namespace MatchFinality
 } // namespace FSTests

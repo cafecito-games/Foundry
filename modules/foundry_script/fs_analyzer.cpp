@@ -5621,10 +5621,12 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 
 	const bool has_unhandled_values = coverage_is_provable && !unhandled.is_empty();
 #ifdef DEBUG_ENABLED
-	// A plain enum without a catch-all always leaves undeclared carrier values unhandled. When some
-	// declared members are unhandled too, the more specific NON_EXHAUSTIVE_MATCH below names them.
+	// A plain enum without a catch-all always leaves undeclared carrier values unhandled, so it owns a
+	// diagnostic of its own whether or not declared members are missing too. Naming the missing members
+	// stays useful, but listing them is never the fix, which is why the shared NON_EXHAUSTIVE_MATCH
+	// advice does not apply here. Exactly one warning is emitted per plain-enum match.
 	if (is_plain_enum && !has_unhandled_values) {
-		parser->push_warning(p_match, FSWarning::MATCH_WITHOUT_DEFAULT);
+		parser->push_warning(p_match, FSWarning::OPEN_ENUM_MATCH_WITHOUT_DEFAULT, type_name, String());
 	}
 #endif // DEBUG_ENABLED
 	if (!has_unhandled_values) {
@@ -5645,7 +5647,7 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 
 	p_match->uncovered_domain_values = String(", ").join(unhandled);
 #ifdef DEBUG_ENABLED
-	parser->push_warning(p_match, FSWarning::NON_EXHAUSTIVE_MATCH, type_name, p_match->uncovered_domain_values);
+	parser->push_warning(p_match, is_plain_enum ? FSWarning::OPEN_ENUM_MATCH_WITHOUT_DEFAULT : FSWarning::NON_EXHAUSTIVE_MATCH, type_name, p_match->uncovered_domain_values);
 #endif // DEBUG_ENABLED
 }
 

@@ -1,5 +1,5 @@
-# Handling every declared member and `null` silences NON_EXHAUSTIVE_MATCH. A plain enum is still an
-# open, integer-backed domain, so MATCH_WITHOUT_DEFAULT remains.
+# Handling every declared member and `null` still leaves the integer carrier's undeclared values open,
+# so OPEN_ENUM_MATCH_WITHOUT_DEFAULT fires with no unhandled values to name.
 enum Direction:
 	NORTH = 0
 	SOUTH = NORTH + 1

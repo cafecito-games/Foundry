@@ -1,4 +1,4 @@
 FS_TEST_OK
-~~ WARNING at line 8: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
+~~ WARNING at line 8: (OPEN_ENUM_MATCH_WITHOUT_DEFAULT) The "match" over "State" has no unguarded "_" or bind branch. "State" is carried by an integer that can also hold values outside its declared members, so no set of value patterns closes it.
 idle
 ok
