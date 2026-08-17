@@ -422,6 +422,8 @@ def binary_identity(path: Path | None) -> dict[str, object] | None:
     if path is None:
         return None
     try:
+        if not path.is_file():
+            return None
         stats = path.stat()
     except OSError:
         return None
@@ -659,7 +661,7 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
     binary_path = context.binary_path
     line = (
         f"{RESULT_PREFIX} {status} step={step} exit_code={exit_code} binary={binary_path} "
-        f"binary_present={'yes' if binary_path.exists() else 'no'} invocation={context.invocation_id} "
+        f"binary_present={'yes' if binary_path.is_file() else 'no'} invocation={context.invocation_id} "
         f"log={context.log_path}"
     )
     context.human_stream.write(f"{line}\n")
@@ -1501,7 +1503,7 @@ def main(argv: list[str]) -> int:
         return emit_result(status, step=step, exit_code=exit_code, context=RESULT_CONTEXT)
 
     if build_exit != 0:
-        if generation_status == "failed":
+        if generation_status in ("failed", "error"):
             return report("generation-failure", "generate", build_exit)
         return report("build-failure", "build", build_exit)
 

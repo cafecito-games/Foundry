@@ -1809,6 +1809,68 @@ class ProgressStreamIdentityTests(WrapperHarness):
         self.assertGreaterEqual(int(summary_at.timestamp() * 1_000_000_000), linked_at)
         self.assertEqual(summary["binary_after"]["mtime_ns"], linked_at)
 
+    def test_an_unresolved_binary_is_reported_as_absent(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            log_path = root / "build.log"
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+                with mock.patch.object(
+                    agent_build, "host_scons_platform", side_effect=RuntimeError("unsupported host")
+                ):
+                    exit_code = agent_build.main(
+                        [
+                            "--log",
+                            str(log_path),
+                            "--progress-file",
+                            str(progress_path),
+                            "--invocation-id",
+                            "unsupported-host",
+                        ]
+                    )
+            run_end = run_end_for(progress_events(progress_path), "unsupported-host")
+            result_line = self.result_line(log_path)
+        assert run_end is not None
+        self.assertEqual(exit_code, 127)
+        self.assertEqual(run_end["status"], "tooling-missing")
+        self.assertIsNone(run_end["binary_after"])
+        self.assertFalse(run_end["binary_changed"])
+        self.assertIn("binary_present=no", result_line)
+
+    def test_a_generation_launch_failure_is_reported_against_the_generate_step(self) -> None:
+        with scratch_directory() as root:
+            state_directory = root / "state"
+            state_directory.write_text("not a directory\n", encoding="utf-8")
+            state = agent_build.NinjaState(state_directory, state_directory / "build.ninja")
+            progress_path = root / "progress.jsonl"
+            log_path = root / "build.log"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build.shutil, "which", side_effect=lambda name: f"/bin/{name}"):
+                        with mock.patch.object(agent_build, "resolve_ninja_state", return_value=state):
+                            with mock.patch.object(agent_build, "read_ccache_stats_best_effort", return_value={}):
+                                exit_code = agent_build.main(
+                                    [
+                                        "--backend",
+                                        "ninja",
+                                        "--platform",
+                                        "macos",
+                                        "--log",
+                                        str(log_path),
+                                        "--progress-file",
+                                        str(progress_path),
+                                        "--invocation-id",
+                                        "generation-launch",
+                                    ]
+                                )
+            run_end = run_end_for(progress_events(progress_path), "generation-launch")
+            result_line = self.result_line(log_path)
+        assert run_end is not None
+        self.assertEqual(exit_code, 127)
+        self.assertEqual(run_end["status"], "generation-failure")
+        self.assertEqual(run_end["step"], "generate")
+        self.assertIn("step=generate", result_line)
+
     def test_documented_wait_snippet_selects_only_the_matching_invocation(self) -> None:
         records: list[dict[str, Any]] = [
             {"event": "run_start", "invocation_id": "first"},
