@@ -5442,6 +5442,52 @@ void FSAnalyzer::resolve_match(FSParser::MatchNode *p_match) {
 	check_match_exhaustiveness(p_match);
 }
 
+// True when `value is T` on the match subject accepts every value the subject can hold, which makes
+// the branch always match. Deciding that needs a domain whose membership is settled statically, so it
+// is limited to the domains the exhaustiveness checker already enumerates -- `bool`, a plain enum, and
+// a tagged union tested against its own type -- plus `Variant`, which the compiler lowers to an
+// unconditional true. A partial test over an open domain, such as `is int` on an `int | String`
+// subject, is deliberately left uncovered: proving those needs the residual-set modeling match-arm
+// analysis still defers, and under-approximating here keeps every answer sound.
+static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_type, const FSParser::DataType &p_subject_type) {
+	if (!p_test_type.is_set() || !p_subject_type.is_set()) {
+		return false;
+	}
+	if (p_test_type.is_variant()) {
+		return true;
+	}
+	// A nullable subject can hold `null`, which fails a test against any written-out type. A meta-type
+	// subject is the type itself rather than a value of it, so it is not a member of its own domain.
+	if (p_subject_type.is_nullable || p_subject_type.is_meta_type) {
+		return false;
+	}
+	if (p_subject_type.kind == FSParser::DataType::ENUM) {
+		// `value is Message.Move` names one case, so it covers that case rather than the whole union.
+		return p_test_type.kind == FSParser::DataType::ENUM &&
+				p_test_type.enum_case_name == StringName() &&
+				p_test_type.is_tagged_union == p_subject_type.is_tagged_union &&
+				p_test_type.enum_type == p_subject_type.enum_type;
+	}
+	if (p_subject_type.kind == FSParser::DataType::BUILTIN && p_subject_type.builtin_type == Variant::BOOL) {
+		return p_test_type.kind == FSParser::DataType::BUILTIN && p_test_type.builtin_type == Variant::BOOL;
+	}
+	return false;
+}
+
+bool FSAnalyzer::match_branch_always_matches(const FSParser::MatchBranchNode *p_branch) {
+	if (p_branch == nullptr || p_branch->guard_body != nullptr) {
+		return false; // A guard can fail, so the branch is not guaranteed to run.
+	}
+	for (const FSParser::PatternNode *pattern : p_branch->patterns) {
+		// Only the type-test shape is consulted here. A tuple pattern can also be irrefutable, but
+		// whether that closes a match's no-match path is a separate question from this one.
+		if (pattern != nullptr && pattern->is_subject_type_test && pattern->is_irrefutable) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // Coverage decides whether a `match` is terminating for flow analysis, which decides whether a program
 // compiles, so it is computed in every build configuration. Only the warnings it feeds are gated.
 void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
@@ -5459,14 +5505,23 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 		return; // Type unknown; cannot classify the domain.
 	}
 
-	// A branch counts as a default only with an unguarded wildcard/bind pattern.
-	// The parser already clears `has_wildcard` when a guard is present.
+	// A branch counts as a default with an unguarded wildcard/bind pattern, or with a same-subject type
+	// test that accepts the subject's whole domain. The parser already clears `has_wildcard` when a
+	// guard is present.
 	bool has_default = false;
 	for (FSParser::MatchBranchNode *branch : p_match->branches) {
-		if (branch->has_wildcard) {
+		if (branch->has_wildcard || match_branch_always_matches(branch)) {
 			has_default = true;
 			break;
 		}
+	}
+
+	// A branch that always matches leaves no fallthrough whatever the subject's domain looks like, so
+	// this settles coverage before the domain is classified. `is Variant` over an open domain is the
+	// case that needs it: there is no value set to enumerate, yet nothing escapes the match.
+	if (has_default) {
+		p_match->covers_subject_domain = true;
+		return;
 	}
 
 	// Classify the matched type's domain.
@@ -5492,16 +5547,9 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 
 	if (!is_finite_domain) {
 #ifdef DEBUG_ENABLED
-		if (!has_default) {
-			parser->push_warning(p_match, FSWarning::MATCH_WITHOUT_DEFAULT);
-		}
+		parser->push_warning(p_match, FSWarning::MATCH_WITHOUT_DEFAULT);
 #endif // DEBUG_ENABLED
 		return;
-	}
-
-	if (has_default) {
-		p_match->covers_subject_domain = true;
-		return; // Exhaustive via default.
 	}
 
 	Vector<String> unhandled;
@@ -5762,6 +5810,11 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 						const FSParser::IdentifierNode *pattern_operand = static_cast<const FSParser::IdentifierNode *>(type_test->operand);
 						const FSParser::IdentifierNode *match_identifier = static_cast<const FSParser::IdentifierNode *>(p_match_test);
 						p_match_pattern->is_subject_type_test = pattern_operand->name == match_identifier->name;
+						// A test the subject can never fail always selects the branch, so record it as
+						// irrefutable here too and let coverage and definite assignment read that decision.
+						if (p_match_pattern->is_subject_type_test && has_match_test_type) {
+							p_match_pattern->is_irrefutable = _type_test_covers_subject_domain(type_test->test_datatype, match_test_type);
+						}
 					}
 				}
 				if (!expr->is_constant) {

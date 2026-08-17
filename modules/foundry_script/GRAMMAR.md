@@ -1457,6 +1457,12 @@ Rules:
   (binds/wildcards, recursively). A refutable sub-pattern such as `Move(0, y)` covers nothing.
 - A guarded branch never contributes coverage, since its guard can fail, and a `match` over a
   nullable subject is exhaustive only when a `null` pattern (or a wildcard) is also present.
+- An unguarded same-subject type-test pattern covers the whole subject when the tested type accepts
+  every value the subject can hold, and the branch then counts exactly as a wildcard does. That is
+  decided only where the subject's domain is statically enumerable: a non-nullable `bool` tested
+  against `bool`, a non-nullable plain enum or tagged union tested against its own type (a case test
+  such as `value is Message.Move` covers that case, not the union), and any subject tested against
+  `Variant`. A partial test such as `value is int` on an `int | String` subject covers nothing.
 - Exhaustiveness is normative for flow analysis, not only for diagnostics: a `match` over a finite
   domain — a tagged union, a plain enum, or `bool` — whose branches cover the whole domain and all
   terminate is itself terminating, so a value-returning function needs no trailing `return` after
