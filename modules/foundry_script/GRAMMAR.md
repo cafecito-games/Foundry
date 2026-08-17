@@ -413,6 +413,11 @@ type_arguments = "[", type, { ",", type }, "]" ;
   identifiers (`extends A.B.C`), or a path string followed by an inner-class chain. A
   generic base may carry `type_arguments` (`extends List[int]`).
 - `uses` mixes in one or more traits, each optionally specialized with type arguments.
+- A trait's type arguments are fixed by the first class in an inheritance chain that applies
+  it. A subclass may re-apply the same trait only with the same arguments; re-applying it with
+  different ones is an error, because a reference typed as the base would otherwise reach a
+  body typed for the other arguments. A position either side leaves on an unreified type
+  parameter (including `Self`) carries no argument and never conflicts.
 
 ---
 
@@ -839,6 +844,12 @@ against the trait succeed if any level in the chain declares the conformance. Co
 names on different levels of the chain (e.g. a base conformance to trait A supplies `foo()` and
 a derived conformance to trait B supplies `foo()`) follow this shadowing rule and are not
 rejected.
+
+A conformance's type arguments answer the same membership question a declared `uses` answers,
+so a conformance may not record arguments that differ from a binding already present on the
+target's class chain. Recording different ones would make the value satisfy the trait at two
+arguments at once, since either evidence source is enough on its own. As with `uses`, a
+position left on an unreified type parameter carries no argument and never conflicts.
 
 **Reach.** A conformance takes effect for the files that **load** its declaring file, not for
 the whole project. A file loads it when it:

@@ -452,6 +452,161 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 	return false;
 }
 
+// How `p_class` binds `p_trait`'s type parameters, expressed in `p_class`'s own frame. Empty when
+// `p_class` does not apply the trait, or applies it without type arguments.
+//
+// `FSAnalyzer::trait_type_argument_substitution()` and `fs_compiler.cpp`'s
+// `_trait_type_argument_substitution()` implement the same algorithm for their own layers. This file
+// must not depend on either, so this is a third copy; the three have to stay in agreement, because a
+// divergence between them becomes a disagreement between the analyzer, the compiler and this
+// relation about which type a conformance binds.
+static HashMap<StringName, FSParser::DataType> _trait_type_argument_substitution(
+		const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_trait) {
+	HashMap<StringName, FSParser::DataType> bindings;
+	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return bindings;
+	}
+
+	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		const FSParser::ClassNode *used_trait = trait_use.resolved_trait;
+		if (used_trait == nullptr) {
+			continue;
+		}
+		if (used_trait == p_trait || used_trait->fqcn == p_trait->fqcn) {
+			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
+			for (int i = 0; i < count; i++) {
+				const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
+				}
+			}
+			return bindings;
+		}
+
+		bool reaches_trait = false;
+		for (const FSParser::ClassNode *supertrait : used_trait->resolved_traits) {
+			if (supertrait == p_trait || (supertrait != nullptr && supertrait->fqcn == p_trait->fqcn)) {
+				reaches_trait = true;
+				break;
+			}
+		}
+		if (reaches_trait) {
+			// Compose the intermediate trait's binding of the target with this class's binding of the
+			// intermediate, so `class C: uses Storing[String]` over `trait Storing[T]: uses Keeper[T]`
+			// reports `Keeper`'s parameter as `String` rather than as `T`.
+			HashMap<StringName, FSParser::DataType> inner = _trait_type_argument_substitution(used_trait, p_trait);
+			if (inner.is_empty()) {
+				continue;
+			}
+			const HashMap<StringName, FSParser::DataType> outer = _trait_type_argument_substitution(p_class, used_trait);
+			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
+				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
+			}
+			return bindings;
+		}
+	}
+	return bindings;
+}
+
+static bool _datatype_names_any_type_parameter(const FSParser::DataType &p_type, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return false;
+	}
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+		return true;
+	}
+	const Vector<FSParser::DataType> *slots[] = {
+		&p_type.type_parameter_bound,
+		&p_type.container_element_types,
+		&p_type.type_arguments,
+		&p_type.union_members,
+		&p_type.method_parameter_types,
+		&p_type.method_return_type,
+		&p_type.method_rest_parameter_type,
+	};
+	for (const Vector<FSParser::DataType> *slot : slots) {
+		for (const FSParser::DataType &nested : *slot) {
+			if (_datatype_names_any_type_parameter(nested, p_depth + 1)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Reads how `p_source`'s class chain binds `p_trait`'s type parameters, expressed in `p_source`'s own
+// type arguments, writing one entry per trait parameter into `r_arguments`. An entry left unset means
+// the chain proves nothing for that position. Returns false when no class on the chain binds the
+// trait at all, which is the no-evidence case a store accepts.
+//
+// Nearest-first, matching the compiler's per-ancestor conformance binding table, where a subclass's
+// own entry overwrites the one it inherited.
+static bool _project_class_trait_arguments(const FSParser::DataType &p_source,
+		const FSParser::ClassNode *p_trait, Vector<FSParser::DataType> &r_arguments) {
+	if (p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return false;
+	}
+
+	FSParser::DataType current = p_source;
+	int depth = 0;
+	while (current.kind == FSParser::DataType::CLASS && current.class_type != nullptr) {
+		if (unlikely(depth++ > Variant::MAX_RECURSION_DEPTH)) {
+			return false;
+		}
+
+		if (current.class_type == p_trait || current.class_type->fqcn == p_trait->fqcn) {
+			// The source is the trait itself: a `Keeper[String]`-typed reference states the arguments
+			// directly rather than through a conformance.
+			if (current.type_arguments.size() != p_trait->type_parameters.size()) {
+				return false;
+			}
+			r_arguments = current.type_arguments;
+			return true;
+		}
+
+		// This level's own arguments, so a binding written in terms of the class's parameters can be
+		// re-expressed in the concrete terms the source handle carries.
+		HashMap<StringName, FSParser::DataType> class_bindings;
+		const Vector<FSParser::TypeParameterNode *> &type_parameters = current.class_type->type_parameters;
+		const int binding_count = MIN(type_parameters.size(), current.type_arguments.size());
+		for (int i = 0; i < binding_count; i++) {
+			const FSParser::TypeParameterNode *type_parameter = type_parameters[i];
+			if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+				class_bindings.insert(type_parameter->identifier->name, current.type_arguments[i]);
+			}
+		}
+
+		const HashMap<StringName, FSParser::DataType> substitution =
+				_trait_type_argument_substitution(current.class_type, p_trait);
+		if (!substitution.is_empty()) {
+			r_arguments.clear();
+			for (const FSParser::TypeParameterNode *type_parameter : p_trait->type_parameters) {
+				FSParser::DataType argument;
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					const FSParser::DataType *bound = substitution.getptr(type_parameter->identifier->name);
+					if (bound != nullptr) {
+						argument = class_bindings.is_empty()
+								? *bound
+								: FSParser::DataType::substitute(*bound, class_bindings);
+					}
+				}
+				r_arguments.push_back(argument);
+			}
+			return true;
+		}
+
+		// Step to the base, carrying this level's arguments into the base handle so the next level's
+		// binding is read in concrete terms too.
+		FSParser::DataType parent = current.class_type->base_type;
+		if (!class_bindings.is_empty()) {
+			parent = FSParser::DataType::substitute(parent, class_bindings);
+		}
+		current = parent;
+	}
+
+	return false;
+}
+
 static FSParser::DataType _type_handle_represented_type(const FSParser::DataType &p_type) {
 	FSParser::DataType result = p_type;
 	result.is_type_handle_annotation = false;
@@ -1018,6 +1173,28 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			p_target.class_type->is_trait && !p_target.is_meta_type) {
 		if (p_source.kind == FSParser::DataType::CLASS && !p_source.is_meta_type) {
 			result.compatible = _class_has_trait(p_source.class_type, p_target.class_type);
+			if (result.compatible && p_target.has_type_arguments()) {
+				// A trait target is invariant in its type arguments exactly like a class target: the
+				// nominal answer above only says the source conforms, not that it conforms at the
+				// arguments the destination declares. Evidence the source's chain does not carry stays
+				// compatible -- that is the gradual rule -- but evidence that contradicts the
+				// destination is rejected here rather than at run time, or not at all.
+				Vector<FSParser::DataType> projected;
+				if (_project_class_trait_arguments(p_source, p_target.class_type, projected) &&
+						projected.size() == p_target.type_arguments.size()) {
+					for (int i = 0; i < projected.size(); i++) {
+						if (!projected[i].is_set() || _datatype_names_any_type_parameter(projected[i])) {
+							// The conformance binds this position to something no value reifies -- an
+							// unbound parameter, or `Self` -- so it proves nothing here.
+							continue;
+						}
+						if (!_datatype_invariant_equal(projected[i], p_target.type_arguments[i])) {
+							result.compatible = false;
+							break;
+						}
+					}
+				}
+			}
 			return result;
 		}
 		if (p_source.kind == FSParser::DataType::SCRIPT && p_source.script_type.is_valid() && !p_source.is_meta_type) {
@@ -1214,6 +1391,15 @@ bool FSTypeCompatibility::is_compatible(const FSParser::DataType &p_target, cons
 
 bool FSTypeCompatibility::is_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
 	return p_a == p_b && _datatype_invariant_equal(p_a, p_b);
+}
+
+bool FSTypeCompatibility::names_any_type_parameter(const FSParser::DataType &p_type) {
+	return _datatype_names_any_type_parameter(p_type);
+}
+
+bool FSTypeCompatibility::project_class_trait_arguments(const FSParser::DataType &p_source,
+		const FSParser::ClassNode *p_trait, Vector<FSParser::DataType> &r_arguments) {
+	return _project_class_trait_arguments(p_source, p_trait, r_arguments);
 }
 
 bool FSTypeCompatibility::rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type) {

@@ -175,6 +175,18 @@ public:
 	// principal type, so it accepts two callables with different signatures.
 	static bool is_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 
+	// True when the type is, or contains at any depth, a type parameter -- `Self` included. Such a
+	// position carries no conformance evidence: the compiler records no binding for it, so a value
+	// proves nothing about it and a destination must not reject on it.
+	static bool names_any_type_parameter(const FSParser::DataType &p_type);
+
+	// How `p_source`'s class chain binds `p_trait`'s type parameters, expressed in `p_source`'s own
+	// type arguments. Writes one entry per trait parameter, an unset entry meaning the chain proves
+	// nothing for that position, and returns false when no class on the chain binds the trait at all.
+	// The nearest binding on the chain wins, matching the compiler's conformance binding table.
+	static bool project_class_trait_arguments(const FSParser::DataType &p_source,
+			const FSParser::ClassNode *p_trait, Vector<FSParser::DataType> &r_arguments);
+
 	// Whether a rest ("...") tail narrows the trailing arguments below Variant. A bare `Array` and an
 	// `Array[Variant]` tail are both gradual and therefore not narrowing.
 	static bool rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type);

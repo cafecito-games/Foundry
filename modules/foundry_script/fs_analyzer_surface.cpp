@@ -31,6 +31,7 @@
 #include "fs_analyzer.h"
 
 #include "foundry_script.h"
+#include "fs_type.h"
 
 #include "core/config/engine.h"
 #include "core/object/class_db.h"
@@ -2156,6 +2157,71 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, bool p_re
 	}
 }
 
+bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::DataType &p_chain_base, FSParser::ClassNode *p_trait,
+		const Vector<FSParser::DataType> &p_applied_arguments, const FSParser::Node *p_source,
+		String &r_inherited_arguments, String &r_applied_arguments, const FSParser::ClassNode *&r_binding_ancestor) {
+	if (p_trait == nullptr || p_trait->type_parameters.is_empty() || p_applied_arguments.is_empty()) {
+		return false;
+	}
+
+	// The chain's bindings live on the ancestors' own `uses` clauses, which have to be resolved before
+	// they can be read. An ancestor already being resolved, or one that fails to resolve, contributes
+	// no evidence rather than a conflict: a false rejection here would break the gradual rule the whole
+	// relation rests on.
+	for (FSParser::DataType current = p_chain_base;
+			current.kind == FSParser::DataType::CLASS && current.class_type != nullptr;
+			current = current.class_type->base_type) {
+		if (current.class_type->resolving_trait_uses) {
+			return false;
+		}
+		if (resolve_trait_uses(current.class_type, p_source) != OK) {
+			return false;
+		}
+	}
+
+	Vector<FSParser::DataType> inherited;
+	if (!FSTypeCompatibility::project_class_trait_arguments(p_chain_base, p_trait, inherited) ||
+			inherited.size() != p_applied_arguments.size()) {
+		return false;
+	}
+
+	bool conflicts = false;
+	String inherited_arguments;
+	String applied_arguments;
+	for (int i = 0; i < inherited.size(); i++) {
+		if (i > 0) {
+			inherited_arguments += ", ";
+			applied_arguments += ", ";
+		}
+		inherited_arguments += inherited[i].to_string();
+		applied_arguments += p_applied_arguments[i].to_string();
+		if (!inherited[i].is_set() || !p_applied_arguments[i].is_set() ||
+				FSTypeCompatibility::names_any_type_parameter(inherited[i]) ||
+				FSTypeCompatibility::names_any_type_parameter(p_applied_arguments[i])) {
+			// A position left on an unreified type parameter proves nothing about the other side.
+			continue;
+		}
+		conflicts = conflicts || !_datatype_alpha_equal(p_applied_arguments[i], inherited[i]);
+	}
+	if (!conflicts) {
+		return false;
+	}
+
+	// Name the nearest ancestor that fixed the binding, which is the one the projection above read.
+	r_binding_ancestor = nullptr;
+	for (FSParser::DataType current = p_chain_base;
+			current.kind == FSParser::DataType::CLASS && current.class_type != nullptr;
+			current = current.class_type->base_type) {
+		if (!trait_type_argument_substitution(current.class_type, p_trait).is_empty()) {
+			r_binding_ancestor = current.class_type;
+			break;
+		}
+	}
+	r_inherited_arguments = inherited_arguments;
+	r_applied_arguments = applied_arguments;
+	return true;
+}
+
 Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
 	if (p_source == nullptr && parser->has_class(p_class)) {
 		p_source = p_class;
@@ -2243,6 +2309,44 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		return true;
 	};
 
+	// A trait's type arguments are fixed by the first class on an inheritance chain that applies it, so
+	// a subclass may re-apply the same trait only with the same arguments. Re-applying with different
+	// ones makes a statically valid call through the base type land in a body typed for the other
+	// arguments.
+	auto check_inherited_trait_binding = [&](FSParser::ClassNode *p_seen_trait,
+											  const HashMap<StringName, FSParser::DataType> &p_binding,
+											  const FSParser::Node *p_binding_source) -> bool {
+		if (p_binding.is_empty() || p_seen_trait == nullptr) {
+			return true;
+		}
+		Vector<FSParser::DataType> applied_arguments;
+		for (const FSParser::TypeParameterNode *type_parameter : p_seen_trait->type_parameters) {
+			FSParser::DataType argument;
+			if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+				const FSParser::DataType *bound = p_binding.getptr(type_parameter->identifier->name);
+				if (bound != nullptr) {
+					argument = *bound;
+				}
+			}
+			applied_arguments.push_back(argument);
+		}
+
+		String inherited_arguments;
+		String rendered_applied_arguments;
+		const FSParser::ClassNode *binding_ancestor = nullptr;
+		if (!trait_binding_conflicts_with_chain(p_class->base_type, p_seen_trait, applied_arguments,
+					p_binding_source, inherited_arguments, rendered_applied_arguments, binding_ancestor)) {
+			return true;
+		}
+
+		push_error(vformat(R"(Trait "%s" is already applied with type arguments ("%s") by "%s"; "%s" cannot re-apply it with ("%s").)",
+						   _class_or_trait_name(p_seen_trait), inherited_arguments,
+						   _class_or_trait_name(binding_ancestor), _class_or_trait_name(p_class),
+						   rendered_applied_arguments),
+				p_binding_source);
+		return false;
+	};
+
 	for (FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
 		const FSParser::Node *source = _trait_use_source(trait_use, p_class);
 		FSParser::ClassNode *trait = resolve_trait_reference(p_class, trait_use, source);
@@ -2302,6 +2406,9 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		if (!record_trait_binding(trait, direct_substitution, source)) {
 			return fail();
 		}
+		if (!check_inherited_trait_binding(trait, direct_substitution, source)) {
+			return fail();
+		}
 
 		for (FSParser::ClassNode *transitive_trait : trait->resolved_traits) {
 			if (!class_satisfies_trait_base(p_class, transitive_trait)) {
@@ -2318,6 +2425,9 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 				transitive_binding.insert(entry.key, FSParser::DataType::substitute(entry.value, direct_substitution));
 			}
 			if (!record_trait_binding(transitive_trait, transitive_binding, source)) {
+				return fail();
+			}
+			if (!check_inherited_trait_binding(transitive_trait, transitive_binding, source)) {
 				return fail();
 			}
 			_append_trait_unique(p_class->resolved_traits, transitive_trait);

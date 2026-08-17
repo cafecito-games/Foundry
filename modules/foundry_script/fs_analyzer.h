@@ -730,6 +730,19 @@ private:
 	// identifier on the Variant fallback. Returns whether the metatype was published.
 	bool publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type,
 			bool p_allow_open_script_handle_metatype = false);
+	// Whether binding p_trait to p_applied_arguments contradicts the binding the inheritance chain
+	// rooted at p_chain_base already carries for it. A trait's type arguments are fixed by the first
+	// class on a chain that applies it, because the compiler's per-ancestor conformance table lets a
+	// later binding overwrite the inherited one: a base-typed reference would then reach a body typed
+	// for the other arguments. Positions either side leaves on an unreified type parameter carry no
+	// evidence and never conflict, and an unresolved or already-resolving chain reads as no evidence.
+	//
+	// On a conflict, fills the two rendered argument lists and the ancestor that fixed the binding.
+	bool trait_binding_conflicts_with_chain(const FSParser::DataType &p_chain_base, FSParser::ClassNode *p_trait,
+			const Vector<FSParser::DataType> &p_applied_arguments, const FSParser::Node *p_source,
+			String &r_inherited_arguments, String &r_applied_arguments,
+			const FSParser::ClassNode *&r_binding_ancestor);
+
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);

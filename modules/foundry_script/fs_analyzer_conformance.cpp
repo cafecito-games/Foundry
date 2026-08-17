@@ -729,6 +729,24 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				continue;
 			}
 
+			// A trait's type arguments are fixed by the first class on the target's inheritance chain
+			// that applies it. Recording different ones here would make the value satisfy the trait at
+			// two arguments at once, since the runtime relation accepts either evidence source.
+			if (parser->has_class(target) && !trait_use.resolved_type_arguments.is_empty()) {
+				String inherited_arguments;
+				String recorded_arguments;
+				const FSParser::ClassNode *binding_ancestor = nullptr;
+				if (trait_binding_conflicts_with_chain(target->base_type, trait, trait_use.resolved_type_arguments,
+							conformance, inherited_arguments, recorded_arguments, binding_ancestor)) {
+					push_error(vformat(R"(Trait "%s" is already applied with type arguments ("%s") by "%s"; the conformance for "%s" cannot record ("%s").)",
+									   _class_or_trait_name(trait), inherited_arguments,
+									   _class_or_trait_name(binding_ancestor), _class_or_trait_name(target),
+									   recorded_arguments),
+							conformance);
+					continue;
+				}
+			}
+
 			// Coherence applies to the whole implied identity closure. A repeated implied identity within
 			// this declaration is the ordinary diamond case; a repeated direct identity or an overlap with
 			// another declaration remains an error.

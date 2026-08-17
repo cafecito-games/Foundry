@@ -437,6 +437,9 @@ func measured() -> void:
   the arguments have to be proven.
 - Traits are nominal contracts. A class satisfies a trait by declaring `uses TraitName`; matching method names alone is
   not enough.
+- A generic trait's type arguments are fixed by the first class in an inheritance chain that applies it. A subclass may
+  re-apply the same trait only with the same arguments, and a retroactive `extend ... uses` conformance may not record
+  arguments that differ from a binding already on the target's chain.
 - Custom annotation declarations are root-only and use `annotation name(...) targets METHOD, CLASS, VARIABLE`.
 
 ## Few-Shot Examples
