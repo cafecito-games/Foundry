@@ -751,6 +751,11 @@ private:
 	void resolve_assert(FSParser::AssertNode *p_assert);
 	void resolve_match(FSParser::MatchNode *p_match);
 	void check_match_exhaustiveness(FSParser::MatchNode *p_match);
+	// True when an unguarded branch always matches because one of its patterns is a same-subject type
+	// test the analyzer proved accepts the subject's whole domain. Both exhaustiveness checking and
+	// definite-assignment analysis close the no-match path on it, so they read one decision instead of
+	// each re-deriving the pattern's shape.
+	static bool match_branch_always_matches(const FSParser::MatchBranchNode *p_branch);
 	bool collect_uncovered_tagged_union_cases(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, Vector<String> &r_uncovered) const;
 	bool collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const;
 	const FSParser::MatchNode *find_non_covering_match_cause(const FSParser::SuiteNode *p_suite) const;

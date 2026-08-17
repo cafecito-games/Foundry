@@ -1371,9 +1371,10 @@ void FSAnalyzer::FlowFinalityContext::analyze_final_definite_assignment_statemen
 					merge_final_assignment_branches(merged, branch_state, intersection);
 					merged = intersection;
 				}
-				// A guard-less wildcard always matches, so it closes the no-match path and makes any
-				// later branch unreachable; stop merging here.
-				if (branch->has_wildcard && branch->guard_body == nullptr) {
+				// A branch that always matches -- a guard-less wildcard, or a type test the subject
+				// cannot fail -- closes the no-match path and makes any later branch unreachable;
+				// stop merging here.
+				if ((branch->has_wildcard && branch->guard_body == nullptr) || FSAnalyzer::match_branch_always_matches(branch)) {
 					has_unguarded_catchall = true;
 					break;
 				}

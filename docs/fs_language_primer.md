@@ -293,6 +293,10 @@ match value:
   non-identifier subject, and a multi-member union on the right of `is` are all rejected.
 - Comma-separated alternatives compose with OR, and a `when` guard still runs after the pattern
   succeeds, falling through to the next branch when the guard is false.
+- An unguarded test the subject cannot fail counts as covering the `match`, exactly like a `_`
+  branch: a non-nullable `bool` tested against `bool`, a non-nullable enum or tagged union tested
+  against its own type, or anything tested against `Variant`. A partial test such as `value is int`
+  on an `int | String` subject still leaves the rest of the domain uncovered.
 
 ### Types
 

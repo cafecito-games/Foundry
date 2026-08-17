@@ -356,5 +356,221 @@ func describe(flag: bool) -> String:
 	CHECK(has_exact_error(parser, "Not all code paths return a value."));
 }
 
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A same-subject type test over the whole domain terminates") {
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 1
+	HIGH = 2
+
+enum Plain:
+	Ok(value: String)
+	Err(error: int)
+
+func from_bool(value: bool) -> String:
+	match value:
+		value is bool:
+			return str(value)
+
+func from_enum(value: Level) -> String:
+	match value:
+		value is Level:
+			return str(value)
+
+func from_union(value: Plain) -> String:
+	match value:
+		value is Plain:
+			return "plain"
+
+func from_variant(value: int) -> String:
+	match value:
+		value is Variant:
+			return str(value)
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_is_domain.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK_FALSE(has_error_containing(parser, FLOW_ERROR));
+	CHECK(parser.get_errors().is_empty());
+
+	const StringName function_names[] = { SNAME("from_bool"), SNAME("from_enum"), SNAME("from_union"), SNAME("from_variant") };
+	for (const StringName &function_name : function_names) {
+		const FSParser::FunctionNode *function = find_function(parser, function_name);
+		REQUIRE(function != nullptr);
+		const FSParser::MatchNode *match_node = find_first_match(function->body);
+		REQUIRE(match_node != nullptr);
+		CHECK(match_node->covers_subject_domain);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] Both spellings of a full enum cover agree") {
+	// An enum-typed slot can hold an integer outside the declared set, which no branch of either match
+	// selects at run time; both then fall through and return null. Testing the enum type and listing
+	// every declared member must therefore reach the same coverage decision, or the same program would
+	// compile under one spelling and not the other.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 1
+	HIGH = 2
+
+func by_values(value: Level) -> String:
+	match value:
+		Level.LOW:
+			return "low"
+		Level.HIGH:
+			return "high"
+
+func by_type(value: Level) -> String:
+	match value:
+		value is Level:
+			return "type"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_enum_spellings.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+
+	const FSParser::FunctionNode *by_values = find_function(parser, SNAME("by_values"));
+	const FSParser::FunctionNode *by_type = find_function(parser, SNAME("by_type"));
+	REQUIRE(by_values != nullptr);
+	REQUIRE(by_type != nullptr);
+	const FSParser::MatchNode *values_match = find_first_match(by_values->body);
+	const FSParser::MatchNode *type_match = find_first_match(by_type->body);
+	REQUIRE(values_match != nullptr);
+	REQUIRE(type_match != nullptr);
+	CHECK(values_match->covers_subject_domain);
+	CHECK(type_match->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A partial same-subject type test does not terminate") {
+	FSParser parser;
+	const String source = R"(
+type IntOrString = int | String
+
+enum Plain:
+	Ok(value: String)
+	Err(error: int)
+
+func from_union(value: IntOrString) -> String:
+	match value:
+		value is int:
+			return "int"
+
+func from_case(value: Plain) -> String:
+	match value:
+		value is Plain.Ok:
+			return "ok"
+
+func from_nullable(value: bool?) -> String:
+	match value:
+		value is bool:
+			return str(value)
+
+func from_guard(value: bool) -> String:
+	match value:
+		value is bool when value:
+			return "true"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_is_partial.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_error_containing(parser, FLOW_ERROR));
+
+	const StringName function_names[] = { SNAME("from_union"), SNAME("from_case"), SNAME("from_nullable"), SNAME("from_guard") };
+	for (const StringName &function_name : function_names) {
+		const FSParser::FunctionNode *function = find_function(parser, function_name);
+		REQUIRE(function != nullptr);
+		const FSParser::MatchNode *match_node = find_first_match(function->body);
+		REQUIRE(match_node != nullptr);
+		CHECK_FALSE(match_node->covers_subject_domain);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A same-named unrelated enum does not cover") {
+	// Two enums can share a simple name, and a soft subject type is downgraded rather than reported
+	// when a test is incompatible with it, so neither the name nor the recorded subject type on its
+	// own proves the test always passes.
+	FSParser parser;
+	const String source = R"(
+class Inner:
+	enum Level:
+		LOW = 1
+		HIGH = 2
+
+enum Level:
+	LOW = 1
+	HIGH = 2
+
+func describe() -> String:
+	var value = Level.LOW
+	match value:
+		value is Inner.Level:
+			return "inner"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_same_named_enum.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_error_containing(parser, FLOW_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] An open-domain subject is not covered by its own type") {
+	// Coverage is only decided where the subject's domain is statically enumerable. Proving that a
+	// test on an open domain accepts every value it can hold is the residual-set modeling match-arm
+	// analysis still defers, so such a test contributes no coverage.
+	FSParser parser;
+	const String source = R"(
+func describe(value: String) -> String:
+	match value:
+		value is String:
+			return value
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_is_open_domain.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_error_containing(parser, FLOW_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A covering type test leaves a later wildcard reachable") {
+	// The unreachable-pattern warning is syntactic and keyed on a wildcard branch, so making a type
+	// test count as coverage must not turn a trailing `_` arm into a diagnostic.
+	FSParser parser;
+	const String source = R"(
+func describe(value: bool) -> String:
+	match value:
+		value is bool:
+			return str(value)
+		_:
+			return "other"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_is_then_wildcard.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+#ifdef DEBUG_ENABLED
+	for (const FSWarning &warning : parser.get_warnings()) {
+		CHECK(warning.code != FSWarning::UNREACHABLE_PATTERN);
+	}
+#endif // DEBUG_ENABLED
+}
+
 } // namespace MatchFinality
 } // namespace FSTests
