@@ -22,6 +22,18 @@ class OnlyOptional[V]:
 		print(keeper.call(value))
 
 
+trait OptionalKeeper[V]:
+	func keep_optional(value) -> void:
+		var kept: (int, V?) = value
+		print(kept)
+
+
+# A concrete application substitutes the trait's parameter away, and the element keeps both halves of
+# what it was declared as: the argument is enforced and null is still admitted.
+class ConcreteOptionalKeeper:
+	uses OptionalKeeper[String]
+
+
 func supply(value: Variant) -> Variant:
 	return value
 
@@ -30,3 +42,5 @@ func test() -> void:
 	print(OptionalPair[int, String].new().keep_optional(supply((1, 2))))
 	OnlyOptional[String].new().keep_optional(supply((1, 2)))
 	OnlyOptional[String].new().keep_optional_in_lambda(supply((1, 2)))
+	ConcreteOptionalKeeper.new().keep_optional(supply((1, null)))
+	ConcreteOptionalKeeper.new().keep_optional(supply((1, 2)))

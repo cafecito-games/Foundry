@@ -93,6 +93,23 @@ class ConcreteTupleCrate:
 	uses TupleKeeper[String]
 
 
+# A nullable element in a trait body keeps its "or null" through substitution: learning what the
+# trait's parameter stands for says nothing about whether the slot admits null, so a concrete
+# application enforces the argument and still takes null, exactly as a forwarded one does.
+trait OptionalTupleKeeper[V]:
+	func keep_optional_via_trait(value) -> void:
+		var kept: (int, V?) = value
+		print(kept)
+
+
+class ConcreteOptionalTupleCrate:
+	uses OptionalTupleKeeper[String]
+
+
+class ForwardingOptionalTupleCrate[W]:
+	uses OptionalTupleKeeper[W]
+
+
 func supply(value: Variant) -> Variant:
 	return value
 
@@ -136,6 +153,13 @@ func test() -> void:
 
 	print(ForwardingTupleCrate[String].new().keep_via_trait(supply((10, "ten"))))
 	print(ConcreteTupleCrate.new().keep_via_trait(supply((11, "eleven"))))
+
+	var concrete_optional := ConcreteOptionalTupleCrate.new()
+	concrete_optional.keep_optional_via_trait(supply((13, null)))
+	concrete_optional.keep_optional_via_trait(supply((14, "fourteen")))
+	var forwarding_optional := ForwardingOptionalTupleCrate[String].new()
+	forwarding_optional.keep_optional_via_trait(supply((15, null)))
+	forwarding_optional.keep_optional_via_trait(supply((16, "sixteen")))
 
 	# A raw, un-parameterized receiver carries no reified argument, so the parameter element accepts
 	# anything while the arity and the `int` are still enforced.
