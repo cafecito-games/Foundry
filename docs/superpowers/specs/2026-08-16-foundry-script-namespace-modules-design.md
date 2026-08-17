@@ -76,13 +76,21 @@ export class Entity extends RefCounted:
 
 The `module` marker occupies the same source-unit position as `class_name`, `trait_name`, `enum_name`, or
 `tuple_name`. A module must declare a non-empty namespace. Imports remain between `namespace` and the source-unit
-head, matching existing file ordering.
+head, matching existing file ordering. The marker takes no colon and its members remain at file-scope indentation;
+an `INDENT` immediately after `module` is diagnosed rather than interpreted as a module block.
+
+`module` is a mutually exclusive alternative to the existing named source-unit heads in the top-level `program`
+production. Head modifiers such as `final` and `abstract` cannot precede it because the container is not a class.
+Leading script annotations before `namespace` are also invalid in a Foundry Script module file. Per-export
+annotations and documentation comments must appear with the direct declaration they describe, after the `module`
+marker, so there is no implicit "first exported class" target.
 
 Conceptually, the grammar adds these productions:
 
 ```ebnf
 module_head          = "module", NEWLINE, { module_member } ;
-module_member        = { module_declaration_modifier }, module_type_decl ;
+module_member        = { documentation_comment }, { class_annotation },
+                       { module_declaration_modifier }, module_type_decl ;
 module_declaration_modifier = "export" | declaration_modifier ;
 module_type_decl     = type_alias_decl
                      | inner_class_decl
@@ -95,17 +103,22 @@ selective_import     = "import", "{", import_item,
 import_item          = identifier, [ "as", identifier ] ;
 ```
 
+Here `documentation_comment` denotes the leading `##` documentation trivia already captured by the tokenizer, and
+`class_annotation` reuses the existing annotation-usage production. The normative `GRAMMAR.md` update adds
+`module_head` as a source-unit alternative in `program` rather than leaving it as a detached production.
+
 Selective import braces allow line breaks and a trailing comma. `module`, `export`, and `from` are contextual in
 their declaration positions so existing value-position identifiers retain their current meaning. The formatter
 places `export` before other declaration modifiers, as in `export abstract class`; the parser accepts the normal
-leading modifier run in any order.
+leading modifier run in any order. Documentation comments and declaration annotations remain before that modifier
+run.
 
 ### Allowed module members
 
 A direct module member may be a type alias, class, trait, enum, or tuple. Each kind accepts `export`. A declaration
 without `export` is private to that module file.
 
-Documentation strings and declaration annotations remain valid where the corresponding declaration kind already
+Documentation comments and declaration annotations remain valid where the corresponding declaration kind already
 accepts them. They describe the following private or exported declaration and do not create module exports of their
 own. The script-level `@tool`, `@icon`, and `@static_unload` annotations gain a declaration target for direct
 module classes and apply only to the class immediately following them. They remain invalid on the module container
@@ -156,6 +169,23 @@ A selective import may name any public global declaration in the namespace, rega
 module export or a standalone `class_name`, `trait_name`, `enum_name`, or `tuple_name` file. Refactoring a public
 declaration between standalone and module storage therefore does not break consumers. The `export` modifier governs
 module-member visibility only; diagnostics and tooling use the broader term "public declaration" for lookup.
+
+Selective imports also include namespaced native classes from the engine class registry:
+
+```foundryscript
+import { NativeWidget as Widget } from engine.ui
+```
+
+Native namespaces are static for the life of an engine build. They participate in the same local binding and
+ambiguity rules, but the native registry itself does not carry a project namespace generation or trigger
+script-index invalidation. If project scripts also contribute to that canonical namespace, their declarations and
+retroactive conformances retain the ordinary script generation and reach behavior independently.
+
+Wildcard and selective imports may interleave freely in the import section. The formatter preserves their source
+order and normalizes spacing and line wrapping within each selective list; it does not reorder imports. A file may
+selectively import from its own namespace, including with `as`, and that explicit binding has the precedence stated
+below. Import cycles between module files are legal because imports perform no initialization. Only an actual type,
+inheritance, trait, enum-payload, or tuple cycle reached through those imports is rejected.
 
 Exports also support fully qualified access:
 
@@ -247,12 +277,16 @@ icon_path, when applicable
 
 The source range is tooling metadata and is not the persistent identity. The declaration name is sufficient to
 find a direct module member after reparsing; an implementation may also retain a parser-local declaration ID while
-the parser tree is alive.
+the parser tree is alive. `base_identity` is the resolved canonical script identity or qualified ClassDB native
+identity, not the spelling of the source `extends` clause. Editor consumers derive their display spelling from that
+identity instead of treating the legacy `extends` string as an authoritative key.
 
 Index extraction parses the whole file but does not run the analyzer, following the existing custom-annotation and
-retroactive-conformance index pattern. A syntactically broken module contributes no partial exports. Re-indexing a
-path atomically replaces every declaration previously indexed for that path. Create, edit, delete, rename, and move
-operations must not leave stale identities.
+retroactive-conformance index pattern. A syntactically broken module contributes no replacement snapshot: the last
+complete list remains published and the failed candidate generation carries the diagnostics. A successful reparse
+atomically replaces every declaration previously indexed for that path, even if later analysis or compilation
+fails. Explicit delete, rename, and move events remove or transfer the complete old list and must not leave stale
+identities. Every snapshot carries its source generation so asynchronous consumers can discard older updates.
 
 The engine's current global-script-class scan returns one declaration per path. It must be generalized to accept a
 list of global declarations from a language. The base `ScriptLanguage` API provides a compatibility adapter that
@@ -332,6 +366,12 @@ The compiled module contains an export table keyed by canonical identity:
 - Exported enums retain their nominal identity, values, payload constructors, and methods.
 - Exported tuples retain their nominal identity and field metadata.
 
+For a direct exported class or trait handle, the canonical identity and `FoundryScript::fully_qualified_name` are the
+same dotted string, such as `my_project.models.Entity`. A lexical class nested inside an exported class continues the
+existing runtime FQN convention as `my_project.models.Entity::Nested`. The script cache, conformance registry,
+orphan-subclass adoption, bytecode resolver, and release name mangler all use this one FQN; the feature does not
+introduce a second runtime class identity.
+
 The module source path identifies the compilation bundle. Each runtime-bearing export additionally carries its
 canonical declaration identity. Bytecode records both so stripped runtimes can load the bundle once and select the
 requested export without the source front end.
@@ -340,35 +380,64 @@ Adding module bundles and export tables increments the Foundry Script bytecode f
 rejected before execution with a diagnostic that identifies the provider and asks the user to rebuild or re-export;
 the loader never guesses at a root class or silently treats an old script as a module.
 
-Static `preload` of a module path does not produce a class handle and cannot be used with `.new()`, `extends`, or
-`uses`. Imports are the source-language mechanism for reaching module exports. The resource system may load the
-module container internally for compilation, tooling, or dependency purposes, but that container has no user-level
-runtime value.
+The generalized public declaration index is also the release name mangler's source of truth. It protects every
+export's declared name, canonical FQN, and qualified resource-path spelling because those names survive in scenes,
+project settings, bytecode, reflection, and cross-file references. Private module declarations remain mangling
+candidates unless an existing reflection or `@keep_name` rule protects them; their rewritten internal identities
+never appear in the public export table.
+
+Source-level `preload("res://models/module.fs")` is an analyzer error at the call site. A literal
+`load("res://models/module.fs")` receives the same diagnostic, while a dynamic `load(path)` that resolves to a raw
+module reports the error at runtime and returns `null`. The internal module container remains loadable through
+`FSCache` and editor tooling APIs, but the Foundry Script `load` and `preload` surfaces never expose it as a value.
+
+Path inheritance from a provider root is also rejected. Both `extends "res://models/module.fs"` and
+`extends "res://models/module.fs".Entity` explain that a Foundry Script module is not a base class and suggest
+importing the exported class. The declaration-qualified resource path defined below is a real class resource, so
+`load`, `preload`, and path-based `extends` may use that full path when path coupling is intentional. Namespace
+imports and canonical type names remain the normal source-language mechanism.
 
 ## Reload and Partial Failure
 
-A module bundle is the unit of compilation and reload. Editing any member reparses, analyzes, and compiles every
-affected export before publishing a new bundle. The runtime never exposes a mixture such as three newly compiled
-exports and two exports from the previous revision.
+A module bundle is the unit of compilation and reload. Editing any member reparses, analyzes, and compiles a complete
+staged module revision before touching the active bundle. This requires separating Foundry Script compilation from
+publication: the current compiler mutates live handles and registers conformances while compiling, which cannot
+provide rollback. A staged revision owns temporary compiled class state and pending conformance entries until the
+whole module succeeds.
 
-If parsing, analysis, or compilation fails, the editor and a hot-reloading game keep the complete last-known-good
-bundle active. Registry entries, live class handles, and existing instances remain unchanged while diagnostics refer
-to the failing source revision. Fixing the file attempts the whole transaction again.
+If parsing, analysis, or staged compilation fails, the editor and a hot-reloading game keep the complete
+last-known-good runtime bundle active. Live class handles, instances, qualified-path cache entries, and runtime
+conformances remain unchanged while diagnostics refer to the failing source revision. Fixing the file attempts the
+whole transaction again.
 
-On a successful reload, the bundle reconciles exports by canonical identity and swaps its export table atomically:
+On a successful reload, the runtime reconciles exports by canonical FQN and commits the staged revision:
 
-- A surviving class identity keeps the same `FoundryScript` resource handle. Its instances use the existing script
-  reload state-transfer path, including compatible property preservation and placeholder handling.
+- A surviving class keeps the same `FoundryScript` resource object and qualified resource path. A new
+  `FoundryScript::adopt_compiled_state_from(staged, live_handle_map)` operation transfers the staged payload into
+  that handle, remapping internal script references to the reconciled live handles. Existing instances then use the
+  normal state-transfer path for compatible properties and functions.
 - New identities receive new handles and become resolvable only when the complete bundle is committed.
-- A removed identity is immediately removed from lookup and cannot create new instances. In the editor, existing
-  instances become missing-script placeholders that retain serializable property state and the declaration
-  reference so restoring the identity can recover them. In a running game, existing instances are detached from the
-  removed script after a runtime error, matching a deliberately removed script resource.
+- A removed identity is removed from new lookup and its qualified cache key. In the editor, existing instances
+  become missing-script placeholders that retain serializable property state and the qualified resource path so
+  restoring the identity can recover them. In a running game, existing instances are detached after a runtime error.
 - Renaming is remove-plus-add unless the rename refactor updates declaration references as part of the edit.
 
-Exported traits, enums, and tuples are reconciled by the same canonical-identity rule. Any incompatible live use is
-reported before the atomic swap; a failure leaves the last-known-good bundle in place. Release exports with hot
-reload disabled simply load the compiled bundle once.
+The reconciliation extends the mechanisms already used by inner classes: `make_scripts(..., keep_state)` reuses
+surviving subclass objects, and the orphan-subclass table re-adopts a still-live handle by FQN and `ObjectID` when its
+owner is reconstructed. Module exports use canonical FQNs in those mechanisms. A held `Ref<Script>` therefore stays
+the same object and observes the new compiled state after a successful reload.
+
+The atomicity guarantee covers the active compiled bundle, every per-export compiled-state transfer, the bundle's
+qualified-path lookup table, and replacement of its runtime conformance registrations. These publish under one
+language-level commit with a fixed lock order. The runtime never observes a mixture such as three exports from the
+new revision and two from the old one.
+
+`ScriptServer` globals, the editor filesystem declaration list, the autoload index, and LSP document state are not
+part of that runtime lock. Each consumes a generation-tagged, whole-file declaration snapshot and replaces all
+entries for the provider atomically on its own thread; it may briefly lag the runtime commit but never receives a
+partial list. Runtime declaration resolution verifies the active bundle generation instead of assuming an editor
+index entry proves that an export compiled. Release exports with hot reload disabled load one compiled bundle and do
+not create staging revisions.
 
 ## Attachment and Scene Persistence
 
@@ -377,8 +446,8 @@ layers. The root source unit reports `MODULE`, no base class, `can_instantiate =
 `can_attach_to_object = false`.
 
 `can_instantiate` alone is not an attachment guard because the editor creates placeholders for some ordinary
-non-instantiable scripts. The generic `Script` interface should gain an attachment-capability query whose default
-is `true`, preserving existing behavior for other script languages. `Object::set_script` and editor attachment flows
+non-instantiable scripts. The generic `Script` interface gains an attachment-capability query whose default is
+`true`, preserving existing behavior for other script languages. `Object::set_script` and editor attachment flows
 consult it. A Foundry Script module overrides it to return false, produces no placeholder, and reports a
 module-specific error when assignment is attempted.
 
@@ -387,43 +456,83 @@ tool state, icon, and attachment compatibility. A concrete exported `Node` subcl
 node. An abstract class, trait, non-`Node` class, enum, tuple, alias, or module cannot be offered as an attachable
 script.
 
-Every persisted reference to an exported runtime declaration is a structured pair:
+### Qualified resource paths
+
+A direct exported class is an externally addressable `Script` resource. Its path combines the provider path and the
+canonical export identity:
 
 ```text
-provider_uid: uid://...
-canonical_identity: my_project.models.Entity
+provider path:     res://models/module.fs
+canonical/FQN:     my_project.models.Entity
+resource path:     res://models/module.fs::my_project.models.Entity
 ```
 
-The UID identifies the module resource and uses the engine's existing UID-to-path and export remap machinery. The
-canonical identity selects the export in that bundle and is also checked against the bundle's export table; it is
-not resolved by searching for an arbitrary provider elsewhere. The pair is represented in text and binary scene
-resource records as declaration-bearing external-resource metadata, not as a new URI scheme. Ordinary standalone
-scripts keep their existing single-resource representation.
+`FoundryScript::get_script_path()` returns the provider path for the module container and every declaration it owns.
+The container's `Resource::get_path()` is the provider path. A direct exported class's `Resource::get_path()` is the
+qualified resource path above. Private module classes and lexical classes nested inside an export do not gain
+external resource paths merely because they have runtime FQNs.
 
-The text resource form adds an optional `declaration` field to an external script resource, for example:
+The qualified string is the existing `ResourceCache` and in-flight `ResourceLoader` key. Two exports in one module
+therefore have distinct cache entries without changing either cache's key type, while both handles point back to one
+provider bundle. Loading the same qualified path twice returns the same handle. The module container remains cached
+under the unqualified provider path for internal compiler and editor use.
+
+The current `Resource::is_built_in()` path heuristic treats every `::` path as an embedded subresource. It becomes a
+virtual query with the same default behavior; a direct module export overrides it to report external, while ordinary
+built-in resources and private inner scripts retain existing behavior. `FoundryScript::set_path()` likewise
+distinguishes the module root, direct exported handles, and non-addressable nested handles instead of propagating one
+cache path to every subclass.
+
+`ResourceFormatLoaderFoundryScript` recognizes a qualified export path by splitting its first `::`, validating the
+provider as a Foundry Script module, and treating the entire suffix as a canonical direct-export identity. It loads
+the provider bundle through `FSCache`, selects that exact export, verifies its kind and FQN, and returns its stable
+handle. It never searches another provider or falls back to a same-named declaration. Loader operations such as
+`exists`, resource-type lookup, dependency discovery, and `.remap` processing operate on the provider portion while
+preserving the selector.
+
+### Scene, project-setting, and dependency encoding
+
+Text scenes store the qualified path in the existing external-resource record and use the provider's UID:
 
 ```text
-[ext_resource type="Script" uid="uid://c..." path="res://m.fs" declaration="models.Entity" id="1_entity"]
+[ext_resource type="Script" uid="uid://c..." path="res://m.fs::models.Entity" id="1_entity"]
 ```
 
-The binary resource table stores the same optional string beside the provider resource reference. The field is
-legal only for resource types whose loader advertises declaration selection. Loading that external resource asks
-the Foundry Script loader for the named export and returns its class handle, so the node's existing `script`
-property remains a `Script` resource rather than becoming a dictionary or a new property type. Declaration-aware
-project settings store the same UID and identity fields in their structured setting value; their readers continue
-to accept the legacy path or class-name form for standalone scripts.
+The saver obtains the path from the exported handle, classifies it as external through the capability above, and
+writes it without a new `declaration` attribute. UID lookup strips the selector and queries the provider. During text
+or binary load, a successful UID lookup or path remap replaces only the provider portion and then reattaches the
+unchanged canonical selector.
 
-Resource loading, caching, and dependency scanning treat the provider module as the external resource dependency
-and the canonical identity as its declaration selector. Consequently, PCK inclusion, UID path moves, `.remap`
-processing, and one-time bundle loading use the existing provider-resource pipeline. Multiple exports from one
-module share the loaded bundle but return distinct class handles. Cache keys include both fields so selecting one
-export cannot return another.
+The binary external-resource table already stores a UID and path string, so it stores the same qualified path with
+no new field and no binary scene-format version bump. The new engine continues to read previous `.scn` versions.
+An older engine does not understand Foundry Script modules or their qualified export paths and rejects such a new
+resource explicitly; it must not discard the suffix and load the raw module.
+
+Dependency strings remain in the existing `uid::type::fallback-path` representation. For a module export they are,
+conceptually:
+
+```text
+uid://c...::Script::res://models/module.fs::my_project.models.Entity
+```
+
+Dependency readers split only the first two metadata separators and preserve the rest as the fallback path. The
+filesystem index, dependency editor, rename/remap code, and PCK exporter use the provider portion for file inclusion
+while retaining the selector in the serialized reference. Several referenced exports include and load their module
+bundle once.
+
+Project settings that persist a script selection, including autoload and main-loop settings, store the provider UID
+and qualified fallback path in a structured value equivalent to
+`{ "uid": "uid://c...", "path": "res://models/module.fs::my_project.models.Entity" }`, alongside any
+setting-specific fields such as the autoload singleton flag. Their readers continue accepting legacy paths or class
+names for standalone scripts. The node's existing `script` property remains a normal `Script` resource in both text
+and binary scenes.
 
 A provider-file move is transparent because the UID resolves to its new path. Renaming an export, moving it to a
-different provider, or changing its namespace changes one or both fields and is a symbol refactor that updates
-scenes and project settings. If the provider resolves but the identity is missing, private, duplicated, or the wrong
-kind, the dependency editor reports both fields, explains which part failed, and offers compatible public exports
-as repair targets. It never falls back to the module container or another declaration with the same short name.
+different provider, or changing its namespace changes the selector, UID, or both and is a symbol refactor that
+updates scenes and project settings. If the provider resolves but the suffix names a missing, private, duplicated,
+or wrong-kind declaration, the dependency editor reports the provider and canonical identity separately and offers
+compatible public exports as repair targets. It never falls back to the module container or another declaration
+with the same short name.
 
 The same declaration reference is used anywhere the project persists a script choice. A concrete exported `Node`
 class may be an autoload, a compatible concrete `MainLoop` subclass may be the project main loop, and exported
@@ -434,11 +543,11 @@ lists and validate the selected export's base and abstract state rather than tre
 ### Persistence alternatives considered
 
 A canonical-identity-only URI was rejected because it would require every resource-path consumer to implement a
-second addressing and remapping system. A textual `res://module.fs::Entity` subresource path was also rejected as
-the persistent identity: it couples the reference to a path, overloads the built-in-subresource delimiter, and does
-not independently verify that the selected declaration still has the expected namespace identity. The structured
-UID-plus-canonical-identity pair uses the provider mechanism the engine already exports and remaps while making the
-selected public declaration explicit.
+second addressing and remapping system. A separate `declaration` field beside an unqualified path was rejected
+because the resource cache, in-flight loader table, saver, and dependency APIs are path-keyed; threading a selector
+through all of them would be a pervasive core change. A scene-local wrapper resource was rejected because it would
+duplicate `Script` identity and complicate reload. The selected qualified path uses the existing string keys and
+`::` convention, while the provider UID supplies move stability and the full canonical suffix supplies validation.
 
 ## Editor and Language-Server Behavior
 
@@ -476,7 +585,7 @@ Foundry Script module files must declare a named namespace.
 Foundry Script module member "make_entity" cannot be a function.
 Declare functions, variables, constants, and signals inside a class or trait.
 
-"export" is only valid on a module-level type, class, trait, enum, or tuple declaration.
+"export" is only valid on a Foundry Script module-level type, class, trait, enum, or tuple declaration.
 
 "export var" does not declare an inspector property. Use "@export var" inside a class;
 Foundry Script modules export only named types.
@@ -484,7 +593,7 @@ Foundry Script modules export only named types.
 Export "my_project.models.Entity" is also declared in
 "res://my_project/other_models.fs".
 
-Public class "Entity" exposes private module type "InternalState"
+Public class "Entity" exposes private Foundry Script module type "InternalState"
 through property "state".
 
 Could not import "EntityID": namespace "my_project.models"
@@ -493,9 +602,16 @@ has no public declaration with that name.
 Type alias "EntityID" has no runtime value. Use it in a type annotation;
 construct or import one of its concrete member types instead.
 
-Cyclic type aliases: "models.A" -> "shared.B" -> "models.A".
+Cyclic exported type aliases: "models.A" (res://models/a.fs) ->
+"shared.B" (res://shared/b.fs) -> "models.A". Break the cycle in one alias expansion.
 
-Cannot assign module "res://my_project/models/module.fs" as an object script.
+Cannot preload Foundry Script module "res://my_project/models/module.fs".
+Import one of its exported declarations, or load its full qualified export path.
+
+Cannot extend Foundry Script module "res://my_project/models/module.fs" through ".Entity".
+Import "my_project.models.Entity" and extend "Entity" instead.
+
+Cannot assign Foundry Script module "res://my_project/models/module.fs" as an object script.
 Import or select one of its exported classes instead.
 ```
 
@@ -521,7 +637,8 @@ changing the namespace's public API and is diagnosed at the use site or import.
 
 Tests must assert behavior rather than source text. Required coverage includes:
 
-- Parser acceptance, recovery, ordering rules, contextual-keyword behavior, and formatter round trips.
+- Parser acceptance, recovery, ordering rules, contextual-keyword behavior, and formatter round trips, including a
+  colonless/unindented `module`, rejected head modifiers, and rejected pre-namespace `@tool`.
 - `GRAMMAR.md` updates for module source units, exports, selective imports, and type lookup precedence.
 - Rejection of module-level annotations, retroactive conformances, nested exports, and executable declarations, with
   declaration-specific recovery diagnostics.
@@ -532,6 +649,9 @@ Tests must assert behavior rather than source text. Required coverage includes:
   rejection of an incompatible cache.
 - Wildcard, selective, renamed, implicit-own-namespace, and fully qualified resolution, including selective imports
   of standalone global declarations.
+- Selective imports from native namespaces, selective imports from the file's own namespace, freely interleaved
+  wildcard/selective imports, and formatter source-order preservation.
+- Legal import cycles between module files in different namespaces, independently from illegal type cycles.
 - The complete bare-type precedence order, including built-in/native protection and selective-import aliases.
 - Local/import/export collisions, duplicate imports, missing public declarations, and ambiguous namespaces.
 - Selective-import lexical narrowing together with namespace-wide retroactive-conformance reach, while unrelated
@@ -548,10 +668,22 @@ Tests must assert behavior rather than source text. Required coverage includes:
 - Module bytecode generation/loading and stripped-runtime resolution without source, plus clear rejection of older
   bytecode versions.
 - Transactional reload: surviving-handle identity and state preservation, add/remove/rename reconciliation,
-  last-known-good behavior on compile failure, and no partially published export table.
+  last-known-good behavior on compile failure, a held `Ref<Script>` remaining current, and no mixed runtime bundle or
+  conformance generation.
+- Whole-file, generation-tagged updates for `ScriptServer`, editor filesystem, autoload, and LSP consumers, including
+  permitted lag behind an atomic runtime commit without partially applied declaration lists.
+- Release mangling protection for public export names, canonical FQNs, and qualified paths, while private module
+  declarations remain manglable.
+- Import-instead diagnostics for `preload` and literal `load` of a provider root, dynamic-load runtime rejection, and
+  both `extends "res://module.fs"` and `extends "res://module.fs".Entity`.
 - Raw-module attachment rejection through editor UI and `Object::set_script`.
 - Exported-class attachment compatibility, save/reopen scene round trips, provider UID moves, renames, missing
   exports, and dependency-editor repair.
+- Two exports from one module producing distinct cached `Resource` objects, repeated loads returning the same object,
+  and one provider bundle load.
+- Text scene save -> reopen -> save byte stability for a qualified export reference.
+- Binary `.scn` round trips using the qualified path, loading a scene written in the previous binary format, and
+  failure of an unsupported or missing selector without raw-module fallback.
 - Exported-class autoload and main-loop eligibility, with raw-module and incompatible-export rejection.
 - Export dependency inclusion, `.remap` behavior, PCK loading, and one-time loading of a module bundle with several
   referenced exports.
@@ -570,11 +702,12 @@ runtime loading, persistence, and editor support are complete end to end:
 2. Generalize the global declaration index and centralize declaration loading.
 3. Add module visibility, selective imports, alias resolution, dependency tracking, and cycle detection.
 4. Compile, atomically reload, and load exported classes, traits, enums, and tuples with bytecode/export support.
-5. Add UID-plus-identity declaration references, attachment capability, project-setting integration, and scene
-   persistence.
+5. Add UID-backed qualified export paths, attachment capability, project-setting integration, and scene persistence.
 6. Complete editor, LSP, refactoring, documentation, and end-to-end verification.
 
 The estimated implementation cost is 10-16 engineer-weeks for an engineer already familiar with the Foundry Script
 front end and Godot editor/resource systems. Atomic reload and state migration, declaration-aware persistence, and
-the one-to-many editor/index conversion are the highest-risk parts; parsing `module`, `export`, and selective imports
-is comparatively small.
+the one-to-many editor/index conversion are the highest-risk parts. Qualified paths require targeted core changes to
+external-resource classification, UID suffix preservation, and dependency parsing, but do not require new cache-key
+or loader-selector APIs; the estimate assumes that bounded approach. Parsing `module`, `export`, and selective
+imports is comparatively small.
