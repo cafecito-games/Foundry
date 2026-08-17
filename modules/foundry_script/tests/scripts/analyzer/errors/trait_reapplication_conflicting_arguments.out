@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 14: Trait "Keeper" is already applied with type arguments ("String") by "BaseKeeper"; "ChildKeeper" cannot re-apply it with ("int").
+>> ERROR at line 22: Trait "Keeper" is already applied with type arguments ("String") by "ForwardingKeeper"; "SpecializedChild" cannot re-apply it with ("int").

@@ -457,6 +457,137 @@ TEST_CASE("[Modules][FoundryScript] Class type-argument compatibility ignores IN
 	CHECK_FALSE(FSTypeCompatibility::check(box_with_inferred_t, box_with_int).compatible);
 }
 
+static FSParser::ClassNode *find_member_class(FSParser::ClassNode *p_class, const StringName &p_name) {
+	for (int i = 0; i < p_class->members.size(); i++) {
+		const FSParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == FSParser::ClassNode::Member::CLASS && member.m_class != nullptr &&
+				member.m_class->identifier != nullptr && member.m_class->identifier->name == p_name) {
+			return member.m_class;
+		}
+	}
+	return nullptr;
+}
+
+// One analyzed tree shared by the trait-argument cases below, so each case states only the pair of
+// types it is about.
+class TraitArgumentProjectionFixture {
+public:
+	FSParser parser;
+	FSParser::ClassNode *keeper = nullptr;
+	FSParser::ClassNode *forwarding_keeper = nullptr;
+	FSParser::ClassNode *storing_keeper = nullptr;
+	FSParser::ClassNode *self_keeper = nullptr;
+	FSParser::ClassNode *string_keeper_child = nullptr;
+
+	TraitArgumentProjectionFixture() {
+		const char *source = R"(
+trait Keeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+trait Storing[T]:
+	uses Keeper[T]
+
+
+class ForwardingKeeper[U]:
+	uses Keeper[U]
+
+
+class StoringKeeper[U]:
+	uses Storing[U]
+
+
+class SelfKeeper:
+	uses Keeper[Self]
+
+
+class StringKeeperChild extends ForwardingKeeper[String]:
+	pass
+
+
+func test() -> void:
+	pass
+)";
+		REQUIRE_EQ(parser.parse(source, "user://trait_argument_projection.fs", false), OK);
+		FSAnalyzer analyzer(&parser);
+		REQUIRE_EQ(analyzer.analyze(), OK);
+
+		FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		keeper = find_member_class(tree, StringName("Keeper"));
+		forwarding_keeper = find_member_class(tree, StringName("ForwardingKeeper"));
+		storing_keeper = find_member_class(tree, StringName("StoringKeeper"));
+		self_keeper = find_member_class(tree, StringName("SelfKeeper"));
+		string_keeper_child = find_member_class(tree, StringName("StringKeeperChild"));
+		REQUIRE(keeper != nullptr);
+		REQUIRE(forwarding_keeper != nullptr);
+		REQUIRE(storing_keeper != nullptr);
+		REQUIRE(self_keeper != nullptr);
+		REQUIRE(string_keeper_child != nullptr);
+	}
+
+	FSParser::DataType keeper_of(Variant::Type p_argument) const {
+		Vector<FSParser::DataType> arguments;
+		arguments.push_back(make_builtin_type(p_argument));
+		return make_specialized_class_type(keeper, arguments);
+	}
+
+	static FSParser::DataType specialized(FSParser::ClassNode *p_class, Variant::Type p_argument) {
+		Vector<FSParser::DataType> arguments;
+		arguments.push_back(make_builtin_type(p_argument));
+		return make_specialized_class_type(p_class, arguments);
+	}
+
+	static FSParser::DataType bare(FSParser::ClassNode *p_class) {
+		return make_specialized_class_type(p_class, Vector<FSParser::DataType>());
+	}
+};
+
+TEST_CASE("[Modules][FoundryScript] Type compatibility rejects a trait target whose arguments conflict with the source's conformance") {
+	TraitArgumentProjectionFixture fixture;
+
+	const FSParser::DataType string_conformer = TraitArgumentProjectionFixture::specialized(fixture.forwarding_keeper, Variant::STRING);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::STRING), string_conformer).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(fixture.keeper_of(Variant::INT), string_conformer).compatible);
+
+	// A raw trait destination asks only the nominal question, so it still accepts.
+	CHECK(FSTypeCompatibility::check(TraitArgumentProjectionFixture::bare(fixture.keeper), string_conformer).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript] Type compatibility accepts a trait target when the source's conformance arguments are absent") {
+	TraitArgumentProjectionFixture fixture;
+
+	// `ForwardingKeeper` without arguments binds `Keeper`'s parameter to its own unreified `U`.
+	const FSParser::DataType bare_conformer = TraitArgumentProjectionFixture::bare(fixture.forwarding_keeper);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::INT), bare_conformer).compatible);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::STRING), bare_conformer).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript] Type compatibility accepts a trait target whose projected argument names a type parameter") {
+	TraitArgumentProjectionFixture fixture;
+
+	// `uses Keeper[Self]` records no binding a value reifies, at either finality, so the position
+	// carries no evidence and no destination argument may reject on it.
+	const FSParser::DataType self_conformer = TraitArgumentProjectionFixture::bare(fixture.self_keeper);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::INT), self_conformer).compatible);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::STRING), self_conformer).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript] Type compatibility projects trait arguments through a subclass and a supertrait") {
+	TraitArgumentProjectionFixture fixture;
+
+	// `StringKeeperChild extends ForwardingKeeper[String]` reaches `Keeper` as `Keeper[String]`.
+	const FSParser::DataType subclass = TraitArgumentProjectionFixture::bare(fixture.string_keeper_child);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::STRING), subclass).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(fixture.keeper_of(Variant::INT), subclass).compatible);
+
+	// `StoringKeeper[String]` reaches `Keeper` through `Storing`, composing both hops.
+	const FSParser::DataType supertrait = TraitArgumentProjectionFixture::specialized(fixture.storing_keeper, Variant::STRING);
+	CHECK(FSTypeCompatibility::check(fixture.keeper_of(Variant::STRING), supertrait).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(fixture.keeper_of(Variant::INT), supertrait).compatible);
+}
+
 TEST_CASE("[Modules][FoundryScript] Type compatibility checks callable and signal signatures") {
 	const FSParser::DataType callable_target = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);
 	const FSParser::DataType callable_source = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);

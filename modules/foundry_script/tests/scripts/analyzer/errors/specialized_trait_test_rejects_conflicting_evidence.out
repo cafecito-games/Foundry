@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 14: Expression is of type "ForwardingKeeper[String]" so it can't be of type "Keeper[int]".
+>> ERROR at line 15: Invalid cast. Cannot convert from "ForwardingKeeper[String]" to "Keeper[int]".
