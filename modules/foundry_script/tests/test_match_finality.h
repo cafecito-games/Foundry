@@ -404,6 +404,47 @@ func from_variant(value: int) -> String:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][MatchFinality] Both spellings of a full enum cover agree") {
+	// An enum-typed slot can hold an integer outside the declared set, which no branch of either match
+	// selects at run time; both then fall through and return null. Testing the enum type and listing
+	// every declared member must therefore reach the same coverage decision, or the same program would
+	// compile under one spelling and not the other.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 1
+	HIGH = 2
+
+func by_values(value: Level) -> String:
+	match value:
+		Level.LOW:
+			return "low"
+		Level.HIGH:
+			return "high"
+
+func by_type(value: Level) -> String:
+	match value:
+		value is Level:
+			return "type"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_enum_spellings.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+
+	const FSParser::FunctionNode *by_values = find_function(parser, SNAME("by_values"));
+	const FSParser::FunctionNode *by_type = find_function(parser, SNAME("by_type"));
+	REQUIRE(by_values != nullptr);
+	REQUIRE(by_type != nullptr);
+	const FSParser::MatchNode *values_match = find_first_match(by_values->body);
+	const FSParser::MatchNode *type_match = find_first_match(by_type->body);
+	REQUIRE(values_match != nullptr);
+	REQUIRE(type_match != nullptr);
+	CHECK(values_match->covers_subject_domain);
+	CHECK(type_match->covers_subject_domain);
+}
+
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A partial same-subject type test does not terminate") {
 	FSParser parser;
 	const String source = R"(

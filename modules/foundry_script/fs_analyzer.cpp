@@ -5462,6 +5462,11 @@ static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_ty
 		return false;
 	}
 	if (p_subject_type.kind == FSParser::DataType::ENUM) {
+		// A plain enum's domain is taken to be its declared value set, even though a cast can put an
+		// undeclared integer in the slot (`99 as Level` warns and proceeds) and such a value fails the
+		// runtime membership test. That is the same assumption the declared-value path already makes --
+		// a match listing every member is likewise treated as covering -- so both spellings of a full
+		// cover agree. Widening the domain model to undeclared integers is a separate concern.
 		// `value is Message.Move` names one case, so it covers that case rather than the whole union.
 		return p_test_type.kind == FSParser::DataType::ENUM &&
 				p_test_type.enum_case_name == StringName() &&
