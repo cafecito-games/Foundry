@@ -1912,6 +1912,15 @@ static bool _evidence_node_is_untraversably_open(const FSParser::DataType &p_typ
 	return false;
 }
 
+static bool _slot_names_any_type_parameter(const Vector<FSParser::DataType> &p_slot) {
+	for (const FSParser::DataType &type : p_slot) {
+		if (_datatype_names_any_type_parameter(type)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static FSTypeCompatibility::ArgumentEvidence _combine_evidence(FSTypeCompatibility::ArgumentEvidence p_current,
 		FSTypeCompatibility::ArgumentEvidence p_next) {
 	if (p_current == FSTypeCompatibility::ArgumentEvidence::CONFLICT ||
@@ -1962,13 +1971,7 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 			p_a.is_meta_type != p_b.is_meta_type ||
 			p_a.is_type_handle_annotation != p_b.is_type_handle_annotation ||
 			p_a.has_method_signature != p_b.has_method_signature ||
-			p_a.signature_is_async != p_b.signature_is_async ||
-			p_a.container_element_types.size() != p_b.container_element_types.size() ||
-			p_a.type_arguments.size() != p_b.type_arguments.size() ||
-			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
-			p_a.method_return_type.size() != p_b.method_return_type.size() ||
-			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
-			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
+			p_a.signature_is_async != p_b.signature_is_async) {
 		return ArgumentEvidence::CONFLICT;
 	}
 
@@ -2029,6 +2032,18 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 		&p_b.method_rest_parameter_type,
 	};
 	for (int slot = 0; slot < 6; slot++) {
+		if (a_slots[slot]->size() != b_slots[slot]->size()) {
+			// A side that declares no components in this slot says nothing about components the other
+			// side leaves on an unreified parameter: the two then differ only where neither carries
+			// evidence, and rejecting there would be stricter than the erasure this replaced. Two sides
+			// that both state their components concretely still contradict each other by arity.
+			if (_slot_names_any_type_parameter(*a_slots[slot]) ||
+					(p_b_is_open && _slot_names_any_type_parameter(*b_slots[slot]))) {
+				evidence = ArgumentEvidence::UNKNOWN;
+				continue;
+			}
+			return ArgumentEvidence::CONFLICT;
+		}
 		for (int i = 0; i < a_slots[slot]->size(); i++) {
 			evidence = _combine_evidence(evidence,
 					_compare_datatype_evidence((*a_slots[slot])[i], (*b_slots[slot])[i], p_b_is_open, p_depth + 1));

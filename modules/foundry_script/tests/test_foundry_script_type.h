@@ -745,6 +745,26 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] Two open trait arguments 
 			ArgumentEvidence::UNKNOWN);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An unspecialized component conflicts only with a stated one") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	FSParser::DataType open_array = make_builtin_type(Variant::ARRAY);
+	open_array.set_container_element_type(0, make_trait_argument_type_parameter(SNAME("V")));
+	FSParser::DataType int_array = make_builtin_type(Variant::ARRAY);
+	int_array.set_container_element_type(0, make_builtin_type(Variant::INT));
+	const FSParser::DataType bare_array = make_builtin_type(Variant::ARRAY);
+
+	// A bare `Array` states nothing about an element left on an unreified parameter, so the two sides
+	// differ only where neither carries evidence.
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(bare_array, open_array), ArgumentEvidence::UNKNOWN);
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(open_array, bare_array), ArgumentEvidence::UNKNOWN);
+
+	// Two sides that both state their components still contradict each other by arity.
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(bare_array, int_array), ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(int_array, bare_array), ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(bare_array, int_array), ArgumentEvidence::CONFLICT);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter-bearing union member degrades to unknown") {
 	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
 
