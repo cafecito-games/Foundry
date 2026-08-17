@@ -791,6 +791,40 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter-bearing union
 			ArgumentEvidence::CONFLICT);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An open tagged-union payload leaves its arguments comparable") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	// A generic tagged union carries its arguments where they can be compared and its payload schema
+	// where they cannot. An unreified parameter in the schema must not erase the arguments beside it.
+	auto make_result = [](const FSParser::DataType &p_first, const FSParser::DataType &p_second,
+							   const FSParser::DataType &p_payload_field) {
+		FSParser::DataType result;
+		result.kind = FSParser::DataType::ENUM;
+		result.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		result.native_type = SNAME("Result");
+		result.is_tagged_union = true;
+		result.type_arguments.push_back(p_first);
+		result.type_arguments.push_back(p_second);
+		FSParser::DataType::EnumCasePayload payload;
+		payload.field_names.push_back(SNAME("value"));
+		payload.field_types.push_back(p_payload_field);
+		result.enum_case_payloads.insert(SNAME("Ok"), payload);
+		return result;
+	};
+
+	const FSParser::DataType open_payload_result = make_result(make_builtin_type(Variant::INT),
+			make_trait_argument_type_parameter(SNAME("U")), make_trait_argument_type_parameter(SNAME("U")));
+	const FSParser::DataType conflicting = make_result(make_builtin_type(Variant::STRING),
+			make_builtin_type(Variant::FLOAT), make_builtin_type(Variant::FLOAT));
+	const FSParser::DataType agreeing = make_result(make_builtin_type(Variant::INT),
+			make_builtin_type(Variant::FLOAT), make_builtin_type(Variant::FLOAT));
+
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(open_payload_result, conflicting),
+			ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(open_payload_result, agreeing),
+			ArgumentEvidence::UNKNOWN);
+}
+
 TEST_CASE("[Modules][FoundryScript] Type compatibility checks callable and signal signatures") {
 	const FSParser::DataType callable_target = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);
 	const FSParser::DataType callable_source = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);

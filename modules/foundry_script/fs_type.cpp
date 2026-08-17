@@ -1890,18 +1890,24 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 	return true;
 }
 
-// Sub-structure the evidence comparison below does not traverse: union members, whose identity is a
-// whole-vector comparison, and tagged-union case payloads, which it never reads. A type parameter
-// inside one of those makes the node itself unknown rather than comparable, which is what keeps the
-// per-component comparison strictly more precise than the whole-position erasure it replaced. Without
-// it, a parameter-bearing union member that used to erase its position would start rejecting along a
-// dimension this comparison cannot actually reason about.
-static bool _evidence_node_is_untraversably_open(const FSParser::DataType &p_type) {
+// A union's identity is its whole member vector, compared in one step rather than traversed, so a
+// type parameter inside a member leaves nothing about the node comparable. Rejecting there would be
+// stricter than the whole-position erasure this comparison replaced, along a dimension it cannot
+// reason about, so such a node is unknown as a whole.
+static bool _evidence_union_members_are_open(const FSParser::DataType &p_type) {
 	for (const FSParser::DataType &member : p_type.union_members) {
 		if (_datatype_names_any_type_parameter(member)) {
 			return true;
 		}
 	}
+	return false;
+}
+
+// A tagged union's case payloads are never read by this comparison, so a type parameter inside one is
+// not evidence. Unlike a union member it is not part of the node's identity either, so it only keeps
+// the node from reporting a full match -- the enum's own name and its type arguments are still
+// compared, which is what lets `Result[int, U]` contradict `Result[String, float]`.
+static bool _evidence_enum_payloads_are_open(const FSParser::DataType &p_type) {
 	for (const KeyValue<StringName, FSParser::DataType::EnumCasePayload> &payload : p_type.enum_case_payloads) {
 		for (const FSParser::DataType &field_type : payload.value.field_types) {
 			if (_datatype_names_any_type_parameter(field_type)) {
@@ -1962,7 +1968,7 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 	if (a_is_parameter || (p_b_is_open && b_is_parameter)) {
 		return ArgumentEvidence::UNKNOWN;
 	}
-	if (_evidence_node_is_untraversably_open(p_a) || (p_b_is_open && _evidence_node_is_untraversably_open(p_b))) {
+	if (_evidence_union_members_are_open(p_a) || (p_b_is_open && _evidence_union_members_are_open(p_b))) {
 		return ArgumentEvidence::UNKNOWN;
 	}
 
@@ -2015,6 +2021,9 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 	}
 
 	ArgumentEvidence evidence = ArgumentEvidence::MATCH;
+	if (_evidence_enum_payloads_are_open(p_a) || (p_b_is_open && _evidence_enum_payloads_are_open(p_b))) {
+		evidence = ArgumentEvidence::UNKNOWN;
+	}
 	const Vector<FSParser::DataType> *a_slots[] = {
 		&p_a.type_parameter_bound,
 		&p_a.container_element_types,
