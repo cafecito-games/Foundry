@@ -1110,6 +1110,101 @@ TEST_CASE("[Modules][FoundryScript][Generics] A specialized script slot enforces
 	CHECK_FALSE(tuple_type.is_type(out_of_range_element, true, true));
 }
 
+TEST_CASE("[Modules][FoundryScript][Generics] A trait-typed slot decoded like a return operand answers from conformance") {
+	ScopedGenericRuntimeLanguage language;
+
+	const char *source =
+			"trait Keeper[T]:\n"
+			"\tfunc label() -> String:\n"
+			"\t\treturn \"keeper\"\n"
+			"\n"
+			"class IntKeeper:\n"
+			"\tuses Keeper[int]\n"
+			"\n"
+			"class DerivedIntKeeper extends IntKeeper:\n"
+			"\tpass\n"
+			"\n"
+			"class StringKeeper:\n"
+			"\tuses Keeper[String]\n"
+			"\n"
+			"class ForwardingKeeper[U]:\n"
+			"\tuses Keeper[U]\n"
+			"\n"
+			"class Plain:\n"
+			"\tpass\n";
+
+	Ref<FoundryScript> script = compile_generic_runtime_source(source);
+	Ref<FoundryScript> keeper = get_generic_subclass(script, "Keeper");
+	Ref<FoundryScript> int_keeper = get_generic_subclass(script, "IntKeeper");
+	Ref<FoundryScript> derived_int_keeper = get_generic_subclass(script, "DerivedIntKeeper");
+	Ref<FoundryScript> string_keeper = get_generic_subclass(script, "StringKeeper");
+	Ref<FoundryScript> forwarding_keeper = get_generic_subclass(script, "ForwardingKeeper");
+	Ref<FoundryScript> plain = get_generic_subclass(script, "Plain");
+	REQUIRE(keeper.is_valid());
+	REQUIRE(int_keeper.is_valid());
+	REQUIRE(derived_int_keeper.is_valid());
+	REQUIRE(string_keeper.is_valid());
+	REQUIRE(forwarding_keeper.is_valid());
+	REQUIRE(plain.is_valid());
+
+	// `int` in source carries its declared width, which is part of the argument's identity.
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
+	Vector<ContainerType> int_arguments;
+	int_arguments.push_back(int_argument);
+
+	Callable::CallError error;
+	const Variant declared_conformer = int_keeper->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant subclass_conformer = derived_int_keeper->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant mismatched_conformer = string_keeper->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant forwarded_conformer = forwarding_keeper->_new_specialized(nullptr, 0, int_arguments, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant unspecialized_conformer = forwarding_keeper->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant nonconformer = plain->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+
+	// The return boundary decodes its operand as a class handle and drops the handle layer to ask the
+	// value-position question; building the expected type the same way keeps the two in step.
+	ContainerType declared;
+	declared.builtin_type = Variant::OBJECT;
+	declared.script = keeper;
+	declared.type_arguments = int_arguments;
+	FSDataType keeper_of_int = FSDataType::from_type_handle_container_type(declared);
+	keeper_of_int.is_type_handle = false;
+	REQUIRE(keeper_of_int.is_script_trait);
+	REQUIRE(keeper_of_int.type_arguments.size() == 1);
+
+	// Membership is conformance, not a class chain, and the specialization question stays gradual for a
+	// store: an implementer that fixed no argument states nothing and is accepted.
+	CHECK(keeper_of_int.is_type(declared_conformer));
+	CHECK(keeper_of_int.is_type(subclass_conformer));
+	CHECK(keeper_of_int.is_type(forwarded_conformer));
+	CHECK(keeper_of_int.is_type(unspecialized_conformer));
+	CHECK_FALSE(keeper_of_int.is_type(mismatched_conformer));
+	CHECK_FALSE(keeper_of_int.is_type(nonconformer));
+
+	// The narrowing rule differs on exactly the position that carries no evidence.
+	CHECK(keeper_of_int.is_type(declared_conformer, false, true));
+	CHECK_FALSE(keeper_of_int.is_type(unspecialized_conformer, false, true));
+
+	// An unspecialized trait slot keeps asking the nominal question alone.
+	ContainerType nominal = declared;
+	nominal.type_arguments.clear();
+	FSDataType keeper_raw = FSDataType::from_type_handle_container_type(nominal);
+	keeper_raw.is_type_handle = false;
+	CHECK(keeper_raw.type_arguments.is_empty());
+	CHECK(keeper_raw.is_type(declared_conformer));
+	CHECK(keeper_raw.is_type(mismatched_conformer));
+	CHECK_FALSE(keeper_raw.is_type(nonconformer));
+
+	script->clear();
+}
+
 #endif // TOOLS_ENABLED
 
 } // namespace FSTests

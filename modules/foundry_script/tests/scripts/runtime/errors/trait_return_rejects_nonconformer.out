@@ -1,0 +1,8 @@
+FS_TEST_RUNTIME_ERROR
+true
+>> SCRIPT ERROR at runtime/errors/trait_return_rejects_nonconformer.fs:23 on Source.give(): Trying to return value of type "StringKeeper" from a function whose return type is "Keeper[int]".
+false
+>> SCRIPT ERROR at runtime/errors/trait_return_rejects_nonconformer.fs:23 on Source.give(): Trying to return value of type "Plain" from a function whose return type is "Keeper[int]".
+false
+>> SCRIPT ERROR at runtime/errors/trait_return_rejects_nonconformer.fs:23 on Source.give(): Trying to return value of type "String" from a function whose return type is "Keeper[int]".
+false
