@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -13,13 +14,14 @@ import queue
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple, TextIO, cast
@@ -55,6 +57,10 @@ RESULT_STATUSES = (
     "interrupted",
 )
 RESULT_STEPS = ("startup", "generate", "build", "test")
+# How a build or test child ended, as reported by the terminal verdict.
+CHILD_DISPOSITIONS = ("none", "exited", "terminated", "killed", "escaped")
+# How long an interrupted child is given to stop on SIGTERM before it is killed outright.
+CHILD_TERMINATION_GRACE_SECONDS = 10.0
 MISSING_BINARY_EXIT_CODE = 1
 TOOLING_MISSING_EXIT_CODE = 127
 INTERRUPTED_EXIT_CODE = 130
@@ -520,6 +526,186 @@ def stream_output(pipe, output_queue: queue.Queue[str | None]) -> None:
         output_queue.put(None)
 
 
+class StopSignalDeferral:
+    """Whether a stop signal must be held, and the one being held."""
+
+    def __init__(self) -> None:
+        self.active = False
+        self.pending: int | None = None
+
+
+STOP_SIGNALS = StopSignalDeferral()
+
+
+def raise_interrupt(signal_number: int, frame: object) -> None:
+    """Route a supervisor's stop signal into the wrapper's ordinary interrupt path."""
+    if STOP_SIGNALS.active:
+        STOP_SIGNALS.pending = signal_number
+        return
+    raise KeyboardInterrupt(f"signal {signal_number}")
+
+
+def install_stop_signal_handlers() -> dict[int, Any]:
+    """Handle the signals a supervisor stops a build with, and report what they replaced.
+
+    A stop signal is delivered to the wrapper alone — its build runs in a separate session — so
+    without a handler the wrapper dies leaving the build running and no verdict written at all.
+    `SIGINT` is handled explicitly, rather than left to the interpreter's default, so that it can be
+    deferred over the sections where an interrupt would lose track of a running build.
+    """
+    previous: dict[int, Any] = {}
+    for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            previous[number] = signal.signal(number, raise_interrupt)
+        except (OSError, ValueError):
+            continue
+    return previous
+
+
+@contextlib.contextmanager
+def deferred_stop_signals(*, deliver: bool = True) -> Iterator[None]:
+    """Hold stop signals for the length of a section, then deliver one that arrived.
+
+    Creating the build process is such a section: an interrupt raised inside `Popen` leaves a
+    started, separately-sessioned child that no handle refers to, which is unstoppable and therefore
+    the very orphan this shutdown path exists to prevent. Deferring costs only the microseconds the
+    launch takes, and the signal is honored immediately afterwards.
+
+    Stopping that build is the other: an impatient second signal must not abort the shutdown and let
+    the wrapper report a verdict over a build that is still running. `deliver=False` drops the held
+    signal there, because the shutdown it would ask for is already under way.
+    """
+    STOP_SIGNALS.active = True
+    try:
+        yield
+    finally:
+        STOP_SIGNALS.active = False
+        pending = STOP_SIGNALS.pending
+        STOP_SIGNALS.pending = None
+    if pending is not None and deliver:
+        raise KeyboardInterrupt(f"signal {pending}")
+
+
+def child_group_id(proc: subprocess.Popen[str]) -> int | None:
+    """The child's process group, or None where the platform has none to address."""
+    if os.name == "nt":
+        return None
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        return None
+    # The child is expected to lead its own group; sharing the wrapper's would make a shutdown
+    # signal reach the wrapper itself.
+    return None if pgid == os.getpgrp() else pgid
+
+
+def signal_child_group(proc: subprocess.Popen[str], pgid: int | None, signal_number: int) -> None:
+    """Signal the child's whole process group, so a build's compilers go with it.
+
+    The child is started in its own session, so signaling only the child would leave the compiler
+    processes it spawned running and still writing objects.
+    """
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal_number)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    try:
+        if signal_number == getattr(signal, "SIGKILL", None):
+            proc.kill()
+        else:
+            proc.terminate()
+    except (OSError, ValueError):
+        pass
+
+
+def child_group_is_running(pgid: int | None) -> bool:
+    """Whether any process of the group is still there — a reaped leader proves nothing."""
+    if pgid is None:
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def wait_for_child(proc: subprocess.Popen[str], timeout: float) -> int | None:
+    """Wait up to `timeout` for the child, ignoring further interrupts, and report its status.
+
+    A second interrupt arriving while the wrapper is shutting a build down must not abandon the
+    wait: that is exactly how an orphan escapes. `None` means the child outlived the timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return proc.poll()
+        try:
+            return proc.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            return proc.poll()
+        except KeyboardInterrupt:
+            continue
+
+
+def wait_for_child_group(pgid: int | None, timeout: float) -> bool:
+    """Wait up to `timeout` for the group to empty out, and report whether it did.
+
+    The build driver's own exit is not proof that the build stopped: a compiler it spawned can
+    outlive it and keep writing objects, so the group is what has to be observed gone.
+    """
+    deadline = time.monotonic() + timeout
+    while child_group_is_running(pgid):
+        if time.monotonic() >= deadline:
+            return False
+        try:
+            time.sleep(0.05)
+        except KeyboardInterrupt:
+            continue
+    return True
+
+
+def terminate_child_group(
+    proc: subprocess.Popen[str],
+    pgid: int | None,
+    *,
+    grace_seconds: float | None = None,
+) -> tuple[str, int | None]:
+    """Stop an interrupted run's child process group and wait for it to actually be gone.
+
+    Returns the group's disposition and the driver's exit status: `exited` when the build had
+    already finished on its own, `terminated` when SIGTERM was enough, `killed` when SIGKILL was
+    needed, and `escaped` when something survived even that — the one case where later writes to the
+    build tree are still possible.
+    """
+    grace = CHILD_TERMINATION_GRACE_SECONDS if grace_seconds is None else grace_seconds
+    if proc.poll() is not None and not child_group_is_running(pgid):
+        return "exited", proc.returncode
+
+    signal_child_group(proc, pgid, signal.SIGTERM)
+    started = time.monotonic()
+    status = wait_for_child(proc, grace)
+    if status is not None and wait_for_child_group(pgid, max(0.0, grace - (time.monotonic() - started))):
+        return "terminated", status
+
+    signal_child_group(proc, pgid, getattr(signal, "SIGKILL", signal.SIGTERM))
+    started = time.monotonic()
+    if status is None:
+        status = wait_for_child(proc, grace)
+    if status is not None and wait_for_child_group(pgid, max(0.0, grace - (time.monotonic() - started))):
+        return "killed", status
+    return "escaped", status
+
+
 def run_logged_command(
     command: list[str],
     *,
@@ -561,58 +747,99 @@ def run_logged_command(
             if progress_path is not None:
                 write_status(log_file, f"[agent-build] progress: {progress_path}", stream=human_stream)
 
-            proc = subprocess.Popen(
-                command,
-                cwd=REPO_ROOT,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                start_new_session=os.name != "nt",
-            )
-            assert proc.stdout is not None
+            proc: subprocess.Popen[str] | None = None
+            pgid: int | None = None
+            # Everything from process creation on is guarded: an interrupt landing between the
+            # launch and the output loop would otherwise leave the build running unattended.
+            try:
+                with deferred_stop_signals():
+                    proc = subprocess.Popen(
+                        command,
+                        cwd=REPO_ROOT,
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        start_new_session=os.name != "nt",
+                    )
+                    pgid = child_group_id(proc)
+                assert proc.stdout is not None
 
-            output_queue: queue.Queue[str | None] = queue.Queue()
-            reader = threading.Thread(target=stream_output, args=(proc.stdout, output_queue), daemon=True)
-            reader.start()
+                output_queue: queue.Queue[str | None] = queue.Queue()
+                reader = threading.Thread(target=stream_output, args=(proc.stdout, output_queue), daemon=True)
+                reader.start()
 
-            last_output = "(no output yet)"
-            output_index = 0
-            next_heartbeat = time.monotonic() + heartbeat if heartbeat > 0 else float("inf")
-            stream_done = False
+                last_output = "(no output yet)"
+                output_index = 0
+                next_heartbeat = time.monotonic() + heartbeat if heartbeat > 0 else float("inf")
+                stream_done = False
 
-            while not stream_done:
-                try:
-                    item = output_queue.get(timeout=0.25)
-                except queue.Empty:
-                    item = ""
+                while not stream_done:
+                    try:
+                        item = output_queue.get(timeout=0.25)
+                    except queue.Empty:
+                        item = ""
 
-                if item is None:
-                    stream_done = True
-                elif item:
-                    human_stream.write(item)
-                    human_stream.flush()
-                    log_file.write(item)
-                    log_file.flush()
-                    stripped = item.strip()
-                    if stripped:
-                        output_index += 1
-                        last_output = stripped
-                        progress.emit("command_output", output_index=output_index, line=stripped)
+                    if item is None:
+                        stream_done = True
+                    elif item:
+                        human_stream.write(item)
+                        human_stream.flush()
+                        log_file.write(item)
+                        log_file.flush()
+                        stripped = item.strip()
+                        if stripped:
+                            output_index += 1
+                            last_output = stripped
+                            progress.emit("command_output", output_index=output_index, line=stripped)
 
-                now = time.monotonic()
-                if now >= next_heartbeat and proc.poll() is None:
-                    elapsed = format_duration(now - started)
-                    progress.emit("command_heartbeat", elapsed=elapsed, last_output=last_output)
+                    now = time.monotonic()
+                    if now >= next_heartbeat and proc.poll() is None:
+                        elapsed = format_duration(now - started)
+                        progress.emit("command_heartbeat", elapsed=elapsed, last_output=last_output)
+                        write_status(
+                            log_file,
+                            f"[agent-build] {label} still running after {elapsed}; last output: {last_output}",
+                            stream=human_stream,
+                        )
+                        next_heartbeat = now + heartbeat
+
+                exit_code = proc.wait()
+            except BaseException:
+                if proc is None:
+                    raise
+                # The child owns the build tree, so it has to be gone before the run is declared
+                # over; otherwise it keeps writing artifacts the terminal verdict has described.
+                # Signals are held throughout, so an impatient second one cannot cut the shutdown
+                # short and produce exactly the verdict-over-a-live-build this prevents.
+                with deferred_stop_signals(deliver=False):
+                    disposition, child_status = terminate_child_group(proc, pgid)
+                    RESULT_CONTEXT.child_disposition = disposition
+                    RESULT_CONTEXT.child_exit_code = child_status
+                    progress.emit(
+                        "command_end",
+                        duration_ms=int((time.monotonic() - started) * 1000),
+                        exit_code=child_status,
+                        status="interrupted",
+                        child_disposition=disposition,
+                    )
                     write_status(
                         log_file,
-                        f"[agent-build] {label} still running after {elapsed}; last output: {last_output}",
+                        f"[agent-build] {label} interrupted; child process group {disposition}"
+                        + ("" if child_status is None else f" with status {child_status}"),
                         stream=human_stream,
                     )
-                    next_heartbeat = now + heartbeat
-
-            exit_code = proc.wait()
+                    if disposition == "escaped":
+                        write_status(
+                            log_file,
+                            f"[agent-build] warning: the {label} child survived SIGKILL and may still be "
+                            "writing build artifacts",
+                            stream=human_stream,
+                        )
+                raise
+            RESULT_CONTEXT.child_disposition = "exited"
+            RESULT_CONTEXT.child_exit_code = exit_code
             reader.join(timeout=1)
             duration = time.monotonic() - started
             elapsed = format_duration(duration)
@@ -644,6 +871,8 @@ class ResultContext:
         self.progress_stdout_jsonl = False
         self.binaries_before: dict[str, dict[str, object]] = {}
         self.started = time.monotonic()
+        self.child_disposition = "none"
+        self.child_exit_code: int | None = None
 
 
 RESULT_CONTEXT = ResultContext()
@@ -658,11 +887,12 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
     """
     assert status in RESULT_STATUSES, f"unknown result status {status!r}"
     assert step in RESULT_STEPS, f"unknown result step {step!r}"
+    assert context.child_disposition in CHILD_DISPOSITIONS, f"unknown child disposition {context.child_disposition!r}"
     binary_path = context.binary_path
     line = (
         f"{RESULT_PREFIX} {status} step={step} exit_code={exit_code} binary={binary_path} "
-        f"binary_present={'yes' if binary_path.is_file() else 'no'} invocation={context.invocation_id} "
-        f"log={context.log_path}"
+        f"binary_present={'yes' if binary_path.is_file() else 'no'} child={context.child_disposition} "
+        f"invocation={context.invocation_id} log={context.log_path}"
     )
     context.human_stream.write(f"{line}\n")
     context.human_stream.flush()
@@ -688,6 +918,8 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
             binary_after=binary_after,
             binary_before=binary_before,
             binary_changed=binary_after != binary_before,
+            child_disposition=context.child_disposition,
+            child_exit_code=context.child_exit_code,
         )
     except Exception as exc:
         print(f"[agent-build] warning: could not emit the run_end record: {exc}", file=sys.stderr)
@@ -1248,6 +1480,8 @@ def main(argv: list[str]) -> int:
     RESULT_CONTEXT.progress_stdout_jsonl = progress_stdout_jsonl
     RESULT_CONTEXT.binaries_before = {}
     RESULT_CONTEXT.started = time.monotonic()
+    RESULT_CONTEXT.child_disposition = "none"
+    RESULT_CONTEXT.child_exit_code = None
 
     def fail_at_startup(exit_code: int, error: str) -> int:
         print(f"[agent-build] {error}", file=sys.stderr)
@@ -1540,6 +1774,7 @@ def main(argv: list[str]) -> int:
 
 def run(argv: list[str]) -> int:
     """Run the wrapper, turning an interrupt into a defined verdict instead of a traceback."""
+    previous_handlers = install_stop_signal_handlers()
     try:
         return main(argv)
     except KeyboardInterrupt:
@@ -1549,6 +1784,12 @@ def run(argv: list[str]) -> int:
             exit_code=INTERRUPTED_EXIT_CODE,
             context=RESULT_CONTEXT,
         )
+    finally:
+        for number, handler in previous_handlers.items():
+            try:
+                signal.signal(number, handler)
+            except (OSError, ValueError):
+                pass
 
 
 if __name__ == "__main__":
