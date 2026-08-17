@@ -246,9 +246,7 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 	string_arguments.push_back(string_argument);
 
 	const ContainerType expected = class_handle_type_for(box, int_arguments);
-	// A local class has no global name, so the descriptor renders its engine base with the
-	// specialization inside the handle wrapper.
-	CHECK(expected.get_type_name() == "Type[RefCounted[int]]");
+	CHECK(expected.get_type_name() == "Type[Box[int]]");
 
 	Ref<FSSpecializedClassHandle> int_box = FSSpecializedClassHandle::create(box, int_arguments);
 	Ref<FSSpecializedClassHandle> string_box = FSSpecializedClassHandle::create(box, string_arguments);
@@ -296,7 +294,7 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 	ContainerType array_of_expected;
 	array_of_expected.builtin_type = Variant::ARRAY;
 	array_of_expected.element_types.push_back(expected);
-	CHECK(array_of_expected.get_type_name() == "Array[Type[RefCounted[int]]]");
+	CHECK(array_of_expected.get_type_name() == "Array[Type[Box[int]]]");
 
 	ERR_PRINT_OFF;
 	CHECK_FALSE(ContainerTypeValidate(array_of_expected).test_validate(unspecialized_source));
@@ -444,11 +442,17 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle names the 
 	REQUIRE(nested.is_valid());
 	CHECK(nested->get_type_name() == "Inner[String]");
 
-	// A script with neither a global nor a local class identity keeps the engine instance base.
+	// A script with neither a global nor a local class identity is named by its own file, which is the
+	// only identity such a script has. The rendered name is the file alone, never a full path, and never
+	// the engine instance base the script happens to inherit from.
+	CHECK(script->get_global_name() == StringName());
 	CHECK(script->get_local_name() == StringName());
 	Ref<FSSpecializedClassHandle> anonymous = FSSpecializedClassHandle::create(script, Vector<ContainerType>());
 	REQUIRE(anonymous.is_valid());
-	CHECK(anonymous->get_type_name() == "RefCounted");
+	const String script_file_name = script->get_fully_qualified_name().get_file();
+	REQUIRE_FALSE(script_file_name.is_empty());
+	CHECK(anonymous->get_type_name() == script_file_name);
+	CHECK(anonymous->get_type_name() != String(script->get_instance_base_type()));
 }
 
 TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle keeps a qualified global name") {

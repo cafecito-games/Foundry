@@ -37,6 +37,14 @@
 #include "core/variant/dictionary.h"
 #include "core/variant/variant_internal.h"
 
+// Names the script class a diagnostic is talking about. A script that has no name of its own falls back
+// to the engine class of the `Script` resource, which at least identifies the language rather than
+// claiming the script is called `FoundryScript`.
+static String _script_diagnostic_name(const Ref<Script> &p_script) {
+	const String name = p_script->get_diagnostic_class_name();
+	return name.is_empty() ? String(p_script->get_class_name()) : name;
+}
+
 // Compares a value's projected type arguments against an expected specialization. A projected argument
 // that is known and differs from the expected one is a definite invariance violation; an unknown
 // argument (an unspecialized-leaf open parameter, or a step of the chain that could not be resolved)
@@ -160,9 +168,16 @@ String ContainerTypeValidate::_get_value_type_name() const {
 		const String value = element_types.size() > 1 ? element_types[1].get_type_name() : String("Variant");
 		return vformat("Dictionary[%s, %s]", key, value);
 	}
+	// A script names itself: `class_name` is the native compatibility constraint and by construction
+	// holds the engine class the script instantiates, so rendering it would spell a script class such
+	// as `Box[int]` as `RefCounted[int]`. A script with no name of its own returns an empty string and
+	// the engine class is then the best available name.
 	if (type == Variant::OBJECT) {
-		if (script.is_valid() && script->get_global_name() != StringName()) {
-			return script->get_global_name();
+		if (script.is_valid()) {
+			const String script_name = script->get_diagnostic_class_name();
+			if (!script_name.is_empty()) {
+				return script_name;
+			}
 		}
 		if (class_name != StringName()) {
 			return class_name;
@@ -298,7 +313,7 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 		}
 	} else if (other_script.is_null() || !other_script->inherits_script(script)) {
 		if (p_output_errors) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object into a %s, that does not inherit from '%s'.", String(p_operation), String(where), String(script->get_class_name())));
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object into a %s, that does not inherit from '%s'.", String(p_operation), String(where), _script_diagnostic_name(script)));
 		}
 		return false;
 	}
@@ -889,7 +904,7 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			if (outer.is_type_handle && !value_carries_arguments) {
 				// Matches the fully-known class-handle rule: a handle that cannot express a specialization
 				// at all does not satisfy a slot that requires one.
-				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for an unspecialized '%s' into a %s of type '%s'.", String(p_operation), String(outer.script.is_valid() ? outer.script->get_class_name() : outer.class_name), String(p_where), get_type_name()));
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for an unspecialized '%s' into a %s of type '%s'.", String(p_operation), (outer.script.is_valid() ? _script_diagnostic_name(outer.script) : String(outer.class_name)), String(p_where), get_type_name()));
 			}
 			return true;
 		}
@@ -897,7 +912,7 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 		for (int i = 0; i < type_arguments.size() && i < value_projection.size(); i++) {
 			if (outer.is_type_handle && type_arguments[i].is_known() && !value_projection[i].is_known() &&
 					!value_carries_arguments) {
-				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for an unspecialized '%s' into a %s of type '%s'.", String(p_operation), String(outer.script.is_valid() ? outer.script->get_class_name() : outer.class_name), String(p_where), get_type_name()));
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for an unspecialized '%s' into a %s of type '%s'.", String(p_operation), (outer.script.is_valid() ? _script_diagnostic_name(outer.script) : String(outer.class_name)), String(p_where), get_type_name()));
 			}
 			if (type_arguments[i].conflicts_with(value_projection[i])) {
 				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a value specialized as '%s' into a %s of '%s'.", String(p_operation), value_projection[i].get_type_name(), String(p_where), get_type_name()));

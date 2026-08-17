@@ -5,26 +5,26 @@ FS_TEST_RUNTIME_ERROR
 <null>
 >> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:27 on nullable_local(): Trying to assign value of type 'int' to a variable of type 'FbrBadge'.
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to set a variable of type 'int' into a TypedArray of type 'RefCounted'.
+>>   Attempted to set a variable of type 'int' into a TypedArray of type 'FbrBadge'.
 >> ERROR: Condition "!_p->typed.validate(value, "set")" is true.
 1
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to set a variable of type 'int' into a TypedDictionary.Value of type 'RefCounted'.
+>>   Attempted to set a variable of type 'int' into a TypedDictionary.Value of type 'FbrBadge'.
 >> ERROR: Condition "!_p->typed_value.validate(value, "set")" is true. Returning: false
 0
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to set a variable of type 'int' into a TypedDictionary.Key of type 'RefCounted'.
+>>   Attempted to set a variable of type 'int' into a TypedDictionary.Key of type 'FbrBadge'.
 >> ERROR: Condition "!_p->typed_key.validate(key, "set")" is true. Returning: false
 0
 >> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:47 on tuple_element(): Trying to assign a value of type "Array" to a variable of type "(int, FbrBadge)".
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to set a variable of type 'int' into a TypedArray of type 'Type[RefCounted]'.
+>>   Attempted to set a variable of type 'int' into a TypedArray of type 'Type[FbrFactory]'.
 >> ERROR: Condition "!_p->typed.validate(value, "set")" is true.
 1
 >> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:67 on static_bare_local(): Trying to assign value of type 'int' to a variable of type 'FbrBadge'.
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to assign a variable of type 'int' into a variable of type 'RefCounted'.
->> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:73 on FbrHolder.instance_bare_local(): Trying to assign a value of type "int" to a variable of type "RefCounted".
+>>   Attempted to assign a variable of type 'int' into a variable of type 'FbrBadge'.
+>> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:73 on FbrHolder.instance_bare_local(): Trying to assign a value of type "int" to a variable of type "FbrBadge".
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to assign a variable of type 'int' into a variable of type 'RefCounted'.
->> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:73 on FbrHolder.instance_bare_local(): Trying to assign a value of type "int" to a variable of type "RefCounted".
+>>   Attempted to assign a variable of type 'int' into a variable of type 'FbrBadge'.
+>> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:73 on FbrHolder.instance_bare_local(): Trying to assign a value of type "int" to a variable of type "FbrBadge".

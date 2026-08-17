@@ -196,12 +196,7 @@ String FSSpecializedClassHandle::get_type_name() const {
 	}
 	ContainerType type;
 	type.builtin_type = Variant::OBJECT;
-	// Display-only descriptor. An inner class has no global name, so without this the renderer would
-	// fall through to the engine instance base and spell `Box[int]` as `RefCounted[int]`. The local
-	// name belongs here and nowhere persistent: in a stored or validated descriptor `class_name` is
-	// also the native compatibility constraint, and a script-local class is not an engine class.
-	const StringName local_name = script->get_local_name();
-	type.class_name = local_name != StringName() ? local_name : script->get_instance_base_type();
+	type.class_name = script->get_instance_base_type();
 	type.script = script;
 	type.type_arguments = get_type_arguments();
 	return type.get_type_name();
@@ -2687,22 +2682,25 @@ const FSDataType *FoundryScript::find_member_data_type(const StringName &p_membe
 	return member != nullptr ? &member->data_type : nullptr;
 }
 
+// A global class is named by its registered global name, which carries any namespace qualification and
+// so keeps two classes that share a declaration identifier apart. An inner or file-local class has no
+// global name and is named by the identifier it was declared with, which is the name the analyzer and
+// the source both use; consulting the global name alone would leak the engine instance base instead.
+String FoundryScript::get_diagnostic_class_name() const {
+	if (global_name != StringName()) {
+		return String(global_name);
+	}
+	if (local_name != StringName()) {
+		return String(local_name);
+	}
+	return fully_qualified_name.get_file();
+}
+
 String FoundryScript::debug_get_script_name(const Ref<Script> &p_script) {
 	if (p_script.is_valid()) {
-		Ref<FoundryScript> foundry_script = p_script;
-		if (foundry_script.is_valid()) {
-			if (foundry_script->get_local_name() != StringName()) {
-				return foundry_script->get_local_name();
-			}
-			return foundry_script->get_fully_qualified_name().get_file();
-		}
-
-		if (p_script->get_global_name() != StringName()) {
-			return p_script->get_global_name();
-		} else if (!p_script->get_path().is_empty()) {
-			return p_script->get_path().get_file();
-		} else if (!p_script->get_name().is_empty()) {
-			return p_script->get_name(); // Resource name.
+		const String name = p_script->get_diagnostic_class_name();
+		if (!name.is_empty()) {
+			return name;
 		}
 	}
 

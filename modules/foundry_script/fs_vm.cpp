@@ -291,12 +291,51 @@ static String _specialized_value_type_name(Object *p_object) {
 	return _specialized_script_type_name(evidence.script.ptr(), evidence.type_arguments);
 }
 
-// Names whatever a value rejected by a script-typed boundary actually is. A scripted instance is named
-// by its script and reified arguments, so a specialization mismatch reads as `Pair[int, Node]` rather
-// than as the bare class. An object without a script instance is named by its engine class, which is the
+// Names a value that denotes a class rather than an instance of one. The type of a class handle is
+// `Type[X]`, so without the wrapper a rejected `Box[String]` handle reads as an instance of
+// `Box[String]`, and a bare script resource reads as `FoundryScript`. Returns an empty string when the
+// value denotes no class, leaving the caller's own naming in charge.
+static String _class_handle_value_type_name(const Variant *p_value) {
+	if (p_value->get_type() != Variant::OBJECT) {
+		return String();
+	}
+	Object *object = p_value->get_validated_object();
+	if (object == nullptr) {
+		return String();
+	}
+	if (FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(object)) {
+		return "Type[" + specialized_handle->get_type_name() + "]";
+	}
+	if (object->is_class_ptr(FSNativeClass::get_class_ptr_static())) {
+		return "Type[" + String(Object::cast_to<FSNativeClass>(object)->get_name()) + "]";
+	}
+	if (Script *script = Object::cast_to<Script>(object)) {
+		// A script with no name of its own -- an uncompiled resource, say -- still has to render as
+		// something, so the engine class of the resource stands in rather than an empty `Type[]`.
+		const String script_name = script->get_diagnostic_class_name();
+		return "Type[" + (script_name.is_empty() ? String(script->get_class_name()) : script_name) + "]";
+	}
+	return String();
+}
+
+// The same, for a boundary whose declared type is a class handle. A value that denotes no class at all
+// falls back to the generic value naming, so a mismatch still says what was actually supplied.
+[[maybe_unused]] static String _class_handle_boundary_value_type_name(const Variant *p_value) {
+	const String handle_name = _class_handle_value_type_name(p_value);
+	return handle_name.is_empty() ? _get_var_type(p_value) : handle_name;
+}
+
+// Names whatever a value rejected by a script-typed boundary actually is. A value that denotes a class
+// is named as the class handle it is, so the two boundaries agree. A scripted instance is named by its
+// script and reified arguments, so a specialization mismatch reads as `Pair[int, Node]` rather than as
+// the bare class. An object without a script instance is named by its engine class, which is the
 // identity a retroactive native conformance is recorded against; a builtin falls back to the generic
 // value naming, since it too can reach a trait through the conformance registry.
 static String _script_boundary_value_type_name(const Variant *p_value) {
+	const String handle_name = _class_handle_value_type_name(p_value);
+	if (!handle_name.is_empty()) {
+		return handle_name;
+	}
 	if (p_value->get_type() == Variant::OBJECT) {
 		Object *object = p_value->get_validated_object();
 		if (object != nullptr) {
@@ -1453,8 +1492,7 @@ static bool _get_call_argument_width_failure(const FSDataType &p_type, const Var
 static String _get_call_argument_value_type_name(const Variant *p_value) {
 	if (p_value->get_type() == Variant::OBJECT) {
 		Object *object = p_value->get_validated_object();
-		if (object != nullptr && (object->is_class_ptr(FSNativeClass::get_class_ptr_static()) ||
-										 Object::cast_to<FSSpecializedClassHandle>(object) != nullptr)) {
+		if (object != nullptr && (object->is_class_ptr(FSNativeClass::get_class_ptr_static()) || Object::cast_to<FSSpecializedClassHandle>(object) != nullptr)) {
 			return _get_var_type(p_value);
 		}
 		// An unspecialized script class travels as the script resource itself, whose engine class is
@@ -3640,7 +3678,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				if (is_type_handle) {
 					if (!expected_handle_type.is_type(*src)) {
-						err_text = "Trying to assign value of type '" + _get_var_type(src) +
+						err_text = "Trying to assign value of type '" + _class_handle_boundary_value_type_name(src) +
 								"' to a variable of type '" + _get_type_handle_type_name(expected_handle_type, base_type) + "'.";
 						OPCODE_BREAK;
 					}
@@ -5862,7 +5900,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					if (!expected_handle_type.is_type(*r)) {
 #ifdef DEBUG_ENABLED
 						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
-								_get_var_type(r), _get_type_handle_type_name(expected_handle_type, base_type));
+								_class_handle_boundary_value_type_name(r), _get_type_handle_type_name(expected_handle_type, base_type));
 #endif // DEBUG_ENABLED
 						OPCODE_BREAK;
 					}

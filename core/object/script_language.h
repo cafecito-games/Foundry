@@ -178,6 +178,10 @@ public:
 
 	virtual Ref<Script> get_base_script() const = 0; //for script inheritance
 	virtual StringName get_global_name() const = 0;
+	// The name a diagnostic should use for this script's class. Empty when the script has no name of
+	// its own, in which case the caller falls back to the engine class it instantiates. Never returns
+	// a placeholder: an empty result is the signal to fall back.
+	virtual String get_diagnostic_class_name() const;
 	virtual bool inherits_script(const Ref<Script> &p_script) const = 0;
 
 	virtual StringName get_instance_base_type() const = 0; // this may not work in all scripts, will return empty if so
