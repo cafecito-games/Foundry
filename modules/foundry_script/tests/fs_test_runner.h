@@ -125,6 +125,11 @@ private:
 	TestResult execute_test_code(bool p_is_generating);
 
 public:
+	// Stable machine token for a status, used by the structured `foundry test fixtures`
+	// report. Unlike the human-facing `FS_TEST_*` text baked into expected output, this is
+	// consumed by automation, so it never changes shape with the report's prose.
+	static String get_status_token(TestStatus p_status);
+
 	static void print_handler(void *p_this, const String &p_message, bool p_error, bool p_rich);
 	static void error_handler(void *p_this, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type);
 	TestResult run_test();
@@ -164,21 +169,56 @@ class FSTestRunner {
 	// is ever partitioned: fixture regeneration always walks everything.
 	int shard_index = -1;
 	int shard_total = -1;
+	// Corpus-relative glob patterns selecting the fixtures to run. Empty means "the whole
+	// corpus". Only a run is ever filtered: fixture regeneration always walks everything.
+	Vector<String> fixture_filters;
 
 	bool make_tests();
 	bool make_tests_for_dir(const String &p_dir);
 	bool generate_class_index();
 
 public:
+	// Structured outcome of a single fixture execution. Backs `foundry test fixtures`, whose
+	// report has to name the failing fixture as data rather than as a line of console text.
+	struct FixtureOutcome {
+		// Fixture path relative to the corpus root, e.g. `runtime/features/await.fs`.
+		String path;
+		// Which corpus pass produced this outcome: `text`, `binary-tokens`, or `bytecode`.
+		String pass;
+		bool passed = false;
+		// `FSTest::get_status_token()` of the run's terminal stage.
+		String status;
+		// Actual and expected output, so a failure can be diffed without rerunning.
+		String output;
+		String expected;
+	};
+
 	static StringName test_function_name;
 
 	// Registered as the `--foundry_script-generate-tests` test command (normalized from
 	// `foundry test generate-fixtures`) so it runs under the `--test` setup/teardown.
 	static void generate_outputs_for_cmdline();
 	int run_tests();
+
+	// Runs the selected fixtures and returns one outcome per execution instead of reporting
+	// through doctest assertions, so the same corpus can be driven from a plain CLI command.
+	// `r_setup_ok` reports whether collection and class indexing succeeded; when it is false
+	// the returned vector is empty and says nothing about the corpus.
+	Vector<FixtureOutcome> run_tests_collecting(bool &r_setup_ok);
+
 	bool generate_outputs();
 
 	void set_shard(int p_shard_index, int p_shard_total);
+
+	// Restricts the run to fixtures whose corpus-relative path matches one of the patterns.
+	// The class index still covers the whole corpus, so a scoped run resolves the same global
+	// classes a full run does.
+	void set_fixture_filters(const Vector<String> &p_patterns);
+
+	// A pattern containing `*` or `?` is a glob matched against the whole corpus-relative
+	// path; any other pattern matches as a substring. Matching is case-insensitive, and an
+	// empty pattern list selects everything.
+	static bool fixture_path_matches(const String &p_relative_path, const Vector<String> &p_patterns);
 
 	// Keys of the fixtures this runner would execute, in run order. Backs the coverage that
 	// proves the fixture-level partition covers the corpus and never repeats a fixture.
@@ -186,6 +226,12 @@ public:
 
 	FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames = false, bool p_use_binary_tokens = false, bool p_use_compiled_bytecode = false);
 	~FSTestRunner();
+
+private:
+	// Runs one collected fixture and packages its result. Shared by the doctest-reporting
+	// `run_tests()` and the structured `run_tests_collecting()` so both passes execute a
+	// fixture and compare it against expected output in exactly one way.
+	FixtureOutcome execute_fixture(FSTest &p_test) const;
 };
 
 } // namespace FSTests

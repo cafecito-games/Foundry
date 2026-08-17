@@ -147,6 +147,15 @@ const CommandOption TEST_BENCHMARK_OPTIONS[] = {
 	{ "--profile-output", "path", "Write the per-function profile JSON to a file (implies --profile).", false },
 };
 
+const CommandOption TEST_FIXTURES_OPTIONS[] = {
+	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
+	{ "--dir", "path", "Fixture corpus directory (default: modules/foundry_script/tests/scripts).", false },
+	{ "--pass", "all|text|bytecode", "Corpus pass to run (default: all).", false },
+	{ "--use-binary-tokens", nullptr, "Tokenize the text pass from a token buffer.", false },
+	{ "--output", "path", "Write the JSON result report to a file instead of stdout.", false },
+	{ "--print-filenames", nullptr, "Print each fixture path as it runs.", false },
+};
+
 const CommandOption TOOLING_SERVE_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, true },
 	{ "--lsp-port", "6005", "Language server port; 0 requests an ephemeral port.", false },
@@ -191,6 +200,10 @@ const Positional BENCHMARK_DIR_POSITIONAL[] = {
 	{ "dir", true, false },
 };
 
+const Positional FIXTURE_PATTERNS_POSITIONAL[] = {
+	{ "patterns", true, true },
+};
+
 #define FOUNDRY_CLI_COUNT(m_array) ((int)(sizeof(m_array) / sizeof((m_array)[0])))
 
 const CommandSpec COMMANDS[] = {
@@ -207,6 +220,7 @@ const CommandSpec COMMANDS[] = {
 	{ "test", "generate-fixtures", "Regenerate Foundry Script integration test .out fixtures.", "[--project <dir>] [--print-filenames] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-fixtures modules/foundry_script/tests/scripts" },
 	{ "test", "generate-format-fixtures", "Regenerate formatter golden expected.fs fixtures.", "[--project <dir>] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FORMAT_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FORMAT_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format" },
 	{ "test", "benchmark", "Run the Foundry Script benchmark corpus.", "[--project <dir>] [--output <path>] [--profile] [--profile-output <path>] [dir]", FoundryCLIHelp::AVAILABILITY_RELEASE, TEST_BENCHMARK_OPTIONS, FOUNDRY_CLI_COUNT(TEST_BENCHMARK_OPTIONS), BENCHMARK_DIR_POSITIONAL, FOUNDRY_CLI_COUNT(BENCHMARK_DIR_POSITIONAL), "foundry --headless test benchmark modules/foundry_script/tests/benchmarks --output bench.json" },
+	{ "test", "fixtures", "Run named Foundry Script fixtures from the .fs corpus.", "[--project <dir>] [--dir <path>] [--pass <all|text|bytecode>] [--use-binary-tokens] [--output <path>] [--print-filenames] [patterns...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_FIXTURES_OPTIONS), FIXTURE_PATTERNS_POSITIONAL, FOUNDRY_CLI_COUNT(FIXTURE_PATTERNS_POSITIONAL), "foundry --headless test fixtures trait_argument_binding" },
 	{ "tooling", "serve", "Start the combined LSP and debug adapter tooling host.", "--project <dir> [--lsp-port <port>] [--dap-port <port>]", FoundryCLIHelp::AVAILABILITY_EDITOR, TOOLING_SERVE_OPTIONS, FOUNDRY_CLI_COUNT(TOOLING_SERVE_OPTIONS), nullptr, 0, "foundry tooling serve --project . --lsp-port 0 --dap-port 0" },
 	{ "docs", "generate-api", "Generate the extension API JSON dump.", "[--include-docs]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_API_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_API_OPTIONS), nullptr, 0, "foundry docs generate-api --include-docs" },
 	{ "docs", "generate-engine", "Dump the engine class reference XML.", "[--output <path>] [--no-docbase]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_ENGINE_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_ENGINE_OPTIONS), nullptr, 0, "foundry docs generate-engine --output doc-out" },
