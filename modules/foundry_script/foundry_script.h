@@ -675,6 +675,7 @@ public:
 
 	virtual Ref<Script> get_base_script() const override;
 	virtual StringName get_global_name() const override;
+	virtual String get_diagnostic_class_name() const override;
 
 	virtual StringName get_instance_base_type() const override; // this may not work in all scripts, will return empty if so
 	virtual ScriptInstance *instance_create(Object *p_this) override;

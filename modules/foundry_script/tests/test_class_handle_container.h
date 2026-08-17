@@ -246,9 +246,7 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 	string_arguments.push_back(string_argument);
 
 	const ContainerType expected = class_handle_type_for(box, int_arguments);
-	// A local class has no global name, so the descriptor renders its engine base with the
-	// specialization inside the handle wrapper.
-	CHECK(expected.get_type_name() == "Type[RefCounted[int]]");
+	CHECK(expected.get_type_name() == "Type[Box[int]]");
 
 	Ref<FSSpecializedClassHandle> int_box = FSSpecializedClassHandle::create(box, int_arguments);
 	Ref<FSSpecializedClassHandle> string_box = FSSpecializedClassHandle::create(box, string_arguments);
@@ -296,7 +294,7 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 	ContainerType array_of_expected;
 	array_of_expected.builtin_type = Variant::ARRAY;
 	array_of_expected.element_types.push_back(expected);
-	CHECK(array_of_expected.get_type_name() == "Array[Type[RefCounted[int]]]");
+	CHECK(array_of_expected.get_type_name() == "Array[Type[Box[int]]]");
 
 	ERR_PRINT_OFF;
 	CHECK_FALSE(ContainerTypeValidate(array_of_expected).test_validate(unspecialized_source));

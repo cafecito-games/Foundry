@@ -1,7 +1,7 @@
 FS_TEST_RUNTIME_ERROR
 member with matching argument: true
 >> ERROR: Method/function failed. Returning: false
->>   Attempted to assign an object specialized as 'RefCounted[String]' into a member of 'RefCounted[int]'.
+>>   Attempted to assign an object specialized as 'Box[String]' into a member of 'Box[int]'.
 member with mismatched argument: false
 raw receiver keeps the slot gradual: true
 erased parameter at the call boundary: took

@@ -146,6 +146,22 @@ int Script::get_script_method_argument_count(const StringName &p_method, bool *r
 	return mi.arguments.size();
 }
 
+String Script::get_diagnostic_class_name() const {
+	const StringName global_name = get_global_name();
+	if (global_name != StringName()) {
+		return String(global_name);
+	}
+	const String path = get_path();
+	if (!path.is_empty()) {
+		return path.get_file();
+	}
+	const String resource_name = get_name();
+	if (!resource_name.is_empty()) {
+		return resource_name;
+	}
+	return String();
+}
+
 bool Script::has_script_trait(const StringName &p_trait) const {
 	List<StringName> traits;
 	get_script_trait_list(&traits);

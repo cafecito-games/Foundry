@@ -449,4 +449,50 @@ TEST_CASE("[ContainerType] A round-tripped specialization still rejects a mismat
 	CHECK_EQ(round_tripped.size(), 1);
 }
 
+// A script that knows the name of the class it declares, the way a file-local or inner script class
+// does: no global name to look up, but a name of its own that a diagnostic should prefer over the
+// engine class it instantiates.
+class NamedTestScript : public SpecializedTestScript {
+	FOUNDRY_CLASS(NamedTestScript, SpecializedTestScript);
+
+protected:
+	static void _bind_methods() {}
+
+public:
+	String get_diagnostic_class_name() const override { return "TestBox"; }
+};
+
+TEST_CASE("[ContainerType] An object slot is named by its script rather than its engine base") {
+	Ref<NamedTestScript> script;
+	script.instantiate();
+
+	ContainerType specialized;
+	specialized.builtin_type = Variant::OBJECT;
+	specialized.class_name = script->get_instance_base_type();
+	specialized.script = script;
+	specialized.type_arguments.push_back(make_builtin(Variant::INT));
+
+	CHECK(specialized.get_type_name() == "TestBox[int]");
+	CHECK(make_array_of(specialized).get_type_name() == "Array[TestBox[int]]");
+
+	ContainerType handle = specialized;
+	handle.is_type_handle = true;
+	CHECK(handle.get_type_name() == "Type[TestBox[int]]");
+
+	// The native compatibility constraint is untouched by the naming change.
+	CHECK(specialized.class_name == StringName("RefCounted"));
+}
+
+TEST_CASE("[ContainerType] A nameless script still renders its engine base") {
+	Ref<SpecializedTestScript> script;
+	script.instantiate();
+
+	ContainerType nameless;
+	nameless.builtin_type = Variant::OBJECT;
+	nameless.class_name = script->get_instance_base_type();
+	nameless.script = script;
+
+	CHECK(nameless.get_type_name() == "RefCounted");
+}
+
 } // namespace TestContainerTypeArguments
