@@ -566,13 +566,17 @@ def install_stop_signal_handlers() -> dict[int, Any]:
 
 
 @contextlib.contextmanager
-def deferred_stop_signals() -> Iterator[None]:
+def deferred_stop_signals(*, deliver: bool = True) -> Iterator[None]:
     """Hold stop signals for the length of a section, then deliver one that arrived.
 
     Creating the build process is such a section: an interrupt raised inside `Popen` leaves a
     started, separately-sessioned child that no handle refers to, which is unstoppable and therefore
     the very orphan this shutdown path exists to prevent. Deferring costs only the microseconds the
     launch takes, and the signal is honored immediately afterwards.
+
+    Stopping that build is the other: an impatient second signal must not abort the shutdown and let
+    the wrapper report a verdict over a build that is still running. `deliver=False` drops the held
+    signal there, because the shutdown it would ask for is already under way.
     """
     STOP_SIGNALS.active = True
     try:
@@ -581,7 +585,7 @@ def deferred_stop_signals() -> Iterator[None]:
         STOP_SIGNALS.active = False
         pending = STOP_SIGNALS.pending
         STOP_SIGNALS.pending = None
-    if pending is not None:
+    if pending is not None and deliver:
         raise KeyboardInterrupt(f"signal {pending}")
 
 
@@ -807,29 +811,32 @@ def run_logged_command(
                     raise
                 # The child owns the build tree, so it has to be gone before the run is declared
                 # over; otherwise it keeps writing artifacts the terminal verdict has described.
-                disposition, child_status = terminate_child_group(proc, pgid)
-                RESULT_CONTEXT.child_disposition = disposition
-                RESULT_CONTEXT.child_exit_code = child_status
-                progress.emit(
-                    "command_end",
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                    exit_code=child_status,
-                    status="interrupted",
-                    child_disposition=disposition,
-                )
-                write_status(
-                    log_file,
-                    f"[agent-build] {label} interrupted; child process group {disposition}"
-                    + ("" if child_status is None else f" with status {child_status}"),
-                    stream=human_stream,
-                )
-                if disposition == "escaped":
+                # Signals are held throughout, so an impatient second one cannot cut the shutdown
+                # short and produce exactly the verdict-over-a-live-build this prevents.
+                with deferred_stop_signals(deliver=False):
+                    disposition, child_status = terminate_child_group(proc, pgid)
+                    RESULT_CONTEXT.child_disposition = disposition
+                    RESULT_CONTEXT.child_exit_code = child_status
+                    progress.emit(
+                        "command_end",
+                        duration_ms=int((time.monotonic() - started) * 1000),
+                        exit_code=child_status,
+                        status="interrupted",
+                        child_disposition=disposition,
+                    )
                     write_status(
                         log_file,
-                        f"[agent-build] warning: the {label} child survived SIGKILL and may still be "
-                        "writing build artifacts",
+                        f"[agent-build] {label} interrupted; child process group {disposition}"
+                        + ("" if child_status is None else f" with status {child_status}"),
                         stream=human_stream,
                     )
+                    if disposition == "escaped":
+                        write_status(
+                            log_file,
+                            f"[agent-build] warning: the {label} child survived SIGKILL and may still be "
+                            "writing build artifacts",
+                            stream=human_stream,
+                        )
                 raise
             RESULT_CONTEXT.child_disposition = "exited"
             RESULT_CONTEXT.child_exit_code = exit_code

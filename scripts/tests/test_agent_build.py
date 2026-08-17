@@ -1799,6 +1799,37 @@ class InterruptedBuildTests(WrapperHarness):
         self.assertEqual(after_verdict, at_verdict, "the worker kept writing after the run was declared over")
         self.assertIn("child=killed", line)
 
+    def test_a_second_stop_signal_does_not_cut_the_shutdown_short(self) -> None:
+        """An impatient supervisor must not get a verdict over a build that is still running."""
+        with scratch_directory() as root:
+            pid_path = root / "child.pid"
+            artifact_path = root / "artifact"
+            scons = long_running_fake_scons(
+                root,
+                pid_path=pid_path,
+                artifact_path=artifact_path,
+                ignore_terminate=True,
+                lifetime_seconds=10.0,
+            )
+            original_signal_child_group = agent_build.signal_child_group
+
+            def signal_and_interrupt(*args: Any, **kwargs: Any) -> None:
+                original_signal_child_group(*args, **kwargs)
+                os.kill(os.getpid(), signal.SIGTERM)
+
+            with mock.patch.object(agent_build, "signal_child_group", signal_and_interrupt):
+                exit_code, log_path, _ = self.run_wrapper_interrupted_on_output(root, scons, grace_seconds=0.5)
+            pid = self.reap(pid_path)
+            alive = process_is_alive(pid)
+            at_verdict = artifact_state(artifact_path)
+            time.sleep(0.5)
+            after_verdict = artifact_state(artifact_path)
+            line = self.result_line(log_path)
+        self.assertFalse(alive, "a second stop signal let the build outlive the wrapper")
+        self.assertEqual(after_verdict, at_verdict, "the build kept writing after the run was declared over")
+        self.assertEqual(exit_code, 130)
+        self.assertIn("child=killed", line)
+
     def test_a_stop_signal_during_process_creation_still_stops_the_build(self) -> None:
         """A signal raised inside `Popen` would leave a started build no handle refers to."""
         with scratch_directory() as root:
