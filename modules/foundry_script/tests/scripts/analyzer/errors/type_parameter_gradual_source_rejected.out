@@ -1,0 +1,13 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Cannot assign a value of type Variant to variable "kept" with specified type T: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 12: Value of type "Variant" cannot be assigned to a variable of type "T": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 17: Cannot return value of type "Variant" because the function return type is "T": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 21: Cannot assign a value of type Variant to variable "kept" with specified type Array[T]: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 26: Cannot assign a value of type Variant to variable "kept" with specified type Dictionary[String, T]: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 33: Cannot assign a value of type Variant to variable "kept" with specified type T: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 45: Value of type "int" cannot be assigned to a variable of type "T": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 54: Cannot have an element of type "Variant" in an array of type "Array[T]": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 59: Cannot have a value of type "Variant" in a dictionary of type "Dictionary[String, T]": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 64: Cannot have a key of type "Variant" in a dictionary of type "Dictionary[T, String]": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 73: Cannot assign a value of type Variant to variable "kept" with specified type (int, T): an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 78: Cannot have an element of type "int" in an array of type "Array[T]": an erased type parameter has no run-time type to check the value against.

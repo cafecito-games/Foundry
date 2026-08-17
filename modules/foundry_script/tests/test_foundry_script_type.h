@@ -5187,4 +5187,206 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An undescribed slot keeps
 	}
 }
 
+// Builds the `Options` an instance frame and a static frame respectively hand to the compatibility
+// rules, so a test reads as the frame it describes rather than as a bare boolean.
+static FSTypeCompatibility::Options make_instance_frame_options() {
+	FSTypeCompatibility::Options options;
+	options.receiver_is_available = true;
+	return options;
+}
+
+static FSTypeCompatibility::Options make_static_frame_options() {
+	FSTypeCompatibility::Options options;
+	options.receiver_is_available = false;
+	return options;
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An erased parameter destination is undecidable in every frame") {
+	const FSParser::DataType parameter = make_method_type_parameter(SNAME("T"), 0);
+	const FSParser::DataType string_type = make_builtin_type(Variant::STRING);
+
+	SUBCASE("bare leaf") {
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(parameter, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(parameter, make_static_frame_options()));
+	}
+	SUBCASE("array element") {
+		const FSParser::DataType destination = make_array_of(parameter);
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("dictionary value") {
+		const FSParser::DataType destination = make_dictionary_of(string_type, parameter);
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("mixed nesting") {
+		const FSParser::DataType destination =
+				make_array_of(make_dictionary_of(string_type, make_array_of(parameter)));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("tuple element") {
+		// No receiver reifies a method-scope parameter, so a tuple element naming one stays unenforced
+		// even though the tuple's other elements are checked.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(parameter);
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
+	}
+	SUBCASE("container inside a tuple element") {
+		// The container's runtime element typing belongs to its concrete consumer, so the tuple check
+		// leaves it alone and a concrete value is accepted into it. The gradual answer has to match.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(make_array_of(parameter));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_instance_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
+	}
+	SUBCASE("no parameter named") {
+		const FSParser::DataType destination = make_array_of(make_dictionary_of(string_type, make_builtin_type(Variant::INT)));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A class parameter destination is undecidable only without a receiver") {
+	const FSParser::DataType parameter = make_class_type_parameter(SNAME("T"));
+	const FSParser::DataType string_type = make_builtin_type(Variant::STRING);
+
+	SUBCASE("bare leaf") {
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(parameter, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(parameter, make_static_frame_options()));
+	}
+	SUBCASE("array element") {
+		const FSParser::DataType destination = make_array_of(parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("dictionary value") {
+		const FSParser::DataType destination = make_dictionary_of(string_type, parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("mixed nesting") {
+		const FSParser::DataType destination =
+				make_array_of(make_dictionary_of(string_type, make_array_of(parameter)));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(destination, make_static_frame_options()));
+	}
+	SUBCASE("tuple element") {
+		// A tuple slot resolves its parameter elements against the receiver, so it answers exactly as a
+		// typed container does.
+		FSParser::DataType tuple;
+		tuple.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		tuple.kind = FSParser::DataType::TUPLE;
+		tuple.builtin_type = Variant::ARRAY;
+		tuple.container_element_types.push_back(make_builtin_type(Variant::INT));
+		tuple.container_element_types.push_back(parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(tuple, make_static_frame_options()));
+	}
+	SUBCASE("@Self") {
+		// `@Self` denotes the class the frame runs against, which a static frame has too.
+		const FSParser::DataType self_parameter = make_class_type_parameter(SNAME("@Self"));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(self_parameter, make_static_frame_options()));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A final-bounded parameter destination stays decidable") {
+	FSParser::ClassNode final_class;
+	final_class.is_final = true;
+
+	FSParser::DataType final_bound;
+	final_bound.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	final_bound.kind = FSParser::DataType::CLASS;
+	final_bound.builtin_type = Variant::OBJECT;
+	final_bound.class_type = &final_class;
+
+	const FSParser::DataType method_bounded = make_method_type_parameter(SNAME("W"), 0, &final_class);
+	FSParser::DataType class_bounded = make_class_type_parameter(SNAME("T"));
+	class_bounded.type_parameter_bound.push_back(final_bound);
+
+	SUBCASE("method scope") {
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(method_bounded, make_instance_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(method_bounded, make_static_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(make_array_of(method_bounded), make_static_frame_options()));
+	}
+	SUBCASE("class scope without a receiver") {
+		// `FSTypeCompatibility::check()` settles such a destination against the bound in a static frame
+		// instead of refusing it, so the gradual path has to agree.
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(class_bounded, make_static_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(make_array_of(class_bounded), make_static_frame_options()));
+	}
+}
+
+// A destination the compiler emits no check for even with a receiver must get the same answer in a
+// static frame, or the two frames would disagree about the same declaration. Closing these shapes is
+// the business of the issues that own them, and has to close them for every frame at once.
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An unchecked class-parameter slot is not made undecidable by a static frame") {
+	FSParser::ClassNode holder;
+	const FSParser::DataType parameter = make_class_type_parameter(SNAME("T"));
+
+	SUBCASE("nullable slot") {
+		FSParser::DataType nullable = parameter;
+		nullable.is_nullable = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(nullable, make_static_frame_options()));
+	}
+	SUBCASE("callable signature slot") {
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_callable_with_parameter(parameter), make_static_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_callable_returning(parameter), make_static_frame_options()));
+	}
+	SUBCASE("union member") {
+		FSParser::DataType union_type;
+		union_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		union_type.kind = FSParser::DataType::UNION;
+		union_type.union_members.push_back(make_builtin_type(Variant::INT));
+		union_type.union_members.push_back(parameter);
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(union_type, make_static_frame_options()));
+	}
+	SUBCASE("bare specialized meta-type destination") {
+		FSParser::DataType handle_destination = make_specialized_class_type(&holder, { parameter });
+		handle_destination.is_meta_type = true;
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(handle_destination, make_static_frame_options()));
+	}
+	SUBCASE("specialized class handle type argument") {
+		// The instance shape is reified from what construction recorded, so it is checkable with a
+		// receiver and undecidable without one.
+		const FSParser::DataType instance_destination = make_specialized_class_type(&holder, { parameter });
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(instance_destination, make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(instance_destination, make_static_frame_options()));
+	}
+}
+
+// Strict dynamic mode already refuses every `Variant` source, and it is the rejection the user opted
+// into, so it stays the only diagnostic at these boundaries rather than being doubled up with the
+// undecidable-destination one.
+TEST_CASE("[Modules][FoundryScript] Strict dynamic mode owns the diagnostic for an erased destination") {
+	const String prelude = "func get_dynamic() -> Variant:\n\treturn 1\n";
+
+	SUBCASE("initializer") {
+		check_source_error(prelude + "func keep[T]() -> void:\n\tvar kept: T = get_dynamic()\n\tprint(kept)\n",
+				R"*(Cannot assign Variant value to variable "kept" in strict dynamic mode; expected "T".)*",
+				false, true);
+	}
+	SUBCASE("return") {
+		check_source_error(prelude + "func keep[T]() -> T:\n\treturn get_dynamic()\n",
+				R"*(Cannot return Variant value in strict dynamic mode; expected "T".)*",
+				false, true);
+	}
+	SUBCASE("later assignment") {
+		check_source_error(prelude + "func keep[T](seed: T) -> void:\n\tvar kept: T = seed\n\tkept = get_dynamic()\n\tprint(kept)\n",
+				R"*(Cannot assign Variant value to variable "kept" in strict dynamic mode; expected "T".)*",
+				false, true);
+	}
+}
+
 } // namespace FSTests

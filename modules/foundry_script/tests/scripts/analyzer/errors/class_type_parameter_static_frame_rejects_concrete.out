@@ -1,5 +1,5 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 7: Cannot assign a value of type int to variable "kept" with specified type T.
->> ERROR at line 11: Cannot return value of type "int" because the function return type is "T".
->> ERROR at line 14: Cannot assign a value of type Array[int] to variable "kept" with specified type Array[T].
->> ERROR at line 20: Cannot assign a value of type (int, int) to variable "kept" with specified type (int, T).
+>> ERROR at line 9: Cannot assign a value of type int to variable "kept" with specified type T.
+>> ERROR at line 13: Cannot return value of type "int" because the function return type is "T".
+>> ERROR at line 16: Cannot assign a value of type Array[int] to variable "kept" with specified type Array[T].
+>> ERROR at line 22: Cannot assign a value of type (int, int) to variable "kept" with specified type (int, T).
