@@ -1,0 +1,13 @@
+FS_TEST_OK
+~~ WARNING at line 57: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "int" but the supertype "Variant" was provided.
+~~ WARNING at line 59: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "int" but the supertype "Variant" was provided.
+~~ WARNING at line 60: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "String" but the supertype "Variant" was provided.
+~~ WARNING at line 65: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "pick_tail()" requires the subtype "int" but the supertype "Variant" was provided.
+~~ WARNING at line 66: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "pick_tail()" requires the subtype "int" but the supertype "Variant" was provided.
+~~ WARNING at line 70: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "Array[int]" but the supertype "Variant" was provided.
+~~ WARNING at line 75: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "Sample" but the supertype "Variant" was provided.
+~~ WARNING at line 80: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "Box[int]" but the supertype "Variant" was provided.
+~~ WARNING at line 84: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "collect()" requires the subtype "int" but the supertype "Variant" was provided.
+~~ WARNING at line 84: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "collect()" requires the subtype "int" but the supertype "Variant" was provided.
+~~ WARNING at line 87: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "forward()" requires the subtype "int" but the supertype "Variant" was provided.
+generic call argument check ok

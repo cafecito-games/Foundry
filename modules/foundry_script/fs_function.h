@@ -693,6 +693,13 @@ public:
 		// converts -- tuple elements are invariant and a tuple value is a read-only Array -- so a value
 		// that passes is stored exactly as it arrived.
 		OPCODE_ASSIGN_TYPED_TUPLE,
+		// Call-site validation of one argument of a statically resolved generic call. The callee is
+		// compiled once with its method-scope type parameters erased, so its own argument binding has no
+		// run-time type to check the value against; the caller, which knows the substitution, checks and
+		// converts here and passes the converted value on. The substituted type travels as a compiled
+		// descriptor operand, and the callee name and argument ordinal travel beside it so a rejection
+		// names the boundary that rejected it.
+		OPCODE_VALIDATE_CALL_ARGUMENT,
 		OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,
 		OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,
 		OPCODE_CAST_TO_BUILTIN,

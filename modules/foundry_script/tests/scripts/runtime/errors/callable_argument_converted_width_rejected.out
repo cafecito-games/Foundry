@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+2147483647
+>> SCRIPT ERROR at runtime/errors/callable_argument_converted_width_rejected.fs:11 on test(): Invalid type in function 'RefCounted::take (Callable)'. Cannot convert argument 1 from float to int.

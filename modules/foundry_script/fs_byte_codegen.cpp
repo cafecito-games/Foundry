@@ -1574,6 +1574,17 @@ void FSByteCodeGenerator::write_assign_typed_tuple(const Address &p_target, cons
 	append(p_expected_type.container_element_types.size());
 }
 
+void FSByteCodeGenerator::write_validate_call_argument(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, const StringName &p_callee_name, int p_argument_index) {
+	append_opcode(FSFunction::OPCODE_VALIDATE_CALL_ARGUMENT);
+	append(p_target);
+	append(p_source);
+	// Always the full descriptor: the substituted type can be any shape the language expresses, and the
+	// compact `script_type` constant the other typed stores fall back to describes only some of them.
+	append(get_constant_pos(make_container_type_descriptor(p_expected_type)) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	append(p_callee_name);
+	append(p_argument_index);
+}
+
 void FSByteCodeGenerator::write_assign_typed_array_convert(const Address &p_target, const Address &p_source) {
 	const FSDataType element_type = _runtime_container_element_type(p_target.type.get_container_element_type(0));
 	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_ARRAY_CONVERT);

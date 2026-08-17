@@ -708,6 +708,20 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_VALIDATE_CALL_ARGUMENT: {
+				text += "validate call argument ";
+				text += itos(_code_ptr[ip + 5] + 1);
+				text += " of ";
+				text += String(get_global_name(_code_ptr[ip + 4]));
+				text += "() (";
+				text += DADDR(3);
+				text += ") ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+
+				incr += 6;
+			} break;
 			case OPCODE_ASSIGN_TYPED_DICTIONARY: {
 				text += "assign typed dictionary ";
 				text += DADDR(1);

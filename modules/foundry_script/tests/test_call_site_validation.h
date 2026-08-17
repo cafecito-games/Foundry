@@ -240,4 +240,203 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode stil
 	CHECK_FALSE(analyzer_reports_substring(parser, "so no subtype can supply it"));
 }
 
+// The generic call-argument checks a call site records, in ascending argument order. A generic callee
+// is compiled once with its method type parameters erased, so these are the only checks standing
+// between a gradual argument and the callee's erased parameter slot.
+static Vector<FSParser::CallNode::GenericArgumentCheck> call_site_generic_argument_checks(const FSParser::ClassNode *p_class, const StringName &p_function) {
+	const FSParser::CallNode *call = call_site_validation_first_call(p_class, p_function);
+	if (call == nullptr) {
+		return Vector<FSParser::CallNode::GenericArgumentCheck>();
+	}
+	return call->generic_argument_checks;
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An explicit substitution marks its gradual argument for a call-site check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: Variant) -> void:\n"
+			"\tidentity[int](value)\n",
+			"user://generic_argument_explicit.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<FSParser::CallNode::GenericArgumentCheck> checks = call_site_generic_argument_checks(parser.get_tree(), SNAME("test"));
+	REQUIRE(checks.size() == 1);
+	CHECK(checks[0].argument_index == 0);
+	CHECK(checks[0].substituted_type.kind == FSParser::DataType::BUILTIN);
+	CHECK(checks[0].substituted_type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An inferred substitution marks the same argument an explicit one does") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func pick_tail[T](_head: T, tail: T) -> T:\n"
+			"\treturn tail\n"
+			"func test(head: int, tail: Variant) -> void:\n"
+			"\tpick_tail(head, tail)\n",
+			"user://generic_argument_inferred.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<FSParser::CallNode::GenericArgumentCheck> checks = call_site_generic_argument_checks(parser.get_tree(), SNAME("test"));
+	REQUIRE(checks.size() == 1);
+	CHECK(checks[0].argument_index == 1);
+	CHECK(checks[0].substituted_type.kind == FSParser::DataType::BUILTIN);
+	CHECK(checks[0].substituted_type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A still-open forwarding substitution records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func forward[U](value: U) -> Variant:\n"
+			"\tidentity[U](value)\n"
+			"\treturn value\n",
+			"user://generic_argument_forwarded.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("forward")).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A statically typed generic argument records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: int) -> void:\n"
+			"\tidentity[int](value)\n",
+			"user://generic_argument_hard.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An ordinary non-generic call records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func take(value: int) -> void:\n"
+			"\tpass\n"
+			"func test(value: Variant) -> void:\n"
+			"\ttake(value)\n",
+			"user://generic_argument_plain.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A resolved rest element marks every gradual surplus argument") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func collect[T](...values: Array[T]) -> Array[T]:\n"
+			"\treturn values\n"
+			"func test(first: Variant, second: Variant) -> void:\n"
+			"\tcollect[int](first, second)\n",
+			"user://generic_argument_rest.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<FSParser::CallNode::GenericArgumentCheck> checks = call_site_generic_argument_checks(parser.get_tree(), SNAME("test"));
+	REQUIRE(checks.size() == 2);
+	CHECK(checks[0].argument_index == 0);
+	CHECK(checks[1].argument_index == 1);
+	CHECK(checks[1].substituted_type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A runtime-narrowed generic argument is marked for a call-site check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: Object) -> void:\n"
+			"\tidentity[Resource](value)\n",
+			"user://generic_argument_narrowed.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<FSParser::CallNode::GenericArgumentCheck> checks = call_site_generic_argument_checks(parser.get_tree(), SNAME("test"));
+	REQUIRE(checks.size() == 1);
+	CHECK(checks[0].argument_index == 0);
+	CHECK(checks[0].substituted_type.native_type == SNAME("Resource"));
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An upcast generic argument records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: Resource) -> void:\n"
+			"\tidentity[Object](value)\n",
+			"user://generic_argument_upcast.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A substitution landing on a class type parameter records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"class Box[U]:\n"
+			"\tfunc keep(value: Variant) -> U:\n"
+			"\t\treturn identity[U](value)\n",
+			"user://generic_argument_class_parameter.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const FSParser::ClassNode *outer_class = parser.get_tree();
+	REQUIRE(outer_class != nullptr);
+	REQUIRE(outer_class->has_member(SNAME("Box")));
+	const FSParser::ClassNode *box = outer_class->get_member(SNAME("Box")).m_class;
+	REQUIRE(box != nullptr);
+	REQUIRE(box->has_function(SNAME("keep")));
+	const FSParser::FunctionNode *keep = box->get_member(SNAME("keep")).function;
+	REQUIRE(keep != nullptr);
+	REQUIRE(keep->body != nullptr);
+	REQUIRE(!keep->body->statements.is_empty());
+	REQUIRE(keep->body->statements[0]->type == FSParser::Node::RETURN);
+	const FSParser::ReturnNode *return_statement = static_cast<const FSParser::ReturnNode *>(keep->body->statements[0]);
+	REQUIRE(return_statement->return_value != nullptr);
+	REQUIRE(return_statement->return_value->type == FSParser::Node::CALL);
+	const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(return_statement->return_value);
+
+	// The class parameter is resolved by the callee's receiver, not by anything the caller compiled, so
+	// it is as open at this call site as a method-scope parameter is.
+	CHECK(call->generic_argument_checks.is_empty());
+}
+
 } // namespace FSTests

@@ -226,6 +226,72 @@ void FSAnalyzer::CallSiteValidationContext::collect_type_parameter_bindings(cons
 	}
 }
 
+void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSParser::CallNode *p_call, int p_argument_index,
+		const FSParser::DataType &p_declared_type, const FSParser::DataType &p_substituted_type) const {
+	if (p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
+		return;
+	}
+	// A default the analyzer synthesized for a skipped middle parameter is a constant it already typed
+	// from the declaration, and it must behave like a trailing omitted default the callee fills in.
+	if (p_call->synthesized_argument_indices.has(p_argument_index)) {
+		return;
+	}
+
+	// The same relation that decides whether a destination is worth diagnosing decides whether it is
+	// worth checking: it answers "would a store into this slot be verified at run time". A destination
+	// the callee already checks needs nothing from the caller, and one the substitution leaves open
+	// (`inner[U](value)` forwarding through another generic frame) cannot be checked by the caller
+	// either. Only the pair "erased in the callee, closed at the call site" is this boundary's business.
+	//
+	// The two questions differ only in whether a receiver is available, and that difference is the
+	// point. The callee's declared destination is judged with one, so a slot its own frame validates
+	// against its receiver needs nothing from here. The substituted type is judged without one, because
+	// this check carries only the type the call site can state: a substitution that lands on a class
+	// type parameter is resolved by the *callee's* receiver, not by anything the caller compiled, so it
+	// is as open here as a method-scope parameter is.
+	FSTypeCompatibility::Options callee_frame_options;
+	if (!FSTypeCompatibility::destination_is_undecidable_type_parameter(p_declared_type, callee_frame_options)) {
+		return;
+	}
+	FSTypeCompatibility::Options call_site_options;
+	call_site_options.receiver_is_available = false;
+	if (FSTypeCompatibility::destination_is_undecidable_type_parameter(p_substituted_type, call_site_options)) {
+		return;
+	}
+
+	// A `Self` node reaches the run time as "the frame's own receiver", which in the caller's frame is
+	// the caller, not the callee. Leave such a substitution to the receiver-relative contract.
+	if (!p_substituted_type.is_set() || p_substituted_type.is_variant() || !p_substituted_type.is_hard_type() ||
+			analyzer->datatype_contains_self_type_parameter(p_substituted_type)) {
+		return;
+	}
+
+	// A gradual argument can launder any value through the erased parameter, so it always needs the
+	// check. A statically typed one needs it exactly when the analyzer accepted it on the promise of a
+	// run-time check: `allows_runtime_narrowing()` is that promise, and an erased destination is the one
+	// place that never keeps it, so an `Object` holding a `Node` would otherwise reach a `T := Resource`
+	// parameter and come back out typed as a `Resource`. An argument the destination provably accepts
+	// needs nothing further, including one the language converts implicitly: a numeric conversion is a
+	// property of the concrete argument boundary, and moving it here would make one boundary's rule
+	// depend on whether the callee happened to be generic.
+	const FSParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
+	if (argument == nullptr) {
+		return;
+	}
+	const FSParser::DataType argument_type = argument->get_datatype();
+	if (argument_type.is_set() && !argument_type.is_variant()) {
+		if (FSTypeCompatibility::is_compatible(p_substituted_type, argument_type) ||
+				!FSTypeCompatibility::allows_runtime_narrowing(p_substituted_type, argument_type)) {
+			return;
+		}
+	}
+
+	FSParser::CallNode::GenericArgumentCheck check;
+	check.argument_index = p_argument_index;
+	check.substituted_type = p_substituted_type;
+	p_call->generic_argument_checks.push_back(check);
+}
+
 void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::CallNode *p_call, FSParser::FunctionNode *p_function,
 		List<FSParser::DataType> &r_par_types, FSParser::DataType &r_rest_parameter_type, FSParser::DataType &r_return_type) {
 	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_function->type_parameters;
@@ -414,14 +480,34 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 		}
 	}
 
+	if (p_call != nullptr) {
+		p_call->generic_argument_checks.clear();
+	}
+
+	int parameter_index = 0;
 	for (FSParser::DataType &parameter_type : r_par_types) {
+		const FSParser::DataType declared_parameter_type = parameter_type;
 		parameter_type = FSParser::DataType::substitute(parameter_type, bindings);
+		record_generic_argument_check(p_call, parameter_index, declared_parameter_type, parameter_type);
+		parameter_index++;
 	}
 
 	// Surplus arguments are validated against the rest element after this point, so the element
 	// must already be the solved concrete type (`Array[T]` -> `Array[int]`).
+	const FSParser::DataType declared_rest_parameter_type = r_rest_parameter_type;
 	if (r_rest_parameter_type.is_set()) {
 		r_rest_parameter_type = FSParser::DataType::substitute(r_rest_parameter_type, bindings);
+	}
+
+	// Every surplus argument fills a rest-array element slot, so it enters the same erased destination
+	// a fixed parameter does and is checked element by element against the solved element type.
+	if (p_call != nullptr && FSAnalyzer::rest_parameter_type_is_narrowing(r_rest_parameter_type) &&
+			declared_rest_parameter_type.has_container_element_type(0)) {
+		const FSParser::DataType &declared_element_type = declared_rest_parameter_type.get_container_element_type(0);
+		const FSParser::DataType &substituted_element_type = r_rest_parameter_type.get_container_element_type(0);
+		for (int argument_index = r_par_types.size(); argument_index < p_call->arguments.size(); argument_index++) {
+			record_generic_argument_check(p_call, argument_index, declared_element_type, substituted_element_type);
+		}
 	}
 
 	// A typed-container return whose element involves a method type parameter (`-> Array[T]`) is erased
