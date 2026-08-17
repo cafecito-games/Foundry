@@ -35,7 +35,7 @@ The wrapper prints the decision at startup:
 [agent-build] jobs: 4 (source: cgroup-cpu-quota)
 ```
 
-and records it as `jobs` and `jobs_source` in the final `build_summary` progress event. `jobs_source`
+and records it as `jobs` and `jobs_source` in the `run_start` and `build_summary` progress events. `jobs_source`
 is one of `--jobs`, `FOUNDRY_BUILD_JOBS`, `cgroup-cpu-quota`, or `host-cpu-count`. A non-positive or
 non-numeric `FOUNDRY_BUILD_JOBS` is a hard error rather than a silent fallback.
 
