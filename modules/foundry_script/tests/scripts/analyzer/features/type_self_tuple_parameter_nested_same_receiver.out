@@ -1,0 +1,5 @@
+FS_TEST_OK
+nested 1
+both true
+optional 2 same=true
+optional none

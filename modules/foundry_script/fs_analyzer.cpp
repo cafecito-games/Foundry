@@ -17180,16 +17180,60 @@ Error FSAnalyzer::analyze() {
 	return run_phase_final_diagnostics_and_dependencies();
 }
 
-bool FSAnalyzer::call_argument_is_same_receiver(const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument) const {
-	return ::call_argument_is_same_receiver(p_call, p_argument);
-}
-
 bool FSAnalyzer::datatype_contains_self_type_parameter(const FSParser::DataType &p_type) const {
 	return _datatype_contains_self_type_parameter(p_type);
 }
 
-bool FSAnalyzer::is_bare_self_value_parameter(const FSParser::DataType &p_type) const {
-	return _is_bare_self_value_parameter(p_type);
+// `Self` in parameter position means the frame's exact receiver, which for an instance call through
+// an open receiver is the runtime leaf rather than the receiver's static class. A value typed as the
+// declaring class is therefore not admissible, but the receiver *itself* is: whatever the leaf turns
+// out to be, the receiver is an instance of it. That is the whole admission rule, and it holds at
+// every nesting depth a value travels through.
+//
+// Tuple element positions are the only positions that carry it inward, because a tuple's runtime test
+// is a per-element test of the values against per-frame-resolved element types. A typed container is
+// checked as its carrier's declared element type, invariantly, so no element identity can make a
+// carrier built against the static class satisfy the leaf; `Array[Self]`, `Dictionary[..., Self]`,
+// `Type[Self]`, and a generic specialization over `Self` stay rejected for an open receiver.
+//
+// Identity has to be provable at the call site, so the argument must be written as a tuple literal
+// whose `Self` positions are the receiver reference itself. A tuple-shaped value arriving through a
+// local, a parameter, or a call result proves nothing about this frame's receiver and is rejected.
+bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::DataType &p_expected_type, const FSParser::ExpressionNode *p_argument, const FSParser::CallNode *p_call) {
+	if (p_call == nullptr || p_argument == nullptr) {
+		return false;
+	}
+	if (_is_bare_self_value_parameter(p_expected_type)) {
+		return ::call_argument_is_same_receiver(p_call, p_argument);
+	}
+	// A named tuple is built by its constructor call, never by a literal, so a literal against a named
+	// expectation is not a shape this rule can admit.
+	if (p_expected_type.kind != FSParser::DataType::TUPLE || p_expected_type.tuple_name != StringName() ||
+			p_argument->type != FSParser::Node::TUPLE_LITERAL) {
+		return false;
+	}
+	const FSParser::TupleLiteralNode *literal = static_cast<const FSParser::TupleLiteralNode *>(p_argument);
+	if (literal->elements.size() != p_expected_type.container_element_types.size()) {
+		return false;
+	}
+	for (int i = 0; i < literal->elements.size(); i++) {
+		const FSParser::DataType &expected_element = p_expected_type.container_element_types[i];
+		FSParser::ExpressionNode *element = literal->elements[i];
+		if (element == nullptr) {
+			return false;
+		}
+		if (_datatype_contains_self_type_parameter(expected_element)) {
+			if (!self_parameter_satisfied_by_receiver_identity(expected_element, element, p_call)) {
+				return false;
+			}
+			continue;
+		}
+		const FSParser::DataType element_type = element->get_datatype();
+		if (!element_type.is_hard_type() || !is_type_compatible(expected_element, element_type, true)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 bool FSAnalyzer::datatype_matches_self_parameter_contract(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) const {

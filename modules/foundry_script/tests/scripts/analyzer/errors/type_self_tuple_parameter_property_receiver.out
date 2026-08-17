@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 15: Invalid argument for "take_pair()" function: argument 1 should be "(int, Self)" but is "(int, Receiver)".

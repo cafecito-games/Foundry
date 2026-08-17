@@ -472,9 +472,8 @@ private:
 
 	CallSiteValidationContext call_site_validation;
 
-	bool call_argument_is_same_receiver(const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument) const;
 	bool datatype_contains_self_type_parameter(const FSParser::DataType &p_type) const;
-	bool is_bare_self_value_parameter(const FSParser::DataType &p_type) const;
+	bool self_parameter_satisfied_by_receiver_identity(const FSParser::DataType &p_expected_type, const FSParser::ExpressionNode *p_argument, const FSParser::CallNode *p_call);
 	bool datatype_matches_self_parameter_contract(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) const;
 	String make_type_handle_argument_error(
 			const StringName &p_function,
