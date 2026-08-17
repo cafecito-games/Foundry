@@ -1317,6 +1317,33 @@ tolerated).
 
 ---
 
+### 5.6 Call evaluation order
+
+Evaluating a call is observable whenever any of its sub-expressions has a side effect, so the
+order is normative rather than an implementation detail. For any call the order is:
+
+1. the callee **receiver** expression, when the call form has one (`receiver.method(...)`,
+   `receiver.method[TypeArgs](...)`, an enum host-function instance call, and the construction
+   target of a specialized `Handle.new(...)`);
+2. the **argument** expressions, in source (left-to-right *written*) order;
+3. any argument validation or conversion the call site injects;
+4. the dispatch itself.
+
+`a.f(b)` therefore evaluates `a` and then `b`, the order in which they are written, matching
+Python, C#, Kotlin, Java, and JavaScript. This composes with the named-argument rule rather than
+replacing it: named arguments bind to parameters by name, but their expressions still evaluate in
+written order, so `make_sink().take(c = note("c"), a = note("a"))` evaluates the receiver, then
+`note("c")`, then `note("a")`.
+
+Because the receiver precedes step 3, a call that is rejected by an injected argument check still
+runs the receiver expression first; a receiver's side effects are never skipped by a failing
+argument.
+
+Call forms without a receiver expression — `super.method(...)`, a self or static call, a builtin
+construction, and a utility-function call — start at step 2.
+
+---
+
 ## 6. Statements
 
 ```ebnf
