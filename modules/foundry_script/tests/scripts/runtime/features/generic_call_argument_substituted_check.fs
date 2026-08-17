@@ -6,6 +6,10 @@ class Sample:
 	var label: String = "sample"
 
 
+class Box[T]:
+	var value: T
+
+
 func identity[T](value: T) -> T:
 	return value
 
@@ -45,6 +49,10 @@ func untyped_sample() -> Variant:
 	return Sample.new()
 
 
+func untyped_int_box() -> Variant:
+	return Box[int].new()
+
+
 func test() -> void:
 	Utils.check(identity[int](untyped_int()) == 5)
 	# The value is converted at the call boundary, exactly as a concrete `int` parameter converts it.
@@ -66,6 +74,11 @@ func test() -> void:
 
 	var sample: Sample = identity[Sample](untyped_sample())
 	Utils.check(sample.label == "sample")
+
+	# A substituted specialization is decided by its reified type arguments, through the same
+	# structural relation every other boundary asks.
+	var box: Box[int] = identity[Box[int]](untyped_int_box())
+	Utils.check(box != null)
 
 	# A rest element resolved at the call site is checked element by element.
 	var collected: Array[int] = collect[int](untyped_int(), untyped_float())
