@@ -1006,10 +1006,24 @@ private:
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, const FSParser::Node *p_source);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, bool &r_valid, const FSParser::Node *p_source);
 	void update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
+	static bool _is_container_literal(const FSParser::ExpressionNode *p_expression);
+	// Pushes a declared type into a container literal written where that type is expected. Every
+	// position that knows what it is building — a declaration, an assignment, a return, a cast, a call
+	// argument, a `for` list, a tuple or case field, and a nested element of any of those — routes
+	// through this one dispatcher, so a newly added literal form cannot be missed at some of them.
+	void update_container_literal_element_types(FSParser::ExpressionNode *p_expression,
+			const FSParser::DataType &p_expected_type,
+			bool p_self_parameter_contract = false,
+			bool p_substitute_self_runtime_type = false);
 	void update_array_literal_element_type(FSParser::ArrayNode *p_array,
 			const FSParser::DataType &p_element_type,
 			bool p_self_parameter_contract = false,
 			bool p_substitute_self_runtime_type = false);
+	void update_tuple_literal_element_types(FSParser::TupleLiteralNode *p_tuple_literal,
+			const FSParser::DataType &p_tuple_type,
+			bool p_self_parameter_contract = false,
+			bool p_substitute_self_runtime_type = false);
+	FSParser::DataType tuple_literal_datatype_from_elements(const FSParser::TupleLiteralNode *p_tuple_literal);
 	void update_dictionary_literal_element_type(FSParser::DictionaryNode *p_dictionary,
 			const FSParser::DataType &p_key_element_type,
 			const FSParser::DataType &p_value_element_type,

@@ -4984,17 +4984,9 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 		// or inferred declaration supplies no union, which the resolver reports.
 		resolve_contextual_enum_case(p_assignable->initializer, specified_type);
 
-		if (p_assignable->initializer->type == FSParser::Node::ARRAY) {
-			FSParser::ArrayNode *array = static_cast<FSParser::ArrayNode *>(p_assignable->initializer);
-			if (has_specified_type && specified_type.has_container_element_type(0)) {
-				update_array_literal_element_type(array, specified_type.get_container_element_type(0));
-			}
-		} else if (p_assignable->initializer->type == FSParser::Node::DICTIONARY) {
-			FSParser::DictionaryNode *dictionary = static_cast<FSParser::DictionaryNode *>(p_assignable->initializer);
-			if (has_specified_type && specified_type.has_container_element_types()) {
-				update_dictionary_literal_element_type(dictionary, specified_type.get_container_element_type_or_variant(0), specified_type.get_container_element_type_or_variant(1));
-			}
-		}
+		// A container literal is built as the declared type says, before the constant folding below
+		// bakes it: an untyped element folded into a `const` would be untyped in the bytecode forever.
+		update_container_literal_element_types(p_assignable->initializer, specified_type);
 
 		if (is_constant && !p_assignable->initializer->is_constant) {
 			bool is_initializer_value_reduced = false;
@@ -5376,11 +5368,22 @@ void FSAnalyzer::resolve_for(FSParser::ForNode *p_for) {
 					p_for->use_conversion_assign = true;
 				}
 				if (p_for->list) {
-					if (p_for->list->type == FSParser::Node::ARRAY) {
-						update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(p_for->list), specified_type);
-					} else if (p_for->list->type == FSParser::Node::DICTIONARY) {
-						update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(p_for->list), specified_type, FSParser::DataType::get_variant_type());
+					// The loop variable's type is what an *element* of the list has to be, so the list
+					// itself is expected to be a container of that type. A dictionary iterates its keys,
+					// so only the key slot is constrained.
+					FSParser::DataType list_expected_type;
+					if (p_for->list->type == FSParser::Node::ARRAY || p_for->list->type == FSParser::Node::DICTIONARY) {
+						list_expected_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+						list_expected_type.kind = FSParser::DataType::BUILTIN;
+						list_expected_type.builtin_type = p_for->list->type == FSParser::Node::ARRAY ? Variant::ARRAY : Variant::DICTIONARY;
+						// Written straight into the slot so a width-typed loop variable reaches the
+						// element unchanged, exactly as it did when this site called the patcher itself.
+						list_expected_type.container_element_types.push_back(specified_type);
+						if (list_expected_type.builtin_type == Variant::DICTIONARY) {
+							list_expected_type.container_element_types.push_back(FSParser::DataType::get_variant_type());
+						}
 					}
+					update_container_literal_element_types(p_for->list, list_expected_type);
 				}
 			}
 			p_for->variable->set_datatype(specified_type);
@@ -6112,26 +6115,17 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 		} else {
 			const FSParser::DataType &literal_expected_type = preserve_self_contract ? expected_type : compatibility_expected_type;
 			const int literal_errors_before = parser->get_errors().size();
-			if (p_return->return_value->type == FSParser::Node::ARRAY && has_expected_type &&
-					literal_expected_type.has_container_element_type(0)) {
-				const bool substitute_self_runtime_type = preserve_self_contract &&
-						!parser->current_class->is_trait &&
-						_datatype_contains_self_type_parameter(literal_expected_type.get_container_element_type(0));
-				update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(p_return->return_value),
-						literal_expected_type.get_container_element_type(0),
-						false,
-						substitute_self_runtime_type);
-				self_container_literal_validated = substitute_self_runtime_type &&
-						parser->get_errors().size() == literal_errors_before;
-			} else if (p_return->return_value->type == FSParser::Node::DICTIONARY && has_expected_type &&
+			if (_is_container_literal(p_return->return_value) && has_expected_type &&
 					literal_expected_type.has_container_element_types()) {
+				bool contains_self_element = false;
+				for (const FSParser::DataType &element_type : literal_expected_type.container_element_types) {
+					contains_self_element = contains_self_element || _datatype_contains_self_type_parameter(element_type);
+				}
 				const bool substitute_self_runtime_type = preserve_self_contract &&
 						!parser->current_class->is_trait &&
-						(_datatype_contains_self_type_parameter(literal_expected_type.get_container_element_type_or_variant(0)) ||
-								_datatype_contains_self_type_parameter(literal_expected_type.get_container_element_type_or_variant(1)));
-				update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(p_return->return_value),
-						literal_expected_type.get_container_element_type_or_variant(0),
-						literal_expected_type.get_container_element_type_or_variant(1),
+						contains_self_element;
+				update_container_literal_element_types(p_return->return_value,
+						literal_expected_type,
 						false,
 						substitute_self_runtime_type);
 				self_container_literal_validated = substitute_self_runtime_type &&
@@ -6319,13 +6313,9 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 	}
 }
 
-void FSAnalyzer::reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_literal) {
-	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
-		reduce_expression(p_tuple_literal->elements[i]);
-	}
-
-	// A tuple literal is always unnamed: its type is exactly the inferred element shape. A named
-	// tuple is only produced by explicitly calling its declaration.
+// A tuple literal is always unnamed: its type is exactly the shape of its elements. A named tuple is
+// only produced by explicitly calling its declaration.
+FSParser::DataType FSAnalyzer::tuple_literal_datatype_from_elements(const FSParser::TupleLiteralNode *p_tuple_literal) {
 	Vector<FSParser::DataType> element_types;
 	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
 		FSParser::DataType element_type = p_tuple_literal->elements[i]->get_datatype();
@@ -6340,7 +6330,15 @@ void FSAnalyzer::reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_litera
 		element_types.push_back(element_type);
 	}
 
-	p_tuple_literal->set_datatype(make_tuple_type(StringName(), String(), String(), element_types, Vector<StringName>(), false));
+	return make_tuple_type(StringName(), String(), String(), element_types, Vector<StringName>(), false);
+}
+
+void FSAnalyzer::reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_literal) {
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		reduce_expression(p_tuple_literal->elements[i]);
+	}
+
+	p_tuple_literal->set_datatype(tuple_literal_datatype_from_elements(p_tuple_literal));
 }
 
 void FSAnalyzer::reduce_array(FSParser::ArrayNode *p_array) {
@@ -6453,6 +6451,102 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	p_expression->set_datatype(p_type);
 }
 
+// The literal forms whose elements can be built from a declared type.
+bool FSAnalyzer::_is_container_literal(const FSParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+	return p_expression->type == FSParser::Node::ARRAY ||
+			p_expression->type == FSParser::Node::DICTIONARY ||
+			p_expression->type == FSParser::Node::TUPLE_LITERAL;
+}
+
+// Routes a container literal to the patcher for its own form, given the type the position expects of
+// the whole expression. A literal written where nothing is declared, where the declaration is soft,
+// or where the declared type is a different form is left exactly as it was reduced.
+void FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode *p_expression,
+		const FSParser::DataType &p_expected_type,
+		bool p_self_parameter_contract,
+		bool p_substitute_self_runtime_type) {
+	if (p_expression == nullptr || !p_expected_type.is_set() || !p_expected_type.is_hard_type()) {
+		return;
+	}
+
+	switch (p_expression->type) {
+		case FSParser::Node::ARRAY: {
+			if (p_expected_type.kind == FSParser::DataType::BUILTIN && p_expected_type.builtin_type == Variant::ARRAY &&
+					p_expected_type.has_container_element_type(0)) {
+				update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(p_expression),
+						p_expected_type.get_container_element_type(0),
+						p_self_parameter_contract,
+						p_substitute_self_runtime_type);
+			}
+		} break;
+		case FSParser::Node::DICTIONARY: {
+			if (p_expected_type.kind == FSParser::DataType::BUILTIN && p_expected_type.builtin_type == Variant::DICTIONARY &&
+					p_expected_type.has_container_element_types()) {
+				update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(p_expression),
+						p_expected_type.get_container_element_type_or_variant(0),
+						p_expected_type.get_container_element_type_or_variant(1),
+						p_self_parameter_contract,
+						p_substitute_self_runtime_type);
+			}
+		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			if (p_expected_type.kind == FSParser::DataType::TUPLE && !p_expected_type.is_meta_type) {
+				update_tuple_literal_element_types(static_cast<FSParser::TupleLiteralNode *>(p_expression),
+						p_expected_type,
+						p_self_parameter_contract,
+						p_substitute_self_runtime_type);
+			}
+		} break;
+		default:
+			break;
+	}
+}
+
+// A tuple store never converts, so every element of a tuple literal has to be built as the declared
+// element type says instead of as whatever the element reduced to on its own. This patcher pushes the
+// declared element types in and rebuilds the literal's own type from the result. It reports nothing:
+// the position that supplied the tuple type checks compatibility afterwards and its message names the
+// whole tuple, which reads better than a per-element one would.
+void FSAnalyzer::update_tuple_literal_element_types(FSParser::TupleLiteralNode *p_tuple_literal,
+		const FSParser::DataType &p_tuple_type,
+		bool p_self_parameter_contract,
+		bool p_substitute_self_runtime_type) {
+	if (p_tuple_type.tuple_name != StringName()) {
+		// A named tuple is nominal, so an unnamed literal can never satisfy it. Improving the literal's
+		// elements toward a type that is going to be rejected anyway would only confuse the report.
+		return;
+	}
+	if (p_tuple_literal->elements.size() != p_tuple_type.container_element_types.size()) {
+		// A mismatched arity has no defensible per-element pairing, and the arity error is the report
+		// that belongs to it.
+		return;
+	}
+
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		const FSParser::DataType &element_type = p_tuple_type.container_element_types[i];
+		if (!element_type.is_set() || !element_type.is_hard_type()) {
+			// An element the declaration could not pin down must not block the ones it did.
+			continue;
+		}
+		FSParser::ExpressionNode *element_node = p_tuple_literal->elements[i];
+		// An element stands where the tuple's element type says it stands, so that type is what
+		// qualifies a contextual case shorthand written there.
+		resolve_contextual_enum_case(element_node, element_type);
+		update_container_literal_element_types(element_node, element_type, p_self_parameter_contract, p_substitute_self_runtime_type);
+		mark_coroutine_handle_capture(element_node, element_type);
+		if (element_node->is_constant) {
+			update_const_expression_builtin_type(element_node, element_type, "include");
+		}
+	}
+
+	// Every consumer reads the literal's type after this patch, so the patched elements have to be
+	// visible in it.
+	p_tuple_literal->set_datatype(tuple_literal_datatype_from_elements(p_tuple_literal));
+}
+
 // When an array literal is stored (or passed as function argument) to a typed context, we then assume the array is typed.
 // This function determines which type is that (if any).
 void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
@@ -6467,19 +6561,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 		// qualifies a contextual case shorthand written there. This patcher runs after the consumer has
 		// supplied the element type, which is exactly when the union becomes known.
 		resolve_contextual_enum_case(element_node, expected_type);
-		if (expected_type.kind == FSParser::DataType::BUILTIN && expected_type.builtin_type == Variant::ARRAY && expected_type.has_container_element_type(0) && element_node->type == FSParser::Node::ARRAY) {
-			update_array_literal_element_type(
-					static_cast<FSParser::ArrayNode *>(element_node),
-					expected_type.get_container_element_type(0),
-					p_self_parameter_contract,
-					p_substitute_self_runtime_type);
-		} else if (expected_type.kind == FSParser::DataType::BUILTIN && expected_type.builtin_type == Variant::DICTIONARY && expected_type.has_container_element_types() && element_node->type == FSParser::Node::DICTIONARY) {
-			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(element_node),
-					expected_type.get_container_element_type_or_variant(0),
-					expected_type.get_container_element_type_or_variant(1),
-					p_self_parameter_contract,
-					p_substitute_self_runtime_type);
-		}
+		update_container_literal_element_types(element_node, expected_type, p_self_parameter_contract, p_substitute_self_runtime_type);
 		mark_coroutine_handle_capture(element_node, expected_type);
 		if (element_node->is_constant) {
 			update_const_expression_builtin_type(element_node, expected_type, "include");
@@ -6567,19 +6649,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 		// A key stands where the dictionary's key type says it stands, so that type qualifies a
 		// contextual case shorthand written as a key.
 		resolve_contextual_enum_case(key_element_node, expected_key_type);
-		if (expected_key_type.kind == FSParser::DataType::BUILTIN && expected_key_type.builtin_type == Variant::ARRAY && expected_key_type.has_container_element_type(0) && key_element_node->type == FSParser::Node::ARRAY) {
-			update_array_literal_element_type(
-					static_cast<FSParser::ArrayNode *>(key_element_node),
-					expected_key_type.get_container_element_type(0),
-					p_self_parameter_contract,
-					p_substitute_self_runtime_type);
-		} else if (expected_key_type.kind == FSParser::DataType::BUILTIN && expected_key_type.builtin_type == Variant::DICTIONARY && expected_key_type.has_container_element_types() && key_element_node->type == FSParser::Node::DICTIONARY) {
-			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(key_element_node),
-					expected_key_type.get_container_element_type_or_variant(0),
-					expected_key_type.get_container_element_type_or_variant(1),
-					p_self_parameter_contract,
-					p_substitute_self_runtime_type);
-		}
+		update_container_literal_element_types(key_element_node, expected_key_type, p_self_parameter_contract, p_substitute_self_runtime_type);
 		mark_coroutine_handle_capture(key_element_node, expected_key_type);
 		if (key_element_node->is_constant) {
 			update_const_expression_builtin_type(key_element_node, expected_key_type, "include");
@@ -6640,19 +6710,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 		FSParser::ExpressionNode *value_element_node = p_dictionary->elements[i].value;
 		// Likewise for a value: the dictionary's value type is the type expected of the entry.
 		resolve_contextual_enum_case(value_element_node, expected_value_type);
-		if (expected_value_type.kind == FSParser::DataType::BUILTIN && expected_value_type.builtin_type == Variant::ARRAY && expected_value_type.has_container_element_type(0) && value_element_node->type == FSParser::Node::ARRAY) {
-			update_array_literal_element_type(
-					static_cast<FSParser::ArrayNode *>(value_element_node),
-					expected_value_type.get_container_element_type(0),
-					p_self_parameter_contract,
-					p_substitute_self_runtime_type);
-		} else if (expected_value_type.kind == FSParser::DataType::BUILTIN && expected_value_type.builtin_type == Variant::DICTIONARY && expected_value_type.has_container_element_types() && value_element_node->type == FSParser::Node::DICTIONARY) {
-			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(value_element_node),
-					expected_value_type.get_container_element_type_or_variant(0),
-					expected_value_type.get_container_element_type_or_variant(1),
-					p_self_parameter_contract,
-					p_substitute_self_runtime_type);
-		}
+		update_container_literal_element_types(value_element_node, expected_value_type, p_self_parameter_contract, p_substitute_self_runtime_type);
 		mark_coroutine_handle_capture(value_element_node, expected_value_type);
 		if (value_element_node->is_constant) {
 			update_const_expression_builtin_type(value_element_node, expected_value_type, "include");
@@ -6886,13 +6944,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		}
 	}
 
-	// Check if assigned value is an array/dictionary literal, so we can make it a typed container too if appropriate.
-	if (p_assignment->assigned_value->type == FSParser::Node::ARRAY && assignee_type.is_hard_type() && assignee_type.has_container_element_type(0)) {
-		update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(p_assignment->assigned_value), assignee_type.get_container_element_type(0));
-	} else if (p_assignment->assigned_value->type == FSParser::Node::DICTIONARY && assignee_type.is_hard_type() && assignee_type.has_container_element_types()) {
-		update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(p_assignment->assigned_value),
-				assignee_type.get_container_element_type_or_variant(0), assignee_type.get_container_element_type_or_variant(1));
-	}
+	// Check if the assigned value is a container literal, so we can build it as the assignee's type.
+	update_container_literal_element_types(p_assignment->assigned_value, assignee_type);
 
 	if (p_assignment->operation == FSParser::AssignmentNode::OP_NONE && assignee_type.is_hard_type() && p_assignment->assigned_value->is_constant) {
 		update_const_expression_builtin_type(p_assignment->assigned_value, assignee_type, "assign");
@@ -7301,14 +7354,12 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 
 void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p_is_root) {
 	bool all_is_constant = true;
-	HashMap<int, FSParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
-	HashMap<int, FSParser::DictionaryNode *> dictionaries; // Same, but for dictionaries.
+	// Container literals passed as arguments, to potentially type from their parameter.
+	HashMap<int, FSParser::ExpressionNode *> container_literals;
 	for (int i = 0; i < p_call->arguments.size(); i++) {
 		reduce_expression(p_call->arguments[i]);
-		if (p_call->arguments[i]->type == FSParser::Node::ARRAY) {
-			arrays[i] = static_cast<FSParser::ArrayNode *>(p_call->arguments[i]);
-		} else if (p_call->arguments[i]->type == FSParser::Node::DICTIONARY) {
-			dictionaries[i] = static_cast<FSParser::DictionaryNode *>(p_call->arguments[i]);
+		if (_is_container_literal(p_call->arguments[i])) {
+			container_literals[i] = p_call->arguments[i];
 		}
 		all_is_constant = all_is_constant && p_call->arguments[i]->is_constant;
 	}
@@ -7952,14 +8003,11 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		bool named_arguments_valid = true;
 		if (found_function != nullptr) {
 			named_arguments_valid = call_site_validation.canonicalize_named_call_arguments(p_call, found_function);
-			// Reordering may have changed argument positions, so rebuild the literal-typing maps.
-			arrays.clear();
-			dictionaries.clear();
+			// Reordering may have changed argument positions, so rebuild the literal-typing map.
+			container_literals.clear();
 			for (int i = 0; i < p_call->arguments.size(); i++) {
-				if (p_call->arguments[i]->type == FSParser::Node::ARRAY) {
-					arrays[i] = static_cast<FSParser::ArrayNode *>(p_call->arguments[i]);
-				} else if (p_call->arguments[i]->type == FSParser::Node::DICTIONARY) {
-					dictionaries[i] = static_cast<FSParser::DictionaryNode *>(p_call->arguments[i]);
+				if (_is_container_literal(p_call->arguments[i])) {
+					container_literals[i] = p_call->arguments[i];
 				}
 			}
 		} else {
@@ -7988,25 +8036,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			surplus_type = &rest_parameter_type.container_element_types[0];
 		}
 
-		// If the function requires typed arrays we must make literals be typed.
-		for (const KeyValue<int, FSParser::ArrayNode *> &E : arrays) {
-			int index = E.key;
+		// If the function requires typed containers we must make literals be typed.
+		for (const KeyValue<int, FSParser::ExpressionNode *> &E : container_literals) {
+			const int index = E.key;
 			const FSParser::DataType *expected_type = index < par_types.size() ? &par_types.get(index) : surplus_type;
-			if (expected_type != nullptr && expected_type->is_hard_type() && expected_type->has_container_element_type(0)) {
+			if (expected_type != nullptr) {
 				const FSParser::DataType par_type = *expected_type;
-				update_array_literal_element_type(E.value,
-						par_type.get_container_element_type(0),
-						_datatype_contains_self_type_parameter(par_type));
-			}
-		}
-		for (const KeyValue<int, FSParser::DictionaryNode *> &E : dictionaries) {
-			int index = E.key;
-			const FSParser::DataType *expected_dictionary_type = index < par_types.size() ? &par_types.get(index) : surplus_type;
-			if (expected_dictionary_type != nullptr && expected_dictionary_type->is_hard_type() && expected_dictionary_type->has_container_element_types()) {
-				const FSParser::DataType par_type = *expected_dictionary_type;
-				FSParser::DataType key = par_type.get_container_element_type_or_variant(0);
-				FSParser::DataType value = par_type.get_container_element_type_or_variant(1);
-				update_dictionary_literal_element_type(E.value, key, value, _datatype_contains_self_type_parameter(par_type));
+				update_container_literal_element_types(E.value, par_type, _datatype_contains_self_type_parameter(par_type));
 			}
 		}
 		p_call->resolved_parameter_types.clear();
@@ -8325,14 +8361,7 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 		}
 	}
 
-	if (p_cast->operand->type == FSParser::Node::ARRAY && cast_type.has_container_element_type(0)) {
-		update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(p_cast->operand), cast_type.get_container_element_type(0));
-	}
-
-	if (p_cast->operand->type == FSParser::Node::DICTIONARY && cast_type.has_container_element_types()) {
-		update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(p_cast->operand),
-				cast_type.get_container_element_type_or_variant(0), cast_type.get_container_element_type_or_variant(1));
-	}
+	update_container_literal_element_types(p_cast->operand, cast_type);
 
 	if (!cast_type.is_variant()) {
 		FSParser::DataType op_type = p_cast->operand->get_datatype();
@@ -12455,17 +12484,7 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 		// A collection literal in field position stays untyped unless the declared field type is
 		// pushed into it, exactly as an ordinary call does for its typed parameters. Without this,
 		// `Bag(items: Array[int])` rejects `Bag([1, 2])` at runtime as an untyped `Array`.
-		if (!field_type.is_hard_type()) {
-			continue;
-		}
-		if (argument->type == FSParser::Node::ARRAY && field_type.has_container_element_type(0)) {
-			update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(argument),
-					field_type.get_container_element_type(0));
-		} else if (argument->type == FSParser::Node::DICTIONARY && field_type.has_container_element_types()) {
-			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(argument),
-					field_type.get_container_element_type_or_variant(0),
-					field_type.get_container_element_type_or_variant(1));
-		}
+		update_container_literal_element_types(argument, field_type);
 	}
 
 	p_call->set_datatype(tuple_type);
@@ -12847,17 +12866,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		// A collection literal in payload position stays untyped unless the declared field type is
 		// pushed into it, exactly as an ordinary call does for its typed parameters. Without this,
 		// `Case(children: Array[T])` rejects `Case([...])` at runtime as an untyped `Array`.
-		if (!field_type.is_hard_type()) {
-			continue;
-		}
-		if (argument->type == FSParser::Node::ARRAY && field_type.has_container_element_type(0)) {
-			update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(argument),
-					field_type.get_container_element_type(0));
-		} else if (argument->type == FSParser::Node::DICTIONARY && field_type.has_container_element_types()) {
-			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(argument),
-					field_type.get_container_element_type_or_variant(0),
-					field_type.get_container_element_type_or_variant(1));
-		}
+		update_container_literal_element_types(argument, field_type);
 	}
 
 	// A case built entirely from constants is itself a constant: its value is the same read-only
