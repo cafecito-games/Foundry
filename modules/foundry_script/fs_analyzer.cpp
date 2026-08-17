@@ -5458,7 +5458,10 @@ static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_ty
 	}
 	// A nullable subject can hold `null`, which fails a test against any written-out type. A meta-type
 	// subject is the type itself rather than a value of it, so it is not a member of its own domain.
-	if (p_subject_type.is_nullable || p_subject_type.is_meta_type) {
+	// A soft subject type is one the analyzer never committed to: an incompatible test downgrades it
+	// rather than reporting an error, and the downgrade happens after this type was read, so a claim
+	// built on it could outlive the type that justified it.
+	if (p_subject_type.is_nullable || p_subject_type.is_meta_type || !p_subject_type.is_hard_type()) {
 		return false;
 	}
 	if (p_subject_type.kind == FSParser::DataType::ENUM) {
@@ -5467,11 +5470,16 @@ static bool _type_test_covers_subject_domain(const FSParser::DataType &p_test_ty
 		// runtime membership test. That is the same assumption the declared-value path already makes --
 		// a match listing every member is likewise treated as covering -- so both spellings of a full
 		// cover agree. Widening the domain model to undeclared integers is a separate concern.
-		// `value is Message.Move` names one case, so it covers that case rather than the whole union.
+		//
+		// `native_type` is what identifies an enum nominally (`Owner::Name`); `enum_type` is only its
+		// simple name, which two unrelated enums can share. `value is Message.Move` names one case, so
+		// it covers that case rather than the whole union.
 		return p_test_type.kind == FSParser::DataType::ENUM &&
 				p_test_type.enum_case_name == StringName() &&
+				p_subject_type.enum_case_name == StringName() &&
 				p_test_type.is_tagged_union == p_subject_type.is_tagged_union &&
-				p_test_type.enum_type == p_subject_type.enum_type;
+				p_test_type.native_type == p_subject_type.native_type &&
+				p_test_type.script_path == p_subject_type.script_path;
 	}
 	if (p_subject_type.kind == FSParser::DataType::BUILTIN && p_subject_type.builtin_type == Variant::BOOL) {
 		return p_test_type.kind == FSParser::DataType::BUILTIN && p_test_type.builtin_type == Variant::BOOL;

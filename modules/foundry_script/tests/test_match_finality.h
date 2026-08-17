@@ -490,6 +490,40 @@ func from_guard(value: bool) -> String:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A same-named unrelated enum does not cover") {
+	// Two enums can share a simple name, and a soft subject type is downgraded rather than reported
+	// when a test is incompatible with it, so neither the name nor the recorded subject type on its
+	// own proves the test always passes.
+	FSParser parser;
+	const String source = R"(
+class Inner:
+	enum Level:
+		LOW = 1
+		HIGH = 2
+
+enum Level:
+	LOW = 1
+	HIGH = 2
+
+func describe() -> String:
+	var value = Level.LOW
+	match value:
+		value is Inner.Level:
+			return "inner"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_same_named_enum.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_error_containing(parser, FLOW_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
 TEST_CASE("[Modules][FoundryScript][MatchFinality] An open-domain subject is not covered by its own type") {
 	// Coverage is only decided where the subject's domain is statically enumerable. Proving that a
 	// test on an open domain accepts every value it can hold is the residual-set modeling match-arm
