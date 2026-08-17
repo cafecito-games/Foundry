@@ -141,6 +141,18 @@ public:
 	// elements.
 	static bool destination_depends_on_receiver_type_parameter(const FSParser::DataType &p_type);
 
+	// A type parameter whose only bound is a `final` class denotes exactly that class: no subtype of the
+	// bound can exist, so the bound is the one type argument the parameter can ever stand for. Resolves
+	// such a parameter into that concrete bound, carrying every wrapper the parameter itself declared --
+	// nullability, a `Type[...]` handle layer, a metatype layer -- so the resolved shape lowers exactly
+	// as the position that named the parameter would have. Returns false for every other type, leaving
+	// `r_resolved` untouched.
+	//
+	// Compiler lowering resolves through this before ordinary type-parameter erasure, which is what makes
+	// a final-bounded slot a genuinely runtime-checked one; the analyzer's undecidability rules resolve
+	// through it as well, so the two agree on which positions carry a real check.
+	static bool resolve_final_class_bound(const FSParser::DataType &p_type, FSParser::DataType &r_resolved);
+
 	// True when nothing at the destination can decide a value against `p_type`, so a store into it is
 	// neither justified statically nor verified at run time. Both the typed and the gradual paths ask
 	// this one question, which is what keeps them from answering differently for the same declaration.

@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 12: Cannot assign a value of type Variant to variable "kept" with specified type Callable[[T], void]: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 17: Cannot assign a value of type Variant to variable "kept" with specified type Array[T?]: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 22: Cannot assign a value of type Variant to variable "kept" with specified type Array[(int, T)]: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 27: Cannot assign a value of type Variant to variable "kept" with specified type Dictionary[String, (int, T)]: an erased type parameter has no run-time type to check the value against.

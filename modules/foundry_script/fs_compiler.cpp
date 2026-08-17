@@ -37,6 +37,7 @@
 #include "fs_conformance_registry.h"
 #include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
+#include "fs_type.h"
 #include "fs_utility_functions.h"
 
 #include "core/config/engine.h"
@@ -135,7 +136,14 @@ void FSCompiler::_set_error(const String &p_error, const FSParser::Node *p_node)
 
 static bool _datatype_contains_erased_type_parameter(const FSParser::DataType &p_datatype) {
 	if (p_datatype.kind == FSParser::DataType::TYPE_PARAMETER) {
-		return p_datatype.type_parameter_name != SNAME("@Self");
+		if (p_datatype.type_parameter_name == SNAME("@Self")) {
+			return false;
+		}
+		// A parameter bounded by a `final` class resolves to that bound before erasure, so a container or
+		// a specialization declared around one keeps real element metadata instead of collapsing to an
+		// untyped carrier.
+		FSParser::DataType resolved_bound;
+		return !FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound);
 	}
 	// A position substituted from `Self` is re-bound to the call frame's exact receiver before any
 	// argument is accepted, so the declaring class's own type parameters -- which substitution leaves
@@ -337,6 +345,20 @@ FSDataType FSCompiler::_gdtype_tuple_test_type_from_datatype(const FSParser::Dat
 FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype, bool p_preserve_type_parameters) {
 	if (!p_datatype.is_set() || !p_datatype.is_hard_type() || p_datatype.is_coroutine) {
 		return FSDataType();
+	}
+
+	// A parameter bounded by a `final` class stands for exactly that bound, so the slot is lowered as the
+	// bound rather than erased to Variant. That is what turns a final-bounded declaration into a slot the
+	// runtime really checks, which is the premise the analyzer accepts a gradual source into one on.
+	//
+	// A class-scope parameter is left alone while type parameters are being preserved: the preserved node
+	// is resolved against the receiver's reification, which already validates the store. A method-scope
+	// one is resolved even then, because projection reads a method-scope node as no evidence at all.
+	FSParser::DataType resolved_bound;
+	if (FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound) &&
+			(!p_preserve_type_parameters ||
+					p_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD)) {
+		return _gdtype_from_datatype(resolved_bound, p_owner, p_handle_metatype, p_preserve_type_parameters);
 	}
 
 	FSDataType result;

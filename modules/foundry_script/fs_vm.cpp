@@ -3320,11 +3320,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					const StringName trait_name = fs_base_type->get_trait_type_name();
 					if (!FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name, true)) {
 						err_text = "Trying to assign value of type '" + Variant::get_type_name(src->get_type()) +
-								"' to a variable of type '" + base_type->get_path().get_file() + "'.";
+								"' to a variable of type '" + FoundryScript::debug_get_script_name(Ref<Script>(base_type)) + "'.";
 						OPCODE_BREAK;
 					}
 				} else if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
-					err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
+					err_text = "Trying to assign a non-object value to a variable of type '" + FoundryScript::debug_get_script_name(Ref<Script>(base_type)) + "'.";
 					OPCODE_BREAK;
 				} else if (src->get_type() == Variant::OBJECT) {
 					bool was_freed = false;
@@ -3362,7 +3362,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 						if (!valid) {
 							err_text = "Trying to assign value of type '" + val_obj->get_class_name() +
-									"' to a variable of type '" + base_type->get_path().get_file() + "'.";
+									"' to a variable of type '" + FoundryScript::debug_get_script_name(Ref<Script>(base_type)) + "'.";
 							OPCODE_BREAK;
 						}
 					}
@@ -3726,7 +3726,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
 					if (!is_trait_type || !FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), fs_base_type->get_trait_type_name(), true)) {
-						err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
+						err_text = "Trying to assign a non-object value to a variable of type '" + FoundryScript::debug_get_script_name(Ref<Script>(base_type)) + "'.";
 						OPCODE_BREAK;
 					}
 				}
