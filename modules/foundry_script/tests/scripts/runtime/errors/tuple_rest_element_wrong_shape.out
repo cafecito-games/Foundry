@@ -1,3 +1,3 @@
 FS_TEST_RUNTIME_ERROR
 took [[1, "one"], [2, "two"]]
->> SCRIPT ERROR at runtime/errors/tuple_rest_element_wrong_shape.fs:13 on test(): Invalid type in function 'RefCounted::take (Callable)'. The array of argument 2 (Array) does not have the same element type as the expected typed array argument.
+>> SCRIPT ERROR at runtime/errors/tuple_rest_element_wrong_shape.fs:13 on test(): Invalid type in function 'RefCounted::take (Callable)'. Argument 2 has type "Array", but the rest parameter element requires "(int, String)".
