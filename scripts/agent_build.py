@@ -13,6 +13,7 @@ import queue
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,10 @@ RESULT_STATUSES = (
     "interrupted",
 )
 RESULT_STEPS = ("startup", "generate", "build", "test")
+# How a build or test child ended, as reported by the terminal verdict.
+CHILD_DISPOSITIONS = ("none", "exited", "terminated", "killed", "escaped")
+# How long an interrupted child is given to stop on SIGTERM before it is killed outright.
+CHILD_TERMINATION_GRACE_SECONDS = 10.0
 MISSING_BINARY_EXIT_CODE = 1
 TOOLING_MISSING_EXIT_CODE = 127
 INTERRUPTED_EXIT_CODE = 130
@@ -520,6 +525,69 @@ def stream_output(pipe, output_queue: queue.Queue[str | None]) -> None:
         output_queue.put(None)
 
 
+def signal_child_group(proc: subprocess.Popen[str], signal_number: int) -> None:
+    """Signal the child's whole process group, so a build's compilers go with it.
+
+    The child is started in its own session, so signaling only the child would leave the compiler
+    processes it spawned running and still writing objects.
+    """
+    if proc.poll() is not None:
+        return
+    try:
+        if os.name != "nt":
+            os.killpg(os.getpgid(proc.pid), signal_number)
+            return
+    except (OSError, AttributeError):
+        pass
+    try:
+        if signal_number == getattr(signal, "SIGKILL", None):
+            proc.kill()
+        else:
+            proc.terminate()
+    except OSError:
+        pass
+
+
+def wait_for_child(proc: subprocess.Popen[str], timeout: float) -> int | None:
+    """Wait up to `timeout` for the child, ignoring further interrupts, and report its status.
+
+    A second interrupt arriving while the wrapper is shutting a build down must not abandon the
+    wait: that is exactly how an orphan escapes. `None` means the child outlived the timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return proc.poll()
+        try:
+            return proc.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            return proc.poll()
+        except KeyboardInterrupt:
+            continue
+
+
+def terminate_child_group(proc: subprocess.Popen[str], *, grace_seconds: float | None = None) -> tuple[str, int | None]:
+    """Stop an interrupted run's child process group and wait for it to actually be gone.
+
+    Returns the child's disposition and exit status: `exited` when it had already finished,
+    `terminated` when SIGTERM was enough, `killed` when SIGKILL was needed, and `escaped` when it
+    survived even that — the one case where later writes to the build tree are still possible.
+    """
+    grace = CHILD_TERMINATION_GRACE_SECONDS if grace_seconds is None else grace_seconds
+    if proc.poll() is not None:
+        return "exited", proc.returncode
+    signal_child_group(proc, signal.SIGTERM)
+    status = wait_for_child(proc, grace)
+    if status is not None:
+        return "terminated", status
+    signal_child_group(proc, getattr(signal, "SIGKILL", signal.SIGTERM))
+    status = wait_for_child(proc, grace)
+    if status is not None:
+        return "killed", status
+    return "escaped", None
+
+
 def run_logged_command(
     command: list[str],
     *,
@@ -582,37 +650,67 @@ def run_logged_command(
             next_heartbeat = time.monotonic() + heartbeat if heartbeat > 0 else float("inf")
             stream_done = False
 
-            while not stream_done:
-                try:
-                    item = output_queue.get(timeout=0.25)
-                except queue.Empty:
-                    item = ""
+            try:
+                while not stream_done:
+                    try:
+                        item = output_queue.get(timeout=0.25)
+                    except queue.Empty:
+                        item = ""
 
-                if item is None:
-                    stream_done = True
-                elif item:
-                    human_stream.write(item)
-                    human_stream.flush()
-                    log_file.write(item)
-                    log_file.flush()
-                    stripped = item.strip()
-                    if stripped:
-                        output_index += 1
-                        last_output = stripped
-                        progress.emit("command_output", output_index=output_index, line=stripped)
+                    if item is None:
+                        stream_done = True
+                    elif item:
+                        human_stream.write(item)
+                        human_stream.flush()
+                        log_file.write(item)
+                        log_file.flush()
+                        stripped = item.strip()
+                        if stripped:
+                            output_index += 1
+                            last_output = stripped
+                            progress.emit("command_output", output_index=output_index, line=stripped)
 
-                now = time.monotonic()
-                if now >= next_heartbeat and proc.poll() is None:
-                    elapsed = format_duration(now - started)
-                    progress.emit("command_heartbeat", elapsed=elapsed, last_output=last_output)
+                    now = time.monotonic()
+                    if now >= next_heartbeat and proc.poll() is None:
+                        elapsed = format_duration(now - started)
+                        progress.emit("command_heartbeat", elapsed=elapsed, last_output=last_output)
+                        write_status(
+                            log_file,
+                            f"[agent-build] {label} still running after {elapsed}; last output: {last_output}",
+                            stream=human_stream,
+                        )
+                        next_heartbeat = now + heartbeat
+
+                exit_code = proc.wait()
+            except BaseException:
+                # The child owns the build tree, so it has to be gone before the run is declared
+                # over; otherwise it keeps writing artifacts the terminal verdict has described.
+                disposition, child_status = terminate_child_group(proc)
+                RESULT_CONTEXT.child_disposition = disposition
+                RESULT_CONTEXT.child_exit_code = child_status
+                progress.emit(
+                    "command_end",
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    exit_code=child_status,
+                    status="interrupted",
+                    child_disposition=disposition,
+                )
+                write_status(
+                    log_file,
+                    f"[agent-build] {label} interrupted; child process group {disposition}"
+                    + ("" if child_status is None else f" with status {child_status}"),
+                    stream=human_stream,
+                )
+                if disposition == "escaped":
                     write_status(
                         log_file,
-                        f"[agent-build] {label} still running after {elapsed}; last output: {last_output}",
+                        f"[agent-build] warning: the {label} child survived SIGKILL and may still be "
+                        "writing build artifacts",
                         stream=human_stream,
                     )
-                    next_heartbeat = now + heartbeat
-
-            exit_code = proc.wait()
+                raise
+            RESULT_CONTEXT.child_disposition = "exited"
+            RESULT_CONTEXT.child_exit_code = exit_code
             reader.join(timeout=1)
             duration = time.monotonic() - started
             elapsed = format_duration(duration)
@@ -644,6 +742,8 @@ class ResultContext:
         self.progress_stdout_jsonl = False
         self.binaries_before: dict[str, dict[str, object]] = {}
         self.started = time.monotonic()
+        self.child_disposition = "none"
+        self.child_exit_code: int | None = None
 
 
 RESULT_CONTEXT = ResultContext()
@@ -658,11 +758,12 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
     """
     assert status in RESULT_STATUSES, f"unknown result status {status!r}"
     assert step in RESULT_STEPS, f"unknown result step {step!r}"
+    assert context.child_disposition in CHILD_DISPOSITIONS, f"unknown child disposition {context.child_disposition!r}"
     binary_path = context.binary_path
     line = (
         f"{RESULT_PREFIX} {status} step={step} exit_code={exit_code} binary={binary_path} "
-        f"binary_present={'yes' if binary_path.is_file() else 'no'} invocation={context.invocation_id} "
-        f"log={context.log_path}"
+        f"binary_present={'yes' if binary_path.is_file() else 'no'} child={context.child_disposition} "
+        f"invocation={context.invocation_id} log={context.log_path}"
     )
     context.human_stream.write(f"{line}\n")
     context.human_stream.flush()
@@ -688,6 +789,8 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
             binary_after=binary_after,
             binary_before=binary_before,
             binary_changed=binary_after != binary_before,
+            child_disposition=context.child_disposition,
+            child_exit_code=context.child_exit_code,
         )
     except Exception as exc:
         print(f"[agent-build] warning: could not emit the run_end record: {exc}", file=sys.stderr)
@@ -1248,6 +1351,8 @@ def main(argv: list[str]) -> int:
     RESULT_CONTEXT.progress_stdout_jsonl = progress_stdout_jsonl
     RESULT_CONTEXT.binaries_before = {}
     RESULT_CONTEXT.started = time.monotonic()
+    RESULT_CONTEXT.child_disposition = "none"
+    RESULT_CONTEXT.child_exit_code = None
 
     def fail_at_startup(exit_code: int, error: str) -> int:
         print(f"[agent-build] {error}", file=sys.stderr)

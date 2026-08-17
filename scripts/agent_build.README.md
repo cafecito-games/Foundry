@@ -148,7 +148,7 @@ invocation can never be read as this one's. It carries `invocation_id`, `argv`, 
 `run_end` is the last record of every invocation, emitted exactly once alongside the `RESULT:` line
 and with the same `status` and `exit_code`, including when the run aborts during startup and when it
 runs tests. It carries `invocation_id`, `status`, `step`, `exit_code`, `duration_ms`, `binary_path`,
-`binary_before`, `binary_after`, and `binary_changed`.
+`binary_before`, `binary_after`, `binary_changed`, `child_disposition`, and `child_exit_code`.
 
 A binary identity block — `binary_before`, `binary_after`, and the `binary_after` on `build_summary` —
 is `{"path": ..., "size": ..., "mtime_ns": ...}`, or `null` when the file is absent. `binary_changed`
@@ -195,12 +195,18 @@ Every invocation writes exactly one terminal verdict line, always last, to both 
 the build log:
 
 ```
-[agent-build] RESULT: <status> step=<step> exit_code=<n> binary=<path> binary_present=<yes|no> invocation=<uuid> log=<path>
+[agent-build] RESULT: <status> step=<step> exit_code=<n> binary=<path> binary_present=<yes|no> child=<child> invocation=<uuid> log=<path>
 ```
 
 `<status>` is one of `success`, `build-failure`, `generation-failure`, `binary-missing`,
 `test-failure`, `tooling-missing`, `interrupted`; `<step>` is one of `startup`, `generate`, `build`,
 `test`.
+
+`<child>` is how the last build or test child ended, and it is the same value as `run_end`'s
+`child_disposition`: `none` when the run never started one, `exited` when it finished on its own,
+`terminated` or `killed` when an interrupt stopped it, and `escaped` when it survived even `SIGKILL`.
+Only `escaped` leaves a process that may still be writing the build tree; the wrapper also logs a
+warning for it. Everything else guarantees the artifacts described by the verdict are final.
 
 Piping the wrapper into another command, launching it in the background, or appending any trailing
 command in the same shell invocation discards its exit code, so such callers must read the log's final
@@ -226,6 +232,16 @@ is `binary-missing`. An unchanged binary timestamp is never a failure, because a
 build legitimately leaves the binary untouched.
 
 A test command that cannot be launched at all reports `test-failure` with exit code `127`.
+
+### Interrupting a run
+
+The build and test children run in their own session, so an interrupt delivered to the wrapper does
+not reach them. On `KeyboardInterrupt` the wrapper therefore signals the child's whole process group
+with `SIGTERM`, waits for it, escalates to `SIGKILL` after a bounded grace period, and only then
+writes its terminal verdict. Interrupting a build consequently ends it: nothing is left compiling into
+`bin/` or the object tree behind a run that has already been declared over, so the identity the
+verdict reports stays true and a restarted build cannot race a cancelled one. Further interrupts
+arriving during the shutdown do not abandon the wait.
 
 ## Benchmarks
 

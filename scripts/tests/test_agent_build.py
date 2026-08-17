@@ -9,9 +9,11 @@ import io
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from collections.abc import Iterator
 from datetime import datetime
@@ -1417,11 +1419,13 @@ class WrapperHarness(unittest.TestCase):
         extra_argv: list[str] | None = None,
         binary_path: Path | None = None,
         which=None,
+        entry=None,
     ) -> tuple[int, Path, Path, str]:
         binary_path = binary_path if binary_path is not None else root / "foundry.macos.editor.dev.arm64"
         log_path = root / "build.log"
         progress_path = root / "progress.jsonl"
         target = agent_build.BuildTarget("macos", binary_path, None)
+        entry = entry if entry is not None else agent_build.main
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
             with mock.patch.object(agent_build, "scons_prefix", return_value=[sys.executable, str(scons)]):
@@ -1429,7 +1433,7 @@ class WrapperHarness(unittest.TestCase):
                     with contextlib.ExitStack() as stack:
                         if which is not None:
                             stack.enter_context(mock.patch.object(agent_build.shutil, "which", side_effect=which))
-                        exit_code = agent_build.main(
+                        exit_code = entry(
                             [
                                 "--jobs",
                                 "1",
@@ -1624,6 +1628,157 @@ class ResultContractTests(WrapperHarness):
         self.assertEqual(exit_code, 130)
         self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
         self.assertIn("exit_code=130", line)
+
+
+def long_running_fake_scons(
+    directory: Path,
+    *,
+    pid_path: Path,
+    artifact_path: Path,
+    ignore_terminate: bool,
+) -> Path:
+    """A stand-in SCons that keeps writing a build artifact until it is stopped.
+
+    It reports its own pid, then prints one line so the wrapper's output loop is reached while the
+    child is still running — the state a real build is in when an agent interrupts it.
+    """
+    script = directory / f"long_running_fake_scons_{'stubborn' if ignore_terminate else 'cooperative'}.py"
+    script.write_text(
+        "import itertools\n"
+        "import os\n"
+        "import pathlib\n"
+        "import signal\n"
+        "import sys\n"
+        "import time\n"
+        + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if ignore_terminate else "")
+        + f"pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid()))\n"
+        "print('scons: building targets ...')\n"
+        "sys.stdout.flush()\n"
+        "for counter in itertools.count():\n"
+        f"    pathlib.Path({str(artifact_path)!r}).write_text(str(counter))\n"
+        "    time.sleep(0.02)\n"
+        "    if counter > 3000:\n"
+        "        break\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+def process_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+class InterruptedBuildTests(WrapperHarness):
+    """An interrupted run must not leave a build writing the tree its verdict has just described."""
+
+    def setUp(self) -> None:
+        saved = dict(vars(agent_build.RESULT_CONTEXT))
+        self.addCleanup(lambda: vars(agent_build.RESULT_CONTEXT).update(saved))
+
+    def reap(self, pid_path: Path) -> int:
+        """Register a hard cleanup for the fake build, so a failing test cannot leak it."""
+        pid = int(pid_path.read_text(encoding="utf-8"))
+
+        def kill_group() -> None:
+            with contextlib.suppress(OSError):
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+
+        self.addCleanup(kill_group)
+        return pid
+
+    def run_interrupted(
+        self,
+        root: Path,
+        *,
+        ignore_terminate: bool,
+        grace_seconds: float,
+    ) -> tuple[int, Path, Path, int, Path]:
+        """Run the wrapper against a live fake build and interrupt it while output is streaming."""
+        pid_path = root / "child.pid"
+        artifact_path = root / "artifact"
+        scons = long_running_fake_scons(
+            root, pid_path=pid_path, artifact_path=artifact_path, ignore_terminate=ignore_terminate
+        )
+        original_emit = agent_build.ProgressReporter.emit
+        interrupted = False
+
+        def emit_and_interrupt(reporter: Any, event: str, **fields: Any) -> None:
+            nonlocal interrupted
+            original_emit(reporter, event, **fields)
+            if event == "command_output" and not interrupted:
+                interrupted = True
+                raise KeyboardInterrupt
+
+        with mock.patch.object(agent_build, "CHILD_TERMINATION_GRACE_SECONDS", grace_seconds):
+            with mock.patch.object(agent_build.ProgressReporter, "emit", emit_and_interrupt):
+                exit_code, log_path, progress_path, _ = self.run_wrapper(root, scons, entry=agent_build.run)
+        self.assertTrue(interrupted, "the run was never interrupted")
+        return exit_code, log_path, progress_path, self.reap(pid_path), artifact_path
+
+    def test_an_interrupted_build_leaves_no_running_child(self) -> None:
+        with scratch_directory() as root:
+            exit_code, log_path, _, pid, _ = self.run_interrupted(root, ignore_terminate=False, grace_seconds=5.0)
+            alive = process_is_alive(pid)
+            line = self.result_line(log_path)
+        self.assertFalse(alive, "the interrupted build was still running after the wrapper returned")
+        self.assertEqual(exit_code, 130)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
+
+    def test_a_child_that_ignores_the_first_signal_is_still_gone(self) -> None:
+        with scratch_directory() as root:
+            _, log_path, _, pid, _ = self.run_interrupted(root, ignore_terminate=True, grace_seconds=0.5)
+            alive = process_is_alive(pid)
+            line = self.result_line(log_path)
+        self.assertFalse(alive, "a build ignoring SIGTERM outlived the wrapper")
+        self.assertIn("child=killed", line)
+
+    def test_no_artifact_write_follows_the_terminal_record(self) -> None:
+        with scratch_directory() as root:
+            _, _, _, _, artifact_path = self.run_interrupted(root, ignore_terminate=True, grace_seconds=0.5)
+            at_verdict = artifact_path.read_text(encoding="utf-8")
+            time.sleep(0.5)
+            after_verdict = artifact_path.read_text(encoding="utf-8")
+        self.assertEqual(after_verdict, at_verdict, "the build kept writing artifacts after the run was declared over")
+
+    def test_the_verdict_reports_how_the_interrupted_child_ended(self) -> None:
+        with scratch_directory() as root:
+            _, log_path, progress_path, _, _ = self.run_interrupted(root, ignore_terminate=False, grace_seconds=5.0)
+            line = self.result_line(log_path)
+            events = progress_events(progress_path)
+        terminal = [event for event in events if event["event"] == "run_end"]
+        self.assertEqual(len(terminal), 1, "an interrupted run must still emit exactly one run_end")
+        self.assertEqual(terminal[0]["status"], "interrupted")
+        self.assertEqual(terminal[0]["child_disposition"], "terminated")
+        self.assertEqual(terminal[0]["child_exit_code"], -signal.SIGTERM)
+        self.assertIn("child=terminated", line)
+
+    def test_a_completed_build_reports_a_child_that_exited_on_its_own(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            _, log_path, progress_path, _ = self.run_wrapper(root, scons, binary_path=binary_path)
+            line = self.result_line(log_path)
+            terminal = [event for event in progress_events(progress_path) if event["event"] == "run_end"]
+        self.assertIn("child=exited", line)
+        self.assertEqual(terminal[0]["child_disposition"], "exited")
+        self.assertEqual(terminal[0]["child_exit_code"], 0)
+
+    def test_a_run_that_never_started_a_child_reports_none(self) -> None:
+        with scratch_directory() as root:
+            scons = fake_scons(root, exit_code=0, lines=[])
+            _, log_path, _, _ = self.run_wrapper(
+                root,
+                scons,
+                extra_argv=["--compiler-cache", "ccache"],
+                which=lambda executable: None,
+            )
+            line = self.result_line(log_path)
+        self.assertIn("child=none", line)
 
 
 def run_end_for(records: list[dict[str, Any]], invocation_id: str) -> dict[str, Any] | None:
