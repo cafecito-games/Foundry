@@ -1476,8 +1476,27 @@ class BuildTargetSelectionTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assertIn("there is no test runner to run", self.parse_error(argv))
 
+    def test_a_testless_target_names_every_setting_a_test_build_needs(self) -> None:
+        template = self.parse_error(["--target", "template_release", "--test"])
+        editor = self.parse_error(["--scons-arg", "tests=no", "--test"])
+        # A template defaults the Foundry Script front-end off, and SCons refuses tests=yes without
+        # it, so advice that names only tests=yes leads into a configuration error.
+        self.assertIn("--scons-arg tests=yes --scons-arg foundry_script_frontend=yes", template)
+        self.assertIn("add --scons-arg tests=yes", editor)
+        self.assertNotIn("foundry_script_frontend", editor)
+
     def test_a_testless_target_accepts_a_test_run_once_tests_are_enabled(self) -> None:
-        args = agent_build.parse_args(["--target", "template_release", "--scons-arg", "tests=yes", "--test"])
+        args = agent_build.parse_args(
+            [
+                "--target",
+                "template_release",
+                "--scons-arg",
+                "tests=yes",
+                "--scons-arg",
+                "foundry_script_frontend=yes",
+                "--test",
+            ]
+        )
         self.assertTrue(args.test)
 
     def test_a_sole_renamed_binary_is_resolved_for_the_selected_target(self) -> None:
