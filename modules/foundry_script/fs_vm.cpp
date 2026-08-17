@@ -1329,6 +1329,13 @@ static const FSFunction *_find_foundry_script_callee(const Callable &p_callable)
 		if (const FSStaticSelfCallable *static_self = FSStaticSelfCallable::get_from_callable(p_callable)) {
 			return static_self->get_target_function();
 		}
+		// A bound or unbound callable is a wrapper around the callable that actually runs, and the
+		// wrapper is what binding reports. The base comparator is that inner callable, which is the
+		// one whose parameters the arguments were checked against.
+		const Callable *base_callable = p_callable.get_base_comparator();
+		if (base_callable != nullptr && base_callable != &p_callable) {
+			return _find_foundry_script_callee(*base_callable);
+		}
 		return nullptr;
 	}
 	return _find_foundry_script_callee(p_callable.get_object(), p_callable.get_method());

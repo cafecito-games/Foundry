@@ -8,5 +8,5 @@ func test() -> void:
 	var callback: Callable = take
 	var unbound := callback.unbind(1)
 	unbound.call(1, "dropped")
-	unbound.call("not an int", "dropped")
+	unbound.call([1], "dropped")
 	print("unreachable")

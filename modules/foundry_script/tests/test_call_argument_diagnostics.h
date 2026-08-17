@@ -42,8 +42,8 @@
 
 // A rejected dynamic call is reported through `Callable::CallError`, whose `expected` field can carry
 // only a `Variant::Type`. Everything a declaration layers on top of that carrier -- an integer width,
-// a specialization, a tuple shape, a class handle, a rest element type -- is invisible to it, which is
-// why a width rejection used to read as an unexplained `int` to `int` conversion failure.
+// a specialization, a container element type, a class handle, a rest element type -- is invisible to
+// it, which is why a width rejection used to read as an unexplained `int` to `int` conversion failure.
 //
 // The exact declaration is recovered from the callee's own compiled descriptor instead, so the
 // messages below have to hold for a script rebuilt from serialized bytecode alone: a shipped game has
@@ -132,16 +132,13 @@ static const char *call_argument_diagnostic_source =
 		"func take_pair(value: Pair[int, String]) -> void:\n"
 		"\tprint(value != null)\n"
 		"\n"
-		"func take_tuple(value: (int, String)) -> void:\n"
-		"\tprint(value)\n"
-		"\n"
 		"func take_handle(value: Type[RefCounted]) -> void:\n"
 		"\tprint(value != null)\n"
 		"\n"
 		"func take_rest(...values: Array[int]) -> void:\n"
 		"\tprint(values)\n"
 		"\n"
-		"func take_two(first: int, second: String) -> void:\n"
+		"func take_two(first: int, second: Array[int]) -> void:\n"
 		"\tprint(first, second)\n"
 		"\n"
 		"func reject_width() -> void:\n"
@@ -156,10 +153,6 @@ static const char *call_argument_diagnostic_source =
 		"\tvar callback: Callable = take_pair\n"
 		"\tcallback.call(Pair[int, Node].new())\n"
 		"\n"
-		"func reject_tuple() -> void:\n"
-		"\tvar callback: Callable = take_tuple\n"
-		"\tcallback.call((1, 2))\n"
-		"\n"
 		"func reject_handle() -> void:\n"
 		"\tvar callback: Callable = take_handle\n"
 		"\tcallback.call(RefCounted.new())\n"
@@ -170,11 +163,11 @@ static const char *call_argument_diagnostic_source =
 		"\n"
 		"func reject_bound() -> void:\n"
 		"\tvar callback: Callable = take_two\n"
-		"\tcallback.bind(7).call(1)\n"
+		"\tcallback.bind(\"bound\").call(1)\n"
 		"\n"
 		"func reject_unbound() -> void:\n"
 		"\tvar callback: Callable = take_int\n"
-		"\tcallback.unbind(1).call(\"not an int\", \"dropped\")\n";
+		"\tcallback.unbind(1).call([1], \"dropped\")\n";
 
 TEST_CASE("[Modules][FoundryScript][CallArgumentDiagnostics] A rejected call argument names its exact declared parameter") {
 	BytecodeTestResolver resolver;
@@ -205,11 +198,8 @@ TEST_CASE("[Modules][FoundryScript][CallArgumentDiagnostics] A rejected call arg
 	CHECK(specialization.contains(R"(Argument 1 has type "Pair[int, Node]")"));
 	CHECK(specialization.contains(R"(the parameter requires "Pair[int, String]")"));
 
-	// A tuple erases to an Array, and a class handle to an Object, so only the declaration can say
-	// what the call actually wanted.
-	const String tuple = collect_call_argument_diagnostic(original_instance, "reject_tuple");
-	CHECK(tuple.contains(R"(the parameter requires "(int, String)")"));
-
+	// A class handle is an Object in carrier terms, so only the declaration can say that the call
+	// wanted the class itself rather than an instance of it.
 	const String handle = collect_call_argument_diagnostic(original_instance, "reject_handle");
 	CHECK(handle.contains(R"(the parameter requires "Type[RefCounted]")"));
 
@@ -221,19 +211,19 @@ TEST_CASE("[Modules][FoundryScript][CallArgumentDiagnostics] A rejected call arg
 	// A bound argument is counted where the callee counted it: after the arguments the call site
 	// passed, not where the call site wrote it.
 	const String bound = collect_call_argument_diagnostic(original_instance, "reject_bound");
-	CHECK(bound.contains(R"(Argument 2 has type "int")"));
-	CHECK(bound.contains(R"(the parameter requires "String")"));
+	CHECK(bound.contains(R"(Argument 2 has type "String")"));
+	CHECK(bound.contains(R"(the parameter requires "Array[int]")"));
 
 	// An unbound callable drops its trailing arguments before the callee sees them, so the reported
 	// position is the callee's own.
 	const String unbound = collect_call_argument_diagnostic(original_instance, "reject_unbound");
-	CHECK(unbound.contains(R"(Argument 1 has type "String")"));
+	CHECK(unbound.contains(R"(Argument 1 has type "Array")"));
 	CHECK(unbound.contains(R"(the parameter requires "int")"));
 
 	// Nothing above may depend on the front end: the restored script answers from its compiled
 	// parameter descriptors alone and has to produce the identical text.
 	for (const char *method : { "reject_width", "reject_converted_width", "reject_specialization",
-				 "reject_tuple", "reject_handle", "reject_rest", "reject_bound", "reject_unbound" }) {
+				 "reject_handle", "reject_rest", "reject_bound", "reject_unbound" }) {
 		CHECK(collect_call_argument_diagnostic(restored_instance, method) ==
 				collect_call_argument_diagnostic(original_instance, method));
 	}

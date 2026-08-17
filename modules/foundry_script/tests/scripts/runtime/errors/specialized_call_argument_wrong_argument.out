@@ -1,4 +1,4 @@
 FS_TEST_RUNTIME_ERROR
 took true
 took true
->> SCRIPT ERROR at runtime/errors/specialized_call_argument_wrong_argument.fs:16 on test(): Invalid type in function 'RefCounted::take (Callable)'. The Object-derived class of argument 1 (RefCounted (Pair)) is not a subclass of the expected argument class.
+>> SCRIPT ERROR at runtime/errors/specialized_call_argument_wrong_argument.fs:16 on test(): Invalid type in function 'RefCounted::take (Callable)'. Argument 1 has type "Pair[int, Node]", but the parameter requires "Pair[int, String]".
