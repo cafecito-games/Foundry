@@ -2682,10 +2682,14 @@ const FSDataType *FoundryScript::find_member_data_type(const StringName &p_membe
 	return member != nullptr ? &member->data_type : nullptr;
 }
 
-// A Foundry Script class is named by the identifier it was declared with, which is the name the
-// analyzer and the source both use. An inner or file-local class has no global name, so consulting one
-// would leak the engine instance base instead.
+// A global class is named by its registered global name, which carries any namespace qualification and
+// so keeps two classes that share a declaration identifier apart. An inner or file-local class has no
+// global name and is named by the identifier it was declared with, which is the name the analyzer and
+// the source both use; consulting the global name alone would leak the engine instance base instead.
 String FoundryScript::get_diagnostic_class_name() const {
+	if (global_name != StringName()) {
+		return String(global_name);
+	}
 	if (local_name != StringName()) {
 		return String(local_name);
 	}
