@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 19: Invalid argument for "take()" function: argument 1 should be "Storage[String]" but is "C".
