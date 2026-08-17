@@ -427,8 +427,15 @@ int FSBenchmarkRunner::run_cli(const String &p_source_dir, const String &p_outpu
 		}
 	}
 
+	// Sweep the corpus while the workloads are the only live scripts, then restore the language.
+	// `run_cli` returns into the test entry point, which still has the project's `post_compile`
+	// build stage ahead of it, and a script-backed build task provider resolves globals such as
+	// `foundry` through this language. Leaving it torn down would fail that stage's analysis:
+	// the provider bootstrap only initializes the language lazily when the class globals are
+	// missing, and `finish()` leaves those in place while removing the `foundry` named global.
 	FSLanguage::get_singleton()->clear_global_annotations();
 	FSLanguage::get_singleton()->finish();
+	FSLanguage::get_singleton()->init();
 
 	return ok && wrote_output && profile_ok && wrote_profile ? EXIT_SUCCESS : EXIT_FAILURE;
 }
