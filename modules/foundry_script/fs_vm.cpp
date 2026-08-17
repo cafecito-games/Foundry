@@ -1313,9 +1313,13 @@ static const FSFunction *_find_foundry_script_callee(Object *p_object, const Str
 		script = Ref<FoundryScript>(Object::cast_to<FoundryScript>(p_object));
 	}
 	while (script.is_valid()) {
-		HashMap<StringName, FSFunction *>::ConstIterator found = script->get_member_functions().find(p_method);
-		if (found) {
-			return found->value;
+		// Dispatch skips a script that failed to reload, falling through to a valid base, so the lookup
+		// has to skip it too or it would name a parameter of an implementation that never ran.
+		if (script->is_valid()) {
+			HashMap<StringName, FSFunction *>::ConstIterator found = script->get_member_functions().find(p_method);
+			if (found) {
+				return found->value;
+			}
 		}
 		script = script->get_base();
 	}

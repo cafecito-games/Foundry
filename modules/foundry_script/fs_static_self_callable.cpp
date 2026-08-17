@@ -63,9 +63,13 @@ const FSFunction *FSStaticSelfCallable::get_target_function() const {
 	// Lookup starts at the target class and walks its bases, which is the selection `call()` makes.
 	Ref<FoundryScript> script = resolve_target();
 	while (script.is_valid()) {
-		HashMap<StringName, FSFunction *>::ConstIterator found = script->get_member_functions().find(method);
-		if (found) {
-			return found->value;
+		// A script that failed to reload keeps its old functions but is skipped by dispatch, so the
+		// selection has to skip it too.
+		if (script->is_valid()) {
+			HashMap<StringName, FSFunction *>::ConstIterator found = script->get_member_functions().find(method);
+			if (found) {
+				return found->value;
+			}
 		}
 		script = script->get_base();
 	}
