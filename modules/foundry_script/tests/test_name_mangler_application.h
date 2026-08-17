@@ -1206,6 +1206,83 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Mangles around tuple declarat
 	CHECK(script->get_member_functions().has(SNAME("tuple_marker_method")));
 }
 
+TEST_CASE("[FoundryScript][NameManglerApplication] Rewrites a tuple member's shape with its slot type") {
+	// A tuple member's slot type erases to a bare Array, so the shape recorded beside it is the only
+	// place an identity from the declaration survives. Leaving it unrewritten would make a reflective
+	// write reject a value the mangled class itself produces.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"\n"
+			"trait TupleShapeTraitMarker:\n"
+			"\tfunc tuple_shape_marker_method() -> int:\n"
+			"\t\treturn 1\n"
+			"\n"
+			"class TupleShapeConformerMarker extends RefCounted:\n"
+			"\tuses TupleShapeTraitMarker\n"
+			"\n"
+			"var tuple_shape_single_marker: TupleShapeTraitMarker = null\n"
+			"var tuple_shape_pair_marker: (int, TupleShapeTraitMarker)? = null\n"
+			"\n"
+			"func tuple_shape_build_marker() -> Variant:\n"
+			"\treturn (1, TupleShapeConformerMarker.new())\n");
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+
+	REQUIRE(script->debug_get_member_indices().has(SNAME("tuple_shape_pair_marker")));
+	const StringName declared_trait = script->debug_get_member_indices()[SNAME("tuple_shape_pair_marker")]
+											  .tuple_slot_shape.container_element_types[1]
+											  .script_trait;
+	REQUIRE(declared_trait != StringName());
+	// The identity has to actually move, or every assertion below would hold vacuously.
+	REQUIRE(analysis.rename_map.has(SNAME("TupleShapeTraitMarker")));
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(input.scripts, analysis.rename_map, diagnostics), OK);
+	REQUIRE(diagnostics.is_empty());
+
+	{
+		const StringName pair_name = analysis.rename_map.has(SNAME("tuple_shape_pair_marker"))
+				? analysis.rename_map[SNAME("tuple_shape_pair_marker")]
+				: SNAME("tuple_shape_pair_marker");
+		const StringName single_name = analysis.rename_map.has(SNAME("tuple_shape_single_marker"))
+				? analysis.rename_map[SNAME("tuple_shape_single_marker")]
+				: SNAME("tuple_shape_single_marker");
+		REQUIRE(script->debug_get_member_indices().has(pair_name));
+		REQUIRE(script->debug_get_member_indices().has(single_name));
+		// The element identity moves exactly as the scalar member's slot type does.
+		const StringName mangled_trait = script->debug_get_member_indices()[pair_name]
+												 .tuple_slot_shape.container_element_types[1]
+												 .script_trait;
+		CHECK(mangled_trait != declared_trait);
+		CHECK(mangled_trait == script->debug_get_member_indices()[single_name].data_type.script_trait);
+
+		// The mangled class still accepts through reflection what it produces itself.
+		Callable::CallError call_error;
+		const Variant instance = script->_new(nullptr, 0, call_error);
+		REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+		Object *object = instance.get_validated_object();
+		REQUIRE(object != nullptr);
+		const StringName build_name = analysis.rename_map.has(SNAME("tuple_shape_build_marker"))
+				? analysis.rename_map[SNAME("tuple_shape_build_marker")]
+				: SNAME("tuple_shape_build_marker");
+		const Variant built = object->callp(build_name, nullptr, 0, call_error);
+		REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+		bool write_valid = false;
+		object->set(pair_name, built, &write_valid);
+		CHECK(write_valid);
+	}
+
+	transaction.rollback();
+	REQUIRE(script->debug_get_member_indices().has(SNAME("tuple_shape_pair_marker")));
+	CHECK(script->debug_get_member_indices()[SNAME("tuple_shape_pair_marker")]
+					.tuple_slot_shape.container_element_types[1]
+					.script_trait == declared_trait);
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Mangles around tagged unions and keeps them running") {
 	// A tagged-union payload is positional at runtime, so payload field names never reach the
 	// compiled surface and are not rename candidates. A payload case is inlined at its construction
