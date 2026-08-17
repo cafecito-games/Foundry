@@ -560,6 +560,119 @@ TEST_CASE("[FoundryCLIParser] Test fixture generators record paths") {
 	CHECK_EQ(format_fixtures.invocation.command_args, make_args({ "modules/foundry_script/tests/scripts/format" }));
 }
 
+TEST_CASE("[FoundryCLIParser] Test benchmark records the corpus directory and both output paths") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+			"modules/foundry_script/tests/benchmarks/_baseline",
+			"--output",
+			"bench.json",
+			"--profile",
+			"--profile-output",
+			"profile.json",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_BENCHMARK);
+	CHECK_EQ(result.invocation.command_args, make_args({ "modules/foundry_script/tests/benchmarks/_baseline" }));
+	CHECK_EQ(result.invocation.benchmark_output, "bench.json");
+	CHECK(result.invocation.benchmark_profile);
+	CHECK_EQ(result.invocation.benchmark_profile_output, "profile.json");
+}
+
+TEST_CASE("[FoundryCLIParser] Test benchmark defaults the corpus directory") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_BENCHMARK);
+	CHECK_EQ(result.invocation.command_args, make_args({ "modules/foundry_script/tests/benchmarks" }));
+	CHECK(result.invocation.benchmark_output.is_empty());
+	CHECK_FALSE(result.invocation.benchmark_profile);
+	CHECK(result.invocation.benchmark_profile_output.is_empty());
+}
+
+TEST_CASE("[FoundryCLIParser] Test benchmark profile output implies the profile pass") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+			"--profile-output=profile.json",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.invocation.benchmark_profile);
+	CHECK_EQ(result.invocation.benchmark_profile_output, "profile.json");
+}
+
+TEST_CASE("[FoundryCLIParser] Test benchmark keeps an equals sign inside an inline artifact path") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+			"--output=/tmp/run=1/bench.json",
+			"--profile-output=/tmp/run=1/profile.json",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.benchmark_output, "/tmp/run=1/bench.json");
+	CHECK_EQ(result.invocation.benchmark_profile_output, "/tmp/run=1/profile.json");
+}
+
+TEST_CASE("[FoundryCLIParser] Test benchmark rejects a second corpus directory") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+			"first",
+			"second",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK_EQ(result.error, "test benchmark accepts at most one corpus directory.");
+}
+
+TEST_CASE("[FoundryCLIParser] Test benchmark rejects an unknown option") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"benchmark",
+			"--bogus",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK_EQ(result.error, "Unknown option for test benchmark: --bogus.");
+}
+
+TEST_CASE("[FoundryCLIParser] Removed benchmark flags report the test benchmark replacement") {
+	auto expect_removed = [](const std::initializer_list<String> &p_input, const String &p_flag) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(p_input));
+		CHECK_FALSE(result.ok);
+		CHECK_EQ(result.error, vformat("`%s` has been removed. Use `foundry test benchmark`.", p_flag));
+		// The removal must not degrade into legacy engine argument parsing, which is
+		// how the retired scanner used to receive these flags.
+		CHECK(result.global_args.is_empty());
+		CHECK_EQ(result.invocation.kind, Kind::NONE);
+	};
+
+	expect_removed({ "foundry", "--foundry_script-benchmark", "corpus" }, "--foundry_script-benchmark");
+	expect_removed({ "foundry", "--foundry_script-benchmark-output", "bench.json" }, "--foundry_script-benchmark-output");
+	expect_removed({ "foundry", "--foundry_script-benchmark-profile" }, "--foundry_script-benchmark-profile");
+	expect_removed({ "foundry", "--foundry_script-benchmark-profile-output", "p.json" }, "--foundry_script-benchmark-profile-output");
+}
+
+TEST_CASE("[FoundryCLIParser] Removed benchmark flags are rejected in test run passthrough position") {
+	// `test run` forwards unknown tokens to doctest, so without an explicit removal
+	// clause the retired flags would keep reaching a raw argv scanner behind its back.
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--foundry_script-benchmark",
+			"corpus",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK_EQ(result.error, "`--foundry_script-benchmark` has been removed. Use `foundry test benchmark`.");
+}
+
 TEST_CASE("[FoundryCLIParser] Removed lsp serve reports the tooling serve replacement") {
 	const String expected_error = "`foundry lsp serve` has been removed. Use `foundry tooling serve --project <dir> --lsp-port <port> --dap-port <port>`.";
 

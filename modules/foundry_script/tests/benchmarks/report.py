@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Render and compare FoundryScript benchmark JSON (see README.md).
+"""Render and compare Foundry Script benchmark JSON (see README.md).
 
-The runner (`--foundry_script-benchmark <dir>`) emits a flat JSON object mapping
+The runner (`foundry test benchmark [dir]`) emits a flat JSON object mapping
 ``"foundry_script:<case>/<variant>"`` to the measured microseconds, for example::
 
     {

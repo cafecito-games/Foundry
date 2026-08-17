@@ -108,6 +108,12 @@ static bool require_value(CLIParseState &r_state, const String &p_option, String
 	return true;
 }
 
+// Value of an inline `--option=value` token. Everything after the *first* separator is
+// the value, so a filesystem path containing an equals sign survives intact.
+static String inline_option_value(const String &p_arg) {
+	return p_arg.substr(p_arg.find_char('=') + 1);
+}
+
 static void append_trust(PackedStringArray &r_args, bool p_trusted) {
 	if (p_trusted && !has_arg(r_args, "--foundry-build-trusted")) {
 		append(r_args, "--foundry-build-trusted");
@@ -765,6 +771,67 @@ static void parse_test_generate_format_fixtures(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+static void parse_test_benchmark(CLIParseState &r_state) {
+	set_command_path(r_state.result, "test", "benchmark");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_BENCHMARK;
+	String corpus_dir;
+	bool has_corpus_dir = false;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--output" || arg.begins_with("--output=")) {
+			if (arg == "--output") {
+				if (!require_value(r_state, arg, r_state.result.invocation.benchmark_output)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.benchmark_output = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--profile") {
+			r_state.result.invocation.benchmark_profile = true;
+			r_state.index++;
+		} else if (arg == "--profile-output" || arg.begins_with("--profile-output=")) {
+			if (arg == "--profile-output") {
+				if (!require_value(r_state, arg, r_state.result.invocation.benchmark_profile_output)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.benchmark_profile_output = inline_option_value(arg);
+				r_state.index++;
+			}
+			// A sidecar path is meaningless without the pass that fills it.
+			r_state.result.invocation.benchmark_profile = true;
+		} else if (arg.begins_with("-")) {
+			fail(r_state.result, "Unknown option for test benchmark: " + arg + ".");
+			return;
+		} else if (has_corpus_dir) {
+			fail(r_state.result, "test benchmark accepts at most one corpus directory.");
+			return;
+		} else {
+			corpus_dir = arg;
+			has_corpus_dir = true;
+			r_state.index++;
+		}
+	}
+
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	append(r_state.result.invocation.command_args,
+			has_corpus_dir ? corpus_dir : String("modules/foundry_script/tests/benchmarks"));
+	finalize_global_args(r_state);
+}
+
 // Parses a `--shard` value of the form `i/n`. Both sides must be plain decimal integers
 // and `i` has to fall inside `[1, n]`. Anything else is a hard error at the CLI boundary:
 // there is no fallback to an unsharded run, so a typo can never silently drop tests.
@@ -909,6 +976,8 @@ static void parse_test(CLIParseState &r_state) {
 		parse_test_generate_fixtures(r_state);
 	} else if (command == "generate-format-fixtures") {
 		parse_test_generate_format_fixtures(r_state);
+	} else if (command == "benchmark") {
+		parse_test_benchmark(r_state);
 	} else {
 		fail(r_state.result, "Unknown test command: " + command + ".");
 	}
@@ -1388,6 +1457,10 @@ static bool is_legacy_workflow_flag(const String &p_arg, String &r_replacement) 
 	}
 	if (p_arg == "--foundry_script-migrate" || p_arg.begins_with("--foundry_script-migrate-")) {
 		r_replacement = "`foundry script migrate`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-benchmark" || p_arg.begins_with("--foundry_script-benchmark-")) {
+		r_replacement = "`foundry test benchmark`";
 		return true;
 	}
 	if (p_arg == "--foundry_script-generate-tests") {

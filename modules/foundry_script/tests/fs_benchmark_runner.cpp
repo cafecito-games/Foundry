@@ -40,13 +40,11 @@
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 #include "core/os/os.h"
-#include "core/templates/list.h"
 #include "core/variant/array.h"
 #include "core/variant/callable.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 
-#include <cstdio>
 #include <cstdlib>
 
 namespace FSTests {
@@ -360,56 +358,16 @@ bool FSBenchmarkRunner::run_all(HashMap<String, double> &r_results) const {
 	return all_ok;
 }
 
-void FSBenchmarkRunner::handle_cmdline() {
-	List<String> args = OS::get_singleton()->get_cmdline_args();
-	String dir;
-	String output_path;
-	String profile_output_path;
-	bool benchmark_requested = false;
-	bool profile_requested = false;
-	bool malformed = false;
-	for (List<String>::Element *E = args.front(); E; E = E->next()) {
-		const String &arg = E->get();
-		// A flag's value must exist and must not itself be another option.
-		const bool has_value = E->next() && !E->next()->get().begins_with("--");
-		if (arg == "--foundry_script-benchmark") {
-			benchmark_requested = true;
-			if (has_value) {
-				dir = E->next()->get();
-			} else {
-				malformed = true;
-			}
-		} else if (arg == "--foundry_script-benchmark-output") {
-			benchmark_requested = true;
-			if (has_value) {
-				output_path = E->next()->get();
-			} else {
-				malformed = true;
-			}
-		} else if (arg == "--foundry_script-benchmark-profile") {
-			// Boolean opt-in for the separate profiling pass; takes no value.
-			profile_requested = true;
-		} else if (arg == "--foundry_script-benchmark-profile-output") {
-			profile_requested = true;
-			if (has_value) {
-				profile_output_path = E->next()->get();
-			} else {
-				malformed = true;
-			}
-		}
-	}
-	if (!benchmark_requested && !profile_requested) {
-		return; // Flag not present; normal startup continues.
-	}
-	if (malformed || dir.is_empty()) {
-		ERR_PRINT("--foundry_script-benchmark requires a directory argument: "
-				  "--foundry_script-benchmark <dir> [--foundry_script-benchmark-output <file>] "
-				  "[--foundry_script-benchmark-profile [--foundry_script-benchmark-profile-output <file>]]");
-		fflush(nullptr);
-		std::_Exit(2);
-	}
+int FSBenchmarkRunner::run_cli(const String &p_source_dir, const String &p_output_path,
+		bool p_profile, const String &p_profile_output_path) {
+	// The corpus is compiled and run through the script language, which the test harness
+	// does not initialize on its own. The matching `finish()` below is mandatory, not
+	// hygiene: a workload with a static variable leaves a script self-reference in its
+	// compiled static-variable opcodes, and only the finish() sweep breaks that cycle.
+	// Without it the language is deleted with live scripts still on its intrusive lists.
+	FSLanguage::get_singleton()->init();
 
-	FSBenchmarkRunner runner(dir);
+	FSBenchmarkRunner runner(p_source_dir);
 	HashMap<String, double> results;
 	const bool ok = runner.run_all(results);
 
@@ -421,61 +379,58 @@ void FSBenchmarkRunner::handle_cmdline() {
 	}
 	const String json = JSON::stringify(json_map, "\t", true, true);
 
-	// The parseable result channel is the `--foundry_script-benchmark-output` file: it
-	// contains nothing but the JSON map. Stdout cannot be a pure-JSON channel
-	// because the engine has already printed its startup header there by the time
-	// this runs, so a bare stdout dump is only a human-readable convenience.
+	// The parseable result channel is the `--output` file: it contains nothing but the
+	// JSON map. Stdout cannot be a pure-JSON channel because the engine has already
+	// printed its startup header there by the time this runs, so a bare stdout dump is
+	// only a human-readable convenience.
 	bool wrote_output = true;
-	if (output_path.is_empty()) {
-		print_line("foundry_script-benchmark: no --foundry_script-benchmark-output given; "
-				   "printing results to stdout (pass an output file for a pure-JSON artifact).");
+	if (p_output_path.is_empty()) {
+		print_line("foundry test benchmark: no --output given; "
+				   "printing results to stdout (pass --output for a pure-JSON artifact).");
 		print_line(json);
 	} else {
-		Ref<FileAccess> file = FileAccess::open(output_path, FileAccess::WRITE);
+		Ref<FileAccess> file = FileAccess::open(p_output_path, FileAccess::WRITE);
 		if (file.is_null()) {
-			ERR_PRINT("Could not open benchmark output file: " + output_path);
+			ERR_PRINT("Could not open benchmark output file: " + p_output_path);
 			wrote_output = false;
 		} else {
 			file->store_string(json);
 			file->close();
-			print_line(vformat("foundry_script-benchmark: wrote %d variant(s) to %s.", results.size(), output_path));
+			print_line(vformat("foundry test benchmark: wrote %d variant(s) to %s.", results.size(), p_output_path));
 		}
 	}
 
-	// Optional second pass: re-run each workload under the FoundryScript function
+	// Optional second pass: re-run each workload under the Foundry Script function
 	// profiler and write per-function self/total time + call counts to a sidecar
 	// JSON keyed by "<case>/<variant>". Kept separate from the timing run above so
 	// the profiler's per-call bookkeeping never perturbs the measured numbers.
 	bool profile_ok = true;
 	bool wrote_profile = true;
-	if (profile_requested) {
+	if (p_profile) {
 		Dictionary profile;
 		profile_ok = runner.profile_all(profile);
 		const String profile_json = JSON::stringify(profile, "\t", false, true);
-		if (profile_output_path.is_empty()) {
-			print_line("foundry_script-benchmark: no --foundry_script-benchmark-profile-output given; "
-					   "printing profile to stdout (pass an output file for a pure-JSON artifact).");
+		if (p_profile_output_path.is_empty()) {
+			print_line("foundry test benchmark: no --profile-output given; "
+					   "printing profile to stdout (pass --profile-output for a pure-JSON artifact).");
 			print_line(profile_json);
 		} else {
-			Ref<FileAccess> profile_file = FileAccess::open(profile_output_path, FileAccess::WRITE);
+			Ref<FileAccess> profile_file = FileAccess::open(p_profile_output_path, FileAccess::WRITE);
 			if (profile_file.is_null()) {
-				ERR_PRINT("Could not open benchmark profile output file: " + profile_output_path);
+				ERR_PRINT("Could not open benchmark profile output file: " + p_profile_output_path);
 				wrote_profile = false;
 			} else {
 				profile_file->store_string(profile_json);
 				profile_file->close();
-				print_line(vformat("foundry_script-benchmark: wrote profile for %d variant(s) to %s.", profile.size(), profile_output_path));
+				print_line(vformat("foundry test benchmark: wrote profile for %d variant(s) to %s.", profile.size(), p_profile_output_path));
 			}
 		}
 	}
 
-	// Terminate immediately rather than returning into editor startup. `_Exit`
-	// is used instead of `exit()` because the engine is only partway through
-	// initialization here: running C++ static destructors on a half-built engine
-	// aborts on some platforms. The benchmark output file is already flushed and
-	// closed above, so nothing is lost.
-	fflush(nullptr);
-	std::_Exit(ok && wrote_output && profile_ok && wrote_profile ? 0 : 1);
+	FSLanguage::get_singleton()->clear_global_annotations();
+	FSLanguage::get_singleton()->finish();
+
+	return ok && wrote_output && profile_ok && wrote_profile ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 } // namespace FSTests

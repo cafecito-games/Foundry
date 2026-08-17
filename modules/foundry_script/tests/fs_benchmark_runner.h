@@ -82,8 +82,14 @@ public:
 	// false if discovery failed, no variant was found, or any variant failed.
 	bool profile_all(Dictionary &r_profile) const;
 
-	// CLI entry: scans for `--foundry_script-benchmark <dir>`, runs, dumps JSON, exits.
-	static void handle_cmdline();
+	// `foundry test benchmark` entry point. Owns the script language lifecycle for the run
+	// (init before compiling the corpus, finish afterwards). Runs the corpus at `p_source_dir`, writing the
+	// timing JSON to `p_output_path` (stdout when empty) and, when `p_profile` is set, the
+	// per-function profile to `p_profile_output_path` (stdout when empty). Returns
+	// EXIT_SUCCESS only when every variant ran and every requested artifact was written.
+	// Not for in-process callers that manage the language themselves; use run_all()/profile_all().
+	static int run_cli(const String &p_source_dir, const String &p_output_path,
+			bool p_profile, const String &p_profile_output_path);
 };
 
 } // namespace FSTests

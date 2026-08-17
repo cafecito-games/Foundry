@@ -58,7 +58,6 @@
 #endif
 
 #ifdef TESTS_ENABLED
-#include "tests/fs_benchmark_runner.h"
 #include "tests/fs_test_runner.h"
 #endif
 
@@ -3699,12 +3698,6 @@ void FSLanguage::init() {
 	}
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #endif // DEBUG_ENABLED
-
-#ifdef TESTS_ENABLED
-	// `--foundry_script-generate-tests` is handled as a `--test` command (see
-	// `register_types.cpp`) so the process shuts down cleanly afterwards.
-	FSTests::FSBenchmarkRunner::handle_cmdline();
-#endif // TESTS_ENABLED
 }
 
 #ifdef TOOLS_ENABLED

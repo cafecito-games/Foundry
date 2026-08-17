@@ -141,6 +141,20 @@ TEST_CASE("[FoundryCLIHelp] Test run help documents the suite filter") {
 	CHECK(text.contains("Test suite name filter pattern"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Test benchmark help documents the corpus directory and the profile pass") {
+	const String noun_text = FoundryCLIHelp::get_noun_help_text("test");
+	CHECK(noun_text.contains("benchmark"));
+	CHECK(noun_text.contains("Run the Foundry Script benchmark corpus."));
+
+	const String text = FoundryCLIHelp::get_command_help_text("test", "benchmark");
+	CHECK(text.contains("[dir]"));
+	CHECK(text.contains("--output"));
+	CHECK(text.contains("--profile"));
+	CHECK(text.contains("--profile-output"));
+	CHECK(text.contains("implies --profile"));
+	CHECK(text.contains("foundry --headless test benchmark modules/foundry_script/tests/benchmarks --output bench.json"));
+}
+
 TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	bool valid = false;
 

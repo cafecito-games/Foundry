@@ -160,6 +160,9 @@
 #include "modules/foundry_script/fs_lint.h"
 #include "modules/foundry_script/tests/fs_test_runner.h"
 #endif // TOOLS_ENABLED
+#ifdef TESTS_ENABLED
+#include "modules/foundry_script/tests/fs_benchmark_runner.h"
+#endif // TESTS_ENABLED
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 /* Static members */
@@ -819,6 +822,7 @@ static void apply_foundry_cli_invocation(
 		case Kind::TEST_RUN:
 		case Kind::TEST_GENERATE_FIXTURES:
 		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
+		case Kind::TEST_BENCHMARK:
 			break;
 		case Kind::TOOLING_SERVE:
 			// One combined host owns both tooling listeners.
@@ -898,7 +902,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 
 	using Kind = FoundryCLIParser::CLIInvocation::Kind;
 	const Kind kind = cli_parse.invocation.kind;
-	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES) {
+	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES && kind != Kind::TEST_BENCHMARK) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
@@ -921,9 +925,16 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (user_data_root.is_empty()) {
 			user_data_root = OS::get_singleton()->get_temp_path();
 		}
-		const String leaf = (cli_parse.invocation.test_shard_total > 1)
-				? vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total)
-				: "user-unsharded";
+		// `test benchmark` gets its own leaf so measuring a corpus alongside a running
+		// suite cannot erase that suite's `user://` tree when this root is recreated clean.
+		String leaf;
+		if (kind == Kind::TEST_BENCHMARK) {
+			leaf = "user-benchmark";
+		} else if (cli_parse.invocation.test_shard_total > 1) {
+			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
+		} else {
+			leaf = "user-unsharded";
+		}
 		user_data_root = user_data_root.simplify_path().path_join(leaf);
 
 		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
@@ -1028,9 +1039,8 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		}
 		FoundryTestProgress::configure_from_invocation(cli_parse.invocation);
 		status = test_main(test_argv.size(), test_argv.ptrw());
-#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	} else if (kind == Kind::TEST_GENERATE_FIXTURES) {
-#ifdef TOOLS_ENABLED
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(TOOLS_ENABLED)
 		const String path = cli_parse.invocation.command_args.is_empty()
 				? String("modules/foundry_script/tests/scripts")
 				: cli_parse.invocation.command_args[0];
@@ -1039,22 +1049,34 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			status = EXIT_FAILURE;
 		}
 #else
-		ERR_PRINT("foundry test generate-fixtures requires an editor build.");
+		ERR_PRINT("foundry test generate-fixtures requires an editor build with the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
-#endif // TOOLS_ENABLED
+#endif
 	} else if (kind == Kind::TEST_GENERATE_FORMAT_FIXTURES) {
-#ifdef TOOLS_ENABLED
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(TOOLS_ENABLED)
 		const String path = cli_parse.invocation.command_args.is_empty()
 				? String("modules/foundry_script/tests/scripts/format")
 				: cli_parse.invocation.command_args[0];
 		FSFormatterCLI::generate_format_tests(path);
 		status = OS::get_singleton()->get_exit_code();
 #else
-		ERR_PRINT("foundry test generate-format-fixtures requires an editor build.");
+		ERR_PRINT("foundry test generate-format-fixtures requires an editor build with the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
-#endif // TOOLS_ENABLED
-	}
+#endif
+	} else if (kind == Kind::TEST_BENCHMARK) {
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		const String corpus = cli_parse.invocation.command_args.is_empty()
+				? String("modules/foundry_script/tests/benchmarks")
+				: cli_parse.invocation.command_args[0];
+		status = FSTests::FSBenchmarkRunner::run_cli(corpus, cli_parse.invocation.benchmark_output,
+				cli_parse.invocation.benchmark_profile, cli_parse.invocation.benchmark_profile_output);
+#else
+		// Reporting success here would let automation accept a missing benchmark
+		// artifact as a completed measurement.
+		ERR_PRINT("foundry test benchmark requires a build with the Foundry Script module enabled.");
+		status = EXIT_FAILURE;
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+	}
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	if (status == EXIT_SUCCESS && project_loaded_for_build_pipeline) {
@@ -1119,7 +1141,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		new_cwd = OS::get_singleton()->get_executable_path().get_base_dir();
 	}
 #else
-		String new_cwd = OS::get_singleton()->get_executable_path().get_base_dir();
+	String new_cwd = OS::get_singleton()->get_executable_path().get_base_dir();
 #endif
 	if (!new_cwd.is_empty()) {
 		OS::get_singleton()->set_cwd(new_cwd);
@@ -2390,7 +2412,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 #if defined(WINDOWS_ENABLED) || defined(LINUXBSD_ENABLED)
 		if (editor || test_rd_support || test_rd_creation) {
 #else
-			if (editor) {
+		if (editor) {
 #endif
 			// Disable Vulkan overlays in editor, they cause various issues.
 			for (const String &layer_disable : layers_to_disable) {
@@ -4145,7 +4167,7 @@ void Main::setup_boot_logo() {
 #if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
 			Ref<Image> splash = editor ? memnew(Image(boot_splash_editor_png)) : memnew(Image(boot_splash_png));
 #else
-				Ref<Image> splash = memnew(Image(boot_splash_png));
+			Ref<Image> splash = memnew(Image(boot_splash_png));
 #endif
 
 			MAIN_PRINT("Main: ClearColor");
@@ -4485,7 +4507,7 @@ int Main::start() {
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	if (!doc_tool_path.is_empty() && fs_docs_path.is_empty()) {
 #else
-		if (!doc_tool_path.is_empty()) {
+	if (!doc_tool_path.is_empty()) {
 #endif
 		// Needed to instance editor-only classes for their default values
 		Engine::get_singleton()->set_editor_hint(true);
