@@ -31,6 +31,7 @@
 #include "fs_analyzer.h"
 
 #include "foundry_script.h"
+#include "fs_trait_utils.h"
 #include "fs_type.h"
 
 #include "core/config/engine.h"
@@ -1560,10 +1561,10 @@ bool FSAnalyzer::specialize_applied_trait_type(FSParser::ClassNode *p_owner, con
 		return true;
 	}
 
-	// `trait_type_argument_substitution()` already composes the forwarding hops of a transitive
+	// `fs_trait_type_argument_bindings()` already composes the forwarding hops of a transitive
 	// application (`uses Reader[int]` where `trait Reader[T] uses Storage[T]`), so the arguments it
 	// reports are expressed in `p_owner`'s frame and only need this level's bindings applied.
-	const HashMap<StringName, FSParser::DataType> applied = trait_type_argument_substitution(p_owner, target);
+	const HashMap<StringName, FSParser::DataType> applied = fs_trait_type_argument_bindings(p_owner, target);
 	for (const FSParser::TypeParameterNode *parameter : target->type_parameters) {
 		if (parameter == nullptr || parameter->identifier == nullptr) {
 			return false;
@@ -2212,7 +2213,7 @@ bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::DataType &p_
 	for (FSParser::DataType current = p_chain_base;
 			current.kind == FSParser::DataType::CLASS && current.class_type != nullptr;
 			current = current.class_type->base_type) {
-		if (!trait_type_argument_substitution(current.class_type, p_trait).is_empty()) {
+		if (!fs_trait_type_argument_bindings(current.class_type, p_trait).is_empty()) {
 			r_binding_ancestor = current.class_type;
 			break;
 		}
@@ -2393,16 +2394,8 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 
 		// The use-site binding of the directly-applied trait's own parameters, used to re-specialize
 		// the bindings its supertraits carry into this class's frame.
-		HashMap<StringName, FSParser::DataType> direct_substitution;
-		if (!trait->type_parameters.is_empty() && !trait_use.resolved_type_arguments.is_empty()) {
-			const int count = MIN(trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
-			for (int i = 0; i < count; i++) {
-				const FSParser::TypeParameterNode *type_parameter = trait->type_parameters[i];
-				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-					direct_substitution.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
-				}
-			}
-		}
+		const HashMap<StringName, FSParser::DataType> direct_substitution =
+				fs_trait_use_type_argument_bindings(trait, trait_use);
 		if (!record_trait_binding(trait, direct_substitution, source)) {
 			return fail();
 		}
@@ -2421,7 +2414,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 			// Re-specialize how `trait` binds this supertrait into the class's frame, then check it
 			// against any binding the supertrait already received through another path.
 			HashMap<StringName, FSParser::DataType> transitive_binding;
-			for (const KeyValue<StringName, FSParser::DataType> &entry : trait_type_argument_substitution(trait, transitive_trait)) {
+			for (const KeyValue<StringName, FSParser::DataType> &entry : fs_trait_type_argument_bindings(trait, transitive_trait)) {
 				transitive_binding.insert(entry.key, FSParser::DataType::substitute(entry.value, direct_substitution));
 			}
 			if (!record_trait_binding(transitive_trait, transitive_binding, source)) {

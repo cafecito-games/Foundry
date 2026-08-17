@@ -452,62 +452,6 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 	return false;
 }
 
-// How `p_class` binds `p_trait`'s type parameters, expressed in `p_class`'s own frame. Empty when
-// `p_class` does not apply the trait, or applies it without type arguments.
-//
-// `FSAnalyzer::trait_type_argument_substitution()` and `fs_compiler.cpp`'s
-// `_trait_type_argument_substitution()` implement the same algorithm for their own layers. This file
-// must not depend on either, so this is a third copy; the three have to stay in agreement, because a
-// divergence between them becomes a disagreement between the analyzer, the compiler and this
-// relation about which type a conformance binds.
-static HashMap<StringName, FSParser::DataType> _trait_type_argument_substitution(
-		const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_trait) {
-	HashMap<StringName, FSParser::DataType> bindings;
-	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
-		return bindings;
-	}
-
-	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
-		const FSParser::ClassNode *used_trait = trait_use.resolved_trait;
-		if (used_trait == nullptr) {
-			continue;
-		}
-		if (used_trait == p_trait || used_trait->fqcn == p_trait->fqcn) {
-			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
-			for (int i = 0; i < count; i++) {
-				const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
-				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
-				}
-			}
-			return bindings;
-		}
-
-		bool reaches_trait = false;
-		for (const FSParser::ClassNode *supertrait : used_trait->resolved_traits) {
-			if (supertrait == p_trait || (supertrait != nullptr && supertrait->fqcn == p_trait->fqcn)) {
-				reaches_trait = true;
-				break;
-			}
-		}
-		if (reaches_trait) {
-			// Compose the intermediate trait's binding of the target with this class's binding of the
-			// intermediate, so `class C: uses Storing[String]` over `trait Storing[T]: uses Keeper[T]`
-			// reports `Keeper`'s parameter as `String` rather than as `T`.
-			HashMap<StringName, FSParser::DataType> inner = _trait_type_argument_substitution(used_trait, p_trait);
-			if (inner.is_empty()) {
-				continue;
-			}
-			const HashMap<StringName, FSParser::DataType> outer = _trait_type_argument_substitution(p_class, used_trait);
-			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
-				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
-			}
-			return bindings;
-		}
-	}
-	return bindings;
-}
-
 static bool _datatype_names_any_type_parameter(const FSParser::DataType &p_type, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return false;
@@ -577,7 +521,7 @@ static bool _project_class_trait_arguments(const FSParser::DataType &p_source,
 		}
 
 		const HashMap<StringName, FSParser::DataType> substitution =
-				_trait_type_argument_substitution(current.class_type, p_trait);
+				fs_trait_type_argument_bindings(current.class_type, p_trait);
 		if (!substitution.is_empty()) {
 			r_arguments.clear();
 			for (const FSParser::TypeParameterNode *type_parameter : p_trait->type_parameters) {

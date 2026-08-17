@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 16: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "stored()" requires the subtype "int" but the supertype "Variant" was provided.
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a variable of type 'String' into a variable of type 'int'.
+>> SCRIPT ERROR at analyzer/features/trait_argument_binding_argument_less_use_first.fs:3 on C.stored(): Trying to assign a value of type "String" to a variable of type "int".
+<null>

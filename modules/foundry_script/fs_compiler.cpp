@@ -4278,42 +4278,6 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 	return OK;
 }
 
-static HashMap<StringName, FSParser::DataType> _trait_type_argument_substitution(const FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait) {
-	HashMap<StringName, FSParser::DataType> bindings;
-	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
-		return bindings;
-	}
-
-	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
-		FSParser::ClassNode *used_trait = trait_use.resolved_trait;
-		if (used_trait == nullptr) {
-			continue;
-		}
-		if (used_trait == p_trait) {
-			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
-			for (int i = 0; i < count; i++) {
-				const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
-				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
-				}
-			}
-			return bindings;
-		}
-		if (used_trait->resolved_traits.has(p_trait)) {
-			HashMap<StringName, FSParser::DataType> inner = _trait_type_argument_substitution(used_trait, p_trait);
-			if (inner.is_empty()) {
-				continue;
-			}
-			const HashMap<StringName, FSParser::DataType> outer = _trait_type_argument_substitution(p_class, used_trait);
-			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
-				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
-			}
-			return bindings;
-		}
-	}
-	return bindings;
-}
-
 // The generic trait a flattened member was declared in, together with the type arguments the
 // implementer supplied for that trait, indexed by the trait's own type-parameter ordinals.
 struct FlattenedTraitArguments {
@@ -4355,7 +4319,7 @@ static HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> _fl
 		if (trait == nullptr || trait->type_parameters.is_empty()) {
 			continue;
 		}
-		const HashMap<StringName, FSParser::DataType> substitutions = _trait_type_argument_substitution(p_class, trait);
+		const HashMap<StringName, FSParser::DataType> substitutions = fs_trait_type_argument_bindings(p_class, trait);
 		if (substitutions.is_empty()) {
 			continue;
 		}
@@ -5823,7 +5787,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 			continue;
 		}
 
-		const HashMap<StringName, FSParser::DataType> substitutions = _trait_type_argument_substitution(p_class, trait);
+		const HashMap<StringName, FSParser::DataType> substitutions = fs_trait_type_argument_bindings(p_class, trait);
 		Vector<FoundryScript::TypeArgumentBinding> trait_bindings;
 		trait_bindings.resize(trait->type_parameters.size());
 		for (int i = 0; i < trait->type_parameters.size(); i++) {
@@ -6636,7 +6600,7 @@ Vector<FSWeakContainerType> FSCompiler::_conformance_trait_type_arguments(Foundr
 		resolved = p_conformance_arguments;
 	} else {
 		const HashMap<StringName, FSParser::DataType> substitution =
-				_trait_type_argument_substitution(p_direct_trait, p_identity_trait);
+				fs_trait_type_argument_bindings(p_direct_trait, p_identity_trait);
 		for (const FSParser::TypeParameterNode *type_parameter : p_identity_trait->type_parameters) {
 			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
 				return Vector<FSWeakContainerType>();
@@ -6840,16 +6804,8 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			// through this map, exactly as `FSAnalyzer::resolve_trait_uses` re-specializes a
 			// transitive trait's binding.
 			FSParser::ClassNode *direct_trait = trait_use.resolved_trait;
-			HashMap<StringName, FSParser::DataType> direct_bindings;
-			const int direct_binding_count = MIN(direct_trait->type_parameters.size(),
-					trait_use.resolved_type_arguments.size());
-			for (int i = 0; i < direct_binding_count; i++) {
-				const FSParser::TypeParameterNode *type_parameter = direct_trait->type_parameters[i];
-				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-					direct_bindings.insert(type_parameter->identifier->name,
-							trait_use.resolved_type_arguments[i]);
-				}
-			}
+			const HashMap<StringName, FSParser::DataType> direct_bindings =
+					fs_trait_use_type_argument_bindings(direct_trait, trait_use);
 
 			for (FSParser::ClassNode *identity_trait : trait_identity_nodes) {
 				const StringName trait_name = fs_trait_identity_name(identity_trait);
