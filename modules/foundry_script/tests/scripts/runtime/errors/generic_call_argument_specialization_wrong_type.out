@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 18: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "identity()" requires the subtype "Box[String]" but the supertype "Variant" was provided.
+>> SCRIPT ERROR at runtime/errors/generic_call_argument_specialization_wrong_type.fs:18 on test(): Cannot pass a value of type "RefCounted (Box)" as argument 1 of "identity()"; expected "Box[String]".

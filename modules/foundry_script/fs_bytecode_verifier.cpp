@@ -423,6 +423,19 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				VERIFY_FAIL_COND(code_ptr[ip + 4] < 0, "negative tuple arity");
 				ip += 5;
 			} break;
+			case FSFunction::OPCODE_VALIDATE_CALL_ARGUMENT: {
+				// The third operand is an address: the constant holding the substituted type descriptor.
+				// The fourth is a global-name index, bounded like every other name operand, and the fifth
+				// is the argument ordinal, which only ever reaches a diagnostic and so needs no table bound
+				// beyond staying non-negative.
+				VERIFY_FAIL_COND(ip + 6 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_ADDR(ip + 3);
+				CHECK_TABLE(ip + 4, global_names_count, "global name");
+				VERIFY_FAIL_COND(code_ptr[ip + 5] < 0, "negative call argument index");
+				ip += 6;
+			} break;
 			case FSFunction::OPCODE_AWAIT:
 			case FSFunction::OPCODE_AWAIT_RESUME:
 			case FSFunction::OPCODE_RETURN: {

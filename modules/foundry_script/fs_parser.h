@@ -876,6 +876,21 @@ public:
 		// these to learn the type each argument flows into. Entries beyond the fixed parameter count
 		// (varargs) are not recorded.
 		Vector<DataType> resolved_parameter_types;
+		// A call-site check the caller performs on one argument before dispatching. A generic function
+		// is compiled once with its method-scope type parameters erased, so a parameter declared as `T`
+		// reaches the callee with no run-time type to check an incoming value against. The caller is the
+		// only frame that knows what the call substituted, so a gradual argument flowing into such a
+		// parameter is validated and converted here, against the substituted type, and the converted
+		// value is what the callee receives.
+		struct GenericArgumentCheck {
+			int argument_index = 0;
+			DataType substituted_type;
+		};
+		// Recorded in ascending argument order by the analyzer, covering fixed parameters and resolved
+		// rest elements alike. A substitution that stays open -- forwarding `inner[U](value)` while `U`
+		// is still a parameter of the enclosing generic frame -- records nothing, because the caller has
+		// no concrete type to check against either.
+		Vector<GenericArgumentCheck> generic_argument_checks;
 #ifdef TOOLS_ENABLED
 		// Surface argument name per call slot, captured at parse time for editor code completion.
 		// Indexed by argument slot: an empty entry for a positional argument and the parameter

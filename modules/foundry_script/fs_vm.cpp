@@ -1441,6 +1441,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
 		&&OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,           \
 		&&OPCODE_ASSIGN_TYPED_TUPLE,                     \
+		&&OPCODE_VALIDATE_CALL_ARGUMENT,                 \
 		&&OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,             \
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,        \
 		&&OPCODE_CAST_TO_BUILTIN,                        \
@@ -3636,6 +3637,48 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				*dst = _canonical_tuple_value(tuple_type, *src, 0);
 
 				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_VALIDATE_CALL_ARGUMENT) {
+				CHECK_SPACE(6);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+				GET_VARIANT_PTR(type_info, 2);
+				// The callee's name only ever reaches an error message, which exists in debug builds alone.
+#ifdef DEBUG_ENABLED
+				const int callee_name_index = _code_ptr[ip + 4];
+				GD_ERR_BREAK(callee_name_index < 0 || callee_name_index >= _global_names_count);
+#endif // DEBUG_ENABLED
+				const int argument_index = _code_ptr[ip + 5];
+
+				// The substituted type is closed by construction -- the compiler emits this only when the
+				// call site resolved every parameter the destination named -- so no receiver arguments are
+				// supplied and no node here can be left unresolved. The descriptor is decoded through the
+				// same reader an `is` test uses, which is what keeps the two descriptions of one type from
+				// drifting apart.
+				FSDataType expected_type;
+				if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, Vector<ProjectedContainerType>(), expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+
+				// The same conversion the callee's own argument binding performs for a concrete parameter,
+				// so a value that would have been converted at a non-generic boundary is converted here and
+				// the callee body observes the converted value.
+				Variant validated;
+				Callable::CallError argument_error;
+				if (unlikely(!_convert_call_argument(*src, expected_type, validated, argument_error, argument_index))) {
+#ifdef DEBUG_ENABLED
+					const StringName callee_name = _global_names_ptr[callee_name_index];
+					err_text = vformat(R"*(Cannot pass a value of type "%s" as argument %d of "%s()"; expected "%s".)*",
+							_get_var_type(src), argument_index + 1, String(callee_name), expected_type.get_source_type_name());
+#endif // DEBUG_ENABLED
+					OPCODE_BREAK;
+				}
+				*dst = validated;
+
+				ip += 6;
 			}
 			DISPATCH_OPCODE;
 
