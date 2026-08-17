@@ -48,6 +48,18 @@ func tuple_element[T: FbrBadge](value: Variant) -> void:
 	print(kept)
 
 
+final class FbrFactory:
+	func read() -> String:
+		return "factory"
+
+
+func handle_element[T: Type[FbrFactory]](value: Variant) -> void:
+	# `ContainerType` records the class-handle layer, so a container element resolved from a
+	# `Type[...]` bound is checked as the handle it is rather than erased.
+	var kept: Array[T] = [value]
+	print(kept.size())
+
+
 class FbrHolder[T: FbrBadge]:
 	# A static frame has no receiver, so the bound is the only thing that can decide the store -- and
 	# resolving it is what makes the store decidable at all.
@@ -75,5 +87,6 @@ func test() -> void:
 	dictionary_value[FbrBadge](untyped_int())
 	dictionary_key[FbrBadge](untyped_int())
 	tuple_element[FbrBadge](untyped_int())
+	handle_element[Type[FbrFactory]](untyped_int())
 	FbrHolder[FbrBadge].static_bare_local(untyped_int())
 	FbrHolder[FbrBadge].new().instance_bare_local(untyped_int())

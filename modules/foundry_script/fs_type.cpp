@@ -102,11 +102,13 @@ bool FSTypeCompatibility::final_class_bound_survives_lowering(const FSParser::Da
 	if (p_wrappers_are_expressible) {
 		return true;
 	}
-	// Off an `FSDataType` position the shape becomes a `ContainerType`, which records neither "or null"
-	// nor the class-handle layer. A resolved bound carrying either would be lowered as a plain instance
-	// of the bound and would reject the handles and nulls the declaration exists for, so the position
-	// keeps its ordinary erasure instead.
-	return !p_resolved_bound.is_nullable && !p_resolved_bound.is_type_handle_annotation && !p_resolved_bound.is_meta_type;
+	// Off an `FSDataType` position the shape becomes a `ContainerType`, which has no field for "or null"
+	// and describes the class itself rather than a handle for it. A resolved bound carrying either
+	// wrapper would be lowered as a plain instance of the bound and would reject the nulls and class
+	// objects the declaration exists for, so the position keeps its ordinary erasure instead. A
+	// `Type[...]` bound is the exception: `ContainerType::is_type_handle` records that layer, so it
+	// survives the crossing and the element is checked as the handle it is.
+	return !p_resolved_bound.is_nullable && !(p_resolved_bound.is_meta_type && !p_resolved_bound.is_type_handle_annotation);
 }
 
 // Whether the runtime slot compiled for the position reached so far still states the bound a

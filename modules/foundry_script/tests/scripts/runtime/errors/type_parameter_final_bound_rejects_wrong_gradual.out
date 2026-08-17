@@ -17,7 +17,11 @@ FS_TEST_RUNTIME_ERROR
 >> ERROR: Condition "!_p->typed_key.validate(key, "set")" is true. Returning: false
 0
 >> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:47 on tuple_element(): Trying to assign a value of type "Array" to a variable of type "(int, FbrBadge)".
->> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:55 on static_bare_local(): Trying to assign a non-object value to a variable of type 'FbrBadge'.
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to set a variable of type 'int' into a TypedArray of type 'Type[RefCounted]'.
+>> ERROR: Condition "!_p->typed.validate(value, "set")" is true.
+1
+>> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:67 on static_bare_local(): Trying to assign a non-object value to a variable of type 'FbrBadge'.
 >> ERROR: Method/function failed. Returning: false
 >>   Attempted to assign a variable of type 'int' into a variable of type 'RefCounted'.
->> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:61 on FbrHolder.instance_bare_local(): Trying to assign a value of type "int" to a variable of type "RefCounted".
+>> SCRIPT ERROR at runtime/errors/type_parameter_final_bound_rejects_wrong_gradual.fs:73 on FbrHolder.instance_bare_local(): Trying to assign a value of type "int" to a variable of type "RefCounted".

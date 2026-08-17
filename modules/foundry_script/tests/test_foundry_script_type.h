@@ -5514,23 +5514,40 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A directly final-class-bo
 		CHECK(FSTypeCompatibility::resolve_final_class_bound(handle_bounded, resolved));
 		CHECK(resolved.is_type_handle_annotation);
 
-		// A `ContainerType` has no field for that layer, so the bound stops being evidence below one and
-		// the position keeps its ordinary erasure.
+		// `ContainerType::is_type_handle` records that layer, so unlike "or null" it survives the crossing
+		// into a container element and the element is still checked as the handle it is.
 		CHECK(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, true));
-		CHECK_FALSE(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, false));
-		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
-				make_array_of(handle_bounded), make_instance_frame_options()));
+		CHECK(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, false));
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
 				handle_bounded, make_instance_frame_options()));
+		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
+				make_array_of(handle_bounded), make_instance_frame_options()));
 
-		// A static frame lowers the declaration to an `FSDataType`, which does record the handle layer at
-		// its own root, so the same bound still decides a bare class-scope destination there.
+		// A static frame lowers the declaration to an `FSDataType`, so the same bound decides a bare
+		// class-scope destination there as well.
 		FSParser::DataType class_handle_bounded = make_class_type_parameter(SNAME("T"));
 		class_handle_bounded.type_parameter_bound.push_back(handle_bound);
 		CHECK_FALSE(FSTypeCompatibility::destination_is_undecidable_type_parameter(
 				class_handle_bounded, make_static_frame_options()));
+	}
+	SUBCASE("nullable bound") {
+		// A `ContainerType` has no field for "or null", so a bound that admits it stops being evidence
+		// below a container even though it decides a bare declaration.
+		FSParser::DataType nullable_bound;
+		nullable_bound.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		nullable_bound.kind = FSParser::DataType::CLASS;
+		nullable_bound.builtin_type = Variant::OBJECT;
+		nullable_bound.class_type = &final_class;
+		nullable_bound.is_nullable = true;
+
+		FSParser::DataType nullable_bounded = make_method_type_parameter(SNAME("W"), 0);
+		nullable_bounded.type_parameter_bound.push_back(nullable_bound);
+		CHECK(FSTypeCompatibility::resolve_final_class_bound(nullable_bounded, resolved));
+		CHECK(resolved.is_nullable);
+		CHECK(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, true));
+		CHECK_FALSE(FSTypeCompatibility::final_class_bound_survives_lowering(resolved, false));
 		CHECK(FSTypeCompatibility::destination_is_undecidable_type_parameter(
-				make_array_of(class_handle_bounded), make_static_frame_options()));
+				make_array_of(nullable_bounded), make_instance_frame_options()));
 	}
 	SUBCASE("unbounded and non-final bounds") {
 		CHECK_FALSE(FSTypeCompatibility::resolve_final_class_bound(make_method_type_parameter(SNAME("W"), 0), resolved));

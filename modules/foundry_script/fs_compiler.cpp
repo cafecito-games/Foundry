@@ -362,7 +362,11 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	if (FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound) &&
 			(!p_preserve_type_parameters ||
 					p_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD)) {
-		return _gdtype_from_datatype(resolved_bound, p_owner, p_handle_metatype, p_preserve_type_parameters);
+		// A bound written `Type[Label]` denotes a class handle even where the parameter is spelled bare,
+		// so the metatype layer has to be handled here even though the caller -- which saw only the bare
+		// parameter -- had no reason to ask for it.
+		const bool handle_metatype = p_handle_metatype || resolved_bound.is_type_handle_annotation;
+		return _gdtype_from_datatype(resolved_bound, p_owner, handle_metatype, p_preserve_type_parameters);
 	}
 
 	FSDataType result;
