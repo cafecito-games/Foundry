@@ -403,4 +403,40 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An upcast generic argume
 	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A substitution landing on a class type parameter records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"class Box[U]:\n"
+			"\tfunc keep(value: Variant) -> U:\n"
+			"\t\treturn identity[U](value)\n",
+			"user://generic_argument_class_parameter.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const FSParser::ClassNode *outer_class = parser.get_tree();
+	REQUIRE(outer_class != nullptr);
+	REQUIRE(outer_class->has_member(SNAME("Box")));
+	const FSParser::ClassNode *box = outer_class->get_member(SNAME("Box")).m_class;
+	REQUIRE(box != nullptr);
+	REQUIRE(box->has_function(SNAME("keep")));
+	const FSParser::FunctionNode *keep = box->get_member(SNAME("keep")).function;
+	REQUIRE(keep != nullptr);
+	REQUIRE(keep->body != nullptr);
+	REQUIRE(!keep->body->statements.is_empty());
+	REQUIRE(keep->body->statements[0]->type == FSParser::Node::RETURN);
+	const FSParser::ReturnNode *return_statement = static_cast<const FSParser::ReturnNode *>(keep->body->statements[0]);
+	REQUIRE(return_statement->return_value != nullptr);
+	REQUIRE(return_statement->return_value->type == FSParser::Node::CALL);
+	const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(return_statement->return_value);
+
+	// The class parameter is resolved by the callee's receiver, not by anything the caller compiled, so
+	// it is as open at this call site as a method-scope parameter is.
+	CHECK(call->generic_argument_checks.is_empty());
+}
+
 } // namespace FSTests

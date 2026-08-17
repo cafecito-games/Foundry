@@ -242,11 +242,20 @@ void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSPars
 	// the callee already checks needs nothing from the caller, and one the substitution leaves open
 	// (`inner[U](value)` forwarding through another generic frame) cannot be checked by the caller
 	// either. Only the pair "erased in the callee, closed at the call site" is this boundary's business.
-	FSTypeCompatibility::Options options;
-	if (!FSTypeCompatibility::destination_is_undecidable_type_parameter(p_declared_type, options)) {
+	//
+	// The two questions differ only in whether a receiver is available, and that difference is the
+	// point. The callee's declared destination is judged with one, so a slot its own frame validates
+	// against its receiver needs nothing from here. The substituted type is judged without one, because
+	// this check carries only the type the call site can state: a substitution that lands on a class
+	// type parameter is resolved by the *callee's* receiver, not by anything the caller compiled, so it
+	// is as open here as a method-scope parameter is.
+	FSTypeCompatibility::Options callee_frame_options;
+	if (!FSTypeCompatibility::destination_is_undecidable_type_parameter(p_declared_type, callee_frame_options)) {
 		return;
 	}
-	if (FSTypeCompatibility::destination_is_undecidable_type_parameter(p_substituted_type, options)) {
+	FSTypeCompatibility::Options call_site_options;
+	call_site_options.receiver_is_available = false;
+	if (FSTypeCompatibility::destination_is_undecidable_type_parameter(p_substituted_type, call_site_options)) {
 		return;
 	}
 
@@ -262,8 +271,9 @@ void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSPars
 	// run-time check: `allows_runtime_narrowing()` is that promise, and an erased destination is the one
 	// place that never keeps it, so an `Object` holding a `Node` would otherwise reach a `T := Resource`
 	// parameter and come back out typed as a `Resource`. An argument the destination provably accepts
-	// needs nothing further, and a narrowing the relation itself refuses -- a declared integer width in
-	// particular -- is governed by the boundary that owns it rather than converted here.
+	// needs nothing further, including one the language converts implicitly: a numeric conversion is a
+	// property of the concrete argument boundary, and moving it here would make one boundary's rule
+	// depend on whether the callee happened to be generic.
 	const FSParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
 	if (argument == nullptr) {
 		return;
