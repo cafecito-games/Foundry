@@ -1,0 +1,11 @@
+FS_TEST_OK
+declared: true
+subclass: true
+supertrait: true
+forwarded: true
+absent evidence: true
+retroactive script: true
+retroactive native: true
+retroactive builtin: true
+null: true
+unspecialized trait return: true

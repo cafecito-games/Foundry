@@ -293,6 +293,23 @@ static String _specialized_value_type_name(Object *p_object) {
 	const FSRuntimeSpecializationEvidence evidence = FSRuntimeSpecializationEvidence::from_instance(p_object);
 	return _specialized_script_type_name(evidence.script.ptr(), evidence.type_arguments);
 }
+
+// Names whatever a rejected value actually is. A scripted instance is named by its script and reified
+// arguments, so a specialization mismatch reads as `Pair[int, Node]` rather than as the bare class. An
+// object without a script instance is named by its engine class, which is the identity a retroactive
+// native conformance is recorded against; a builtin falls back to the generic value naming, since it
+// too can reach a trait through the conformance registry.
+static String _returned_value_type_name(const Variant *p_value) {
+	if (p_value->get_type() == Variant::OBJECT) {
+		Object *object = p_value->get_validated_object();
+		if (object != nullptr) {
+			return object->get_script_instance() != nullptr
+					? _specialized_value_type_name(object)
+					: String(object->get_class_name());
+		}
+	}
+	return _get_var_type(p_value);
+}
 #endif // DEBUG_ENABLED
 
 // A script-typed `is`/`as` whose target is a class handle (`Type[Crate[int]]`). The nominal answer
@@ -5519,67 +5536,37 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 #endif // DEBUG_ENABLED
 						OPCODE_BREAK;
 					}
-				} else if (r->get_type() != Variant::OBJECT && r->get_type() != Variant::NIL) {
-#ifdef DEBUG_ENABLED
-					err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
-							Variant::get_type_name(r->get_type()), FoundryScript::debug_get_script_name(Ref<Script>(base_type)));
-#endif // DEBUG_ENABLED
-					OPCODE_BREAK;
 				} else {
-#ifdef DEBUG_ENABLED
-					bool freed = false;
-					Object *ret_obj = r->get_validated_object_with_check(freed);
+					// A base-script chain walk cannot answer a trait-typed return: a trait never appears in a
+					// class inheritance chain, so membership comes from a declared `uses`, a supertrait, or the
+					// retroactive-conformance registry instead -- and a conformer may be a scriptless native
+					// object or even a builtin value. The shared structural relation already owns every one of
+					// those sources plus the gradual argument comparison a specialized declaration adds, so the
+					// operand is decoded as a value-position type and the relation answers, rather than this
+					// boundary keeping a second, nominal-only rule. A class return reaches the identical chain
+					// walk and the identical specialization question through the same call.
+					FSDataType expected_value_type = expected_handle_type;
+					expected_value_type.is_type_handle = false;
 
-					if (freed) {
-						err_text = "Trying to return a previously freed instance.";
-						OPCODE_BREAK;
+#ifdef DEBUG_ENABLED
+					// The relation reports a freed instance as a plain mismatch, so the more precise
+					// diagnostic is taken first.
+					if (r->get_type() == Variant::OBJECT) {
+						bool freed = false;
+						r->get_validated_object_with_check(freed);
+						if (freed) {
+							err_text = "Trying to return a previously freed instance.";
+							OPCODE_BREAK;
+						}
 					}
-#else
-					Object *ret_obj = r->operator Object *();
 #endif // DEBUG_ENABLED
 
-					if (ret_obj) {
-						ScriptInstance *ret_inst = ret_obj->get_script_instance();
-						if (!ret_inst) {
+					if (!expected_value_type.is_type(*r)) {
 #ifdef DEBUG_ENABLED
-							err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
-									ret_obj->get_class_name(), FoundryScript::debug_get_script_name(Ref<FoundryScript>(base_type)));
+						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
+								_returned_value_type_name(r), _specialized_script_type_name(base_type, expected_type_arguments));
 #endif // DEBUG_ENABLED
-							OPCODE_BREAK;
-						}
-
-						Script *ret_type = ret_obj->get_script_instance()->get_script().ptr();
-						bool valid = false;
-
-						while (ret_type) {
-							if (ret_type == base_type) {
-								valid = true;
-								break;
-							}
-							ret_type = ret_type->get_base_script().ptr();
-						}
-
-						if (!valid) {
-#ifdef DEBUG_ENABLED
-							err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
-									FoundryScript::debug_get_script_name(ret_obj->get_script_instance()->get_script()), FoundryScript::debug_get_script_name(Ref<FoundryScript>(base_type)));
-#endif // DEBUG_ENABLED
-							OPCODE_BREAK;
-						}
-
-						// A specialized return type asks the same invariant question about the returned
-						// value's reified arguments that the member store and the call boundary ask, under
-						// the gradual store rule: only evidence that contradicts the declared specialization
-						// rejects. The emptiness guard keeps a non-generic return free of any of this work.
-						if (!expected_type_arguments.is_empty() &&
-								!FSDataType::specialization_matches(expected_type_arguments, Ref<Script>(base_type),
-										FSRuntimeSpecializationEvidence::from_instance(ret_obj), false)) {
-#ifdef DEBUG_ENABLED
-							err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
-									_specialized_value_type_name(ret_obj), _specialized_script_type_name(base_type, expected_type_arguments));
-#endif // DEBUG_ENABLED
-							OPCODE_BREAK;
-						}
+						OPCODE_BREAK;
 					}
 				}
 				retvalue = *r;
