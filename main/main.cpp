@@ -162,6 +162,9 @@
 #endif // TOOLS_ENABLED
 #ifdef TESTS_ENABLED
 #include "modules/foundry_script/tests/fs_benchmark_runner.h"
+#ifdef TOOLS_ENABLED
+#include "modules/foundry_script/tests/fs_fixture_cli.h"
+#endif // TOOLS_ENABLED
 #endif // TESTS_ENABLED
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
@@ -827,6 +830,7 @@ static void apply_foundry_cli_invocation(
 		case Kind::TEST_GENERATE_FIXTURES:
 		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
 		case Kind::TEST_BENCHMARK:
+		case Kind::TEST_FIXTURES:
 			break;
 		case Kind::TOOLING_SERVE:
 			// One combined host owns both tooling listeners.
@@ -906,7 +910,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 
 	using Kind = FoundryCLIParser::CLIInvocation::Kind;
 	const Kind kind = cli_parse.invocation.kind;
-	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES && kind != Kind::TEST_BENCHMARK) {
+	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES && kind != Kind::TEST_BENCHMARK && kind != Kind::TEST_FIXTURES) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
@@ -934,6 +938,11 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		String leaf;
 		if (kind == Kind::TEST_BENCHMARK) {
 			leaf = "user-benchmark";
+		} else if (kind == Kind::TEST_FIXTURES) {
+			// A scoped fixture run is meant to be started while a suite, or another scoped run,
+			// is already running, and this root is recreated clean. The leaf is therefore
+			// per-process: a shared one would erase a concurrent run's `user://` tree.
+			leaf = vformat("user-fixtures-%d", OS::get_singleton()->get_process_id());
 		} else if (cli_parse.invocation.test_shard_total > 1) {
 			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
 		} else {
@@ -1065,6 +1074,39 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		status = OS::get_singleton()->get_exit_code();
 #else
 		ERR_PRINT("foundry test generate-format-fixtures requires an editor build with the Foundry Script module enabled.");
+		status = EXIT_FAILURE;
+#endif
+	} else if (kind == Kind::TEST_FIXTURES) {
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(TOOLS_ENABLED) && defined(TESTS_ENABLED)
+		FSTests::FSFixtureCLI::Options options;
+		options.corpus_dir = cli_parse.invocation.fixtures_dir;
+		for (int i = 0; i < cli_parse.invocation.command_args.size(); i++) {
+			options.patterns.push_back(cli_parse.invocation.command_args[i]);
+		}
+		options.output_path = cli_parse.invocation.fixtures_output;
+		options.print_filenames = cli_parse.invocation.print_filenames;
+		options.binary_tokens = cli_parse.invocation.fixtures_binary_tokens;
+		if (cli_parse.invocation.fixtures_pass == "text") {
+			options.passes = FSTests::FSFixtureCLI::PASS_TEXT;
+		} else if (cli_parse.invocation.fixtures_pass == "bytecode") {
+			options.passes = FSTests::FSFixtureCLI::PASS_BYTECODE;
+		}
+		status = FSTests::FSFixtureCLI::run_cli(options);
+
+		// The per-process `user://` leaf is nobody else's to reuse, so this run removes its
+		// own rather than leaving one directory behind per invocation. A report written under
+		// that root is the artifact the run was asked to produce, so it keeps the root instead.
+		const String fixtures_user_root = OS::get_singleton()->get_user_data_root_override();
+		const bool fixtures_report_inside_user_root =
+				FSTests::FSFixtureCLI::report_path_is_inside_root(options.output_path, fixtures_user_root);
+		if (!fixtures_report_inside_user_root && !fixtures_user_root.is_empty() && DirAccess::exists(fixtures_user_root)) {
+			Ref<DirAccess> fixtures_user_dir = DirAccess::open(fixtures_user_root);
+			if (fixtures_user_dir.is_valid() && fixtures_user_dir->erase_contents_recursive() == OK) {
+				DirAccess::remove_absolute(fixtures_user_root);
+			}
+		}
+#else
+		ERR_PRINT("foundry test fixtures requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
 #endif
 	} else if (kind == Kind::TEST_BENCHMARK) {

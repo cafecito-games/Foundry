@@ -155,6 +155,14 @@ TEST_CASE("[FoundryCLIHelp] Test benchmark help documents the corpus directory a
 	CHECK(text.contains("foundry --headless test benchmark modules/foundry_script/tests/benchmarks --output bench.json"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Test fixtures help documents pattern scoping and the report") {
+	const String text = FoundryCLIHelp::get_command_help_text("test", "fixtures");
+	CHECK(text.contains("patterns"));
+	CHECK(text.contains("--pass"));
+	CHECK(text.contains("--output"));
+	CHECK(text.contains("foundry --headless test fixtures trait_argument_binding"));
+}
+
 TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	bool valid = false;
 

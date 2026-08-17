@@ -619,6 +619,71 @@ TEST_CASE("[FoundryCLIParser] Test benchmark keeps an equals sign inside an inli
 	CHECK_EQ(result.invocation.benchmark_profile_output, "/tmp/run=1/profile.json");
 }
 
+TEST_CASE("[FoundryCLIParser] Test fixtures records patterns, corpus, and report options") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"fixtures",
+			"trait_argument_binding",
+			"*await*",
+			"--dir",
+			"modules/foundry_script/tests/scripts/runtime",
+			"--pass",
+			"text",
+			"--use-binary-tokens",
+			"--output",
+			"fixtures.json",
+			"--print-filenames",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_FIXTURES);
+	CHECK_EQ(result.invocation.command_args, make_args({ "trait_argument_binding", "*await*" }));
+	CHECK_EQ(result.invocation.fixtures_dir, "modules/foundry_script/tests/scripts/runtime");
+	CHECK_EQ(result.invocation.fixtures_pass, "text");
+	CHECK(result.invocation.fixtures_binary_tokens);
+	CHECK_EQ(result.invocation.fixtures_output, "fixtures.json");
+	CHECK(result.invocation.print_filenames);
+}
+
+TEST_CASE("[FoundryCLIParser] Test fixtures defaults the corpus directory and runs every pass") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"fixtures",
+			"await_chain",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.fixtures_dir, "modules/foundry_script/tests/scripts");
+	CHECK(result.invocation.fixtures_pass.is_empty());
+	CHECK_FALSE(result.invocation.fixtures_binary_tokens);
+	CHECK(result.invocation.fixtures_output.is_empty());
+}
+
+TEST_CASE("[FoundryCLIParser] Test fixtures rejects an unknown pass selector") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"fixtures",
+			"--pass",
+			"interpreted",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--pass"));
+}
+
+TEST_CASE("[FoundryCLIParser] Test fixtures keeps an equals sign inside an inline report path") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"fixtures",
+			"--output=/tmp/run=1/fixtures.json",
+			"--dir=/tmp/run=1/scripts",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.fixtures_output, "/tmp/run=1/fixtures.json");
+	CHECK_EQ(result.invocation.fixtures_dir, "/tmp/run=1/scripts");
+}
+
 TEST_CASE("[FoundryCLIParser] Test run keeps an equals sign inside an inline progress file path") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",

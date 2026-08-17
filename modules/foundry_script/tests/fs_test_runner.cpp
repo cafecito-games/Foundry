@@ -369,6 +369,31 @@ static String strip_warnings(const String &p_expected) {
 }
 #endif
 
+FSTestRunner::FixtureOutcome FSTestRunner::execute_fixture(FSTest &p_test) const {
+	FixtureOutcome outcome;
+	outcome.path = p_test.get_source_relative_filepath();
+	if (p_test.is_using_compiled_bytecode()) {
+		outcome.pass = "bytecode";
+	} else if (p_test.get_tokenizer_mode() == FSTest::TOKENIZER_BUFFER) {
+		outcome.pass = "binary-tokens";
+	} else {
+		outcome.pass = "text";
+	}
+
+	const FSTest::TestResult result = p_test.run_test();
+	outcome.passed = result.passed;
+	outcome.status = FSTest::get_status_token(result.status);
+	outcome.output = result.output;
+
+	String expected = FileAccess::get_file_as_string(p_test.get_output_file());
+#ifndef DEBUG_ENABLED
+	expected = strip_warnings(expected);
+#endif
+	outcome.expected = expected;
+
+	return outcome;
+}
+
 int FSTestRunner::run_tests() {
 	if (!make_tests()) {
 		FAIL("An error occurred while making the tests.");
@@ -386,22 +411,41 @@ int FSTestRunner::run_tests() {
 		if (print_filenames) {
 			print_line(test.get_source_relative_filepath());
 		}
-		FSTest::TestResult result = test.run_test();
+		const FixtureOutcome outcome = execute_fixture(test);
 
-		String expected = FileAccess::get_file_as_string(test.get_output_file());
-#ifndef DEBUG_ENABLED
-		expected = strip_warnings(expected);
-#endif
 		INFO(test.get_source_file());
-		if (!result.passed) {
-			INFO(expected);
+		if (!outcome.passed) {
+			INFO(outcome.expected);
 			failed++;
 		}
 
-		CHECK_MESSAGE(result.passed, (result.passed ? String() : result.output));
+		CHECK_MESSAGE(outcome.passed, (outcome.passed ? String() : outcome.output));
 	}
 
 	return failed;
+}
+
+Vector<FSTestRunner::FixtureOutcome> FSTestRunner::run_tests_collecting(bool &r_setup_ok) {
+	Vector<FixtureOutcome> outcomes;
+	r_setup_ok = false;
+
+	if (!make_tests()) {
+		return outcomes;
+	}
+	if (!generate_class_index()) {
+		return outcomes;
+	}
+	r_setup_ok = true;
+
+	for (int i = 0; i < tests.size(); i++) {
+		FSTest test = tests[i];
+		if (print_filenames) {
+			print_line(test.get_source_relative_filepath());
+		}
+		outcomes.push_back(execute_fixture(test));
+	}
+
+	return outcomes;
 }
 
 bool FSTestRunner::generate_outputs() {
@@ -495,7 +539,10 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 				// reproduces them, so the repeated compiled-bytecode pass skips them. The skip is
 				// pass-order independent: whichever corpus pass runs the fixture first consumes
 				// the once-only diagnostics, so exactly one non-skipping pass can ever match.
-				if (compiled_bytecode && directives.has("#once-per-process")) {
+				const bool once_per_process_consumed = compiled_bytecode && directives.has("#once-per-process") &&
+						(once_per_process_diagnostics_consumed ||
+								fixtures_already_run.has(current_dir.path_join(next).trim_prefix(corpus_root)));
+				if (once_per_process_consumed) {
 					next = dir->get_next();
 					continue;
 				}
@@ -559,7 +606,18 @@ bool FSTestRunner::make_tests() {
 		return false;
 	}
 
-	// Fixture regeneration always walks the whole corpus; only a run is partitioned.
+	// Fixture regeneration always walks the whole corpus; only a run is filtered or
+	// partitioned.
+	if (!is_generating && !fixture_filters.is_empty()) {
+		Vector<FSTest> selected_tests;
+		for (int i = 0; i < tests.size(); i++) {
+			if (fixture_path_matches(tests[i].get_source_relative_filepath(), fixture_filters)) {
+				selected_tests.push_back(tests[i]);
+			}
+		}
+		tests = selected_tests;
+	}
+
 	if (is_generating || shard_total < 2) {
 		return true;
 	}
@@ -593,6 +651,37 @@ bool FSTestRunner::make_tests() {
 	tests = shard_tests;
 
 	return true;
+}
+
+bool FSTestRunner::fixture_path_matches(const String &p_relative_path, const Vector<String> &p_patterns) {
+	if (p_patterns.is_empty()) {
+		return true;
+	}
+	for (const String &pattern : p_patterns) {
+		if (pattern.is_empty()) {
+			continue;
+		}
+		// A pattern that carries no wildcard is a name fragment, which is how fixtures are
+		// referred to in practice ("the `await_chain` fixture"), so it matches anywhere in the
+		// path. A pattern that carries one is taken literally as a glob over the whole path.
+		const bool is_glob = pattern.contains_char('*') || pattern.contains_char('?');
+		if (p_relative_path.matchn(is_glob ? pattern : "*" + pattern + "*")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void FSTestRunner::set_fixture_filters(const Vector<String> &p_patterns) {
+	fixture_filters = p_patterns;
+}
+
+void FSTestRunner::set_once_per_process_diagnostics_consumed(bool p_consumed) {
+	once_per_process_diagnostics_consumed = p_consumed;
+}
+
+void FSTestRunner::set_fixtures_already_run(const HashSet<String> &p_relative_paths) {
+	fixtures_already_run = p_relative_paths;
 }
 
 void FSTestRunner::set_shard(int p_shard_index, int p_shard_total) {
@@ -768,6 +857,24 @@ bool FSTest::check_output(const String &p_output) const {
 #endif
 
 	return got == expected;
+}
+
+String FSTest::get_status_token(FSTest::TestStatus p_status) {
+	switch (p_status) {
+		case FS_TEST_OK:
+			return "ok";
+		case FS_TEST_LOAD_ERROR:
+			return "load_error";
+		case FS_TEST_PARSER_ERROR:
+			return "parser_error";
+		case FS_TEST_ANALYZER_ERROR:
+			return "analyzer_error";
+		case FS_TEST_COMPILER_ERROR:
+			return "compiler_error";
+		case FS_TEST_RUNTIME_ERROR:
+			return "runtime_error";
+	}
+	return "unknown";
 }
 
 String FSTest::get_text_for_status(FSTest::TestStatus p_status) const {

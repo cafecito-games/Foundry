@@ -832,6 +832,80 @@ static void parse_test_benchmark(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+static void parse_test_fixtures(CLIParseState &r_state) {
+	set_command_path(r_state.result, "test", "fixtures");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_FIXTURES;
+	PackedStringArray patterns;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--dir" || arg.begins_with("--dir=")) {
+			if (arg == "--dir") {
+				if (!require_value(r_state, arg, r_state.result.invocation.fixtures_dir)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.fixtures_dir = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--output" || arg.begins_with("--output=")) {
+			if (arg == "--output") {
+				if (!require_value(r_state, arg, r_state.result.invocation.fixtures_output)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.fixtures_output = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--pass" || arg.begins_with("--pass=")) {
+			String pass_value;
+			if (arg == "--pass") {
+				if (!require_value(r_state, arg, pass_value)) {
+					return;
+				}
+			} else {
+				pass_value = inline_option_value(arg);
+				r_state.index++;
+			}
+			if (pass_value != "all" && pass_value != "text" && pass_value != "bytecode") {
+				fail(r_state.result, "test fixtures --pass expects all, text, or bytecode.");
+				return;
+			}
+			r_state.result.invocation.fixtures_pass = pass_value;
+		} else if (arg == "--use-binary-tokens") {
+			r_state.result.invocation.fixtures_binary_tokens = true;
+			r_state.index++;
+		} else if (arg == "--print-filenames") {
+			r_state.result.invocation.print_filenames = true;
+			r_state.index++;
+		} else if (arg.begins_with("-")) {
+			fail(r_state.result, "Unknown option for test fixtures: " + arg + ".");
+			return;
+		} else {
+			append(patterns, arg);
+			r_state.index++;
+		}
+	}
+
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	if (r_state.result.invocation.fixtures_dir.is_empty()) {
+		r_state.result.invocation.fixtures_dir = "modules/foundry_script/tests/scripts";
+	}
+	r_state.result.invocation.command_args = patterns;
+	finalize_global_args(r_state);
+}
+
 // Parses a `--shard` value of the form `i/n`. Both sides must be plain decimal integers
 // and `i` has to fall inside `[1, n]`. Anything else is a hard error at the CLI boundary:
 // there is no fallback to an unsharded run, so a typo can never silently drop tests.
@@ -978,6 +1052,8 @@ static void parse_test(CLIParseState &r_state) {
 		parse_test_generate_format_fixtures(r_state);
 	} else if (command == "benchmark") {
 		parse_test_benchmark(r_state);
+	} else if (command == "fixtures") {
+		parse_test_fixtures(r_state);
 	} else {
 		fail(r_state.result, "Unknown test command: " + command + ".");
 	}

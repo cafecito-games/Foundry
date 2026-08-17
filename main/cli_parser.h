@@ -51,6 +51,7 @@ public:
 			TEST_GENERATE_FIXTURES,
 			TEST_GENERATE_FORMAT_FIXTURES,
 			TEST_BENCHMARK,
+			TEST_FIXTURES,
 			TOOLING_SERVE,
 			DOCS_GENERATE_API,
 			DOCS_GENERATE_ENGINE,
@@ -115,6 +116,15 @@ public:
 		String benchmark_output;
 		bool benchmark_profile = false;
 		String benchmark_profile_output;
+
+		// `test fixtures` selection. The positional patterns land in `command_args`; the
+		// corpus directory is an option so patterns stay unambiguous. An empty
+		// `fixtures_output` prints the report to stdout instead of writing an artifact.
+		String fixtures_dir;
+		String fixtures_output;
+		bool fixtures_binary_tokens = false;
+		// `all` (both corpus passes), `text`, or `bytecode`. Empty means `all`.
+		String fixtures_pass;
 
 		// Empty means "use the tooling host default" (6005 for LSP, 6006 for DAP).
 		// Otherwise a validated decimal port in [0, 65535], where 0 requests an

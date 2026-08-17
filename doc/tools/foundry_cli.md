@@ -80,6 +80,7 @@ foundry --headless script eval 'print(Engine.get_version_info()["string"])'
 foundry test run --project . --case "*FoundryScript*"
 foundry test run --project . --case "*FoundryScript*" --case "*FoundryCLI*"
 foundry test run --project . --suite "*[Modules][FoundryScript][Completion]*"
+foundry test fixtures trait_argument_binding
 foundry test generate-fixtures modules/foundry_script/tests/scripts
 foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format
 foundry tooling serve --project . --lsp-port 6005 --dap-port 6006
@@ -110,6 +111,37 @@ mistyped or mis-targeted scope can never be mistaken for a passing run.
 `--case`, `--suite`, and `--shard` all narrow the run by marking the tests they
 exclude as skipped, so passing the doctest `--no-skip` option alongside any of
 them is rejected instead of quietly widening the run to every registered test.
+
+## Scoping the Foundry Script fixture corpus
+
+The `.fs` fixture corpus executes inside a single doctest case, so `test run
+--case` can only select the corpus as a whole. `foundry test fixtures` addresses
+one fixture instead:
+
+```sh
+foundry --headless test fixtures trait_argument_binding
+foundry --headless test fixtures "runtime/*/await_*.fs" --pass text
+foundry --headless test fixtures await --output fixtures.json
+```
+
+A pattern without a wildcard matches anywhere in a fixture's corpus-relative
+path; a pattern containing `*` or `?` is a glob over that whole path. Patterns
+are repeatable and select the union of their matches, and a pattern that matches
+no fixture fails with a non-zero exit code rather than reporting an empty pass.
+
+The corpus runs in two passes — the plain pass and the compiled-bytecode
+round-trip — mirroring the two doctest cases. `--pass text` or `--pass bytecode`
+runs only one of them. The class index always covers the whole corpus, so a
+scoped run resolves the same global classes a full run does. Traversal order is
+preserved, but a scoped run executes only the fixtures it selected, so a fixture
+that depends on state a sibling left behind is still worth confirming in a full
+corpus run.
+
+The result is a JSON report: run-level `executed`/`passed`/`failed` counts, one
+compact entry per execution under `fixtures`, and a `failures` array carrying the
+produced and expected output of every mismatch. `--output <path>` writes the
+report as a pure-JSON artifact; without it the report goes to stdout, which also
+carries the engine's startup output.
 
 ## Inline script evaluation
 
