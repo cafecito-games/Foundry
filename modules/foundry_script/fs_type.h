@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "fs_conformance_registry.h"
 #include "fs_parser.h"
 
 // The one decision point for what an integer width means when two of them meet.
@@ -186,6 +187,17 @@ public:
 	// The nearest binding on the chain wins, matching the compiler's conformance binding table.
 	static bool project_class_trait_arguments(const FSParser::DataType &p_source,
 			const FSParser::ClassNode *p_trait, Vector<FSParser::DataType> &r_arguments);
+
+	// True only when a retroactive conformance's recorded trait argument and the argument a destination
+	// declares are both confidently identified and name different types. Anything the flattened
+	// recorded form cannot compare with certainty is no evidence, never a conflict.
+	static bool recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
+			const FSParser::DataType &p_expected);
+
+	// The trait arguments a retroactive conformance on `p_source`'s class chain recorded for
+	// `p_trait_name`. The nearest conforming level wins; false when no level recorded any.
+	static bool project_registry_trait_arguments(const FSParser::DataType &p_source,
+			const StringName &p_trait_name, Vector<FSConformanceRegistry::RecordedTypeArgument> &r_arguments);
 
 	// Whether a rest ("...") tail narrows the trailing arguments below Variant. A bare `Array` and an
 	// `Array[Variant]` tail are both gradual and therefore not narrowing.

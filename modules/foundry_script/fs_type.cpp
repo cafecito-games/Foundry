@@ -551,6 +551,124 @@ static bool _project_class_trait_arguments(const FSParser::DataType &p_source,
 	return false;
 }
 
+// Two flattened script identities name the same declaration when any non-empty spelling on one side
+// equals either spelling on the other. A root class without `class_name` has its script path as its
+// fully-qualified name while a global class has both, so a single-string comparison would miss a
+// legitimate match and produce a false rejection.
+static bool _recorded_script_identities_intersect(const FSConformanceRegistry::RecordedTypeArgument &p_left,
+		const FSConformanceRegistry::RecordedTypeArgument &p_right) {
+	const String left_identities[] = { p_left.script_fqcn, p_left.script_global_name };
+	const String right_identities[] = { p_right.script_fqcn, p_right.script_global_name };
+	for (const String &left : left_identities) {
+		if (left.is_empty()) {
+			continue;
+		}
+		for (const String &right : right_identities) {
+			if (!right.is_empty() && left == right) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// True only when the recorded argument and the expected argument are both confidently identified and
+// name different types. Anything the two representations cannot compare with certainty is reported as
+// no evidence, never as a conflict: a false rejection here would break the gradual store rule this
+// whole relation rests on.
+static bool _recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
+		const FSParser::DataType &p_expected) {
+	using RecordedTypeArgument = FSConformanceRegistry::RecordedTypeArgument;
+	if (p_recorded.kind == RecordedTypeArgument::UNKNOWN) {
+		return false;
+	}
+	const RecordedTypeArgument expected = FSConformanceRegistry::reduce_type_argument(p_expected);
+	if (expected.kind == RecordedTypeArgument::UNKNOWN) {
+		return false;
+	}
+	if (p_recorded.kind != expected.kind || p_recorded.is_nullable != expected.is_nullable) {
+		return true;
+	}
+	switch (p_recorded.kind) {
+		case RecordedTypeArgument::BUILTIN:
+			// Width-sensitive: `int` and `long` share the `Variant::INT` carrier and the runtime already
+			// tells them apart. A side that declared no width agrees with both.
+			return p_recorded.builtin_type != expected.builtin_type ||
+					!numeric_types_agree(p_recorded.numeric_type, expected.numeric_type);
+		case RecordedTypeArgument::NATIVE_CLASS:
+			return p_recorded.native_class != expected.native_class;
+		case RecordedTypeArgument::SCRIPT_CLASS:
+			return !_recorded_script_identities_intersect(p_recorded, expected);
+		case RecordedTypeArgument::UNKNOWN:
+			break;
+	}
+	return false;
+}
+
+// True when the recorded vector contradicts the arguments the destination declares. An arity that
+// does not match is an absence of evidence, exactly like an empty vector.
+static bool _recorded_arguments_conflict(const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_recorded,
+		const Vector<FSParser::DataType> &p_expected) {
+	if (p_recorded.size() != p_expected.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_recorded.size(); i++) {
+		if (_recorded_argument_conflicts(p_recorded[i], p_expected[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Reads the trait arguments a *retroactive* conformance recorded for `p_source`'s class chain, the
+// way `_class_has_trait()` reads membership from the same registry. The nearest conforming level
+// wins, including a conformance declared on the native class the chain bottoms out at. Returns false
+// when no level recorded any, which is the no-evidence case a store accepts.
+static bool _project_registry_trait_arguments(const FSParser::DataType &p_source,
+		const StringName &p_trait_name, Vector<FSConformanceRegistry::RecordedTypeArgument> &r_arguments) {
+	r_arguments.clear();
+	if (p_trait_name == StringName()) {
+		return false;
+	}
+
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	const FSParser::ClassNode *current = p_source.class_type;
+	int depth = 0;
+	while (current != nullptr) {
+		if (unlikely(depth++ > Variant::MAX_RECURSION_DEPTH)) {
+			return false;
+		}
+
+		if (registry->get_recorded_trait_arguments(current->fqcn, p_trait_name, r_arguments) ||
+				registry->get_recorded_trait_arguments(String(current->get_global_name()), p_trait_name, r_arguments)) {
+			return true;
+		}
+		if (registry->has_conformance(current->fqcn, p_trait_name) ||
+				registry->has_conformance(current->get_global_name(), p_trait_name)) {
+			// This level conforms but recorded nothing, and a nearer conformance shadows any further
+			// one, so the chain proves nothing rather than answering from a more distant record.
+			return false;
+		}
+
+		if (current->base_type.kind == FSParser::DataType::CLASS) {
+			current = current->base_type.class_type;
+		} else if (current->base_type.kind == FSParser::DataType::SCRIPT && current->base_type.script_type.is_valid()) {
+			return (_path_identifies_script(current->base_type.script_type) &&
+						   registry->get_recorded_trait_arguments(current->base_type.script_path, p_trait_name, r_arguments)) ||
+					registry->get_recorded_trait_arguments(
+							String(current->base_type.script_type->get_global_name()), p_trait_name, r_arguments) ||
+					registry->get_native_recorded_trait_arguments(
+							current->base_type.script_type->get_instance_base_type(), p_trait_name, r_arguments);
+		} else if (current->base_type.kind == FSParser::DataType::NATIVE) {
+			return registry->get_native_recorded_trait_arguments(current->base_type.native_type, p_trait_name, r_arguments);
+		} else {
+			break;
+		}
+	}
+
+	return false;
+}
+
 static FSParser::DataType _type_handle_represented_type(const FSParser::DataType &p_type) {
 	FSParser::DataType result = p_type;
 	result.is_type_handle_annotation = false;
@@ -1124,18 +1242,30 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				// compatible -- that is the gradual rule -- but evidence that contradicts the
 				// destination is rejected here rather than at run time, or not at all.
 				Vector<FSParser::DataType> projected;
-				if (_project_class_trait_arguments(p_source, p_target.class_type, projected) &&
-						projected.size() == p_target.type_arguments.size()) {
-					for (int i = 0; i < projected.size(); i++) {
-						if (!projected[i].is_set() || _datatype_names_any_type_parameter(projected[i])) {
-							// The conformance binds this position to something no value reifies -- an
-							// unbound parameter, or `Self` -- so it proves nothing here.
-							continue;
+				if (_project_class_trait_arguments(p_source, p_target.class_type, projected)) {
+					if (projected.size() == p_target.type_arguments.size()) {
+						for (int i = 0; i < projected.size(); i++) {
+							if (!projected[i].is_set() || _datatype_names_any_type_parameter(projected[i])) {
+								// The conformance binds this position to something no value reifies -- an
+								// unbound parameter, or `Self` -- so it proves nothing here.
+								continue;
+							}
+							if (!_datatype_invariant_equal(projected[i], p_target.type_arguments[i])) {
+								result.compatible = false;
+								break;
+							}
 						}
-						if (!_datatype_invariant_equal(projected[i], p_target.type_arguments[i])) {
-							result.compatible = false;
-							break;
-						}
+					}
+				} else {
+					// No declared `uses` on the chain binds the trait, so the source is conformed
+					// retroactively and the evidence lives in the conformance registry instead. The two
+					// can no longer contradict each other -- a retroactive conformance that disagrees with
+					// a declared binding on the same chain is already an error -- so declared evidence
+					// simply takes precedence and this is consulted only when there is none.
+					Vector<FSConformanceRegistry::RecordedTypeArgument> recorded;
+					if (_project_registry_trait_arguments(p_source, fs_trait_identity_name(p_target.class_type), recorded) &&
+							_recorded_arguments_conflict(recorded, p_target.type_arguments)) {
+						result.compatible = false;
 					}
 				}
 			}
@@ -1170,12 +1300,30 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			const StringName trait_name = fs_trait_identity_name(p_target.class_type);
 			const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 			result.compatible = registry->native_class_conforms(p_source.native_type, trait_name);
+			if (result.compatible && p_target.has_type_arguments()) {
+				// Nominal conformance says the value satisfies the trait, not that it satisfies it at the
+				// arguments the destination declares. The conformance recorded those on its declaration
+				// side; evidence it does not carry stays compatible, evidence that contradicts the
+				// destination is rejected here rather than only at run time.
+				Vector<FSConformanceRegistry::RecordedTypeArgument> recorded;
+				if (registry->get_native_recorded_trait_arguments(p_source.native_type, trait_name, recorded) &&
+						_recorded_arguments_conflict(recorded, p_target.type_arguments)) {
+					result.compatible = false;
+				}
+			}
 			return result;
 		}
 		if (p_source.kind == FSParser::DataType::BUILTIN && !p_source.is_meta_type) {
 			const StringName trait_name = fs_trait_identity_name(p_target.class_type);
 			const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 			result.compatible = registry->builtin_type_conforms(p_source.builtin_type, trait_name);
+			if (result.compatible && p_target.has_type_arguments()) {
+				Vector<FSConformanceRegistry::RecordedTypeArgument> recorded;
+				if (registry->get_builtin_recorded_trait_arguments(p_source.builtin_type, trait_name, recorded) &&
+						_recorded_arguments_conflict(recorded, p_target.type_arguments)) {
+					result.compatible = false;
+				}
+			}
 			return result;
 		}
 		return result;
@@ -1344,6 +1492,16 @@ bool FSTypeCompatibility::names_any_type_parameter(const FSParser::DataType &p_t
 bool FSTypeCompatibility::project_class_trait_arguments(const FSParser::DataType &p_source,
 		const FSParser::ClassNode *p_trait, Vector<FSParser::DataType> &r_arguments) {
 	return _project_class_trait_arguments(p_source, p_trait, r_arguments);
+}
+
+bool FSTypeCompatibility::recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
+		const FSParser::DataType &p_expected) {
+	return _recorded_argument_conflicts(p_recorded, p_expected);
+}
+
+bool FSTypeCompatibility::project_registry_trait_arguments(const FSParser::DataType &p_source,
+		const StringName &p_trait_name, Vector<FSConformanceRegistry::RecordedTypeArgument> &r_arguments) {
+	return _project_registry_trait_arguments(p_source, p_trait_name, r_arguments);
 }
 
 bool FSTypeCompatibility::rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type) {

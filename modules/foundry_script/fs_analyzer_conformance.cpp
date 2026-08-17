@@ -48,6 +48,55 @@ static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
 	return p_class->fqcn.get_file();
 }
 
+// The arguments one conformance supplies for one trait identity in its implied closure, flattened for
+// the registry. The direct trait takes the declaration's own arguments; an implied supertrait takes
+// its binding by the direct trait, re-expressed in the conformance's terms.
+//
+// Mirrors `FSCompiler::_conformance_trait_type_arguments()` position for position: the parse-side
+// record and the runtime record must describe the same conformance identically, or the analyzer and
+// the runtime disagree about what a conformance proved. In particular the whole vector is dropped
+// when any projected position is unset or still a bare type parameter.
+static Vector<FSConformanceRegistry::RecordedTypeArgument> _recorded_conformance_trait_arguments(
+		const FSParser::ClassNode *p_direct_trait,
+		const Vector<FSParser::DataType> &p_conformance_arguments,
+		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
+		const FSParser::ClassNode *p_identity_trait) {
+	Vector<FSConformanceRegistry::RecordedTypeArgument> arguments;
+	if (p_direct_trait == nullptr || p_identity_trait == nullptr || p_identity_trait->type_parameters.is_empty()) {
+		return arguments;
+	}
+
+	Vector<FSParser::DataType> resolved;
+	if (p_identity_trait == p_direct_trait) {
+		if (p_conformance_arguments.size() != p_identity_trait->type_parameters.size()) {
+			return arguments;
+		}
+		resolved = p_conformance_arguments;
+	} else {
+		const HashMap<StringName, FSParser::DataType> substitution =
+				fs_trait_type_argument_bindings(p_direct_trait, p_identity_trait);
+		for (const FSParser::TypeParameterNode *type_parameter : p_identity_trait->type_parameters) {
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				return Vector<FSConformanceRegistry::RecordedTypeArgument>();
+			}
+			const FSParser::DataType *bound = substitution.getptr(type_parameter->identifier->name);
+			if (bound == nullptr) {
+				return Vector<FSConformanceRegistry::RecordedTypeArgument>();
+			}
+			resolved.push_back(FSParser::DataType::substitute(*bound, p_direct_bindings));
+		}
+	}
+
+	arguments.resize(resolved.size());
+	for (int i = 0; i < resolved.size(); i++) {
+		if (!resolved[i].is_set() || resolved[i].is_type_parameter()) {
+			return Vector<FSConformanceRegistry::RecordedTypeArgument>();
+		}
+		arguments.write[i] = FSConformanceRegistry::reduce_type_argument(resolved[i]);
+	}
+	return arguments;
+}
+
 static String _localize_script_path(const String &p_path) {
 	if (ProjectSettings::get_singleton() == nullptr || p_path.is_empty()) {
 		return p_path;
@@ -693,7 +742,11 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			}
 
 			const StringName trait_identity = fs_trait_identity_name(trait);
-			const Vector<StringName> trait_identities = fs_trait_identity_closure(trait);
+			const Vector<FSParser::ClassNode *> trait_identity_nodes = fs_trait_identity_closure_nodes(trait);
+			Vector<StringName> trait_identities;
+			for (const FSParser::ClassNode *identity_node : trait_identity_nodes) {
+				trait_identities.push_back(fs_trait_identity_name(identity_node));
+			}
 			if (trait_identities.is_empty()) {
 				continue;
 			}
@@ -814,13 +867,16 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					entry.witnesses.insert(witness->identifier->name, witness);
 				}
 			}
-			for (const StringName &identity : trait_identities) {
+			for (int identity_index = 0; identity_index < trait_identities.size(); identity_index++) {
+				const StringName &identity = trait_identities[identity_index];
 				const String pair_key = target->fqcn + "\n" + String(identity);
 				const int *existing_conformance = seen_membership_conformances.getptr(pair_key);
 				if (existing_conformance != nullptr && *existing_conformance == conformance_index) {
 					continue;
 				}
 				entry.trait_name = identity;
+				entry.trait_type_arguments = _recorded_conformance_trait_arguments(trait,
+						trait_use.resolved_type_arguments, substitution, trait_identity_nodes[identity_index]);
 				valid_entries.push_back(entry);
 				seen_membership_conformances.insert(pair_key, conformance_index);
 			}
