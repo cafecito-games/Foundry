@@ -822,6 +822,7 @@ static void apply_foundry_cli_invocation(
 		case Kind::TEST_RUN:
 		case Kind::TEST_GENERATE_FIXTURES:
 		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
+		case Kind::TEST_BENCHMARK:
 			break;
 		case Kind::TOOLING_SERVE:
 			// One combined host owns both tooling listeners.
