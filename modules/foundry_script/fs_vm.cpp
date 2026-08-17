@@ -1711,7 +1711,12 @@ bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType
 	const Variant *argument = &p_value;
 	Variant constructed;
 	Variant::construct(p_type.builtin_type, constructed, &argument, 1, r_err);
-	if (unlikely(r_err.error)) {
+	// The conversion answers the carrier question only, so a declared width still has to be asked
+	// afterwards: `Variant::construct()` truncates a float toward zero and hands back whatever
+	// magnitude that leaves, which the destination may be unable to hold. Re-testing the constructed
+	// value in non-converting mode routes that question through the one structural relation, the same
+	// way the dynamic member and proxy writes validate their own converted value.
+	if (unlikely(r_err.error) || !p_type.is_type(constructed, false)) {
 		r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 		r_err.argument = p_argument_index;
 		r_err.expected = p_type.builtin_type;
