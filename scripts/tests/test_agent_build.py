@@ -777,7 +777,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
                 with mock.patch.object(agent_build.shutil, "which", return_value=None):
-                    exit_code = agent_build.main(["--compiler-cache", "ccache"])
+                    exit_code = agent_build.main(["--compiler-cache", "ccache", "--no-progress-file"])
         self.assertEqual(exit_code, 127)
         self.assertEqual(
             stderr.getvalue(),
