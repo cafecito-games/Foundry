@@ -734,6 +734,78 @@ static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const 
 	return true;
 }
 
+// A tuple value's canonical runtime carrier is what `OPCODE_CONSTRUCT_TUPLE` builds: an *untyped*,
+// *read-only* Array. That identity is what gives tuples their value semantics -- no aliasing
+// mutation, content hashing, usability as a Dictionary key -- and exactly one runtime representation
+// stands for a tuple type.
+//
+// This answers whether a value already is one at every tuple-shaped level of the declared shape, so
+// the store can normalize only when it has to. Membership is decided elsewhere, by the shared
+// structural predicate; this pair of helpers never re-tests, never converts, and can never make a
+// value the predicate rejected acceptable.
+//
+// The walk follows the tuple *spine* only. An element whose declared type is not a tuple imposes
+// nothing: a shared-reference element keeps its own mutability, its own identity, and its own element
+// typing, which is the same deliberate shallow rule `OPCODE_CONSTRUCT_TUPLE` documents. A non-Array
+// value imposes nothing either -- that is how a nullable slot's null passes through.
+static bool _is_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value, int p_depth) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return true;
+	}
+	if (p_value.get_type() != Variant::ARRAY) {
+		return true;
+	}
+	// Reached through `VariantInternal` rather than by constructing an `Array`, so the check that runs
+	// on every tuple store does not pay a refcount round trip on the carrier it is only inspecting.
+	const Array *array = VariantInternal::get_array(&p_value);
+	if (!array->is_read_only() || array->is_typed()) {
+		return false;
+	}
+	const int element_count = MIN(array->size(), p_shape.container_element_types.size());
+	for (int i = 0; i < element_count; i++) {
+		const FSDataType &element_type = p_shape.container_element_types[i];
+		if (element_type.kind != FSDataType::TUPLE) {
+			continue;
+		}
+		if (!_is_canonical_tuple_value(element_type, array->get(i), p_depth + 1)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Normalizes an accepted value to the canonical carrier, leaving the source exactly as it was found.
+// The overwhelmingly common source is a value `OPCODE_CONSTRUCT_TUPLE` already built, so the
+// canonicality check is the fast path and nothing is allocated for it.
+//
+// Freezing the source in place is deliberately not an option: `Array::make_read_only()` sets the flag
+// on the shared backing data, so it would make the caller's own Array read-only -- action at a
+// distance on an object the slot does not own. A fresh Array is built instead, so the caller's later
+// writes keep succeeding and simply no longer reach the slot.
+//
+// The fresh carrier is built rather than duplicated because `Array::duplicate()` preserves element
+// typing, and a typed carrier would leave two runtime representations of the same tuple type in
+// circulation.
+static Variant _canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value, int p_depth) {
+	if (p_value.get_type() != Variant::ARRAY || _is_canonical_tuple_value(p_shape, p_value, p_depth)) {
+		return p_value;
+	}
+	const Array *source = VariantInternal::get_array(&p_value);
+	const int element_count = source->size();
+	Array canonical;
+	canonical.resize(element_count);
+	for (int i = 0; i < element_count; i++) {
+		if (i < p_shape.container_element_types.size() &&
+				p_shape.container_element_types[i].kind == FSDataType::TUPLE) {
+			canonical[i] = _canonical_tuple_value(p_shape.container_element_types[i], source->get(i), p_depth + 1);
+		} else {
+			canonical[i] = source->get(i);
+		}
+	}
+	canonical.make_read_only();
+	return canonical;
+}
+
 static bool _container_type_from_type_info(const Variant &p_type_info, Variant::Type p_builtin_type,
 		const StringName &p_native_type, const FrameSelfBinding &p_frame_self, ContainerType &r_type,
 		const Vector<ProjectedContainerType> &p_receiver_arguments = Vector<ProjectedContainerType>(),
@@ -3554,9 +3626,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				// Tuple elements are invariant in both directions, so the test never widens and there is
-				// nothing to convert. Retyping the value would also destroy its read-only-Array identity,
-				// which is what gives a tuple its value semantics.
-				*dst = *src;
+				// nothing to convert: the elements the slot receives are the elements the source had.
+				//
+				// Only the carrier is normalized. The structural test admits any shape-compatible Array,
+				// including a mutable one, so storing the source unchanged would leave the slot holding a
+				// carrier the caller can still write to -- a guarantee that held only at the instant of the
+				// store. `_canonical_tuple_value()` builds the canonical read-only, untyped carrier every
+				// tuple value has, recursively over the tuple spine, without touching the source. An
+				// already-canonical value, which is what `OPCODE_CONSTRUCT_TUPLE` produces and what
+				// virtually every tuple reaching here is, is stored as itself with nothing allocated.
+				*dst = _canonical_tuple_value(tuple_type, *src, 0);
 
 				ip += 5;
 			}
@@ -3953,6 +4032,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// freezing it would mutate a container the caller still owns. Such an element makes the
 				// tuple's content hash unstable exactly like using that container as a Dictionary key
 				// directly does, which is the pre-existing engine contract for reference elements.
+				//
+				// This is one of the two producers of a canonical carrier. The other is
+				// `OPCODE_ASSIGN_TYPED_TUPLE`, which normalizes an accepted value to the same untyped,
+				// read-only Array under the same shallow rule; `_canonical_tuple_value()` is where that
+				// side lives. The two must keep stating the same rule.
 				tuple.make_read_only();
 
 				GET_INSTRUCTION_ARG(dst, argc);
