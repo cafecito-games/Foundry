@@ -29,6 +29,16 @@ class Crate[T]:
 		var kept: T = value
 		print(kept)
 
+	static func literal_element(value: Variant) -> void:
+		# A container literal's element reaches the parameter slot on its own, and a static frame can
+		# decide it no better there than it can decide the whole container.
+		var kept: Array[T] = [value]
+		print(kept)
+
+	static func concrete_literal_element() -> void:
+		var kept: Array[T] = [1]
+		print(kept)
+
 	static func inside_lambda(value: Variant):
 		# A lambda in a static frame has no receiver either, and the capture it would need to check the
 		# slot does not exist there.
@@ -50,5 +60,7 @@ func test():
 	Crate[int].array_local([4])
 	Crate[int].dictionary_local({"a": 5})
 	Crate[int].weak_source(6)
+	Crate[int].literal_element(7)
+	Crate[int].concrete_literal_element()
 	print(Crate[int].inside_lambda(7))
 	print(Crate[int].new().instance_local(8))
