@@ -207,6 +207,11 @@ bool FSSpecializedClassHandle::is_assignable_to_native_type(const StringName &p_
 	return script.is_valid() && (p_native_type == StringName() || ClassDB::is_parent_class(script->get_class_name(), p_native_type));
 }
 
+// Handle equality is exact structural identity: the same specialized script, and every type argument
+// equal recursively, including arity. It is deliberately not the compatibility relation. Gradual
+// compatibility — where an argument whose evidence is absent is accepted rather than refused — is
+// expressed by `is` and by the shared `FSDataType::is_type()` relation. Keeping the two apart is what
+// lets `handle == Crate[int]` prove the handle really carries `int` rather than merely tolerating it.
 bool FSSpecializedClassHandle::_equals(const Variant &p_other) const {
 	Ref<FSSpecializedClassHandle> other = p_other;
 	return other.is_valid() && script == other->script && type_arguments == other->type_arguments;
