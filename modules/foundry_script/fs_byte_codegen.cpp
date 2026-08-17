@@ -255,6 +255,82 @@ static FSDataType _runtime_container_element_type(const FSDataType &p_element_ty
 	return p_element_type.is_nullable ? FSDataType() : p_element_type;
 }
 
+static const Script *_nominal_script_of(const FSDataType &p_type) {
+	return p_type.script_type != nullptr ? p_type.script_type : p_type.script_type_ref.ptr();
+}
+
+// Structural identity of two lowered types: the same kind, the same nominal target, and the same
+// arguments all the way down. This answers only whether two descriptors spell the same type; it is not
+// a membership or specialization relation, so `FSDataType::is_type()` remains the single place where a
+// value's arguments are judged.
+static bool _lowered_types_are_identical(const FSDataType &p_left, const FSDataType &p_right) {
+	if (p_left.kind != p_right.kind ||
+			p_left.is_type_handle != p_right.is_type_handle ||
+			p_left.is_nullable != p_right.is_nullable ||
+			p_left.is_self_type != p_right.is_self_type ||
+			p_left.is_script_trait != p_right.is_script_trait ||
+			p_left.script_trait != p_right.script_trait ||
+			p_left.builtin_type != p_right.builtin_type ||
+			p_left.numeric_type != p_right.numeric_type ||
+			p_left.native_type != p_right.native_type ||
+			_nominal_script_of(p_left) != _nominal_script_of(p_right) ||
+			p_left.type_parameter_name != p_right.type_parameter_name ||
+			p_left.type_parameter_index != p_right.type_parameter_index ||
+			p_left.type_parameter_scope != p_right.type_parameter_scope ||
+			p_left.type_arguments.size() != p_right.type_arguments.size() ||
+			p_left.container_element_types.size() != p_right.container_element_types.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_left.type_arguments.size(); i++) {
+		if (!_lowered_types_are_identical(p_left.type_arguments[i], p_right.type_arguments[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_left.container_element_types.size(); i++) {
+		if (!_lowered_types_are_identical(p_left.container_element_types[i], p_right.container_element_types[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Whether the returned address's own static type already proves the whole declared return contract, so
+// the runtime specialization check would have nothing left to decide. Proof is exactness: the same
+// class or trait, specialized with the same arguments. Anything weaker -- an unspecialized base, a
+// subclass whose arguments are known only through its ancestor bindings, an unresolved projection, a
+// native or otherwise gradual source -- proves the nominal half at most, so the typed opcode is emitted
+// and the shared relation answers from runtime evidence, under the gradual rule in which absent
+// evidence is accepted and only contradicting evidence rejects.
+static bool _static_type_proves_specialized_return(const FSDataType &p_source, const FSDataType &p_expected) {
+	if (p_expected.references_self_type()) {
+		// A `Self` argument denotes whatever the running frame's receiver is, which no lowered static type
+		// can be compared against here. The analyzer already closes the gap this check exists for: a
+		// gradual source is not assignable to a `Self`-carrying return at all, so every source that
+		// reaches such a return was proven against the same `Self` position it is returned into.
+		return true;
+	}
+	if (p_source.is_type_handle) {
+		// A class handle is not an instance of the returned class, so it can never be the value this
+		// check is about; the analyzer rejects such a return statically.
+		return true;
+	}
+	if (p_source.kind != FSDataType::SCRIPT && p_source.kind != FSDataType::FOUNDRY_SCRIPT) {
+		return false;
+	}
+	if (_nominal_script_of(p_source) != _nominal_script_of(p_expected) ||
+			p_source.is_script_trait != p_expected.is_script_trait ||
+			p_source.script_trait != p_expected.script_trait ||
+			p_source.type_arguments.size() != p_expected.type_arguments.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_source.type_arguments.size(); i++) {
+		if (!_lowered_types_are_identical(p_source.type_arguments[i], p_expected.type_arguments[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
 Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_type) const {
 	Dictionary descriptor;
 	descriptor["builtin_type"] = p_type.builtin_type;
@@ -2695,6 +2771,19 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 				append(p_return_value);
 				append(script_idx);
 				append(true);
+			} else if ((function->return_type.kind == FSDataType::SCRIPT || function->return_type.kind == FSDataType::FOUNDRY_SCRIPT) &&
+					!function->return_type.type_arguments.is_empty() &&
+					!_static_type_proves_specialized_return(p_return_value.type, function->return_type)) {
+				// A specialized return type is only satisfied by a value whose reified arguments agree with
+				// it, and a statically typed source can be nominally assignable while carrying contradicting
+				// arguments: an unspecialized `Pair` slot holding a `Pair[int, Node]` is a legal source for a
+				// `Pair[int, String]` return under the gradual rule. Where the source's own type does not
+				// prove the arguments, the declared descriptor travels to the runtime, exactly as an untyped
+				// source's already does.
+				append_opcode(FSFunction::OPCODE_RETURN_TYPED_SCRIPT);
+				append(p_return_value);
+				append(get_container_type_pos(function->return_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+				append(false);
 			} else if (function->return_type.kind == FSDataType::BUILTIN && function->return_type.builtin_type == Variant::ARRAY && function->return_type.has_container_element_type(0)) {
 				// Typed array.
 				const FSDataType element_type = _runtime_container_element_type(function->return_type.get_container_element_type(0));
