@@ -1676,6 +1676,33 @@ against it, and none of them widen `Self` to `Variant`, to the declaring class, 
 target, or to a common base in order to make a call succeed. A static call that reaches an
 implementation without a receiver is reported as an error rather than resolved approximately.
 
+**Parameter positions.** What satisfies a parameter whose type mentions `Self` follows from how exactly
+the call site knows the receiver, and the answer is the same at every nesting depth.
+
+- When the receiver is exact — a call through a class handle, or an instance of a `final` class —
+  `Self` denotes that class, and a parameter mentioning it admits exactly the values that class
+  admits, in every position and in every container. `Derived.take((1, derived))` is an ordinary
+  argument check against `(int, Derived)`.
+- When the receiver is open — an instance typed as the class that declares the member, as an
+  overriding subclass, as a conformance target, or as `self`/`super` — `Self` denotes the runtime
+  leaf, which the call site does not know. A value merely typed as the static class is rejected,
+  because an override may narrow what the call dispatches to. What is admitted instead is the
+  receiver itself: an argument that *is* the receiver is an instance of the leaf whatever the leaf
+  turns out to be. Identity must be provable where the call is written, so the argument is the
+  receiver reference the call is made through (`self` for an unqualified, `self.`, or `super.` call,
+  and the same name for a call qualified by one).
+- Tuple element positions carry that rule inward, positionally and recursively: a parameter typed
+  `(int, Self)` admits a tuple literal whose second element is the receiver, `(int, (String, Self))`
+  admits a literal whose nested second element is, and non-`Self` positions are checked by the
+  ordinary rules. Nullability is unwrapped first, so a `(int, Self)?` parameter also admits `null`.
+- Typed containers and generic type arguments of `Self` — `Array[Self]`, `Dictionary[String, Self]`,
+  `Type[Self]`, `Callable[[Self], Self]`, `Crate[Self]` — require an exact receiver. They are checked
+  as a carrier's declared element type, invariantly, so holding the receiver inside a carrier built
+  against the static class does not make the carrier the leaf's.
+
+Whether a parameter is satisfied never depends on the calling function's own signature or body: the
+same call written in two functions of one class is accepted or rejected alike.
+
 **Deferred execution.** The receiver rule is unaffected by a call and its execution being separated
 in time.
 
