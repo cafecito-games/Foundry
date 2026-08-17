@@ -33,6 +33,8 @@
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
 
+#include "core/config/project_settings.h"
+
 #include "tests/test_macros.h"
 
 // A `match` that provably covers its subject's whole domain leaves no fallthrough, so a
@@ -876,6 +878,43 @@ func describe(value: bool) -> String:
 }
 
 #ifdef DEBUG_ENABLED
+static const FSWarning::Code MATCH_WARNING_CODES[] = {
+	FSWarning::NON_EXHAUSTIVE_MATCH,
+	FSWarning::MATCH_WITHOUT_DEFAULT,
+	FSWarning::OPEN_ENUM_MATCH_WITHOUT_DEFAULT,
+};
+
+// Which match warning a subject produces is a question about the shipped defaults, so the scope pins
+// every match code to its declared default rather than forcing them all on the way fixtures do.
+class MatchWarningDefaultsScope {
+	Variant previous_enable;
+	Variant previous_levels[std_size(MATCH_WARNING_CODES)];
+	bool previous_ignore = false;
+
+public:
+	MatchWarningDefaultsScope() {
+		previous_ignore = FSParser::is_ignoring_warnings();
+		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
+		for (uint32_t i = 0; i < std_size(MATCH_WARNING_CODES); i++) {
+			const String setting = FSWarning::get_setting_path_from_code(MATCH_WARNING_CODES[i]);
+			previous_levels[i] = ProjectSettings::get_singleton()->get_setting(setting, (int)FSWarning::IGNORE);
+			ProjectSettings::get_singleton()->set_setting(setting, FSWarning::get_default_value(MATCH_WARNING_CODES[i]));
+		}
+		FSParser::set_ignoring_warnings(false);
+		FSParser::update_project_settings();
+	}
+
+	~MatchWarningDefaultsScope() {
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
+		for (uint32_t i = 0; i < std_size(MATCH_WARNING_CODES); i++) {
+			ProjectSettings::get_singleton()->set_setting(FSWarning::get_setting_path_from_code(MATCH_WARNING_CODES[i]), previous_levels[i]);
+		}
+		FSParser::set_ignoring_warnings(previous_ignore);
+		FSParser::update_project_settings();
+	}
+};
+
 static Vector<FSWarning> collect_match_warnings(const FSParser &p_parser) {
 	Vector<FSWarning> match_warnings;
 	for (const FSWarning &warning : p_parser.get_warnings()) {
@@ -891,6 +930,7 @@ static Vector<FSWarning> collect_match_warnings(const FSParser &p_parser) {
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A fully covered plain enum warns about its open carrier") {
 	// A `void` function has no missing-return error to surface the live no-match path, so the warning is
 	// the only diagnostic. It names no unhandled values, because none of the declared members is missing.
+	const MatchWarningDefaultsScope warning_defaults;
 	FSParser parser;
 	const String source = R"(
 enum Level:
@@ -917,6 +957,7 @@ func handle(level: Level) -> void:
 }
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A partly covered plain enum names the unhandled members") {
+	const MatchWarningDefaultsScope warning_defaults;
 	FSParser parser;
 	const String source = R"(
 enum Level:
@@ -942,6 +983,7 @@ func handle(level: Level) -> void:
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A closed plain-enum match warns about nothing") {
 	// A full-carrier test admits every value the enum's slot can hold, so the match is not open.
+	const MatchWarningDefaultsScope warning_defaults;
 	FSParser parser;
 	const String source = R"(
 enum Level:
@@ -962,6 +1004,7 @@ func handle(level: Level) -> void:
 }
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A bool subject keeps the shared non-exhaustive warning") {
+	const MatchWarningDefaultsScope warning_defaults;
 	FSParser parser;
 	const String source = R"(
 func handle(flag: bool) -> void:
@@ -980,6 +1023,7 @@ func handle(flag: bool) -> void:
 }
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A tagged union keeps the shared non-exhaustive warning") {
+	const MatchWarningDefaultsScope warning_defaults;
 	FSParser parser;
 	const String source = R"(
 enum Message:
