@@ -503,7 +503,7 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 	}
 
 public:
-	virtual uint32_t add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_type) override;
+	virtual uint32_t add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_slot_type, const FSDataType &p_validation_type) override;
 	virtual uint32_t add_local(const StringName &p_name, const FSDataType &p_type) override;
 	virtual uint32_t add_local_constant(const StringName &p_name, const Variant &p_constant) override;
 	virtual uint32_t add_or_get_constant(const Variant &p_constant) override;

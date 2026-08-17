@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 14: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take()" requires the subtype "(int, String)" but the supertype "Variant" was provided.
+>> SCRIPT ERROR at runtime/errors/tuple_parameter_direct_call_variant_argument.fs:14 on test(): Invalid type in function 'take' in base 'RefCounted (Receiver)'. Argument 1 has type "Array", but the parameter requires "(int, String)".

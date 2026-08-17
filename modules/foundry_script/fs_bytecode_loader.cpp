@@ -1889,6 +1889,10 @@ Error FSBytecodeLoader::_read_member_info(StreamPeerBuffer *p_stream, const Stri
 	if (error != OK) {
 		return error;
 	}
+	error = decode_data_type(p_stream, r_member_info.tuple_slot_shape);
+	if (error != OK) {
+		return error;
+	}
 	error = _read_property_info(p_stream, r_member_info.property_info);
 	if (error != OK) {
 		return error;

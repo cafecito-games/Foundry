@@ -495,6 +495,16 @@ public:
 	~FSDataType() {}
 };
 
+// The canonical runtime carrier of a value accepted into a tuple-shaped slot: an untyped, read-only
+// Array at every tuple level of `p_shape`. A value that already is one is returned as itself, so the
+// overwhelmingly common case -- a value `OPCODE_CONSTRUCT_TUPLE` built -- allocates nothing.
+//
+// Every boundary a value crosses into a tuple slot normalizes through this, not just the in-body
+// store: a parameter, a rest element, and a reflective member write all promise the same read-only,
+// untyped carrier, and a value that kept the caller's mutable Array would break that promise as soon
+// as the caller wrote to it again. Defined beside the store in `fs_vm.cpp`, whose rule it is.
+Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value);
+
 // The exact class handle a static call was made through, delivered to the frame it starts.
 //
 // Static dispatch may select an implementation declared on an ancestor, on a retroactive-conformance

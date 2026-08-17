@@ -368,7 +368,13 @@ String FSDataType::get_source_type_name() const {
 		case SCRIPT:
 		case FOUNDRY_SCRIPT: {
 			if (is_script_trait && script_trait != StringName()) {
-				name = String(script_trait);
+				// A trait identity is `<declaring file>::<declared name>`, and only the declared name is
+				// source spelling. Naming the identity would put the declaring file's absolute path into a
+				// user-facing diagnostic, the same way naming a script by its path rather than its class
+				// would; the namespace segments of a namespaced trait sit after the separator and are kept.
+				const String identity = String(script_trait);
+				const int separator = identity.rfind("::");
+				name = separator >= 0 ? identity.substr(separator + 2) : identity;
 				break;
 			}
 			const Ref<Script> script = script_type_ref.is_valid() ? script_type_ref : Ref<Script>(script_type);

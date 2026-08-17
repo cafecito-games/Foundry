@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
 
 #include "core/variant/numeric_type.h"
@@ -97,6 +98,40 @@ TEST_CASE("[Modules][FoundryScript][DataType] to_string_diagnostic leaves source
 	FSParser::DataType nullable_byte = data_type_numeric_builtin(Variant::UINT, NumericType::UINT8);
 	nullable_byte.is_nullable = true;
 	CHECK_EQ(nullable_byte.to_string_diagnostic(), "uint8?");
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] A script trait is named by its declared name, not its identity") {
+	// A trait identity carries the declaring file so two same-named file-local traits stay distinct
+	// internally. That path is not source spelling, and rendering it would put an absolute build path
+	// into a user-facing runtime diagnostic.
+	FSDataType trait_type;
+	trait_type.kind = FSDataType::FOUNDRY_SCRIPT;
+	trait_type.builtin_type = Variant::OBJECT;
+	trait_type.is_script_trait = true;
+	trait_type.script_trait = StringName("/abs/path/to/holder.fs::Marker");
+	CHECK_EQ(trait_type.get_source_type_name(), "Marker");
+
+	// A namespaced trait keeps its namespace segments, which sit after the separator.
+	trait_type.script_trait = StringName("/abs/path/to/holder.fs::game.ui.Marker");
+	CHECK_EQ(trait_type.get_source_type_name(), "game.ui.Marker");
+
+	// An identity with no declaring-file prefix is already the declared name.
+	trait_type.script_trait = StringName("Marker");
+	CHECK_EQ(trait_type.get_source_type_name(), "Marker");
+
+	// A tuple element renders through the same rule.
+	FSDataType tuple_type;
+	tuple_type.kind = FSDataType::TUPLE;
+	tuple_type.builtin_type = Variant::ARRAY;
+	FSDataType int_element;
+	int_element.kind = FSDataType::BUILTIN;
+	int_element.builtin_type = Variant::INT;
+	// A slot with no recorded width names the carrier's wide spelling, so the declared width is set
+	// here to keep the assertion about the trait element rather than about integer naming.
+	int_element.numeric_type = NumericType::INT32;
+	tuple_type.container_element_types.push_back(int_element);
+	tuple_type.container_element_types.push_back(trait_type);
+	CHECK_EQ(tuple_type.get_source_type_name(), "(int, Marker)");
 }
 
 } // namespace FSTests

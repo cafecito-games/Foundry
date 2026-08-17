@@ -539,6 +539,10 @@ struct FSNameManglerApplication::Transaction::Data {
 		r_info.setter = rename_atomic(r_info.setter);
 		r_info.getter = rename_atomic(r_info.getter);
 		rewrite_data_type(r_info.data_type);
+		// A tuple member's slot type erases to a bare Array, so the shape beside it is the only place a
+		// trait or script identity from the declaration survives; leaving it unrewritten would make a
+		// reflective write reject a value the mangled class accepts.
+		rewrite_data_type(r_info.tuple_slot_shape);
 		rewrite_property_info(r_info.property_info);
 		r_info.property_info.name = String(p_key);
 		rewrite_type_argument_binding(r_info.type_argument_binding);
@@ -1769,6 +1773,9 @@ struct FSNameManglerApplication::Transaction::Data {
 						data_type_contains_name(
 								member.value.type_argument_binding.fixed,
 								p_name,
+								visited_external_scripts) ||
+						data_type_contains_name(
+								member.value.tuple_slot_shape, p_name,
 								visited_external_scripts)) {
 					r_surface = "member type metadata";
 					return true;
@@ -1784,6 +1791,9 @@ struct FSNameManglerApplication::Transaction::Data {
 						data_type_contains_name(
 								member.value.type_argument_binding.fixed,
 								p_name,
+								visited_external_scripts) ||
+						data_type_contains_name(
+								member.value.tuple_slot_shape, p_name,
 								visited_external_scripts)) {
 					r_surface = "static member type metadata";
 					return true;
@@ -3413,6 +3423,9 @@ struct FSNameManglerApplication::Transaction::Data {
 				if (!validate_data_type_closure(member.value.data_type, script,
 							"member type", p_roots, r_diagnostics) ||
 						!validate_data_type_closure(
+								member.value.tuple_slot_shape, script,
+								"member tuple shape", p_roots, r_diagnostics) ||
+						!validate_data_type_closure(
 								member.value.type_argument_binding.fixed, script,
 								"member type binding", p_roots,
 								r_diagnostics) ||
@@ -3427,6 +3440,9 @@ struct FSNameManglerApplication::Transaction::Data {
 				if (!validate_data_type_closure(member.value.data_type, script,
 							"static member type", p_roots, r_diagnostics) ||
 						!validate_data_type_closure(
+								member.value.tuple_slot_shape, script,
+								"static member tuple shape", p_roots, r_diagnostics) ||
+						!validate_data_type_closure(
 								member.value.type_argument_binding.fixed, script,
 								"static member type binding", p_roots,
 								r_diagnostics) ||
@@ -3440,6 +3456,9 @@ struct FSNameManglerApplication::Transaction::Data {
 					snapshot.old_static_variables_indices) {
 				if (!validate_data_type_closure(member.value.data_type, script,
 							"old static member type", p_roots, r_diagnostics) ||
+						!validate_data_type_closure(
+								member.value.tuple_slot_shape, script,
+								"old static member tuple shape", p_roots, r_diagnostics) ||
 						!validate_data_type_closure(
 								member.value.type_argument_binding.fixed, script,
 								"old static member type binding", p_roots,
