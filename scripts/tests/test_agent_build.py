@@ -1349,6 +1349,13 @@ class BinaryPathTests(unittest.TestCase):
     def test_overridden_dev_build_drops_the_dev_marker(self) -> None:
         self.assertEqual(self.binary_name(["--scons-arg", "dev_build=no"]), "foundry.macos.editor.arm64")
 
+    def test_every_false_spelling_scons_accepts_drops_the_dev_marker(self) -> None:
+        for spelling in ("0", "f", "False", "n", "NO", "none", "off"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(
+                    self.binary_name(["--scons-arg", f"dev_build={spelling}"]), "foundry.macos.editor.arm64"
+                )
+
     def test_every_name_altering_setting_combines(self) -> None:
         self.assertEqual(
             self.binary_name(
