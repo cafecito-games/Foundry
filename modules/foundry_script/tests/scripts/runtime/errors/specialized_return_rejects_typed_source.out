@@ -1,0 +1,8 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/specialized_return_rejects_typed_source.fs:28 on reject_conflicting_arguments(): Trying to return value of type "Pair[int, Node]" from a function whose return type is "Pair[int, String]".
+conflicting arguments: true
+>> SCRIPT ERROR at runtime/errors/specialized_return_rejects_typed_source.fs:33 on reject_conflicting_projection(): Trying to return value of type "ConflictingPair" from a function whose return type is "Pair[int, String]".
+conflicting projection: true
+>> SCRIPT ERROR at runtime/errors/specialized_return_rejects_typed_source.fs:38 on reject_conflicting_trait_arguments(): Trying to return value of type "StringHolder" from a function whose return type is "Holder[int]".
+conflicting trait arguments: true
+done
