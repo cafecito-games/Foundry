@@ -8,4 +8,6 @@ FS_TEST_ANALYZER_ERROR
 >> ERROR at line 29: Cannot assign a value of type Variant to variable "kept" with specified type T: an erased type parameter has no run-time type to check the value against.
 >> ERROR at line 35: Cannot have an element of type "Variant" in an array of type "Array[T]": an erased type parameter has no run-time type to check the value against.
 >> ERROR at line 39: Cannot have an element of type "int" in an array of type "Array[T]".
->> ERROR at line 46: Cannot assign a value of type Variant to variable "kept" with specified type T: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 43: Cannot assign a value of type Variant to variable "kept" with specified type (int, T): an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 49: Cannot assign a value of type Variant to variable "kept" with specified type (int, T?): an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 56: Cannot assign a value of type Variant to variable "kept" with specified type T: an erased type parameter has no run-time type to check the value against.
