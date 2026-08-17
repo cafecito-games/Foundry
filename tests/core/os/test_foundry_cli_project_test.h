@@ -1258,6 +1258,46 @@ TEST_CASE("[FoundryCLI][TestBenchmark] Benchmark profile pass writes the sidecar
 	TemporaryNoMainSceneProject::remove_recursive(scratch);
 }
 
+// A workload with a static variable leaves a script self-reference in its compiled
+// static-variable opcodes. Without the runner's language finish() sweep the language is
+// deleted with that script still listed, which aborts the process during teardown.
+TEST_CASE("[FoundryCLI][TestBenchmark] A static-variable workload shuts down cleanly") {
+	const String scratch = benchmark_scratch_root("static-var");
+	const String corpus = scratch.path_join("static_case");
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(corpus), OK);
+	{
+		Ref<FileAccess> config = FileAccess::open(corpus.path_join("case.cfg"), FileAccess::WRITE);
+		REQUIRE(config.is_valid());
+		config->store_string("[case]\niterations=64\nwarmup=1\noverhead_threshold_percent=-1\n");
+	}
+	{
+		Ref<FileAccess> workload = FileAccess::open(corpus.path_join("static_var.fs"), FileAccess::WRITE);
+		REQUIRE(workload.is_valid());
+		workload->store_string(
+				"extends RefCounted\n\n"
+				"static var counter: int = 0\n\n"
+				"func run_benchmark(iterations: int) -> void:\n"
+				"\tfor index in iterations:\n"
+				"\t\tcounter += index\n");
+	}
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back(corpus);
+	arguments.push_back("--output");
+	arguments.push_back(scratch.path_join("bench.json"));
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(FileAccess::exists(scratch.path_join("bench.json")));
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
 TEST_CASE("[FoundryCLI][TestBenchmark] A missing corpus directory fails the run") {
 	const String scratch = benchmark_scratch_root("missing");
 

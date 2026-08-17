@@ -360,6 +360,13 @@ bool FSBenchmarkRunner::run_all(HashMap<String, double> &r_results) const {
 
 int FSBenchmarkRunner::run_cli(const String &p_source_dir, const String &p_output_path,
 		bool p_profile, const String &p_profile_output_path) {
+	// The corpus is compiled and run through the script language, which the test harness
+	// does not initialize on its own. The matching `finish()` below is mandatory, not
+	// hygiene: a workload with a static variable leaves a script self-reference in its
+	// compiled static-variable opcodes, and only the finish() sweep breaks that cycle.
+	// Without it the language is deleted with live scripts still on its intrusive lists.
+	FSLanguage::get_singleton()->init();
+
 	FSBenchmarkRunner runner(p_source_dir);
 	HashMap<String, double> results;
 	const bool ok = runner.run_all(results);
@@ -419,6 +426,9 @@ int FSBenchmarkRunner::run_cli(const String &p_source_dir, const String &p_outpu
 			}
 		}
 	}
+
+	FSLanguage::get_singleton()->clear_global_annotations();
+	FSLanguage::get_singleton()->finish();
 
 	return ok && wrote_output && profile_ok && wrote_profile ? EXIT_SUCCESS : EXIT_FAILURE;
 }

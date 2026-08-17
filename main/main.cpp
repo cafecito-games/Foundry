@@ -1065,9 +1065,6 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 #endif
 	} else if (kind == Kind::TEST_BENCHMARK) {
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-		// The corpus is compiled and run through the script language, which the test
-		// harness does not initialize on its own.
-		FSLanguage::get_singleton()->init();
 		const String corpus = cli_parse.invocation.command_args.is_empty()
 				? String("modules/foundry_script/tests/benchmarks")
 				: cli_parse.invocation.command_args[0];
