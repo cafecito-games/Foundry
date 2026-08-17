@@ -118,6 +118,14 @@ class SubDirectSelf extends DirectSelf:
 	pass
 
 
+# A subclass inherits the implementer's one slot rather than getting one of its own, so a body here
+# that names the constant must report what that slot holds, not this class's own `Self`. A class that
+# flattens a constant in and is then extended cannot be `final`, so the slot is always the bare handle.
+final class FinalSubDirectSelf extends DirectSelf:
+	func read_inherited() -> Variant:
+		return Direct
+
+
 final class FinalDirectSelf:
 	uses DirectSelfAliasing
 
@@ -257,6 +265,15 @@ func test() -> void:
 	print(from_sub_direct_stored is Holder[DirectSelf])
 	print(DirectSelf.new().own_direct() == Holder)
 	print(DirectSelf.new().own_direct() == Holder[DirectSelf])
+	# The inherited slot is the implementer's, so a `final` subclass reading it in a body agrees with the
+	# stored value rather than folding its own `Self` in.
+	var inherited_slot: Variant = FinalSubDirectSelf.Direct
+	print(inherited_slot == Holder)
+	print(FinalSubDirectSelf.new().read_inherited() == Holder)
+	print(FinalSubDirectSelf.new().read_inherited() == Holder[FinalSubDirectSelf])
+	# The name form stays receiver-dependent for that subclass, as for any other.
+	var final_sub_built: Variant = FinalSubDirectSelf.Direct.new()
+	print(final_sub_built is Holder[FinalSubDirectSelf])
 
 	var direct_nested_built: Variant = SubDirectSelf.DirectNested.new()
 	print(direct_nested_built is Holder[Array[SubDirectSelf]])

@@ -1084,20 +1084,20 @@ static bool _baked_shape_references_self(const FSDataType &p_type, int p_depth =
 	return false;
 }
 
-// Whether a constant a function body names is one the compiled class flattens in from an applied
-// trait rather than one it declares itself. Such a declaration belongs to the trait's frame, so a
-// `Self` it writes has to fold by the same rule the flattened member fold uses; otherwise naming the
-// constant inside the trait's own default method body disagrees with reading it off the implementer.
-static bool _constant_flattened_from_trait(const FSParser::ClassNode *p_class, const FSParser::ConstantNode *p_constant) {
+// The class that flattened a constant a function body names in from an applied trait, or `nullptr`
+// when the constant is an ordinary declaration. That class owns the constant's one slot: a subclass
+// inherits the slot rather than getting one of its own, so it is the flattening class -- not whichever
+// class is being compiled -- whose frame a `Self` the trait wrote belongs to.
+static const FSParser::ClassNode *_constant_flattening_class(const FSParser::ClassNode *p_class, const FSParser::ConstantNode *p_constant) {
 	if (p_class == nullptr || p_constant == nullptr || p_constant->identifier == nullptr) {
-		return false;
+		return nullptr;
 	}
 	const StringName name = p_constant->identifier->name;
 	// An explicit declaration anywhere on the inheritance chain shadows a same-named trait member, which
 	// is the rule `_collect_flattened_trait_members()` applies when deciding what is flattened at all.
 	for (const FSParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
 		if (owner->has_member(name)) {
-			return false;
+			return nullptr;
 		}
 	}
 	for (const FSParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
@@ -1107,11 +1107,11 @@ static bool _constant_flattened_from_trait(const FSParser::ClassNode *p_class, c
 			}
 			const FSParser::ClassNode::Member member = trait->get_member(name);
 			if (member.type == FSParser::ClassNode::Member::CONSTANT && member.constant == p_constant) {
-				return true;
+				return owner;
 			}
 		}
 	}
-	return false;
+	return nullptr;
 }
 
 // Whether a declared type, or anything nested in it, writes `Self`. The parser counterpart of
@@ -1525,9 +1525,19 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 							// agrees with the specialization the implementer's own constant pool holds.
 							storage_type = identifier_type;
 						}
+						const FSParser::ClassNode *flattening_class =
+								_constant_flattening_class(codegen.class_node, in->constant_source);
+						if (flattening_class != nullptr && flattening_class != codegen.class_node &&
+								_datatype_references_self(storage_type)) {
+							// The one slot this names lives in a base's constant pool, and a class that flattens a
+							// constant in and is then extended cannot be `final`, so that slot holds the bare
+							// handle. Folding this class's own `Self` here would make a body read report a
+							// specialization the constant itself does not carry.
+							return codegen.add_constant(_resolve_aliased_class_constant(in->reduced_value));
+						}
 						return codegen.add_constant(
 								_resolve_aliased_class_constant(in->reduced_value, storage_type, codegen.script,
-										_constant_flattened_from_trait(codegen.class_node, in->constant_source)));
+										flattening_class == codegen.class_node));
 					}
 
 					// Try class constants.
