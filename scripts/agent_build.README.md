@@ -126,17 +126,64 @@ CCACHE_DIR="$HOME/.cache/foundry-ccache" ccache --show-config
 
 Default log and progress-file names include a stable, safe hash of the resolved worktree path. Override
 them with `--log` and `--progress-file`; use `--no-progress-file` when a persistent JSONL file is not
-useful. Command events and the build summary carry the same invocation ID.
+useful. Every record of one run carries the same invocation ID, which `--invocation-id` lets a caller
+choose in advance.
 
 Use `--progress-format jsonl` when stdout must be machine-readable; human build output moves to stderr.
 The wrapper collects ccache telemetry using a unique per-invocation `CCACHE_STATSLOG`, so concurrent
 worktrees do not race on statistics. Telemetry is best-effort: summaries report explicit status/errors,
 and telemetry never replaces the build result.
 
-Progress records cover wrapper command start, output, heartbeat, completion, and the final
-`build_summary`. They do not provide detailed visibility into every internal SCons or Ninja phase.
-`build_summary` describes the build step only: under `--test` it stays `success` when the build
-succeeded even if the tests then fail.
+Progress records are `run_start`, wrapper command start, output, heartbeat and completion,
+`build_summary`, and `run_end`. They do not provide detailed visibility into every internal SCons or
+Ninja phase. `build_summary` describes the build step only: under `--test` it stays `success` when the
+build succeeded even if the tests then fail.
+
+`run_start` is the first thing the process does, before any tooling check, and it replaces the
+progress file's contents unless `--append-progress` is given, so a stale record from a previous
+invocation can never be read as this one's. It carries `invocation_id`, `argv`, `pid`, `worktree`,
+`backend`, `compiler_cache`, `platform`, `arch`, `jobs`, `jobs_source`, `git_commit`, `log_path`,
+`binary_path`, and `binary_before`.
+
+`run_end` is the last record of every invocation, emitted exactly once alongside the `RESULT:` line
+and with the same `status` and `exit_code`, including when the run aborts during startup and when it
+runs tests. It carries `invocation_id`, `status`, `step`, `exit_code`, `duration_ms`, `binary_path`,
+`binary_after`, and `binary_changed`.
+
+A binary identity block — `binary_before`, `binary_after`, and the `binary_after` on `build_summary` —
+is `{"path": ..., "size": ..., "mtime_ns": ...}`, or `null` when the file is absent. `binary_changed`
+is `binary_after != binary_before`. It is not a failure when it is `false`: a no-op incremental build
+legitimately leaves the binary untouched, and the field exists so a caller can decide.
+
+### Waiting for a build from another process
+
+`--invocation-id` makes a run addressable, and the wrapper announces the id and its paths on its first
+line of output:
+
+```
+[agent-build] invocation: <id> progress: <path|none> log: <path>
+```
+
+Wait on `run_end` for that specific id. Keying on an event alone matches a previous invocation's
+records, which is how a caller ends up testing a stale binary while believing its build finished:
+
+```sh
+# Wait for one specific agent_build.py invocation, then use the binary it produced.
+invocation="$(uuidgen)"
+progress=/tmp/foundry-build-wait.jsonl
+python3 scripts/agent_build.py --invocation-id "$invocation" --progress-file "$progress" &
+build_pid=$!
+wait "$build_pid"; build_status=$?
+python3 - "$progress" "$invocation" <<'PY'
+import json, sys
+path, invocation = sys.argv[1], sys.argv[2]
+end = [r for r in map(json.loads, open(path))
+       if r.get("event") == "run_end" and r.get("invocation_id") == invocation]
+assert end, "no run_end for this invocation"
+assert end[-1]["status"] == "success", end[-1]["status"]
+PY
+[ "$build_status" -eq 0 ] || exit "$build_status"
+```
 
 ### The RESULT line
 

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -784,15 +785,15 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                         exit_code = agent_build.main(
                             ["--compiler-cache", "ccache", "--no-progress-file", "--log", str(log_path)]
                         )
-            result_line = log_path.read_text(encoding="utf-8").strip()
+            log_lines = log_path.read_text(encoding="utf-8").splitlines()
         self.assertEqual(exit_code, 127)
         self.assertEqual(
             stderr.getvalue(),
             "[agent-build] ccache is required for this build mode but was not found in PATH. "
             "Use --backend scons --compiler-cache none for the native fallback.\n",
         )
-        self.assertTrue(result_line.startswith(f"{RESULT_PREFIX} tooling-missing step=startup exit_code=127"))
-        self.assertEqual(stdout.getvalue().strip(), result_line)
+        self.assertTrue(log_lines[-1].startswith(f"{RESULT_PREFIX} tooling-missing step=startup exit_code=127"))
+        self.assertEqual(stdout.getvalue().splitlines(), log_lines)
 
     def test_missing_ninja_returns_actionable_failure(self) -> None:
         stderr = io.StringIO()
@@ -808,7 +809,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                         exit_code = agent_build.main(
                             ["--backend", "ninja", "--log", str(log_path), "--no-progress-file"]
                         )
-            result_line = log_path.read_text(encoding="utf-8").strip()
+            result_line = log_path.read_text(encoding="utf-8").splitlines()[-1]
         self.assertEqual(exit_code, 127)
         self.assertEqual(
             stderr.getvalue(),
@@ -857,7 +858,7 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                                             with mock.patch.object(
                                                 agent_build.time,
                                                 "monotonic",
-                                                side_effect=[100.0, 101.5],
+                                                side_effect=[90.0, 100.0, 101.5, 101.6],
                                             ):
                                                 with mock.patch.object(
                                                     agent_build,
@@ -962,7 +963,8 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             generation_call, build_call = run_command.call_args_list
             self.assertEqual(generation_call.kwargs["label"], "generate")
             self.assertFalse(generation_call.kwargs["append_log"])
-            self.assertFalse(generation_call.kwargs["append_progress"])
+            # `run_start` owns the progress file's truncation, so every command appends to it.
+            self.assertTrue(generation_call.kwargs["append_progress"])
             self.assertEqual(build_call.kwargs["label"], "build")
             self.assertTrue(build_call.kwargs["append_log"])
             self.assertTrue(build_call.kwargs["append_progress"])
@@ -1069,7 +1071,9 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                             "read_git_commit",
                             return_value=("deadbeef", None),
                         ):
-                            with mock.patch.object(agent_build.time, "monotonic", side_effect=[100.0, 101.0]):
+                            with mock.patch.object(
+                                agent_build.time, "monotonic", side_effect=[90.0, 100.0, 101.0, 101.1]
+                            ):
                                 with mock.patch.object(
                                     agent_build,
                                     "run_logged_command",
@@ -1116,7 +1120,9 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
                             "read_git_commit",
                             return_value=("deadbeef", None),
                         ):
-                            with mock.patch.object(agent_build.time, "monotonic", side_effect=[100.0, 100.25]):
+                            with mock.patch.object(
+                                agent_build.time, "monotonic", side_effect=[90.0, 100.0, 100.25, 100.3]
+                            ):
                                 with mock.patch.object(
                                     agent_build,
                                     "run_logged_command",
@@ -1313,7 +1319,7 @@ class BinaryPathTests(unittest.TestCase):
 
     def binary_name(self, argv: list[str]) -> str:
         args = agent_build.parse_args(["--platform", "macos", "--scons-arg", "arch=arm64", *argv])
-        return agent_build.resolve_build_target(args).binary_path.name
+        return str(agent_build.resolve_build_target(args).binary_path.name)
 
     def test_default_editor_binary_name(self) -> None:
         self.assertEqual(self.binary_name([]), "foundry.macos.editor.dev.arm64")
@@ -1371,6 +1377,20 @@ def fake_scons(directory: Path, *, exit_code: int, lines: list[str]) -> Path:
     return script
 
 
+def linking_fake_scons(directory: Path, binary_path: Path, content: bytes, *, settle_seconds: float = 0.0) -> Path:
+    """A stand-in SCons that writes the editor binary, the way a real build's final link does."""
+    script = directory / f"linking_fake_scons_{abs(hash((str(binary_path), content, settle_seconds))) % 10**8}.py"
+    script.write_text(
+        "import pathlib\n"
+        "import time\n"
+        f"pathlib.Path({str(binary_path)!r}).write_bytes({content!r})\n"
+        f"time.sleep({settle_seconds!r})\n"
+        "print('scons: done building targets.')\n",
+        encoding="utf-8",
+    )
+    return script
+
+
 def executable_stub(path: Path, exit_code: int) -> Path:
     """An executable file that exits with the given status, standing in for a built binary."""
     path.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
@@ -1386,8 +1406,8 @@ SHADOW_DIAGNOSTIC = [
 ]
 
 
-class ResultContractTests(unittest.TestCase):
-    """The wrapper's exit code and its terminal RESULT: line must agree with what the build did."""
+class WrapperHarness(unittest.TestCase):
+    """Runs the wrapper end to end against a fake SCons, so a whole run takes milliseconds."""
 
     def run_wrapper(
         self,
@@ -1429,6 +1449,10 @@ class ResultContractTests(unittest.TestCase):
 
     def result_lines(self, log_path: Path) -> list[str]:
         return [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.startswith(RESULT_PREFIX)]
+
+
+class ResultContractTests(WrapperHarness):
+    """The wrapper's exit code and its terminal RESULT: line must agree with what the build did."""
 
     def test_failed_build_exits_with_the_scons_child_status(self) -> None:
         with scratch_directory() as root:
@@ -1593,12 +1617,189 @@ class ResultContractTests(unittest.TestCase):
             agent_build.RESULT_CONTEXT.invocation_id = "invocation-interrupt"
             agent_build.RESULT_CONTEXT.log_path = log_path
             agent_build.RESULT_CONTEXT.human_stream = io.StringIO()
+            agent_build.RESULT_CONTEXT.progress_path = None
             with mock.patch.object(agent_build, "main", side_effect=KeyboardInterrupt):
                 exit_code = agent_build.run([])
             line = self.result_line(log_path)
         self.assertEqual(exit_code, 130)
         self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
         self.assertIn("exit_code=130", line)
+
+
+def run_end_for(records: list[dict[str, Any]], invocation_id: str) -> dict[str, Any] | None:
+    """The selection the documented wait idiom performs: this invocation's terminal record."""
+    matches = [
+        record
+        for record in records
+        if record.get("event") == "run_end" and record.get("invocation_id") == invocation_id
+    ]
+    return matches[-1] if matches else None
+
+
+class ProgressStreamIdentityTests(WrapperHarness):
+    """A waiter must be able to tell this invocation's progress records from a previous run's."""
+
+    def test_run_start_is_the_first_record_and_truncates_the_progress_file(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            progress_path.write_text(
+                json.dumps({"version": 1, "event": "build_summary", "invocation_id": "stale", "status": "success"})
+                + "\n",
+                encoding="utf-8",
+            )
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            self.run_wrapper(root, scons, binary_path=binary_path)
+            records = progress_events(progress_path)
+        self.assertEqual(records[0]["event"], "run_start")
+        self.assertNotIn("stale", [record.get("invocation_id") for record in records])
+
+    def test_append_progress_preserves_earlier_records(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            progress_path.write_text(
+                json.dumps({"version": 1, "event": "build_summary", "invocation_id": "stale"}) + "\n",
+                encoding="utf-8",
+            )
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            self.run_wrapper(root, scons, binary_path=binary_path, extra_argv=["--append-progress"])
+            records = progress_events(progress_path)
+        self.assertEqual(records[0]["invocation_id"], "stale")
+        self.assertEqual(records[1]["event"], "run_start")
+
+    def test_missing_tooling_still_truncates_and_records_run_start_and_run_end(self) -> None:
+        with scratch_directory() as root:
+            progress_path = root / "progress.jsonl"
+            progress_path.write_text(
+                json.dumps({"version": 1, "event": "build_summary", "invocation_id": "stale"}) + "\n",
+                encoding="utf-8",
+            )
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build.shutil, "which", return_value=None):
+                        exit_code = agent_build.main(
+                            [
+                                "--compiler-cache",
+                                "ccache",
+                                "--log",
+                                str(root / "build.log"),
+                                "--progress-file",
+                                str(progress_path),
+                                "--invocation-id",
+                                "tooling-probe",
+                            ]
+                        )
+            records = progress_events(progress_path)
+        self.assertEqual(exit_code, 127)
+        self.assertEqual([record["event"] for record in records], ["run_start", "run_end"])
+        self.assertEqual(records[-1]["status"], "tooling-missing")
+        self.assertEqual(records[-1]["exit_code"], 127)
+        self.assertEqual({record["invocation_id"] for record in records}, {"tooling-probe"})
+
+    def test_supplied_invocation_id_is_used_for_every_record(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            _, _, progress_path, _ = self.run_wrapper(
+                root, scons, binary_path=binary_path, extra_argv=["--invocation-id", "fixed-token"]
+            )
+            records = progress_events(progress_path)
+        self.assertIn("build_summary", [record["event"] for record in records])
+        self.assertEqual({record["invocation_id"] for record in records}, {"fixed-token"})
+
+    def test_startup_line_announces_invocation_and_paths(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            _, log_path, progress_path, stdout = self.run_wrapper(
+                root, scons, binary_path=binary_path, extra_argv=["--invocation-id", "announced-token"]
+            )
+        expected = f"[agent-build] invocation: announced-token progress: {progress_path} log: {log_path}"
+        self.assertEqual(
+            [line for line in stdout.splitlines() if line.startswith("[agent-build] invocation:")], [expected]
+        )
+
+    def test_run_end_records_binary_identity_after_a_successful_build(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            scons = linking_fake_scons(root, binary_path, b"freshly linked editor binary")
+            _, _, progress_path, _ = self.run_wrapper(
+                root, scons, binary_path=binary_path, extra_argv=["--invocation-id", "linking"]
+            )
+            records = progress_events(progress_path)
+            stats = binary_path.stat()
+        run_end = run_end_for(records, "linking")
+        assert run_end is not None
+        self.assertEqual(run_end["status"], "success")
+        self.assertEqual(
+            run_end["binary_after"], {"path": str(binary_path), "size": stats.st_size, "mtime_ns": stats.st_mtime_ns}
+        )
+        self.assertTrue(run_end["binary_changed"])
+
+    def test_run_end_reports_unchanged_binary_on_a_no_op_build(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            binary_path.write_bytes(b"already linked editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: `.' is up to date."])
+            _, _, progress_path, _ = self.run_wrapper(
+                root, scons, binary_path=binary_path, extra_argv=["--invocation-id", "no-op"]
+            )
+            run_end = run_end_for(progress_events(progress_path), "no-op")
+        assert run_end is not None
+        self.assertEqual(run_end["status"], "success")
+        self.assertFalse(run_end["binary_changed"])
+
+    def test_run_end_is_last_and_singular_under_test_phase(self) -> None:
+        with scratch_directory() as root:
+            binary_path = executable_stub(root / "foundry.macos.editor.dev.arm64", 0)
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            _, _, progress_path, _ = self.run_wrapper(root, scons, binary_path=binary_path, extra_argv=["--test"])
+            events = [record["event"] for record in progress_events(progress_path)]
+        self.assertEqual(events[-1], "run_end")
+        self.assertEqual(events.count("run_end"), 1)
+        self.assertLess(events.index("build_summary"), events.index("run_end"))
+
+    def test_run_end_reports_test_failure_after_a_successful_build(self) -> None:
+        with scratch_directory() as root:
+            binary_path = executable_stub(root / "foundry.macos.editor.dev.arm64", 7)
+            scons = fake_scons(root, exit_code=0, lines=["scons: done building targets."])
+            _, _, progress_path, _ = self.run_wrapper(
+                root, scons, binary_path=binary_path, extra_argv=["--test", "--invocation-id", "failing-tests"]
+            )
+            records = progress_events(progress_path)
+        run_end = run_end_for(records, "failing-tests")
+        assert run_end is not None
+        self.assertEqual(run_end["status"], "test-failure")
+        self.assertEqual(run_end["exit_code"], 7)
+        self.assertEqual(sole_build_summary(records)["status"], "success")
+
+    def test_build_summary_follows_the_linked_binary(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "foundry.macos.editor.dev.arm64"
+            scons = linking_fake_scons(root, binary_path, b"linked editor binary", settle_seconds=0.05)
+            _, _, progress_path, _ = self.run_wrapper(root, scons, binary_path=binary_path)
+            summary = sole_build_summary(progress_events(progress_path))
+            linked_at = binary_path.stat().st_mtime_ns
+        summary_at = datetime.fromisoformat(str(summary["timestamp"]).replace("Z", "+00:00"))
+        self.assertGreaterEqual(int(summary_at.timestamp() * 1_000_000_000), linked_at)
+        self.assertEqual(summary["binary_after"]["mtime_ns"], linked_at)
+
+    def test_documented_wait_snippet_selects_only_the_matching_invocation(self) -> None:
+        records: list[dict[str, Any]] = [
+            {"event": "run_start", "invocation_id": "first"},
+            {"event": "build_summary", "invocation_id": "first", "status": "success"},
+            {"event": "run_end", "invocation_id": "first", "status": "success", "exit_code": 0},
+            {"event": "run_start", "invocation_id": "second"},
+            {"event": "run_end", "invocation_id": "second", "status": "build-failure", "exit_code": 2},
+        ]
+        self.assertEqual(run_end_for(records, "second"), records[-1])
+        self.assertEqual(run_end_for(records, "first"), records[2])
+        self.assertIsNone(run_end_for(records, "third"))
 
 
 if __name__ == "__main__":

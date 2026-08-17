@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import NamedTuple, TextIO, cast
+from typing import Any, NamedTuple, TextIO, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_PATH = Path.home() / ".scons_cache"
@@ -396,6 +396,7 @@ def append_progress_record(
     path: Path | None,
     event: str,
     *,
+    mode: str = "a",
     stdout_jsonl: bool = False,
     **fields: object,
 ) -> None:
@@ -405,11 +406,26 @@ def append_progress_record(
     line = json.dumps(payload, sort_keys=True)
     if path is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as progress_file:
+        with path.open(mode, encoding="utf-8") as progress_file:
             progress_file.write(line + "\n")
     if stdout_jsonl:
         sys.stdout.write(line + "\n")
         sys.stdout.flush()
+
+
+def binary_identity(path: Path | None) -> dict[str, object] | None:
+    """What the file at `path` is right now, or None when there is no such file.
+
+    A caller comparing the identity recorded before a build with the one recorded after it can tell
+    whether this invocation actually relinked the binary it is about to run.
+    """
+    if path is None:
+        return None
+    try:
+        stats = path.stat()
+    except OSError:
+        return None
+    return {"path": str(path), "size": stats.st_size, "mtime_ns": stats.st_mtime_ns}
 
 
 class ProgressReporter:
@@ -602,32 +618,73 @@ class ResultContext:
         self.invocation_id = ""
         self.log_path = DEFAULT_LOG
         self.human_stream: TextIO = sys.stdout
+        self.progress_path: Path | None = None
+        self.progress_stdout_jsonl = False
+        self.binary_before: dict[str, object] | None = None
+        self.started = time.monotonic()
 
 
 RESULT_CONTEXT = ResultContext()
 
 
-def emit_result(
-    status: str,
-    *,
-    step: str,
-    exit_code: int,
-    binary_path: Path,
-    invocation_id: str,
-    log_path: Path,
-    human_stream: TextIO,
-) -> int:
-    """Write the single terminal verdict line and return the exit code the caller should use.
+def emit_result(status: str, *, step: str, exit_code: int, context: ResultContext) -> int:
+    """Write the terminal verdict — the `RESULT:` line and the `run_end` record — exactly once.
 
     A process exit code is discarded by a pipe, a background launch, or any trailing command in the
-    same shell invocation, so the verdict is also written as the last line of the build log where a
-    caller can always recover it.
+    same shell invocation, so the verdict is also written as the last line of the build log and as
+    the last record of the progress stream, where a caller can always recover it.
     """
     assert status in RESULT_STATUSES, f"unknown result status {status!r}"
     assert step in RESULT_STEPS, f"unknown result step {step!r}"
+    binary_path = context.binary_path
     line = (
         f"{RESULT_PREFIX} {status} step={step} exit_code={exit_code} binary={binary_path} "
-        f"binary_present={'yes' if binary_path.exists() else 'no'} invocation={invocation_id} log={log_path}"
+        f"binary_present={'yes' if binary_path.exists() else 'no'} invocation={context.invocation_id} "
+        f"log={context.log_path}"
+    )
+    context.human_stream.write(f"{line}\n")
+    context.human_stream.flush()
+    try:
+        context.log_path.parent.mkdir(parents=True, exist_ok=True)
+        with context.log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(f"{line}\n")
+    except OSError as exc:
+        print(f"[agent-build] warning: could not append the result line to {context.log_path}: {exc}", file=sys.stderr)
+    binary_after = binary_identity(binary_path)
+    try:
+        append_progress_record(
+            context.progress_path,
+            "run_end",
+            stdout_jsonl=context.progress_stdout_jsonl,
+            invocation_id=context.invocation_id,
+            status=status,
+            step=step,
+            exit_code=exit_code,
+            duration_ms=int((time.monotonic() - context.started) * 1000),
+            binary_path=str(binary_path),
+            binary_after=binary_after,
+            binary_changed=binary_after != context.binary_before,
+        )
+    except Exception as exc:
+        print(f"[agent-build] warning: could not emit the run_end record: {exc}", file=sys.stderr)
+    return exit_code
+
+
+def announce_invocation(
+    invocation_id: str,
+    *,
+    progress_path: Path | None,
+    log_path: Path,
+    human_stream: TextIO,
+) -> None:
+    """Announce this run's identity so a caller can wait for its records specifically.
+
+    Without an announced id a caller reading the progress stream from outside cannot tell this
+    invocation's records from a previous one's.
+    """
+    line = (
+        f"[agent-build] invocation: {invocation_id} "
+        f"progress: {progress_path if progress_path is not None else 'none'} log: {log_path}"
     )
     human_stream.write(f"{line}\n")
     human_stream.flush()
@@ -635,9 +692,8 @@ def emit_result(
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(f"{line}\n")
-    except OSError as exc:
-        print(f"[agent-build] warning: could not append the result line to {log_path}: {exc}", file=sys.stderr)
-    return exit_code
+    except OSError:
+        pass
 
 
 def scons_prefix() -> list[str] | None:
@@ -1073,6 +1129,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--append-log", action="store_true", help="Append to the log instead of replacing it.")
     parser.add_argument(
+        "--invocation-id",
+        default=None,
+        help=(
+            "Identity to stamp on every progress record of this run. Supply one to wait for this "
+            "specific invocation's run_end record. Default: a freshly generated UUID."
+        ),
+    )
+    parser.add_argument(
         "--progress-file",
         type=Path,
         default=DEFAULT_PROGRESS_LOG,
@@ -1148,7 +1212,7 @@ def main(argv: list[str]) -> int:
     progress_path = progress_path_from_args(args)
     progress_stdout_jsonl = args.progress_format == "jsonl"
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
-    invocation_id = new_invocation_id()
+    invocation_id = args.invocation_id or new_invocation_id()
 
     RESULT_CONTEXT.step = "startup"
     RESULT_CONTEXT.exit_code = INTERRUPTED_EXIT_CODE
@@ -1156,24 +1220,60 @@ def main(argv: list[str]) -> int:
     RESULT_CONTEXT.invocation_id = invocation_id
     RESULT_CONTEXT.log_path = args.log
     RESULT_CONTEXT.human_stream = human_stream
+    RESULT_CONTEXT.progress_path = progress_path
+    RESULT_CONTEXT.progress_stdout_jsonl = progress_stdout_jsonl
+    RESULT_CONTEXT.binary_before = None
+    RESULT_CONTEXT.started = time.monotonic()
 
     def fail_at_startup(exit_code: int, error: str) -> int:
         print(f"[agent-build] {error}", file=sys.stderr)
-        return emit_result(
-            "tooling-missing",
-            step="startup",
-            exit_code=exit_code,
-            binary_path=RESULT_CONTEXT.binary_path,
-            invocation_id=invocation_id,
-            log_path=args.log,
-            human_stream=human_stream,
-        )
+        return emit_result("tooling-missing", step="startup", exit_code=exit_code, context=RESULT_CONTEXT)
 
+    resolved_target: BuildTarget | None
     try:
-        target = resolve_build_target(args)
+        resolved_target = resolve_build_target(args)
     except RuntimeError as exc:
-        return fail_at_startup(TOOLING_MISSING_EXIT_CODE, str(exc))
-    RESULT_CONTEXT.binary_path = target.binary_path
+        resolved_target = None
+        target_error: str | None = str(exc)
+    else:
+        target_error = None
+        RESULT_CONTEXT.binary_path = resolved_target.binary_path
+        RESULT_CONTEXT.binary_before = binary_identity(resolved_target.binary_path)
+
+    git_commit, git_commit_error = read_git_commit()
+
+    # The progress stream is truncated and identified before any tooling check, so a caller waiting
+    # on this invocation's records can never match a previous invocation's, not even in the window
+    # before the first build command starts and not on the paths that abort during startup.
+    try:
+        append_progress_record(
+            progress_path,
+            "run_start",
+            mode="a" if args.append_progress else "w",
+            stdout_jsonl=progress_stdout_jsonl,
+            invocation_id=invocation_id,
+            argv=list(argv),
+            pid=os.getpid(),
+            worktree=str(REPO_ROOT),
+            backend=args.backend,
+            compiler_cache=resolve_compiler_cache(args),
+            platform=resolved_target.scons_platform if resolved_target is not None else args.platform,
+            arch=arch_from_args(args),
+            jobs=args.jobs,
+            jobs_source=args.jobs_source,
+            git_commit=git_commit,
+            log_path=str(args.log),
+            binary_path=str(resolved_target.binary_path) if resolved_target is not None else None,
+            binary_before=RESULT_CONTEXT.binary_before,
+        )
+    except Exception as exc:
+        print(f"[agent-build] warning: could not emit the run_start record: {exc}", file=sys.stderr)
+    announce_invocation(invocation_id, progress_path=progress_path, log_path=args.log, human_stream=human_stream)
+
+    if resolved_target is None:
+        assert target_error is not None
+        return fail_at_startup(TOOLING_MISSING_EXIT_CODE, target_error)
+    target = resolved_target
 
     if scons_prefix() is None:
         return fail_at_startup(
@@ -1198,7 +1298,6 @@ def main(argv: list[str]) -> int:
 
     print(f"[agent-build] jobs: {args.jobs} (source: {args.jobs_source})", file=human_stream)
 
-    git_commit, git_commit_error = read_git_commit()
     stats_log_path = ccache_stats_log_path(invocation_id) if compiler_cache == "ccache" else None
     build_env = build_environment(args, compiler_cache, ccache_stats_log=stats_log_path)
     cache_before = read_ccache_stats_best_effort(build_env) if compiler_cache == "ccache" else {}
@@ -1244,7 +1343,9 @@ def main(argv: list[str]) -> int:
     active_step = "build"
     try:
         append_log = args.append_log
-        append_progress = args.append_progress
+        # `run_start` already opened the progress file with the caller's truncation choice, so every
+        # later record appends to it.
+        append_progress = True
         if generation_command_args is not None:
             assert ninja_state is not None
             active_step = "generate"
@@ -1268,7 +1369,6 @@ def main(argv: list[str]) -> int:
                 build_status = "failed"
             else:
                 append_log = True
-                append_progress = True
 
         if build_exit is None:
             active_step = "build"
@@ -1311,7 +1411,7 @@ def main(argv: list[str]) -> int:
             if "error" in stats
         }
         cache_stats_status = "error" if cache_stats_errors else ("ok" if compiler_cache == "ccache" else "disabled")
-        summary_fields: dict[str, object] = {
+        summary_fields: dict[str, Any] = {
             "phase": "build",
             "invocation_id": invocation_id,
             "backend": args.backend,
@@ -1343,6 +1443,8 @@ def main(argv: list[str]) -> int:
             "cache_stats_after": cache_after,
             "cache_delta": cache_delta,
             "log_path": str(args.log),
+            "binary_path": str(target.binary_path),
+            "binary_after": binary_identity(target.binary_path),
         }
         try:
             append_progress_record(
@@ -1369,15 +1471,8 @@ def main(argv: list[str]) -> int:
     assert build_exit is not None
 
     def report(status: str, step: str, exit_code: int) -> int:
-        return emit_result(
-            status,
-            step=step,
-            exit_code=exit_code,
-            binary_path=target.binary_path,
-            invocation_id=invocation_id,
-            log_path=args.log,
-            human_stream=human_stream,
-        )
+        RESULT_CONTEXT.binary_path = target.binary_path
+        return emit_result(status, step=step, exit_code=exit_code, context=RESULT_CONTEXT)
 
     if build_exit != 0:
         if generation_status == "failed":
@@ -1424,10 +1519,7 @@ def run(argv: list[str]) -> int:
             "interrupted",
             step=RESULT_CONTEXT.step,
             exit_code=INTERRUPTED_EXIT_CODE,
-            binary_path=RESULT_CONTEXT.binary_path,
-            invocation_id=RESULT_CONTEXT.invocation_id,
-            log_path=RESULT_CONTEXT.log_path,
-            human_stream=RESULT_CONTEXT.human_stream,
+            context=RESULT_CONTEXT,
         )
 
 
