@@ -197,6 +197,23 @@ static Ref<FoundryScript> missing_static_self_subclass(const Ref<FoundryScript> 
 // diagnostic itself rather than on a paraphrase of it.
 static const char *MISSING_STATIC_SELF_MESSAGE = "the running frame has no static receiver to resolve it against.";
 
+// A valid descriptor whose backing script no longer resolves. A freshly instantiated, never-registered
+// script released immediately stands in for a receiver freed between dispatch and execution: `FSCache`
+// holds a strong reference to every script a program can name, so this state has no source-level form.
+static FSStaticSelfContext missing_static_self_dead_receiver() {
+	FSStaticSelfContext dead_receiver;
+	{
+		Ref<FoundryScript> transient;
+		transient.instantiate();
+		REQUIRE(transient.is_valid());
+		dead_receiver = FSStaticSelfContext::for_script(transient);
+		REQUIRE(dead_receiver.is_fully_live());
+	}
+	REQUIRE(dead_receiver.is_valid());
+	REQUIRE_FALSE(dead_receiver.is_fully_live());
+	return dead_receiver;
+}
+
 // Runs a static function the way a C++ caller with no receiver would: no instance, no `self` override,
 // and no `FSStaticSelfContext`. That is the state the guard exists for, and the one no dispatch entry
 // point in the engine produces.
@@ -235,32 +252,57 @@ TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A receiver-less static fr
 	CHECK_FALSE((bool)result);
 }
 
-TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A receiver-less static frame refuses a Self-typed store") {
+TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A dead receiver refuses a Self-typed store") {
 	MissingStaticSelfLanguageScope language;
 
+	// A typed local's store always carries its element descriptor to the run time, so a `Self`-typed
+	// slot is re-bound to the frame's receiver on every assignment. The store is reached through an
+	// instance frame because a `Self`-typed local can only be initialized from a statically exact
+	// source, which in a receiver-less static frame is refused earlier for its own signature.
 	const Ref<FoundryScript> script = compile_missing_static_self_source(
-			"static func store(value: Variant) -> int:\n"
-			"\tvar target: Self = value\n"
-			"\treturn 1\n");
-	FSFunction *store = missing_static_self_function(script, SNAME("store"));
-	REQUIRE(store != nullptr);
-	REQUIRE_FALSE(store->has_self_referencing_signature());
+			"class Holder:\n"
+			"\tfunc keep(source: Array[Self], other: Array[Self]) -> int:\n"
+			"\t\tvar items: Array[Self] = source\n"
+			"\t\titems = other\n"
+			"\t\treturn items.size()\n");
+	const Ref<FoundryScript> holder = missing_static_self_subclass(script, SNAME("Holder"));
+	REQUIRE(holder.is_valid());
+
+	FSFunction *keep = missing_static_self_function(holder, SNAME("keep"));
+	REQUIRE(keep != nullptr);
+
+	Callable::CallError instantiate_error;
+	const Variant holder_instance_variant = holder->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+	Object *holder_instance = holder_instance_variant;
+	REQUIRE(holder_instance != nullptr);
+	FSInstance *holder_frame = static_cast<FSInstance *>(holder_instance->get_script_instance());
+	REQUIRE(holder_frame != nullptr);
+
+	FSStaticSelfContext dead_receiver = missing_static_self_dead_receiver();
+
+	// Typed for the class the declaration was lowered against, which is what the fallback signature
+	// expects, so the argument binding accepts it and the frame runs to its first store.
+	ContainerType holder_element;
+	holder_element.builtin_type = Variant::OBJECT;
+	holder_element.class_name = SNAME("RefCounted");
+	holder_element.script = holder;
+	Array holder_array;
+	holder_array.set_typed(holder_element);
+	const Variant stored = holder_array;
+	const Variant *arguments[2] = { &stored, &stored };
 
 	MissingStaticSelfErrorRecorder recorder;
 	Callable::CallError error;
 	ERR_PRINT_OFF;
-	const Variant result = call_without_static_receiver(store, { Variant() }, error);
+	const Variant result = keep->call(holder_frame, arguments, 2, error, nullptr, nullptr, &dead_receiver);
 	ERR_PRINT_ON;
 
-#ifdef DEBUG_ENABLED
-	// A typed local's declared specialization is only checked in debug builds, so this is also the
-	// boundary that decides whether the store's descriptor is decoded at all.
 	CHECK(recorder.messages.contains(MISSING_STATIC_SELF_MESSAGE));
+	// Storing against the class the declaration was lowered against would leave the slot holding a
+	// value the receiver's own type never admitted, so the frame is aborted and returns the default.
 	CHECK(result.get_type() == Variant::INT);
 	CHECK((int64_t)result == 0);
-#else
-	CHECK((int64_t)result == 1);
-#endif // DEBUG_ENABLED
 }
 
 TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A receiver-less static frame refuses a Self-typed call argument") {
@@ -348,19 +390,21 @@ TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A receiver-less static fr
 TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A dead receiver refuses a Self-typed return") {
 	MissingStaticSelfLanguageScope language;
 
-	// An instance frame always has a `self`, so its signature resolution falls back rather than
-	// refusing the call. The body's own `Self`-marked descriptors are still bound through the supplied
-	// receiver, and a receiver whose script was freed between dispatch and execution has to be reported
-	// instead of silently standing in for the declaring class.
+	// An instance frame always has a `self`, so a signature it cannot resolve falls back to the declared
+	// types rather than refusing the call. That is what lets the typed return be reached at all: the
+	// return's own descriptor is still bound through the supplied receiver, and a receiver whose script
+	// was freed between dispatch and execution has to be reported instead of silently standing in for
+	// the class the declaration was lowered against.
 	const Ref<FoundryScript> script = compile_missing_static_self_source(
 			"class Holder:\n"
-			"\tfunc items(source: Variant) -> Array[Self]:\n"
+			"\tfunc items(source: Array[Self]) -> Array[Self]:\n"
 			"\t\treturn source\n");
 	const Ref<FoundryScript> holder = missing_static_self_subclass(script, SNAME("Holder"));
 	REQUIRE(holder.is_valid());
 
 	FSFunction *items = missing_static_self_function(holder, SNAME("items"));
 	REQUIRE(items != nullptr);
+	REQUIRE(items->has_self_referencing_signature());
 
 	Callable::CallError instantiate_error;
 	const Variant holder_instance_variant = holder->_new(nullptr, -1, instantiate_error);
@@ -370,21 +414,17 @@ TEST_CASE("[Modules][FoundryScript][MissingStaticSelf] A dead receiver refuses a
 	FSInstance *holder_frame = static_cast<FSInstance *>(holder_instance->get_script_instance());
 	REQUIRE(holder_frame != nullptr);
 
-	// A freshly instantiated, never-registered script released before the call stands in for a receiver
-	// script freed mid-call: a valid descriptor whose backing script no longer resolves. `FSCache` holds
-	// a strong reference to every script a program can name, so this state has no source-level form.
-	FSStaticSelfContext dead_receiver;
-	{
-		Ref<FoundryScript> transient;
-		transient.instantiate();
-		REQUIRE(transient.is_valid());
-		dead_receiver = FSStaticSelfContext::for_script(transient);
-		REQUIRE(dead_receiver.is_fully_live());
-	}
-	REQUIRE(dead_receiver.is_valid());
-	REQUIRE_FALSE(dead_receiver.is_fully_live());
+	FSStaticSelfContext dead_receiver = missing_static_self_dead_receiver();
 
-	const Variant returned = Array();
+	// Typed for the class the declaration was lowered against, which is what the fallback signature
+	// expects, so the argument binding accepts it and the frame runs to its return.
+	ContainerType holder_element;
+	holder_element.builtin_type = Variant::OBJECT;
+	holder_element.class_name = SNAME("RefCounted");
+	holder_element.script = holder;
+	Array holder_array;
+	holder_array.set_typed(holder_element);
+	const Variant returned = holder_array;
 	const Variant *arguments[1] = { &returned };
 
 	MissingStaticSelfErrorRecorder recorder;
