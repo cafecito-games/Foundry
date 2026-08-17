@@ -3416,6 +3416,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 
+				// Typed-local specialization is checked in debug builds only, so a release build reads
+				// nothing the type operand describes. Decoding it there would build an `FSDataType` and a
+				// `Vector<ContainerType>`, with their `Ref<Script>` refcounting, only to discard them --
+				// including the `Self` resolution, which has no failure to report about a slot that is not
+				// checked. The descriptor is therefore decoded only where something reads it.
+#ifdef DEBUG_ENABLED
 				GET_VARIANT_PTR(type, 2);
 				FSDataType expected_handle_type;
 				Script *base_type = nullptr;
@@ -3426,9 +3432,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				GD_ERR_BREAK(!base_type);
-				[[maybe_unused]] const bool is_type_handle = _code_ptr[ip + 4];
+				const bool is_type_handle = _code_ptr[ip + 4];
 
-#ifdef DEBUG_ENABLED
 				if (is_type_handle) {
 					if (!expected_handle_type.is_type(*src)) {
 						err_text = "Trying to assign value of type '" + _get_var_type(src) +
@@ -5649,8 +5654,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(type, 1);
 				FSDataType expected_handle_type;
 				Script *base_type = nullptr;
+				// A typed return is validated in every build, so the descriptor is decoded unconditionally.
+				// Only its reified arguments are diagnostic-only -- the mismatch message names them -- so a
+				// release build declines the out-parameter instead of copying the vector it never reads.
+#ifdef DEBUG_ENABLED
 				Vector<ContainerType> expected_type_arguments;
-				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
+				Vector<ContainerType> *type_arguments_output = &expected_type_arguments;
+#else
+				Vector<ContainerType> *type_arguments_output = nullptr;
+#endif // DEBUG_ENABLED
+				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, type_arguments_output))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
