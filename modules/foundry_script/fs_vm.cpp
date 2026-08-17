@@ -143,6 +143,64 @@ static String _get_var_type(const Variant *p_var) {
 	return basestr;
 }
 
+// The extra clause a rejected tuple store adds when exactly one element failed, and failed only on
+// its container element typing. Naming the whole tuple type leaves the reader unable to tell that the
+// arity and every other element agreed and that the offending element disagreed only on its own
+// element typing, which is the one failure the declaration's spelling cannot explain by itself. Any
+// other shape of failure is left to the plain message, and nothing is reported when more than one
+// element disagrees, since the clause would then be describing only part of the story.
+static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type, const Variant &p_value) {
+	if (p_value.get_type() != Variant::ARRAY) {
+		return String();
+	}
+	const Array array = p_value;
+	if (array.size() != p_tuple_type.container_element_types.size()) {
+		return String();
+	}
+
+	int failed_element = -1;
+	for (int i = 0; i < p_tuple_type.container_element_types.size(); i++) {
+		const FSDataType &element_type = p_tuple_type.container_element_types[i];
+		const Variant element = array[i];
+		// The tuple test rejects null in a non-nullable object element even though `is_type()` accepts
+		// it for assignment compatibility, so the same rule has to be applied here or such an element
+		// counts as passing and the clause claims a sole culprit it does not have.
+		const bool rejected_null = element.get_type() == Variant::NIL && !element_type.is_nullable &&
+				(element_type.kind == FSDataType::NATIVE || element_type.kind == FSDataType::SCRIPT ||
+						element_type.kind == FSDataType::FOUNDRY_SCRIPT);
+		if (!rejected_null && element_type.is_type(element)) {
+			continue;
+		}
+		// The carrier already agrees and the declaration asks for element typing, so the element test
+		// had nothing left to reject but the value's own element type.
+		const bool container_element_typing_only = element_type.kind == FSDataType::BUILTIN &&
+				(element_type.builtin_type == Variant::ARRAY || element_type.builtin_type == Variant::DICTIONARY) &&
+				element.get_type() == element_type.builtin_type &&
+				!element_type.container_element_types.is_empty();
+		if (!container_element_typing_only || failed_element != -1) {
+			return String();
+		}
+		failed_element = i;
+	}
+	if (failed_element == -1) {
+		return String();
+	}
+
+	// An untyped value and a differently typed one fail the same test but need opposite advice: one has
+	// to acquire element typing, the other already has some and simply disagrees.
+	const Variant &failed_value = array[failed_element];
+	const bool value_is_typed = failed_value.get_type() == Variant::ARRAY
+			? Array(failed_value).is_typed()
+			: Dictionary(failed_value).is_typed();
+	const String reason = value_is_typed
+			? String("a tuple store never converts, so a container element's own typing has to match exactly.")
+			: String("a tuple store never converts, so a container element has to arrive already typed.");
+
+	return vformat(R"( Tuple element %d expects "%s", but the value is "%s": %s)",
+			failed_element, p_tuple_type.container_element_types[failed_element].get_source_type_name(),
+			_get_var_type(&failed_value), reason);
+}
+
 void FSFunction::_profile_native_call(uint64_t p_t_taken, const String &p_func_name, const String &p_instance_class_name) {
 	HashMap<String, Profile::NativeProfile>::Iterator inner_prof = profile.native_calls.find(p_func_name);
 	if (inner_prof) {
@@ -3488,8 +3546,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						: tuple_type.is_type(*src);
 				if (!matches) {
 #ifdef DEBUG_ENABLED
-					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".)",
-							_get_var_type(src), tuple_type.get_source_type_name());
+					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".%s)",
+							_get_var_type(src), tuple_type.get_source_type_name(),
+							_tuple_store_container_element_hint(tuple_type, *src));
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
