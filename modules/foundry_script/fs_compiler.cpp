@@ -1058,6 +1058,64 @@ static bool _baked_shape_contains_type_parameter(const FSDataType &p_type, int p
 	return false;
 }
 
+// Whether a baked shape, or anything nested in it, stands for `Self`. Two spellings reach here: a
+// node `_gdtype_from_datatype()` already reified onto the owner script, which records the origin on
+// `is_self_type`, and a `@Self` parameter node that no substitution step resolved.
+static bool _baked_shape_references_self(const FSDataType &p_type, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return true;
+	}
+	if (p_type.is_self_type) {
+		return true;
+	}
+	if (p_type.kind == FSDataType::TYPE_PARAMETER && p_type.type_parameter_name == SNAME("@Self")) {
+		return true;
+	}
+	for (const FSDataType &element_type : p_type.container_element_types) {
+		if (_baked_shape_references_self(element_type, p_depth + 1)) {
+			return true;
+		}
+	}
+	for (const FSDataType &type_argument : p_type.type_arguments) {
+		if (_baked_shape_references_self(type_argument, p_depth + 1)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Settles every unresolved `@Self` node in a baked shape onto the class the shape is being folded
+// into, at any nesting depth. A `Self` nested inside a composite argument is already reified this way
+// while the argument is converted; a whole applied argument that is bare `Self` survives conversion as
+// a forwarded parameter node instead, and this is what resolves it. Only sound where exactly one
+// receiver is possible, which the caller establishes.
+static void _resolve_baked_self_to_owner(FSDataType &r_type, FoundryScript *p_owner, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return;
+	}
+	if (r_type.kind == FSDataType::TYPE_PARAMETER && r_type.type_parameter_name == SNAME("@Self")) {
+		// `Type[Self]` stands for a class handle for the receiver, and a declared-nullable node still
+		// admits null once resolved, so both layers travel across the replacement.
+		const bool was_type_handle = r_type.is_type_handle;
+		const bool was_nullable = r_type.is_nullable;
+		r_type = FSDataType();
+		r_type.kind = FSDataType::FOUNDRY_SCRIPT;
+		r_type.builtin_type = Variant::OBJECT;
+		r_type.script_type = p_owner;
+		r_type.native_type = p_owner->get_instance_base_type();
+		r_type.is_self_type = true;
+		r_type.is_type_handle = was_type_handle;
+		r_type.is_nullable = was_nullable;
+		return;
+	}
+	for (int i = 0; i < r_type.container_element_types.size(); i++) {
+		_resolve_baked_self_to_owner(r_type.container_element_types.write[i], p_owner, p_depth + 1);
+	}
+	for (int i = 0; i < r_type.type_arguments.size(); i++) {
+		_resolve_baked_self_to_owner(r_type.type_arguments.write[i], p_owner, p_depth + 1);
+	}
+}
+
 // Whether a function-body slot (a local, a later assignment, or a return) has to be validated against
 // the receiver instead of stored directly. A class type parameter is reified onto the instance, but a
 // function body is compiled once for the declaring class and sees only the parameter, which erases
@@ -5289,6 +5347,16 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
 // argument works too. An argument that still stands for a parameter afterwards -- the implementer
 // forwarded its own, and one compiled function and one constant pool are shared by every
 // specialization of it -- has no honest constant form and is refused here.
+//
+// An applied argument naming `Self` (`uses Aliasing[Self]`, `uses Aliasing[Array[Self]]`) is refused
+// on the same grounds unless the implementer is `final`. `Self` is receiver-dependent -- constructing
+// through the constant's name resolves it against the receiver, so a subclass of the implementer
+// builds its own specialization -- while the flattened constant is one slot in the implementer's pool
+// that every subclass reads. Folding the implementer in would make the constant assert a
+// specialization a subclass receiver contradicts. A `final` non-generic implementer admits exactly one
+// receiver, so `Self` denotes it for every read and folding it is honest. Projecting `Self` onto the
+// receiver a constant is read through would let both spellings agree in every case, but a
+// receiver-dependent constant is no longer a compile-time fold; that is the option not taken.
 bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &p_argument, FoundryScript *p_owner, FSDataType &r_reified) {
 	if (flattened_trait_declaration == nullptr) {
 		return false;
@@ -5307,6 +5375,16 @@ bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &
 
 	FSDataType converted = _gdtype_from_datatype(p_argument, p_owner, true, true);
 	_substitute_binding_type_parameters(converted, flattened_trait_type_arguments, p_owner);
+	if (_baked_shape_references_self(converted)) {
+		// A generic class has one receiver per specialization, so `Self` is no more foldable there than a
+		// forwarded parameter is. The analyzer already rejects an application that names such a class's own
+		// parameters -- which `Self` does, since it carries them as its arguments -- before this runs;
+		// spelling the condition out keeps the rule readable without depending on that distant check.
+		if (p_owner == nullptr || !p_owner->is_final() || p_owner->is_generic()) {
+			return false;
+		}
+		_resolve_baked_self_to_owner(converted, p_owner);
+	}
 	if (_baked_shape_contains_type_parameter(converted)) {
 		return false;
 	}
