@@ -162,7 +162,13 @@ static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type
 	for (int i = 0; i < p_tuple_type.container_element_types.size(); i++) {
 		const FSDataType &element_type = p_tuple_type.container_element_types[i];
 		const Variant element = array[i];
-		if (element_type.is_type(element)) {
+		// The tuple test rejects null in a non-nullable object element even though `is_type()` accepts
+		// it for assignment compatibility, so the same rule has to be applied here or such an element
+		// counts as passing and the clause claims a sole culprit it does not have.
+		const bool rejected_null = element.get_type() == Variant::NIL && !element_type.is_nullable &&
+				(element_type.kind == FSDataType::NATIVE || element_type.kind == FSDataType::SCRIPT ||
+						element_type.kind == FSDataType::FOUNDRY_SCRIPT);
+		if (!rejected_null && element_type.is_type(element)) {
 			continue;
 		}
 		// The carrier already agrees and the declaration asks for element typing, so the element test
