@@ -49,6 +49,7 @@ class FoundryScript;
 namespace FSTests {
 class TestFSBytecodeScriptAccessor;
 class TestEnumStaticReceiverAccessor;
+class TestMissingStaticSelfAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 #ifdef TOOLS_ENABLED
@@ -920,6 +921,7 @@ private:
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSBytecodeScriptAccessor;
 	friend class FSTests::TestEnumStaticReceiverAccessor;
+	friend class FSTests::TestMissingStaticSelfAccessor;
 #endif // TESTS_ENABLED
 
 	StringName name;

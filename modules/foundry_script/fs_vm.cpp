@@ -950,9 +950,41 @@ static bool _class_slot_static_callable(const FSStaticSelfContext *p_static_self
 // One diagnostic for every instruction that needed the frame's receiver and could not get it. Naming
 // the function keeps a broken dispatch path identifiable instead of surfacing as a type mismatch
 // against whichever class the declaration happened to be lowered against.
+//
+// No Foundry Script source can reach this. A descriptor only asks for a receiver when lowering marked
+// it as having come from `Self`, and every way a frame carrying such a descriptor can be entered
+// supplies a live one: script, handle, and native dispatch resolve it from the callee's own class
+// (`FoundryScript::callp`, `FSSpecializedClassHandle::callp`, `FSNativeClass::callp`,
+// `FoundryScript::call_static_with_context`); extracted callables and lambdas refuse the call before
+// it starts when their captured receiver was freed (`FSStaticSelfCallable::call`,
+// `FSLambdaCallable::call`); a static frame whose *signature* needs a receiver is refused before its
+// first instruction (the `_static` leg of the signature resolution in `FSFunction::call`); enum
+// dispatch -- the one dispatch path that supplies no receiver -- runs only functions whose `Self` the
+// analyzer resolved eagerly to the exact enum type; and `Self` in an expression position is rejected
+// at analysis for the one receiver kind that has no class handle, a builtin conformance target
+// (`FSAnalyzer::reduce_identifier`). Freeing a receiver script out from under a running frame is not
+// expressible either: `FSCache` holds a strong reference to every script a program can name.
+//
+// It stays a reported error rather than an assertion because two callers outside the language can
+// still reach it: C++ that invokes `FSFunction::call()` with an absent or stale `FSStaticSelfContext`,
+// and a `.fsb` whose constant pool marks a descriptor `is_self_type` -- the bytecode verifier
+// bounds-checks operands, not descriptor contents. Both must degrade to a diagnostic and the return
+// type's default, exactly as the other untrusted-operand paths in this file do.
+//
+// Coverage lives in `modules/foundry_script/tests/test_missing_static_self.h`, which constructs those
+// states directly. Do not spend time trying to trigger this from a `.fs` fixture.
 static String _missing_static_self_error(const StringName &p_function_name) {
 	return vformat(
 			R"(Cannot resolve "Self" in "%s": the running frame has no static receiver to resolve it against.)",
+			String(p_function_name));
+}
+
+// A specialization whose type-argument script has been freed is not a missing receiver: the frame
+// may have one. Constructing from it would silently degrade the argument slot, so it is refused
+// with the condition it actually failed on.
+static String _freed_specialization_argument_error(const StringName &p_function_name) {
+	return vformat(
+			R"(Cannot construct a specialization in "%s": one of its type arguments names a script that has been freed.)",
 			String(p_function_name));
 }
 
@@ -4363,9 +4395,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				Vector<ContainerType> type_arguments;
 				if (specialized_handle.is_valid()) {
 					// A freed type-argument script makes the specialization unconstructable: building from it
-					// would silently degrade the argument slot. Report the existing missing-receiver error.
+					// would silently degrade the argument slot.
 					if (!specialized_handle->is_fully_live()) {
-						err_text = _missing_static_self_error(name);
+						err_text = _freed_specialization_argument_error(name);
 						OPCODE_BREAK;
 					}
 					type_arguments = specialized_handle->get_type_arguments();
