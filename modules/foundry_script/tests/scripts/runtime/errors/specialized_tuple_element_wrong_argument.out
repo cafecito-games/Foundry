@@ -1,0 +1,8 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 21: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 23: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+~~ WARNING at line 25: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "keep()" requires the subtype "Variant" but the supertype "Variant" was provided.
+correct specialization accepted: 1
+unspecialized accepted: 2
+>> SCRIPT ERROR at runtime/errors/specialized_tuple_element_wrong_argument.fs:11 on Crate.keep(): Trying to assign a value of type "Array" to a variable of type "(int, Pair[int, String])".
+wrongly specialized rejected at the store: []

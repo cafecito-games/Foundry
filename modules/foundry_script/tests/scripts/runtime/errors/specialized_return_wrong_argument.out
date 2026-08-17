@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+true
+true
+>> SCRIPT ERROR at runtime/errors/specialized_return_wrong_argument.fs:10 on Source.give(): Trying to return value of type "Pair[int, Node]" from a function whose return type is "Pair[int, String]".
+false

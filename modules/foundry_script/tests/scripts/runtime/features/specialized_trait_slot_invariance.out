@@ -1,0 +1,8 @@
+FS_TEST_OK
+declared Keeper[int]: top-level is=true, nested is=true
+declared Keeper[String]: top-level is=false, nested is=false
+forwarded Keeper[int]: top-level is=true, nested is=true
+unspecialized forwarder: top-level is=false, nested is=false
+retroactively conformed: top-level is=true, nested is=true
+trait member store: right=true wrong=false forwarded=true raw=true retro=true
+specialized trait slot invariance ok

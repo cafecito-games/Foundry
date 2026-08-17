@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+correct specialization stored
+>> SCRIPT ERROR at runtime/errors/specialized_member_wrong_argument.fs:20 on test(): Invalid assignment of property or key 'pair' with value of type 'RefCounted (Pair)' on a base object of type 'RefCounted (Holder)'.

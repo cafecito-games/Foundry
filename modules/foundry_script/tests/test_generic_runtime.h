@@ -998,6 +998,118 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-arg
 	script->clear();
 }
 
+TEST_CASE("[Modules][FoundryScript][Generics] A specialized script slot enforces its arguments in both strictness modes") {
+	ScopedGenericRuntimeLanguage language;
+
+	const char *source =
+			"class Box[T]:\n"
+			"\tvar value\n"
+			"\n"
+			"class IntBox extends Box[int]:\n"
+			"\tpass\n";
+
+	Ref<FoundryScript> script = compile_generic_runtime_source(source);
+	Ref<FoundryScript> box = get_generic_subclass(script, "Box");
+	Ref<FoundryScript> int_box = get_generic_subclass(script, "IntBox");
+	REQUIRE(box.is_valid());
+	REQUIRE(int_box.is_valid());
+
+	// `int` in source carries its declared width, which is part of the argument's identity: the
+	// invariance comparison would otherwise read `IntBox`'s inherited `Box[int]` as a different type.
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+
+	Vector<ContainerType> int_arguments;
+	int_arguments.push_back(int_argument);
+	Vector<ContainerType> string_arguments;
+	string_arguments.push_back(string_argument);
+
+	Callable::CallError error;
+	const Variant specialized_int = box->_new_specialized(nullptr, 0, int_arguments, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant specialized_string = box->_new_specialized(nullptr, 0, string_arguments, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant unspecialized = box->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant subclass = int_box->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+
+	ContainerType expected;
+	expected.builtin_type = Variant::OBJECT;
+	expected.script = box;
+	expected.type_arguments = int_arguments;
+	const FSDataType box_of_int = FSDataType::from_container_type(expected);
+	REQUIRE(box_of_int.type_arguments.size() == 1);
+
+	// The gradual rule every store uses: only evidence that contradicts the declared argument rejects.
+	// An instance created without arguments states nothing, so it is written like any other value.
+	CHECK(box_of_int.is_type(specialized_int));
+	CHECK_FALSE(box_of_int.is_type(specialized_string));
+	CHECK(box_of_int.is_type(unspecialized));
+	CHECK(box_of_int.is_type(subclass));
+
+	// The narrowing rule `is` uses: a successful test narrows the value, so every position needs
+	// positive, complete evidence. That is the single answer that differs between the two modes.
+	CHECK(box_of_int.is_type(specialized_int, false, true));
+	CHECK_FALSE(box_of_int.is_type(specialized_string, false, true));
+	CHECK_FALSE(box_of_int.is_type(unspecialized, false, true));
+	CHECK(box_of_int.is_type(subclass, false, true));
+
+	// The specialization work is guarded on `type_arguments`: an unspecialized slot keeps answering the
+	// nominal question alone, identically in both modes.
+	ContainerType nominal = expected;
+	nominal.type_arguments.clear();
+	const FSDataType plain_box = FSDataType::from_container_type(nominal);
+	CHECK(plain_box.type_arguments.is_empty());
+	for (const Variant *value : { &specialized_int, &specialized_string, &unspecialized, &subclass }) {
+		CHECK(plain_box.is_type(*value));
+		CHECK(plain_box.is_type(*value, false, true));
+	}
+
+	// A tuple element inherits the mode through the per-element recursion, so the nested spelling of the
+	// test now agrees with the identically spelled top-level one.
+	FSDataType tuple_type;
+	tuple_type.kind = FSDataType::TUPLE;
+	tuple_type.builtin_type = Variant::ARRAY;
+	FSDataType int_element;
+	int_element.kind = FSDataType::BUILTIN;
+	int_element.builtin_type = Variant::INT;
+	int_element.numeric_type = NumericType::INT32;
+	tuple_type.container_element_types.push_back(int_element);
+	tuple_type.container_element_types.push_back(box_of_int);
+
+	Array in_range_with_specialized;
+	in_range_with_specialized.push_back(1);
+	in_range_with_specialized.push_back(specialized_int);
+	Array in_range_with_unspecialized;
+	in_range_with_unspecialized.push_back(1);
+	in_range_with_unspecialized.push_back(unspecialized);
+	Array in_range_with_wrong;
+	in_range_with_wrong.push_back(1);
+	in_range_with_wrong.push_back(specialized_string);
+
+	CHECK(tuple_type.is_type(in_range_with_specialized));
+	CHECK(tuple_type.is_type(in_range_with_specialized, false, true));
+	CHECK(tuple_type.is_type(in_range_with_unspecialized));
+	CHECK_FALSE(tuple_type.is_type(in_range_with_unspecialized, false, true));
+	CHECK_FALSE(tuple_type.is_type(in_range_with_wrong));
+	CHECK_FALSE(tuple_type.is_type(in_range_with_wrong, false, true));
+
+	// A declared integer width has no partial form, so it is not a specialization-style strictness
+	// choice: the `BUILTIN` branch enforces it in BOTH modes, ahead of the implicit-conversion fallback.
+	// Making it mode-dependent would silently disable it for every store rather than fail a test.
+	Array out_of_range_element;
+	out_of_range_element.push_back(int64_t(2147483648LL));
+	out_of_range_element.push_back(specialized_int);
+	CHECK_FALSE(tuple_type.is_type(out_of_range_element));
+	CHECK_FALSE(tuple_type.is_type(out_of_range_element, false, true));
+	CHECK_FALSE(tuple_type.is_type(out_of_range_element, true));
+	CHECK_FALSE(tuple_type.is_type(out_of_range_element, true, true));
+}
+
 #endif // TOOLS_ENABLED
 
 } // namespace FSTests

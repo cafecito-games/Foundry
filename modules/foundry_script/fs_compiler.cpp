@@ -596,9 +596,26 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	// Preserve specialized type arguments (e.g. the `int` in `Box[int]`) so runtime metadata is not lost.
 	// A `Type[T]` argument keeps its class-handle layer, so `Slot[Type[Factory]]` stays distinct from
 	// `Slot[Factory]` in the reified descriptor the runtime validates member writes against.
-	for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
-		const FSParser::DataType &argument_datatype = p_datatype.type_arguments[i];
-		result.type_arguments.push_back(_gdtype_from_datatype(argument_datatype, p_owner, argument_datatype.is_type_handle_annotation, p_preserve_type_parameters));
+	//
+	// A slot whose argument (transitively) involves an erased type parameter -- `Box[T]`,
+	// `Box[Array[T]]` -- erases the whole argument list instead, exactly as the container-element loop
+	// above does and for the same reason: `T` lowers to an unconstrained node indistinguishable from a
+	// written `Variant`, and the runtime compares a declared argument invariantly, so a typed-but-erased
+	// argument would reject the concrete `Box[int]` a correctly specialized receiver holds. The analyzer
+	// still enforces the argument statically, and a boundary that *can* resolve the parameter against a
+	// receiver resolves it before the comparison.
+	bool erases_type_arguments = false;
+	for (int i = 0; i < p_datatype.type_arguments.size() && !p_preserve_type_parameters; i++) {
+		if (_datatype_contains_erased_type_parameter(p_datatype.type_arguments[i])) {
+			erases_type_arguments = true;
+			break;
+		}
+	}
+	if (!erases_type_arguments) {
+		for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
+			const FSParser::DataType &argument_datatype = p_datatype.type_arguments[i];
+			result.type_arguments.push_back(_gdtype_from_datatype(argument_datatype, p_owner, argument_datatype.is_type_handle_annotation, p_preserve_type_parameters));
+		}
 	}
 
 	return result;
