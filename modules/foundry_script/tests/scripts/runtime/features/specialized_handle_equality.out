@@ -1,0 +1,27 @@
+FS_TEST_OK
+exact arguments equal: true
+differing argument: false
+differing argument reversed: false
+variant argument against concrete: false
+concrete against variant argument: false
+bare against specialized: false
+specialized against bare: false
+bare against bare: true
+two arguments exact: true
+two arguments transposed: false
+differing arity across classes: false
+bare against two arguments: false
+nested argument exact: true
+nested argument differing element: false
+nested against unnested: false
+handle layer exact: true
+handle layer against bare class: false
+unspecialized slot accepts a specialized handle: true
+stored handle is Type[Holder]: true
+stored handle is Type[Holder[int]]: true
+stored handle equals bare: false
+stored handle equals concrete: true
+equal specializations collapse: 1
+collapsed entry keeps the last write: second
+unequal specializations separate: 3
+specialized handle equality ok

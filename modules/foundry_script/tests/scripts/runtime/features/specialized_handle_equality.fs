@@ -13,10 +13,6 @@ class Pair[K, V]:
 	var value: V
 
 
-func gradual_slot(handle: Type[Holder[int]]) -> Variant:
-	return handle
-
-
 func test() -> void:
 	var int_handle: Variant = Holder[int]
 	var int_handle_again: Variant = Holder[int]
@@ -51,11 +47,15 @@ func test() -> void:
 	print("handle layer exact: ", handle_layer == Holder[Type[Node]])
 	print("handle layer against bare class: ", handle_layer == class_layer)
 
-	# The gradual side accepts a handle whose argument evidence is absent, while `==` against a
-	# concrete specialization still refuses it. That split is the point of the operator.
-	var stored: Variant = gradual_slot(bare_handle)
-	print("gradual slot accepts absent evidence: ", stored != null)
+	# The compatibility side accepts a specialized handle wherever the demanded argument evidence is
+	# absent — the store below is legal and the matching `is` succeeds — while `==` against the
+	# unspecialized handle still refuses it. That split is the point of the operator.
+	var unspecialized_slot: Type[Holder] = Holder[int]
+	var stored: Variant = unspecialized_slot
+	print("unspecialized slot accepts a specialized handle: ", stored != null)
 	print("stored handle is Type[Holder]: ", stored is Type[Holder])
+	print("stored handle is Type[Holder[int]]: ", stored is Type[Holder[int]])
+	print("stored handle equals bare: ", stored == bare_handle)
 	print("stored handle equals concrete: ", stored == int_handle)
 
 	var registry: Dictionary = {}
