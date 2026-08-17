@@ -90,3 +90,6 @@ func test() -> void:
 	handle_element[Type[FbrFactory]](untyped_int())
 	FbrHolder[FbrBadge].static_bare_local(untyped_int())
 	FbrHolder[FbrBadge].new().instance_bare_local(untyped_int())
+	# An unspecialized receiver reifies nothing, so the bound baked into the slot is the only thing left
+	# to decide the store -- and it decides it.
+	FbrHolder.new().instance_bare_local(untyped_int())

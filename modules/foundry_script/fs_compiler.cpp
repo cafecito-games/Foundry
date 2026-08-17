@@ -355,13 +355,13 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	// bound rather than erased to Variant. That is what turns a final-bounded declaration into a slot the
 	// runtime really checks, which is the premise the analyzer accepts a gradual source into one on.
 	//
-	// A class-scope parameter is left alone while type parameters are being preserved: the preserved node
-	// is resolved against the receiver's reification, which already validates the store. A method-scope
-	// one is resolved even then, because projection reads a method-scope node as no evidence at all.
+	// This runs ahead of the type-parameter preservation a reified binding asks for, and replaces it: the
+	// bound is the only argument the parameter can ever be given, so baking it in says exactly what the
+	// receiver's reification would have said -- and says it even where no reification exists, as on an
+	// unspecialized generic instance, where projection would otherwise keep no evidence and take any
+	// value.
 	FSParser::DataType resolved_bound;
-	if (FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound) &&
-			(!p_preserve_type_parameters ||
-					p_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD)) {
+	if (FSTypeCompatibility::resolve_final_class_bound(p_datatype, resolved_bound)) {
 		// A bound written `Type[Label]` denotes a class handle even where the parameter is spelled bare,
 		// so the metatype layer has to be handled here even though the caller -- which saw only the bare
 		// parameter -- had no reason to ask for it.
