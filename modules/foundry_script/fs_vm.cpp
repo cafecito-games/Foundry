@@ -145,10 +145,10 @@ static String _get_var_type(const Variant *p_var) {
 
 // The extra clause a rejected tuple store adds when exactly one element failed, and failed only on
 // its container element typing. Naming the whole tuple type leaves the reader unable to tell that the
-// arity and every other element agreed and that the offending element was merely untyped, which is the
-// one failure the declaration's spelling cannot explain by itself. Any other shape of failure is left
-// to the plain message, and nothing is reported when more than one element disagrees, since the clause
-// would then be describing only part of the story.
+// arity and every other element agreed and that the offending element disagreed only on its own
+// element typing, which is the one failure the declaration's spelling cannot explain by itself. Any
+// other shape of failure is left to the plain message, and nothing is reported when more than one
+// element disagrees, since the clause would then be describing only part of the story.
 static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type, const Variant &p_value) {
 	if (p_value.get_type() != Variant::ARRAY) {
 		return String();
@@ -186,9 +186,19 @@ static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type
 		return String();
 	}
 
-	return vformat(R"( Tuple element %d expects "%s", but the value is "%s": a tuple store never converts, so a container element has to arrive already typed.)",
+	// An untyped value and a differently typed one fail the same test but need opposite advice: one has
+	// to acquire element typing, the other already has some and simply disagrees.
+	const Variant &failed_value = array[failed_element];
+	const bool value_is_typed = failed_value.get_type() == Variant::ARRAY
+			? Array(failed_value).is_typed()
+			: Dictionary(failed_value).is_typed();
+	const String reason = value_is_typed
+			? String("a tuple store never converts, so a container element's own typing has to match exactly.")
+			: String("a tuple store never converts, so a container element has to arrive already typed.");
+
+	return vformat(R"( Tuple element %d expects "%s", but the value is "%s": %s)",
 			failed_element, p_tuple_type.container_element_types[failed_element].get_source_type_name(),
-			_get_var_type(&array[failed_element]));
+			_get_var_type(&failed_value), reason);
 }
 
 void FSFunction::_profile_native_call(uint64_t p_t_taken, const String &p_func_name, const String &p_instance_class_name) {
