@@ -171,7 +171,7 @@ static bool reject_automation_option(CLIParseState &r_state, const String &p_arg
 
 static bool consume_automation_transport_option(CLIParseState &r_state, const String &p_arg, String &r_transport) {
 	if (p_arg.begins_with("--automation-transport=")) {
-		r_transport = p_arg.get_slicec('=', 1);
+		r_transport = inline_option_value(p_arg);
 		r_state.index++;
 		return true;
 	}
@@ -186,7 +186,7 @@ static bool consume_automation_transport_option(CLIParseState &r_state, const St
 
 static bool consume_automation_run_workflow_option(CLIParseState &r_state, const String &p_arg, String &r_workflow) {
 	if (p_arg.begins_with("--automation-run-workflow=")) {
-		r_workflow = p_arg.get_slicec('=', 1);
+		r_workflow = inline_option_value(p_arg);
 		r_state.index++;
 		return true;
 	}
@@ -893,7 +893,7 @@ static void parse_test_run(CLIParseState &r_state) {
 					return;
 				}
 			} else {
-				selector = arg.get_slice("=", 1);
+				selector = inline_option_value(arg);
 				r_state.index++;
 			}
 			int shard_index = -1;
@@ -914,7 +914,7 @@ static void parse_test_run(CLIParseState &r_state) {
 					return;
 				}
 			} else {
-				format = arg.get_slice("=", 1);
+				format = inline_option_value(arg);
 				r_state.index++;
 			}
 			if (format != "text" && format != "jsonl") {
@@ -928,7 +928,7 @@ static void parse_test_run(CLIParseState &r_state) {
 					return;
 				}
 			} else {
-				r_state.result.invocation.test_progress_file = arg.get_slice("=", 1);
+				r_state.result.invocation.test_progress_file = inline_option_value(arg);
 				r_state.index++;
 			}
 		} else if (arg == "--progress-heartbeat-seconds" || arg.begins_with("--progress-heartbeat-seconds=")) {
@@ -938,7 +938,7 @@ static void parse_test_run(CLIParseState &r_state) {
 					return;
 				}
 			} else {
-				heartbeat = arg.get_slice("=", 1);
+				heartbeat = inline_option_value(arg);
 				r_state.index++;
 			}
 			if (!heartbeat.is_valid_int()) {
