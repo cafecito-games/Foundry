@@ -1298,6 +1298,103 @@ TEST_CASE("[FoundryCLI][TestBenchmark] A static-variable workload shuts down cle
 	TemporaryNoMainSceneProject::remove_recursive(scratch);
 }
 
+// Writes a minimal corpus whose single workload is cheap enough for a subprocess test.
+static void write_trivial_benchmark_corpus(const String &p_corpus) {
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(p_corpus), OK);
+	{
+		Ref<FileAccess> config = FileAccess::open(p_corpus.path_join("case.cfg"), FileAccess::WRITE);
+		REQUIRE(config.is_valid());
+		config->store_string("[case]\niterations=16\nwarmup=1\noverhead_threshold_percent=-1\n");
+	}
+	Ref<FileAccess> workload = FileAccess::open(p_corpus.path_join("trivial.fs"), FileAccess::WRITE);
+	REQUIRE(workload.is_valid());
+	workload->store_string(
+			"extends RefCounted\n\n"
+			"func run_benchmark(iterations: int) -> void:\n"
+			"\tvar total := 0\n"
+			"\tfor index in iterations:\n"
+			"\t\ttotal += index\n");
+}
+
+// The benchmark run happens between the project's `pre_compile` and `post_compile` build stages.
+// Tearing the script language down inside the benchmark verb would strip the `foundry` named
+// global before `post_compile` runs, so a script-backed provider that reaches for
+// `foundry.reflection` would fail analysis for reasons that have nothing to do with the project.
+TEST_CASE("[FoundryCLI][TestBenchmark] A post-compile provider still resolves the reflection global") {
+	const String scratch = benchmark_scratch_root("post-compile-reflection");
+	const String corpus = scratch.path_join("corpus");
+	write_trivial_benchmark_corpus(corpus);
+
+	const String project = scratch.path_join("project");
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(project.path_join("build")), OK);
+	{
+		Ref<FileAccess> provider = FileAccess::open(project.path_join("build/reflection_provider.fs"),
+				FileAccess::WRITE);
+		REQUIRE(provider.is_valid());
+		provider->store_string(
+				"class_name BenchmarkReflectionProvider extends FoundryBuildTask\n"
+				"\n"
+				"func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"
+				"\tvar result := FoundryBuildResult.new()\n"
+				"\tresult.fingerprint = \"post-compile-reflection\"\n"
+				"\tvar methods := foundry.reflection.get_methods(self)\n"
+				"\tvar file := FileAccess.open(\"res://post_compile_artifact.txt\", FileAccess.WRITE)\n"
+				"\tif file == null:\n"
+				"\t\tresult.success = false\n"
+				"\t\tresult.message = \"could not write the post-compile artifact\"\n"
+				"\t\treturn result\n"
+				"\tfile.store_string(context.task_name + \":\" + str(methods.size()))\n"
+				"\tfile.close()\n"
+				"\tresult.success = true\n"
+				"\tresult.message = \"post-compile-reflection\"\n"
+				"\treturn result\n");
+	}
+	{
+		Ref<FileAccess> config = FileAccess::open(project.path_join("project.foundry"), FileAccess::WRITE);
+		REQUIRE(config.is_valid());
+		config->store_string(
+				"config_version=5\n\n"
+				"[application]\n\n"
+				"config/name=\"Benchmark Post Compile Project\"\n\n"
+				"[build]\n\n"
+				"enabled=true\n"
+				"post_compile=PackedStringArray(\"reflection_task\")\n\n"
+				"[build/providers/pipeline.reflection]\n\n"
+				"script=\"res://build/reflection_provider.fs\"\n"
+				"class_name=\"BenchmarkReflectionProvider\"\n\n"
+				"[build/tasks/reflection_task]\n\n"
+				"provider=\"pipeline.reflection\"\n"
+				"outputs=PackedStringArray(\"res://post_compile_artifact.txt\")\n");
+	}
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("--trusted");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back("--project");
+	arguments.push_back(project);
+	arguments.push_back(corpus);
+	arguments.push_back("--output");
+	arguments.push_back(scratch.path_join("bench.json"));
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(FileAccess::exists(scratch.path_join("bench.json")));
+
+	const String artifact_path = project.path_join("post_compile_artifact.txt");
+	REQUIRE(FileAccess::exists(artifact_path));
+	const String artifact = FileAccess::get_file_as_string(artifact_path);
+	CHECK(artifact.begins_with("reflection_task:"));
+	// `get_methods(self)` reports the provider's own `run`, so an empty count would mean the
+	// reflection surface answered without ever seeing the script.
+	CHECK_GT(artifact.get_slicec(':', 1).to_int(), 0);
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
 TEST_CASE("[FoundryCLI][TestBenchmark] A missing corpus directory fails the run") {
 	const String scratch = benchmark_scratch_root("missing");
 
