@@ -1437,6 +1437,66 @@ class AgentBuildFailureDetectionTests(unittest.TestCase):
         self.assertIn("SCons is not available", stderr.getvalue())
 
 
+class BinaryPathTests(unittest.TestCase):
+    """The wrapper must look for the file SCons actually writes."""
+
+    def binary_name(self, argv: list[str]) -> str:
+        args = agent_build.parse_args(["--platform", "macos", "--scons-arg", "arch=arm64", *argv])
+        return agent_build.resolve_build_target(args).binary_path.name
+
+    def test_default_editor_binary_name(self) -> None:
+        self.assertEqual(self.binary_name([]), "foundry.macos.editor.dev.arm64")
+
+    def test_double_precision_changes_the_binary_name(self) -> None:
+        self.assertEqual(
+            self.binary_name(["--scons-arg", "precision=double"]),
+            "foundry.macos.editor.dev.double.arm64",
+        )
+
+    def test_disabled_threads_change_the_binary_name(self) -> None:
+        self.assertEqual(
+            self.binary_name(["--scons-arg", "threads=no"]),
+            "foundry.macos.editor.dev.arm64.nothreads",
+        )
+
+    def test_extra_suffix_changes_the_binary_name(self) -> None:
+        self.assertEqual(
+            self.binary_name(["--scons-arg", "extra_suffix=probe"]),
+            "foundry.macos.editor.dev.arm64.probe",
+        )
+
+    def test_overridden_dev_build_drops_the_dev_marker(self) -> None:
+        self.assertEqual(self.binary_name(["--scons-arg", "dev_build=no"]), "foundry.macos.editor.arm64")
+
+    def test_every_name_altering_setting_combines(self) -> None:
+        self.assertEqual(
+            self.binary_name(
+                [
+                    "--scons-arg",
+                    "precision=double",
+                    "--scons-arg",
+                    "threads=false",
+                    "--scons-arg",
+                    "extra_suffix=probe",
+                ]
+            ),
+            "foundry.macos.editor.dev.double.arm64.nothreads.probe",
+        )
+
+    def test_the_post_build_check_accepts_a_renamed_binary(self) -> None:
+        with scratch_directory() as root:
+            binary_path = root / "bin" / "foundry.macos.editor.dev.double.arm64"
+            binary_path.parent.mkdir(parents=True)
+            binary_path.write_bytes(b"linked editor binary")
+            args = agent_build.parse_args(
+                ["--platform", "macos", "--scons-arg", "arch=arm64", "--scons-arg", "precision=double"]
+            )
+            with mock.patch.object(agent_build, "REPO_ROOT", root):
+                target = agent_build.resolve_build_target(args)
+            self.assertEqual(target.binary_path, binary_path)
+            self.assertTrue(target.binary_path.exists())
+
+
 class BuildFailureSignalScanTests(unittest.TestCase):
     def test_only_the_current_invocation_region_is_scanned(self) -> None:
         with scratch_directory() as root:

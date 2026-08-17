@@ -55,6 +55,8 @@ BUILD_FAILURE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 BUILD_OUTPUT_FAILURE_EXIT_CODE = 1
 MISSING_BINARY_EXIT_CODE = 127
+# The falsy spellings SCons accepts for a boolean build setting.
+SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "off"})
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
 DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
 DEFAULT_PROC_CGROUP = Path("/proc/self/cgroup")
@@ -653,10 +655,29 @@ def arch_from_args(args: argparse.Namespace) -> str:
     return normalize_arch()
 
 
+def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
+    """The binary suffix SCons will produce, mirroring the suffix assembled in SConstruct.
+
+    Raw SCons arguments can rename the produced binary, and the wrapper has to look for the file
+    the build actually writes rather than the default name.
+    """
+    suffix = f".{scons_platform}.editor"
+    if _scons_boolean_setting(args, "dev_build") is not False:
+        suffix += ".dev"
+    if _raw_scons_setting(args, "precision") == "double":
+        suffix += ".double"
+    suffix += f".{arch_from_args(args)}"
+    if _scons_boolean_setting(args, "threads") is False:
+        suffix += ".nothreads"
+    extra_suffix = _raw_scons_setting(args, "extra_suffix")
+    if extra_suffix:
+        suffix += f".{extra_suffix}"
+    return suffix
+
+
 def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
     scons_platform = host_scons_platform() if args.platform == "auto" else args.platform
-    arch = arch_from_args(args)
-    binary_path = REPO_ROOT / "bin" / f"foundry.{scons_platform}.editor.dev.{arch}"
+    binary_path = REPO_ROOT / "bin" / f"foundry{binary_suffix(args, scons_platform)}"
     default_display = ":1" if scons_platform == "linuxbsd" else None
     return BuildTarget(scons_platform=scons_platform, binary_path=binary_path, default_display=default_display)
 
@@ -672,6 +693,13 @@ def _raw_scons_setting(args: argparse.Namespace, name: str) -> str | None:
         if separator and key.strip().replace("-", "_").lower() == name:
             value = candidate
     return value
+
+
+def _scons_boolean_setting(args: argparse.Namespace, name: str) -> bool | None:
+    value = _raw_scons_setting(args, name)
+    if value is None:
+        return None
+    return value.strip().lower() not in SCONS_FALSE_VALUES
 
 
 def _resolve_build_input(value: str, repo_root: Path) -> Path:

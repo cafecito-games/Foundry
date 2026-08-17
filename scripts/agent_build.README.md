@@ -155,8 +155,10 @@ verifies the result and fails when either check trips:
 - no editor binary is present at the expected path, meaning no final link occurred. Exit code `127`
   and `build_summary.status` `failed`.
 
-The second check means a `--scons-arg` invocation that deliberately builds something other than the
-editor binary is reported as a failure. Startup failures (missing SCons, Ninja, or ccache) also emit a
+The expected binary path follows the raw SCons settings that rename it (`arch`, `precision`,
+`threads`, `extra_suffix`, `dev_build`), so those builds are checked against the file they actually
+produce. A `--scons-arg` invocation that deliberately builds something other than the editor binary is
+still reported as a failure. Startup failures (missing SCons, Ninja, or ccache) also emit a
 `build_summary` with status `error`, so a waiter is never left without a verdict.
 
 ## Benchmarks
