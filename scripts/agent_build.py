@@ -73,8 +73,10 @@ CHILD_TERMINATION_GRACE_SECONDS = 10.0
 MISSING_BINARY_EXIT_CODE = 1
 TOOLING_MISSING_EXIT_CODE = 127
 INTERRUPTED_EXIT_CODE = 130
-# The falsy spellings SCons accepts for a boolean build setting.
-SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "off"})
+# The falsy spellings SCons accepts for a boolean build setting, mirroring SCons' own BoolVariable
+# table. Missing one here makes the wrapper predict the wrong binary name for a build that disabled
+# the setting, and then resolve a stale binary from an earlier configuration.
+SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "none", "off"})
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
 DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
 DEFAULT_PROC_CGROUP = Path("/proc/self/cgroup")
