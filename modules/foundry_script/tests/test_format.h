@@ -761,6 +761,20 @@ static void check_format_invariants(const String &p_source, const String &p_form
 			vformat("Formatter is not idempotent for %s: %s", p_path, second.formatted));
 }
 
+// A comment-free body-level `pass` declares nothing and owns no comment, so erasing it
+// must leave the body formatted exactly as if it had never been written. Each case pins
+// the exact text and cross-checks it against the same source with the `pass` deleted, so
+// a future spacing change cannot make the two drift apart unnoticed.
+static void check_erased_pass_leaves_no_trace(const String &p_with_pass, const String &p_without_pass,
+		const String &p_expected, const String &p_path) {
+	const String formatted = format_or_fail(p_with_pass);
+	CHECK_MESSAGE(formatted == p_expected,
+			vformat("A comment-free pass must leave no trace in %s: %s", p_path, formatted));
+	CHECK_MESSAGE(formatted == format_or_fail(p_without_pass),
+			vformat("Formatting must not depend on an erased pass in %s: %s", p_path, formatted));
+	check_format_invariants(p_with_pass, formatted, p_path);
+}
+
 TEST_SUITE("[Modules][FoundryScript][Format]") {
 	TEST_CASE("[Format] Reindents structurally with tabs") {
 		String source = "func f():\n        return     1+2\n";
@@ -1860,6 +1874,83 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_MESSAGE(formatted == "class Inner:\n\t# one\n\tpass  # two\n",
 				vformat("An empty class must keep every pass comment once: %s", formatted));
 		check_format_invariants(source, formatted, "empty_class_multiple_pass.fs");
+	}
+
+	TEST_CASE("[Format] Removes a comment-free conformance `pass` without a trace") {
+		check_erased_pass_leaves_no_trace(
+				"extend Node uses Greeter:\n\tpass\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n",
+				"extend Node uses Greeter:\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n",
+				"extend Node uses Greeter:\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n",
+				"conformance_leading_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"extend Node uses Greeter:\n\tfunc a() -> String:\n\t\treturn \"a\"\n"
+				"\tpass\n\tfunc b() -> String:\n\t\treturn \"b\"\n",
+				"extend Node uses Greeter:\n\tfunc a() -> String:\n\t\treturn \"a\"\n"
+				"\tfunc b() -> String:\n\t\treturn \"b\"\n",
+				"extend Node uses Greeter:\n\tfunc a() -> String:\n\t\treturn \"a\"\n"
+				"\n\tfunc b() -> String:\n\t\treturn \"b\"\n",
+				"conformance_interior_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"extend Node uses Greeter:\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n\tpass\nvar z = 1\n",
+				"extend Node uses Greeter:\n\tfunc greet() -> String:\n\t\treturn \"hi\"\nvar z = 1\n",
+				"extend Node uses Greeter:\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n\n\nvar z = 1\n",
+				"conformance_trailing_bare_pass.fs");
+	}
+
+	TEST_CASE("[Format] Removes a comment-free class-body `pass` without a trace") {
+		check_erased_pass_leaves_no_trace(
+				"class Inner:\n\tpass\n\tfunc ping():\n\t\tpass\n",
+				"class Inner:\n\tfunc ping():\n\t\tpass\n",
+				"class Inner:\n\tfunc ping():\n\t\tpass\n",
+				"class_leading_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"class Inner:\n\tvar a = 1\n\tpass\n\tvar b = 2\n",
+				"class Inner:\n\tvar a = 1\n\tvar b = 2\n",
+				"class Inner:\n\tvar a = 1\n\tvar b = 2\n",
+				"class_interior_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"class Inner:\n\tvar a = 1\n\tpass\nvar z = 2\n",
+				"class Inner:\n\tvar a = 1\nvar z = 2\n",
+				"class Inner:\n\tvar a = 1\n\n\nvar z = 2\n",
+				"class_trailing_bare_pass.fs");
+	}
+
+	TEST_CASE("[Format] Removes a comment-free root-body `pass` without a trace") {
+		check_erased_pass_leaves_no_trace(
+				"pass\nvar x = 1\n", "var x = 1\n", "var x = 1\n", "root_leading_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"var x = 1\npass\nvar y = 2\n", "var x = 1\nvar y = 2\n", "var x = 1\nvar y = 2\n",
+				"root_interior_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"var x = 1\npass\n", "var x = 1\n", "var x = 1\n", "root_trailing_bare_pass.fs");
+	}
+
+	TEST_CASE("[Format] Removes a comment-free match-body `pass` without a trace") {
+		check_erased_pass_leaves_no_trace(
+				"func f(value):\n\tmatch value:\n\t\tpass\n\t\t1:\n\t\t\treturn 1\n",
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n",
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n",
+				"match_leading_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n\t\tpass\n\t\t2:\n\t\t\treturn 2\n",
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n\t\t2:\n\t\t\treturn 2\n",
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n\t\t2:\n\t\t\treturn 2\n",
+				"match_interior_bare_pass.fs");
+		check_erased_pass_leaves_no_trace(
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n\t\tpass\n\treturn 0\n",
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n\treturn 0\n",
+				"func f(value):\n\tmatch value:\n\t\t1:\n\t\t\treturn 1\n\treturn 0\n",
+				"match_trailing_bare_pass.fs");
+	}
+
+	TEST_CASE("[Format] Keeps a comment above a removed comment-free `pass` flush against the next member") {
+		// The comment belongs to the declaration that follows; the erased line between
+		// them must not push the two apart.
+		check_erased_pass_leaves_no_trace(
+				"extend Node uses Greeter:\n\t# lead\n\tpass\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n",
+				"extend Node uses Greeter:\n\t# lead\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n",
+				"extend Node uses Greeter:\n\t# lead\n\tfunc greet() -> String:\n\t\treturn \"hi\"\n",
+				"conformance_commented_bare_pass.fs");
 	}
 
 	TEST_CASE("[Format] Golden fixtures match byte-for-byte") {

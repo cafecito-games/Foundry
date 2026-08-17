@@ -128,6 +128,13 @@ private:
 	// alone cannot answer this: emitting a construct that keeps its own multi-line
 	// layout advances the cursor over lines whose comments it never consumed.
 	HashSet<int> emitted_inline_comments;
+	// Source lines that held only a body-level `pass` the parser erased. Such a line
+	// is neither trivia nor a retained node, so the blank-line normalizer would count
+	// it as a blank line and leave a gap where the statement used to be. Registered as
+	// the walk enters each body that recorded erased lines, which always happens before
+	// any trivia flush that could span them.
+	HashSet<int> erased_pass_source_lines;
+	void note_erased_pass_lines(const Vector<int> &p_lines);
 
 	// Buffer helpers.
 	void write_indent();

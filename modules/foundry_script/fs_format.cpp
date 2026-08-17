@@ -716,6 +716,17 @@ void FSPrinter::emit_trivia_line(int p_line) {
 	emit_comment_line(p_line, comments.find(p_line)->value.comment);
 }
 
+// Records the source lines of the `pass` statements the parser erased from a body
+// the walk is about to print, so the blank-line normalizer can tell them apart from
+// lines the author actually left blank.
+void FSPrinter::note_erased_pass_lines(const Vector<int> &p_lines) {
+	for (const int line : p_lines) {
+		if (line > 0) {
+			erased_pass_source_lines.insert(line);
+		}
+	}
+}
+
 // Emits the full-line comments and the normalized blank lines that sit between
 // the last emitted source line and `p_next_line` (exclusive). `p_required_blanks`
 // is the structural minimum to enforce before the first emitted piece (comment
@@ -729,7 +740,11 @@ void FSPrinter::emit_leading_trivia(int p_next_line, int p_required_blanks) {
 	while (!done) {
 		int blank_run = 0;
 		while (line < p_next_line && !is_trivia_line(line)) {
-			blank_run++;
+			// A line that held only an erased `pass` is not a blank line the author
+			// wrote; counting it would leave a gap where the statement was removed.
+			if (!erased_pass_source_lines.has(line)) {
+				blank_run++;
+			}
 			line++;
 		}
 		const bool trivia_follows = line < p_next_line;
@@ -1048,6 +1063,7 @@ void FSPrinter::print_extends_clause(const FSParser::ClassNode *p_class) {
 }
 
 void FSPrinter::print_class(const FSParser::ClassNode *p_class, bool p_is_root, bool p_is_tool) {
+	note_erased_pass_lines(p_class->erased_pass_lines);
 	if (p_is_root) {
 		int header_min_line = 0;
 		int header_max_line = 0;
@@ -1433,6 +1449,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 }
 
 void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance) {
+	note_erased_pass_lines(p_conformance->erased_pass_lines);
 	write_indent();
 	write("extend ");
 	print_type(p_conformance->target);
@@ -1545,8 +1562,8 @@ void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line,
 			first_piece = false;
 		}
 		lift_inline_comment(line);
-		// The erased line itself is spoken for either way; leaving the cursor behind it
-		// would let the following flush read it as a blank line.
+		// The erased line is fully consumed here; leaving the cursor behind it would let
+		// a later flush revisit it.
 		if (line > last_emitted_line) {
 			last_emitted_line = line;
 		}
@@ -2585,6 +2602,7 @@ void FSPrinter::print_while(const FSParser::WhileNode *p_while) {
 }
 
 void FSPrinter::print_match(const FSParser::MatchNode *p_match) {
+	note_erased_pass_lines(p_match->erased_pass_lines);
 	write_indent();
 	write("match ");
 	print_expression(p_match->test);
