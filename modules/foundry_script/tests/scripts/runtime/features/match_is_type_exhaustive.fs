@@ -11,10 +11,14 @@ func classify_bool(value: bool) -> String:
 		value is bool:
 			return "bool:" + str(value)
 
+# A plain enum is an open, integer-backed domain, so the type test covers the declared values only
+# and the catch-all is what closes the match.
 func classify_enum(value: Level) -> String:
 	match value:
 		value is Level:
 			return "level:" + str(value)
+		_:
+			return "level:undeclared"
 
 func classify_tagged_union(value: Shape) -> String:
 	match value:

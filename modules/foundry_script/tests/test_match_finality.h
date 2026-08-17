@@ -269,7 +269,11 @@ func describe(flag: bool) -> String:
 	CHECK(parser.get_errors().is_empty());
 }
 
-TEST_CASE("[Modules][FoundryScript][MatchFinality] A full plain-enum cover terminates") {
+static const char *OPEN_ENUM_ERROR = R"(Not all code paths return a value. The "match" over "Level" needs an unguarded "_" or bind branch: an enum-typed value can hold an integer outside the declared values.)";
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A full plain-enum cover does not terminate") {
+	// A plain enum is carried by an integer that accepts undeclared values, so handling every declared
+	// member leaves a live no-match path.
 	FSParser parser;
 	const String source = R"(
 enum Level:
@@ -287,8 +291,158 @@ func describe(level: Level) -> String:
 	FSAnalyzer analyzer(&parser);
 	analyzer.analyze();
 
-	CHECK_FALSE(has_error_containing(parser, FLOW_ERROR));
-	CHECK(parser.get_errors().is_empty());
+	CHECK(has_exact_error(parser, OPEN_ENUM_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] Explicit undeclared integers do not close a plain-enum match") {
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		Level.LOW:
+			return "low"
+		Level.HIGH:
+			return "high"
+		99:
+			return "ninety-nine"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_extra_integer.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_exact_error(parser, OPEN_ENUM_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A guarded catch-all does not close a plain-enum match") {
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level, allow: bool) -> String:
+	match level:
+		Level.LOW:
+			return "low"
+		Level.HIGH:
+			return "high"
+		_ when allow:
+			return "other"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_guarded.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_exact_error(parser, OPEN_ENUM_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] An unguarded catch-all closes a plain-enum match") {
+	FSParser wildcard_parser;
+	const String wildcard_source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		Level.LOW:
+			return "low"
+		_:
+			return "other"
+)";
+	REQUIRE(wildcard_parser.parse(wildcard_source, "res://match_finality_plain_enum_wildcard.fs", false) == OK);
+	FSAnalyzer wildcard_analyzer(&wildcard_parser);
+	wildcard_analyzer.analyze();
+	CHECK(wildcard_parser.get_errors().is_empty());
+
+	FSParser bind_parser;
+	const String bind_source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		Level.LOW:
+			return "low"
+		var other:
+			return str(other)
+)";
+	REQUIRE(bind_parser.parse(bind_source, "res://match_finality_plain_enum_bind.fs", false) == OK);
+	FSAnalyzer bind_analyzer(&bind_parser);
+	bind_analyzer.analyze();
+	CHECK(bind_parser.get_errors().is_empty());
+
+	const FSParser::FunctionNode *describe = find_function(bind_parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A plain-enum match keeps the no-match path for definite assignment") {
+	// Definite assignment must see the same open domain flow finality does: without an unguarded
+	// catch-all, a blank final assigned in every member branch is still not definitely assigned.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+final var label: String
+
+func _init(level: Level) -> void:
+	match level:
+		level is Level:
+			label = "declared"
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_definite_assignment.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_error_containing(parser, R"(Final variable "label" must be definitely assigned)"));
+
+	FSParser covered_parser;
+	const String covered_source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+final var label: String
+
+func _init(level: Level) -> void:
+	match level:
+		level is Level:
+			label = "declared"
+		_:
+			label = "undeclared"
+)";
+	REQUIRE(covered_parser.parse(covered_source, "res://match_finality_plain_enum_definite_assignment_covered.fs", false) == OK);
+	FSAnalyzer covered_analyzer(&covered_parser);
+	covered_analyzer.analyze();
+	CHECK(covered_parser.get_errors().is_empty());
 }
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A wildcard branch still terminates") {
@@ -359,10 +513,6 @@ func describe(flag: bool) -> String:
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A same-subject type test over the whole domain terminates") {
 	FSParser parser;
 	const String source = R"(
-enum Level:
-	LOW = 1
-	HIGH = 2
-
 enum Plain:
 	Ok(value: String)
 	Err(error: int)
@@ -370,11 +520,6 @@ enum Plain:
 func from_bool(value: bool) -> String:
 	match value:
 		value is bool:
-			return str(value)
-
-func from_enum(value: Level) -> String:
-	match value:
-		value is Level:
 			return str(value)
 
 func from_union(value: Plain) -> String:
@@ -394,7 +539,7 @@ func from_variant(value: int) -> String:
 	CHECK_FALSE(has_error_containing(parser, FLOW_ERROR));
 	CHECK(parser.get_errors().is_empty());
 
-	const StringName function_names[] = { SNAME("from_bool"), SNAME("from_enum"), SNAME("from_union"), SNAME("from_variant") };
+	const StringName function_names[] = { SNAME("from_bool"), SNAME("from_union"), SNAME("from_variant") };
 	for (const StringName &function_name : function_names) {
 		const FSParser::FunctionNode *function = find_function(parser, function_name);
 		REQUIRE(function != nullptr);
@@ -407,8 +552,8 @@ func from_variant(value: int) -> String:
 TEST_CASE("[Modules][FoundryScript][MatchFinality] Both spellings of a full enum cover agree") {
 	// An enum-typed slot can hold an integer outside the declared set, which no branch of either match
 	// selects at run time; both then fall through and return null. Testing the enum type and listing
-	// every declared member must therefore reach the same coverage decision, or the same program would
-	// compile under one spelling and not the other.
+	// every declared member must therefore reach the same coverage decision -- both open -- or the same
+	// program would compile under one spelling and not the other.
 	FSParser parser;
 	const String source = R"(
 enum Level:
@@ -431,7 +576,7 @@ func by_type(value: Level) -> String:
 	FSAnalyzer analyzer(&parser);
 	analyzer.analyze();
 
-	CHECK(parser.get_errors().is_empty());
+	CHECK(has_exact_error(parser, OPEN_ENUM_ERROR));
 
 	const FSParser::FunctionNode *by_values = find_function(parser, SNAME("by_values"));
 	const FSParser::FunctionNode *by_type = find_function(parser, SNAME("by_type"));
@@ -441,8 +586,8 @@ func by_type(value: Level) -> String:
 	const FSParser::MatchNode *type_match = find_first_match(by_type->body);
 	REQUIRE(values_match != nullptr);
 	REQUIRE(type_match != nullptr);
-	CHECK(values_match->covers_subject_domain);
-	CHECK(type_match->covers_subject_domain);
+	CHECK_FALSE(values_match->covers_subject_domain);
+	CHECK_FALSE(type_match->covers_subject_domain);
 }
 
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A partial same-subject type test does not terminate") {

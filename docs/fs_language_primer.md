@@ -294,9 +294,14 @@ match value:
 - Comma-separated alternatives compose with OR, and a `when` guard still runs after the pattern
   succeeds, falling through to the next branch when the guard is false.
 - An unguarded test the subject cannot fail counts as covering the `match`, exactly like a `_`
-  branch: a non-nullable `bool` tested against `bool`, a non-nullable enum or tagged union tested
-  against its own type, or anything tested against `Variant`. A partial test such as `value is int`
-  on an `int | String` subject still leaves the rest of the domain uncovered.
+  branch: a non-nullable `bool` tested against `bool`, a non-nullable tagged union tested against
+  its own type, or anything tested against `Variant`. A partial test such as `value is int` on an
+  `int | String` subject still leaves the rest of the domain uncovered.
+- A plain enum is an **open** domain: it is carried by an integer, and a cast such as `99 as Level`
+  puts an undeclared value in an enum-typed slot with only a warning. Listing every declared member,
+  or testing `value is Level`, therefore does not make the `match` exhaustive — only an unguarded
+  `_` or bind branch does. Tagged unions and `bool` are closed domains and are covered by handling
+  every case or both values.
 
 ### Types
 

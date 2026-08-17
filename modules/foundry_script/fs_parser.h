@@ -1601,6 +1601,10 @@ public:
 		// populated for the finite domains coverage is computed over; used by diagnostics.
 		String subject_domain_name;
 		String uncovered_domain_values;
+		// Set when the subject is a plain enum without an unguarded catch-all. A plain enum is backed
+		// by an integer carrier that accepts undeclared values, so listing every declared member never
+		// closes the match; diagnostics say that instead of naming values to add.
+		bool subject_domain_is_open_enum = false;
 		// Structured companion to `uncovered_domain_values` for a tagged-union subject: the cases no
 		// branch provably covers, in declaration order, and whether the subject's `null` value is
 		// among them. Tooling (code generation, completion filtering) must read these instead of
