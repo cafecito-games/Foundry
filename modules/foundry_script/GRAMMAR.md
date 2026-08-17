@@ -1460,16 +1460,19 @@ Rules:
 - A **plain enum is an open, integer-backed domain**. Its declared members name values; they are not
   proof that no other integer inhabits an enum-typed slot, since a cast such as `99 as Level` warns
   and proceeds. A `match` over a plain enum is therefore exhaustive only through a branch that
-  cannot fail: an unguarded wildcard or bind, or an unguarded `value is Variant` test. Listing every
-  member, handling extra integer literals, or testing `value is Level` all leave the undeclared
-  carrier values unhandled. Tagged unions and `bool` remain closed domains.
+  cannot fail: an unguarded wildcard or bind, an unguarded `value is Variant` test, or an unguarded
+  test against the enum's whole integer carrier (`value is long`), which admits the undeclared values
+  as well. Listing every member, handling extra integer literals, or testing `value is Level` all
+  leave the undeclared carrier values unhandled. Tagged unions and `bool` remain closed domains.
 - An unguarded same-subject type-test pattern covers the whole subject when the tested type accepts
   every value the subject can hold, and the branch then counts exactly as a wildcard does. That is
-  decided only where the subject's domain is closed: a non-nullable `bool` tested against `bool`, a
-  non-nullable tagged union tested against its own type (a case test such as `value is Message.Move`
-  covers that case, not the union), and any subject tested against `Variant`. A partial test such as
-  `value is int` on an `int | String` subject covers nothing, and neither does `value is Level` on a
-  plain-enum subject, which is a runtime membership test over the declared values.
+  decided in three shapes: any subject tested against `Variant`; a closed domain tested against its
+  own type — a non-nullable `bool` against `bool`, and a non-nullable tagged union against its own
+  type (a case test such as `value is Message.Move` covers that case, not the union); and a
+  non-nullable plain enum tested against the whole of its integer carrier (`value is long`). Every
+  other test covers nothing: a partial test such as `value is int` on an `int | String` subject, a
+  narrower carrier width such as `value is int` on a plain enum, and `value is Level` on a plain-enum
+  subject, which is a runtime membership test over the declared values.
 - Exhaustiveness is normative for flow analysis, not only for diagnostics: a `match` over a closed
   domain — a tagged union or `bool` — whose branches cover the whole domain and all terminate is
   itself terminating, so a value-returning function needs no trailing `return` after it. The same

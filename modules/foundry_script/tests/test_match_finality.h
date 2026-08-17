@@ -472,6 +472,137 @@ func _init(level: Level) -> void:
 	CHECK(covered_parser.get_errors().is_empty());
 }
 
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A full-carrier test closes a plain-enum match") {
+	// The carrier is what makes a plain enum open, so a test that admits the whole carrier admits the
+	// undeclared values too and leaves no fallthrough, in a value-returning and in a void function.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		level is long:
+			return str(level)
+
+func record(level: Level) -> void:
+	match level:
+		level is long:
+			print(level)
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_carrier.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK(match_node->covers_subject_domain);
+
+	const FSParser::FunctionNode *record = find_function(parser, SNAME("record"));
+	REQUIRE(record != nullptr);
+	const FSParser::MatchNode *void_match = find_first_match(record->body);
+	REQUIRE(void_match != nullptr);
+	CHECK(void_match->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] An enum-type test does not close a plain-enum match") {
+	// `value is Level` is a membership test over the declared values, so the undeclared carrier values
+	// still fall through even though the carrier test on the same subject does not.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		level is Level:
+			return str(level)
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_own_type.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_exact_error(parser, OPEN_ENUM_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A narrower carrier test does not close a plain-enum match") {
+	// `int` is a 32-bit range test over the 64-bit carrier, so values the slot can hold still escape.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+func describe(level: Level) -> String:
+	match level:
+		level is int:
+			return str(level)
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_narrow_carrier.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(has_exact_error(parser, OPEN_ENUM_ERROR));
+
+	const FSParser::FunctionNode *describe = find_function(parser, SNAME("describe"));
+	REQUIRE(describe != nullptr);
+	const FSParser::MatchNode *match_node = find_first_match(describe->body);
+	REQUIRE(match_node != nullptr);
+	CHECK_FALSE(match_node->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][MatchFinality] A full-carrier test satisfies definite assignment") {
+	// Definite assignment reads the same coverage decision flow finality does, so both answers agree.
+	FSParser parser;
+	const String source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+final var label: String
+
+func _init(level: Level) -> void:
+	match level:
+		level is long:
+			label = str(level)
+)";
+	REQUIRE(parser.parse(source, "res://match_finality_plain_enum_carrier_definite_assignment.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(parser.get_errors().is_empty());
+
+	FSParser narrow_parser;
+	const String narrow_source = R"(
+enum Level:
+	LOW = 0
+	HIGH = 1
+
+final var label: String
+
+func _init(level: Level) -> void:
+	match level:
+		level is int:
+			label = str(level)
+)";
+	REQUIRE(narrow_parser.parse(narrow_source, "res://match_finality_plain_enum_narrow_carrier_definite_assignment.fs", false) == OK);
+	FSAnalyzer narrow_analyzer(&narrow_parser);
+	narrow_analyzer.analyze();
+	CHECK(has_error_containing(narrow_parser, R"(Final variable "label" must be definitely assigned)"));
+}
+
 TEST_CASE("[Modules][FoundryScript][MatchFinality] A wildcard branch still terminates") {
 	FSParser parser;
 	const String source = R"(
