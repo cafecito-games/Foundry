@@ -93,6 +93,7 @@ public:
 		ONREADY_WITH_EXPORT, // The `@onready` annotation will set the value after `@export` which is likely not intended.
 		NON_EXHAUSTIVE_MATCH, // A `match` over an enum or `bool` does not handle all values and has no wildcard `_` branch.
 		MATCH_WITHOUT_DEFAULT, // A `match` over a non-finite-domain value has no wildcard `_` branch.
+		OPEN_ENUM_MATCH_WITHOUT_DEFAULT, // A `match` over a plain (integer-backed) enum has no unguarded `_` or bind branch.
 		WARNING_MAX,
 	};
 
@@ -145,6 +146,7 @@ public:
 		ERROR, // ONREADY_WITH_EXPORT // May not work as expected.
 		WARN, // NON_EXHAUSTIVE_MATCH
 		IGNORE, // MATCH_WITHOUT_DEFAULT // Requiring a default branch on open-domain matches is noisy; opt-in.
+		WARN, // OPEN_ENUM_MATCH_WITHOUT_DEFAULT // Handling every declared member looks exhaustive but is not.
 	};
 
 	static_assert(std_size(default_warning_levels) == WARNING_MAX, "Amount of default levels does not match the amount of warnings.");

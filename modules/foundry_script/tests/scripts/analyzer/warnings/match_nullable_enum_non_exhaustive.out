@@ -1,4 +1,4 @@
 FS_TEST_OK
-~~ WARNING at line 7: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Direction". Unhandled: null. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 7: (OPEN_ENUM_MATCH_WITHOUT_DEFAULT) The "match" over "Direction" does not handle: null. "Direction" is also carried by an integer that can hold values outside its declared members, so add an unguarded "_" or bind branch rather than the missing patterns alone.
 north
 ok

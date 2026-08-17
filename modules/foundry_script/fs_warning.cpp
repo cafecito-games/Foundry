@@ -173,6 +173,14 @@ String FSWarning::get_message() const {
 			return vformat(R"(The "match" statement does not cover all values of "%s". Unhandled: %s. Add the missing patterns or a "_" wildcard branch.)", symbols[0], symbols[1]);
 		case MATCH_WITHOUT_DEFAULT:
 			return R"(The "match" statement has no "_" wildcard branch; some values may go unhandled.)";
+		case OPEN_ENUM_MATCH_WITHOUT_DEFAULT:
+			CHECK_SYMBOLS(2);
+			// The empty-list form is also reached when a non-constant pattern makes coverage unprovable,
+			// so it must not claim that every declared member is handled.
+			if (symbols[1].is_empty()) {
+				return vformat(R"(The "match" over "%s" has no unguarded "_" or bind branch. "%s" is carried by an integer that can also hold values outside its declared members, so no set of value patterns closes it.)", symbols[0], symbols[0]);
+			}
+			return vformat(R"(The "match" over "%s" does not handle: %s. "%s" is also carried by an integer that can hold values outside its declared members, so add an unguarded "_" or bind branch rather than the missing patterns alone.)", symbols[0], symbols[1], symbols[0]);
 		case WARNING_MAX:
 			break; // Can't happen, but silences warning.
 	}
@@ -246,6 +254,7 @@ String FSWarning::get_name_from_code(Code p_code) {
 		PNAME("ONREADY_WITH_EXPORT"),
 		PNAME("NON_EXHAUSTIVE_MATCH"),
 		PNAME("MATCH_WITHOUT_DEFAULT"),
+		PNAME("OPEN_ENUM_MATCH_WITHOUT_DEFAULT"),
 	};
 
 	static_assert(std_size(names) == WARNING_MAX, "Amount of warning types don't match the amount of warning names.");
