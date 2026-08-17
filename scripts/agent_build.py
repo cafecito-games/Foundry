@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -20,7 +21,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple, TextIO, cast
@@ -525,6 +526,65 @@ def stream_output(pipe, output_queue: queue.Queue[str | None]) -> None:
         output_queue.put(None)
 
 
+class StopSignalDeferral:
+    """Whether a stop signal must be held, and the one being held."""
+
+    def __init__(self) -> None:
+        self.active = False
+        self.pending: int | None = None
+
+
+STOP_SIGNALS = StopSignalDeferral()
+
+
+def raise_interrupt(signal_number: int, frame: object) -> None:
+    """Route a supervisor's stop signal into the wrapper's ordinary interrupt path."""
+    if STOP_SIGNALS.active:
+        STOP_SIGNALS.pending = signal_number
+        return
+    raise KeyboardInterrupt(f"signal {signal_number}")
+
+
+def install_stop_signal_handlers() -> dict[int, Any]:
+    """Handle the signals a supervisor stops a build with, and report what they replaced.
+
+    A stop signal is delivered to the wrapper alone — its build runs in a separate session — so
+    without a handler the wrapper dies leaving the build running and no verdict written at all.
+    `SIGINT` is handled explicitly, rather than left to the interpreter's default, so that it can be
+    deferred over the sections where an interrupt would lose track of a running build.
+    """
+    previous: dict[int, Any] = {}
+    for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            previous[number] = signal.signal(number, raise_interrupt)
+        except (OSError, ValueError):
+            continue
+    return previous
+
+
+@contextlib.contextmanager
+def deferred_stop_signals() -> Iterator[None]:
+    """Hold stop signals for the length of a section, then deliver one that arrived.
+
+    Creating the build process is such a section: an interrupt raised inside `Popen` leaves a
+    started, separately-sessioned child that no handle refers to, which is unstoppable and therefore
+    the very orphan this shutdown path exists to prevent. Deferring costs only the microseconds the
+    launch takes, and the signal is honored immediately afterwards.
+    """
+    STOP_SIGNALS.active = True
+    try:
+        yield
+    finally:
+        STOP_SIGNALS.active = False
+        pending = STOP_SIGNALS.pending
+        STOP_SIGNALS.pending = None
+    if pending is not None:
+        raise KeyboardInterrupt(f"signal {pending}")
+
+
 def child_group_id(proc: subprocess.Popen[str]) -> int | None:
     """The child's process group, or None where the platform has none to address."""
     if os.name == "nt":
@@ -688,17 +748,18 @@ def run_logged_command(
             # Everything from process creation on is guarded: an interrupt landing between the
             # launch and the output loop would otherwise leave the build running unattended.
             try:
-                proc = subprocess.Popen(
-                    command,
-                    cwd=REPO_ROOT,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    start_new_session=os.name != "nt",
-                )
-                pgid = child_group_id(proc)
+                with deferred_stop_signals():
+                    proc = subprocess.Popen(
+                        command,
+                        cwd=REPO_ROOT,
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        start_new_session=os.name != "nt",
+                    )
+                    pgid = child_group_id(proc)
                 assert proc.stdout is not None
 
                 output_queue: queue.Queue[str | None] = queue.Queue()
@@ -1702,29 +1763,6 @@ def main(argv: list[str]) -> int:
         print(f"[agent-build] failed to start the test command: {exc}", file=sys.stderr)
         return report("test-failure", "test", TOOLING_MISSING_EXIT_CODE)
     return report("test-failure" if test_exit else "success", "test", test_exit)
-
-
-def raise_interrupt(signal_number: int, frame: object) -> None:
-    """Route a supervisor's stop signal into the wrapper's ordinary interrupt path."""
-    raise KeyboardInterrupt(f"signal {signal_number}")
-
-
-def install_stop_signal_handlers() -> dict[int, Any]:
-    """Handle the signals a supervisor stops a build with, and report what they replaced.
-
-    A stop signal is delivered to the wrapper alone — its build runs in a separate session — so
-    without a handler the wrapper dies leaving the build running and no verdict written at all.
-    """
-    previous: dict[int, Any] = {}
-    for name in ("SIGTERM", "SIGHUP"):
-        number = getattr(signal, name, None)
-        if number is None:
-            continue
-        try:
-            previous[number] = signal.signal(number, raise_interrupt)
-        except (OSError, ValueError):
-            continue
-    return previous
 
 
 def run(argv: list[str]) -> int:

@@ -1799,6 +1799,41 @@ class InterruptedBuildTests(WrapperHarness):
         self.assertEqual(after_verdict, at_verdict, "the worker kept writing after the run was declared over")
         self.assertIn("child=killed", line)
 
+    def test_a_stop_signal_during_process_creation_still_stops_the_build(self) -> None:
+        """A signal raised inside `Popen` would leave a started build no handle refers to."""
+        with scratch_directory() as root:
+            pid_path = root / "child.pid"
+            artifact_path = root / "artifact"
+            scons = long_running_fake_scons(
+                root,
+                pid_path=pid_path,
+                artifact_path=artifact_path,
+                ignore_terminate=False,
+                lifetime_seconds=10.0,
+            )
+            original_popen = agent_build.subprocess.Popen
+
+            def popen_and_signal(command: Any, *args: Any, **kwargs: Any) -> Any:
+                proc = original_popen(command, *args, **kwargs)
+                if str(scons) in list(command):
+                    os.kill(os.getpid(), signal.SIGTERM)
+                return proc
+
+            with mock.patch.object(agent_build.subprocess, "Popen", popen_and_signal):
+                exit_code, log_path, _, _ = self.run_wrapper(root, scons, entry=agent_build.run)
+            time.sleep(0.5)
+            alive = process_is_alive(self.reap(pid_path)) if pid_path.exists() else False
+            after_verdict = artifact_state(artifact_path)
+            time.sleep(0.5)
+            settled = artifact_state(artifact_path)
+            line = self.result_line(log_path)
+        self.assertFalse(alive, "a build signaled during its own creation was left running")
+        self.assertEqual(settled, after_verdict, "the build kept writing after the run was declared over")
+        self.assertEqual(exit_code, 130)
+        self.assertTrue(line.startswith(f"{RESULT_PREFIX} interrupted"), line)
+        # `none` is the tell that the wrapper never got a handle on the build it had already started.
+        self.assertIn("child=terminated", line)
+
     def test_an_interrupt_right_after_the_launch_still_stops_the_build(self) -> None:
         """The window between creating the build process and watching it must be guarded too."""
         with scratch_directory() as root:
