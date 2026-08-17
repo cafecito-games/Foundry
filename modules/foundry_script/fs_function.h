@@ -150,6 +150,15 @@ public:
 			case BUILTIN: {
 				Variant::Type var_type = p_variant.get_type();
 				bool valid = builtin_type == var_type;
+				if (valid && numeric_type != NumericType::NONE) {
+					// A declared width is part of the type: a value on the right carrier whose magnitude the
+					// width cannot hold is not a value of that type, and no conversion can rescue it -- the
+					// carrier already matches, so constructing it again would yield the same magnitude. This
+					// returns instead of clearing `valid` so the implicit-conversion fallback below cannot
+					// re-admit the value unchanged. A typed-container element never reaches here; its width
+					// travels inside the `ContainerType` comparison the array and dictionary cases make.
+					return numeric_type_contains(numeric_type, p_variant);
+				}
 				if (valid && builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 					Array array = p_variant;
 					valid = array.is_typed() && container_element_types[0].is_same_container_type(array.get_element_type());
