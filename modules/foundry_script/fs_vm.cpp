@@ -253,7 +253,9 @@ static bool _type_handle_test_matches(const FSDataType &p_expected_type, const V
 // The one invariant specialization relation behind every script `is` and `as` lives on `FSDataType`
 // (`fs_function.cpp`), because the structural predicate `is_type()` answers with it too: a specialized
 // script slot enforces its arguments at every boundary, and a second copy here is how the top-level and
-// nested answers drifted apart in the first place. These wrappers only pin the strictness mode.
+// nested answers drifted apart in the first place. An instance test reaches it through `is_type()`
+// itself; this wrapper serves the class-handle form, which asks the nominal and argument questions
+// separately, and only pins the strictness mode.
 //
 // `is`/`as` narrow: a successful test lets the guarded body read the value at the specialization, so
 // every projected position must be positive, complete evidence. Every store is gradual instead, which
@@ -261,13 +263,6 @@ static bool _type_handle_test_matches(const FSDataType &p_expected_type, const V
 static bool _specialization_matches(const Vector<ContainerType> &p_expected_arguments,
 		const Ref<Script> &p_expected_script, const FSRuntimeSpecializationEvidence &p_actual) {
 	return FSDataType::specialization_matches(p_expected_arguments, p_expected_script, p_actual, true);
-}
-
-static bool _trait_specialization_matches(const Vector<ContainerType> &p_expected_arguments,
-		const Ref<Script> &p_expected_script, const StringName &p_trait_name,
-		Object *p_object, const Variant &p_value) {
-	return FSDataType::trait_specialization_matches(p_expected_arguments, p_expected_script, p_trait_name,
-			p_object, p_value, true);
 }
 
 #ifdef DEBUG_ENABLED
@@ -2649,14 +2644,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 				} else {
 					Script *script_type = nullptr;
-					Vector<ContainerType> expected_type_arguments;
-					if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type, nullptr, &expected_type_arguments))) {
+					FSDataType expected_handle_type;
+					if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type, &expected_handle_type))) {
 						err_text = _missing_static_self_error(name);
 						OPCODE_BREAK;
 					}
 					GD_ERR_BREAK(!script_type);
-					FoundryScript *fs_type = Object::cast_to<FoundryScript>(script_type);
-					const bool is_trait_type = fs_type != nullptr && fs_type->is_trait_type();
 
 					bool was_freed = false;
 					Object *object = value->get_validated_object_with_check(was_freed);
@@ -2665,49 +2658,24 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 
-					if (is_trait_type) {
-						// Trait-typed values are Object-backed: a trait has no native class of its own, so
-						// membership is a nominal trait-set lookup over the flattened implementer rather than
-						// a native/script inheritance walk.
-						const StringName trait_name = fs_type->get_trait_type_name();
-						if (object) {
-							ScriptInstance *script_instance = object->get_script_instance();
-							if (script_instance != nullptr) {
-								Ref<Script> script_ref = script_instance->get_script();
-								result = script_ref.is_valid() && script_ref->has_script_trait(trait_name);
-							}
-							if (!result) {
-								// A native object (no Foundry Script instance), or a scripted object whose engine
-								// base class was retroactively conformed, satisfies the trait via the registry.
-								result = FSConformanceRegistry::get_singleton()->native_class_conforms(object->get_class_name(), trait_name, true);
-							}
-						} else if (value->get_type() != Variant::NIL && value->get_type() != Variant::OBJECT) {
-							result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(value->get_type(), trait_name, true);
-						}
-						// A specialized trait target asks the same second, invariant question a specialized
-						// class target does, against the arguments the value's implementer conformed with,
-						// whether it declared them itself or a retroactive conformance recorded them.
-						if (result && !expected_type_arguments.is_empty()) {
-							result = _trait_specialization_matches(expected_type_arguments, Ref<Script>(script_type),
-									trait_name, object, *value);
-						}
-					} else if (object && object->get_script_instance()) {
-						Ref<Script> script_ref = object->get_script_instance()->get_script();
-						Script *script_ptr = script_ref.ptr();
-						while (script_ptr) {
-							if (script_ptr == script_type) {
-								result = true;
-								break;
-							}
-							script_ptr = script_ptr->get_base_script().ptr();
-						}
-						// A specialized target asks a second, invariant question about the arguments the
-						// instance was actually created with; a raw target asks only the nominal one above.
-						if (result && !expected_type_arguments.is_empty()) {
-							result = _specialization_matches(expected_type_arguments, Ref<Script>(script_type),
-									FSRuntimeSpecializationEvidence::from_instance(object));
-						}
-					}
+					// A trait never appears in a class inheritance chain, so membership comes from a declared
+					// `uses`, an inherited or supertrait clause, or the retroactive-conformance registry -- and
+					// a conformer may be a scriptless native object or even a builtin value. The shared
+					// structural relation owns every one of those sources plus the specialization comparison a
+					// specialized target adds, so the operand is decoded as a value-position type and the
+					// relation answers, rather than this instruction keeping a second, nominal-only rule. A
+					// class target reaches the identical base-script walk through the same call.
+					FSDataType expected_value_type = expected_handle_type;
+					expected_value_type.is_type_handle = false;
+
+					// The relation accepts null for assignment compatibility; a test must not, because
+					// `null is Keeper` narrows nothing. An object reference whose object is already gone is
+					// answered the same way.
+					const bool has_testable_value = value->get_type() != Variant::NIL &&
+							(value->get_type() != Variant::OBJECT || object != nullptr);
+					// Narrowing: a successful test lets the guarded body read the value at the target
+					// specialization, so absent evidence cannot justify it.
+					result = has_testable_value && expected_value_type.is_type(*value, false, true);
 				}
 
 				*dst = result;
@@ -3861,9 +3829,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				GD_ERR_BREAK(!base_type);
-				FoundryScript *fs_base_type = Object::cast_to<FoundryScript>(base_type);
-				const bool is_trait_type = fs_base_type != nullptr && fs_base_type->is_trait_type();
 				const bool is_type_handle = _code_ptr[ip + 4];
+
+				// A cast succeeds exactly when the matching `is` would, so it asks the one shared structural
+				// relation the same way: a declared or inherited `uses`, a supertrait, retroactive script,
+				// native and builtin conformance, and the specialization comparison all live there, and a
+				// second copy here is how the runtime answers drifted apart before.
+				FSDataType expected_value_type = expected_handle_type;
+				expected_value_type.is_type_handle = false;
 
 #ifdef DEBUG_ENABLED
 				if (src->operator Object *() && !src->get_validated_object()) {
@@ -3871,7 +3844,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
-					if (!is_trait_type || !FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), fs_base_type->get_trait_type_name(), true)) {
+					// A builtin value reaches a script-typed target only through a retroactive builtin
+					// conformance, which is the nominal half of the relation. The arguments are stripped for
+					// that question so a value that conforms but specializes differently still casts to null
+					// below instead of raising this diagnostic.
+					FSDataType nominal_value_type = expected_value_type;
+					nominal_value_type.type_arguments.clear();
+					if (!nominal_value_type.is_type(*src)) {
 						err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
 						OPCODE_BREAK;
 					}
@@ -3882,49 +3861,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				if (is_type_handle) {
 					valid = _script_type_handle_matches(expected_handle_type, expected_type_arguments, *src);
-				} else if (is_trait_type) {
-					const StringName trait_name = fs_base_type->get_trait_type_name();
-					if (src->get_type() == Variant::OBJECT && src->operator Object *() != nullptr) {
-						Object *src_obj = src->operator Object *();
-						ScriptInstance *scr_inst = src_obj->get_script_instance();
-						if (scr_inst) {
-							Ref<Script> src_script = scr_inst->get_script();
-							valid = src_script.is_valid() && src_script->has_script_trait(trait_name);
-						}
-						if (!valid) {
-							// A native object (no Foundry Script instance), or a scripted object whose engine
-							// base class was retroactively conformed, casts successfully via the registry.
-							valid = FSConformanceRegistry::get_singleton()->native_class_conforms(src_obj->get_class_name(), trait_name, true);
-						}
-					} else if (src->get_type() != Variant::NIL) {
-						valid = FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name, true);
-					}
-					// A trait cast succeeds exactly when the matching `is` would, so a specialized trait
-					// target requires the same invariant argument evidence.
-					if (valid && !expected_type_arguments.is_empty()) {
-						valid = _trait_specialization_matches(expected_type_arguments, Ref<Script>(base_type),
-								trait_name, src->get_validated_object(), *src);
-					}
-				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
-					Object *src_obj = src->operator Object *();
-					ScriptInstance *scr_inst = src_obj->get_script_instance();
-					if (scr_inst) {
-						Ref<Script> src_script = scr_inst->get_script();
-						Script *src_type = src_script.ptr();
-						while (src_type) {
-							if (src_type == base_type) {
-								valid = true;
-								break;
-							}
-							src_type = src_type->get_base_script().ptr();
-						}
-					}
-					// A cast succeeds exactly when the matching `is` would, so a mismatched or unproven
-					// specialization yields null rather than relabelling the object.
-					if (valid && !expected_type_arguments.is_empty()) {
-						valid = _specialization_matches(expected_type_arguments, Ref<Script>(base_type),
-								FSRuntimeSpecializationEvidence::from_instance(src_obj));
-					}
+				} else {
+					// Null casts to null, and so does a reference whose object is already gone: the relation
+					// accepts both for assignment compatibility, which a cast must not.
+					const bool has_castable_value = src->get_type() != Variant::NIL &&
+							(src->get_type() != Variant::OBJECT || src->get_validated_object() != nullptr);
+					// Narrowing, matching the `is` that guards such a cast: absent argument evidence yields null
+					// rather than relabelling the value at an unproven specialization.
+					valid = has_castable_value && expected_value_type.is_type(*src, false, true);
 				}
 
 				if (valid) {
