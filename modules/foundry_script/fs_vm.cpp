@@ -803,6 +803,10 @@ static Variant _canonical_tuple_value(const FSDataType &p_shape, const Variant &
 	return canonical;
 }
 
+Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value) {
+	return _canonical_tuple_value(p_shape, p_value, 0);
+}
+
 static bool _container_type_from_type_info(const Variant &p_type_info, Variant::Type p_builtin_type,
 		const StringName &p_native_type, const FrameSelfBinding &p_frame_self, ContainerType &r_type,
 		const Vector<ProjectedContainerType> &p_receiver_arguments = Vector<ProjectedContainerType>(),
@@ -1843,6 +1847,26 @@ bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType
 		r_value = p_value;
 		return true;
 	}
+	if (p_type.kind == FSDataType::TUPLE) {
+		// A declared tuple means the same thing here as it does at a store: the structural shape, with
+		// the store's rule. The general path below would answer only the erased carrier question --
+		// "is this an Array" -- because every other consumer of a tuple slot sees it lowered to a bare
+		// Array, and arity and element types would never be asked about at all.
+		//
+		// Nothing is converted. `is_type()` passes `false` down to a tuple's elements regardless of the
+		// implicit-conversion flag, so the converting probe would give the same answer as this one, and
+		// a container element still has to arrive already typed exactly as a store demands.
+		if (!p_type.is_type(p_value, false)) {
+			r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_err.argument = p_argument_index;
+			r_err.expected = p_type.builtin_type;
+			return false;
+		}
+		// Validation alone would leave the body holding whatever carrier the caller handed over, which a
+		// parameter -- unlike a local -- performs no store to normalize. See `fs_canonical_tuple_value()`.
+		r_value = fs_canonical_tuple_value(p_type, p_value);
+		return true;
+	}
 	if (!p_type.is_type_handle && p_type.kind == FSDataType::NATIVE) {
 		FSSpecializedClassHandle *specialized_handle =
 				_specialized_handle_assignable_to_native_script(&p_value, p_type.native_type);
@@ -2099,9 +2123,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			FSDataType element_data;
 			if (effective_rest_parameter_type.has_container_element_type(0)) {
 				element_data = effective_rest_parameter_type.container_element_types[0];
-				const ContainerType element_type = element_data.to_container_type();
-				if (element_type.builtin_type != Variant::NIL) {
-					vararg.set_typed(element_type);
+				// A tuple element has no typed-container form: `to_container_type()` maps it to an
+				// element-typed Array, and a tuple's carrier is untyped by definition, so typing the
+				// collected array with it would reject every legal element. The collected array stays
+				// untyped and each element is still validated -- and canonicalized -- below.
+				if (element_data.kind != FSDataType::TUPLE) {
+					const ContainerType element_type = element_data.to_container_type();
+					if (element_type.builtin_type != Variant::NIL) {
+						vararg.set_typed(element_type);
+					}
 				}
 			}
 			const int rest_count = MAX(p_argcount - _argument_count, 0);

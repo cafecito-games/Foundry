@@ -445,14 +445,14 @@ int FSByteCodeGenerator::get_native_type_pos(const FSDataType &p_type) {
 	return get_constant_pos(FSLanguage::get_singleton()->get_global_array()[class_index]);
 }
 
-uint32_t FSByteCodeGenerator::add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_type) {
+uint32_t FSByteCodeGenerator::add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_slot_type, const FSDataType &p_validation_type) {
 	function->_argument_count++;
-	function->argument_types.push_back(p_type);
+	function->argument_types.push_back(p_validation_type);
 	if (p_is_optional) {
 		function->_default_arg_count++;
 	}
 
-	return add_local(p_name, p_type);
+	return add_local(p_name, p_slot_type);
 }
 
 uint32_t FSByteCodeGenerator::add_local(const StringName &p_name, const FSDataType &p_type) {

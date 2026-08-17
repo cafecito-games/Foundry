@@ -190,6 +190,15 @@ class FoundryScript : public Script {
 		StringName setter;
 		StringName getter;
 		FSDataType data_type;
+		// The declared shape of a tuple-typed member, whose `data_type` erases to a bare, untyped Array
+		// like every other tuple slot. A reflective write (`Object.set()`) has only the slot type to go
+		// on, so without this it would accept any Array of any arity with any contents. Left at the
+		// default `VARIANT` kind for every non-tuple member, which is what the write paths test for.
+		//
+		// It is recorded beside `data_type` rather than replacing it because the compiled slot type is
+		// also what a member's codegen address carries, and every `write_assign*` dispatches on that
+		// kind.
+		FSDataType tuple_slot_shape;
 		PropertyInfo property_info;
 		// When this member is typed as a class generic parameter (e.g. `value: T` in `class Box[T]`),
 		// how its reified type argument resolves against the class that declares this `MemberInfo`.
@@ -215,6 +224,13 @@ class FoundryScript : public Script {
 	// that OPEN case (the declaration itself is rejected); the projection remains as a backstop for
 	// bytecode that reaches the loader without having gone through the analyzer.
 	static bool _validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
+
+	// A member write reached reflectively -- through `Object.set()` or a bare-class static write --
+	// coerced and validated against the member's declared slot. A tuple member is validated against
+	// `MemberInfo::tuple_slot_shape` rather than its erased Array carrier, and the accepted value is
+	// normalized to the canonical read-only, untyped carrier, so one declared type does not mean two
+	// things depending on whether the write arrived in a body or through reflection.
+	static bool _coerce_member_write(const MemberInfo &p_member, const Variant &p_original, Variant &r_value);
 
 public:
 	// Resolves the recursive type evidence a binding carries for a receiver whose reified arguments are

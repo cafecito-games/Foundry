@@ -538,6 +538,27 @@ static bool _erase_specialized_class_handle_for_native_data_type(const FSDataTyp
 	return true;
 }
 
+// Nothing is converted on the tuple leg: tuple elements are invariant, and `Variant::construct()` on
+// the Array carrier could only reproduce the value the shape already rejected.
+bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Variant &p_original, Variant &r_value) {
+	if (p_member.tuple_slot_shape.kind == FSDataType::TUPLE) {
+		if (!p_member.tuple_slot_shape.is_type(r_value)) {
+			return false;
+		}
+		r_value = fs_canonical_tuple_value(p_member.tuple_slot_shape, r_value);
+		return true;
+	}
+	if (!p_member.data_type.is_type(r_value)) {
+		const Variant *args = &p_original;
+		Callable::CallError err;
+		Variant::construct(p_member.data_type.builtin_type, r_value, &args, 1, err);
+		if (err.error != Callable::CallError::CALL_OK || !p_member.data_type.is_type(r_value)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // Resolves the surviving `TYPE_PARAMETER` nodes of a baked binding type against the reified arguments
 // of the receiver, producing recursive evidence. A node that names a class parameter the receiver
 // supplied becomes that argument; one that names a parameter nothing supplied, or that was permanently
@@ -2153,13 +2174,8 @@ bool FoundryScript::_set(const StringName &p_name, const Variant &p_value) {
 				return false;
 			}
 			_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
-			if (!member->data_type.is_type(value)) {
-				const Variant *args = &p_value;
-				Callable::CallError err;
-				Variant::construct(member->data_type.builtin_type, value, &args, 1, err);
-				if (err.error != Callable::CallError::CALL_OK || !member->data_type.is_type(value)) {
-					return false;
-				}
+			if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+				return false;
 			}
 			if (likely(top->valid) && member->setter) {
 				const Variant *args = &value;
@@ -2968,13 +2984,8 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 				}
 			} else {
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
-				if (!member->data_type.is_type(value)) {
-					const Variant *args = &p_value;
-					Callable::CallError err;
-					Variant::construct(member->data_type.builtin_type, value, &args, 1, err);
-					if (err.error != Callable::CallError::CALL_OK || !member->data_type.is_type(value)) {
-						return false;
-					}
+				if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+					return false;
 				}
 			}
 			if (likely(script->valid) && member->setter) {
@@ -3005,13 +3016,8 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 					return false;
 				}
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
-				if (!member->data_type.is_type(value)) {
-					const Variant *args = &p_value;
-					Callable::CallError err;
-					Variant::construct(member->data_type.builtin_type, value, &args, 1, err);
-					if (err.error != Callable::CallError::CALL_OK || !member->data_type.is_type(value)) {
-						return false;
-					}
+				if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+					return false;
 				}
 				if (likely(sptr->valid) && member->setter) {
 					const Variant *args = &value;

@@ -65,7 +65,12 @@ public:
 		}
 	};
 
-	virtual uint32_t add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_type) = 0;
+	// `p_slot_type` types the parameter's stack slot and its codegen address; `p_validation_type` is
+	// what the call boundary validates an incoming argument against. They differ only for a tuple,
+	// whose slot carrier erases to a bare Array while its declared shape -- arity and element types --
+	// is what the boundary has to enforce. Handing the shape to the slot instead would change how the
+	// body is lowered, since every `write_assign*` dispatches on the address type's kind.
+	virtual uint32_t add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_slot_type, const FSDataType &p_validation_type) = 0;
 	virtual uint32_t add_local(const StringName &p_name, const FSDataType &p_type) = 0;
 	virtual uint32_t add_local_constant(const StringName &p_name, const Variant &p_constant) = 0;
 	virtual uint32_t add_or_get_constant(const Variant &p_constant) = 0;

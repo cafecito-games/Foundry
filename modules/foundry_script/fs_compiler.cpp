@@ -3063,10 +3063,15 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// The whole assigned value is a generic method returning an erased `Dictionary[K, V]`; retype
 					// the untyped runtime dictionary into the concrete typed-dictionary target.
 					gen->write_assign_typed_dictionary_convert(target, to_assign);
-				} else if (!is_member && _slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
-					// A later store into a tuple local is the same boundary its initializer was: without a
+				} else if (_slot_is_tuple_shaped(assignment->assignee->get_datatype())) {
+					// A later store into a tuple slot is the same boundary its initializer was: without a
 					// check here the declared shape could be laundered away after the fact. Checked before
 					// the class-parameter store below so a tuple keeps its positional shape.
+					//
+					// A member reaches here too, unlike the receiver-relative store below. A member's slot
+					// erases to a bare Array with no binding of its own to be checked against, so without
+					// this the only in-body write path to a tuple member would be an unchecked
+					// `write_assign()`.
 					gen->write_assign_typed_tuple(target, to_assign, _tuple_slot_shape(assignment->assignee->get_datatype(), codegen));
 				} else if (!is_member && _slot_needs_receiver_validation(assignment->assignee->get_datatype(), codegen)) {
 					// A later store into a local whose declared type mentions a class parameter has to be
@@ -4762,13 +4767,23 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 	int optional_parameters = 0;
 	FSCodeGenerator::Address vararg_addr;
 	FSDataType compiled_rest_type;
+	FSDataType compiled_rest_validation_type;
 
 	if (p_func) {
 		for (int i = 0; i < p_func->parameters.size(); i++) {
 			const FSParser::ParameterNode *parameter = p_func->parameters[i];
 			const FSParser::DataType parameter_datatype = _substitute_self_type_parameter_for_class(parameter->get_datatype(), p_class);
 			FSDataType par_type = _gdtype_from_datatype(parameter_datatype, p_script);
-			uint32_t par_addr = codegen.generator->add_parameter(parameter->identifier->name, parameter->initializer != nullptr, par_type);
+			// A tuple parameter's slot stays the erased Array carrier every other tuple slot is, so body
+			// lowering is unchanged; only the runtime validation type carries the declared shape.
+			//
+			// Type parameters are erased in that shape, as they are in every other parameter today: the
+			// call boundary has no slot descriptor to resolve a preserved node against, so preserving one
+			// would demand evidence the frame cannot produce.
+			const FSDataType par_validation_type = _slot_is_tuple_shaped(parameter_datatype)
+					? _gdtype_tuple_test_type_from_datatype(parameter_datatype, p_script)
+					: par_type;
+			uint32_t par_addr = codegen.generator->add_parameter(parameter->identifier->name, parameter->initializer != nullptr, par_type, par_validation_type);
 			codegen.parameters[parameter->identifier->name] = FSCodeGenerator::Address(FSCodeGenerator::Address::FUNCTION_PARAMETER, par_addr, par_type);
 
 			method_info.arguments.push_back(parameter_datatype.to_property_info(parameter->identifier->name));
@@ -4785,6 +4800,17 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 			const FSParser::DataType rest_datatype = _substitute_self_type_parameter_for_class(
 					p_func->rest_parameter->get_datatype(), p_class);
 			compiled_rest_type = _gdtype_from_datatype(rest_datatype, codegen.script);
+			compiled_rest_validation_type = compiled_rest_type;
+			// A tuple rest element erases to a bare Array like any other tuple slot, so the collected
+			// array's own local type keeps that erasure and only the validation type carries the shape.
+			// The two must stay separate: the collected array is typed from the local's element type, and
+			// a tuple has no typed-container form to be typed with.
+			if (rest_datatype.container_element_types.size() == 1 &&
+					_slot_is_tuple_shaped(rest_datatype.container_element_types[0]) &&
+					compiled_rest_validation_type.container_element_types.size() == 1) {
+				compiled_rest_validation_type.container_element_types.write[0] =
+						_gdtype_tuple_test_type_from_datatype(rest_datatype.container_element_types[0], codegen.script);
+			}
 			vararg_addr = codegen.add_local(p_func->rest_parameter->identifier->name, compiled_rest_type);
 			method_info.flags |= METHOD_FLAG_VARARG;
 		}
@@ -4991,7 +5017,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 
 		if (p_func->is_vararg()) {
 			gd_function->_vararg_index = vararg_addr.address;
-			gd_function->rest_parameter_type = compiled_rest_type;
+			gd_function->rest_parameter_type = compiled_rest_validation_type;
 		}
 
 		// `write_end()` already ran `setup_runtime_pointers()`, but the return type and the rest tail are
@@ -5881,6 +5907,15 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				}
 				const FSParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
 				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
+				if (_slot_is_tuple_shaped(member_datatype)) {
+					// The slot type stays the erased Array carrier; the shape travels beside it so a
+					// reflective write validates the same thing an in-body store does. Type parameters are
+					// erased here: a member's binding to a class parameter is expressed by
+					// `type_argument_binding`, and a tuple element naming one has no argument to resolve
+					// against at this point, so it degrades to accepting anything rather than to a demand
+					// nothing can satisfy.
+					minfo.tuple_slot_shape = _gdtype_tuple_test_type_from_datatype(member_datatype, p_script);
+				}
 
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == FSParser::DataType::TYPE_PARAMETER &&

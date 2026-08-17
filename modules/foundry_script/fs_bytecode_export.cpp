@@ -921,6 +921,12 @@ Error FSBytecodeExporter::_write_member_info(StreamPeerBuffer *r_stream, const S
 	if (error != OK) {
 		return error;
 	}
+	// A tuple member's shape is not recoverable from its erased slot type, so it travels beside it:
+	// without it a bytecode-loaded script would accept reflective writes the source-built one rejects.
+	error = encode_data_type(r_stream, p_member_info.tuple_slot_shape);
+	if (error != OK) {
+		return error;
+	}
 	_encode_property_info(r_stream, p_member_info.property_info);
 	return _write_type_argument_binding(r_stream, p_member_info.type_argument_binding);
 }
