@@ -58,7 +58,7 @@ TEST_CASE("[Editor][BoardView] Point hit-testing selects the right board") {
 	EditorBoardView view;
 	view.enter_overview(3, 1, viewport);
 
-	// The centred active board contains the viewport centre.
+	// The centered active board contains the viewport center.
 	CHECK(view.index_at_point(Point2(800, 450), 3, viewport) == 1);
 	// Far above every board is empty space.
 	CHECK(view.index_at_point(Point2(800, 5), 3, viewport) == -1);

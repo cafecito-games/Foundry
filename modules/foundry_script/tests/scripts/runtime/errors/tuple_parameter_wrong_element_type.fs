@@ -1,6 +1,6 @@
 # A tuple parameter means the declared shape, not the erased Array carrier it lowers to. The argument
 # reaches the callee as a `Variant` through an opaque `Callable`, so the analyzer has no static
-# evidence about it and the parameter boundary is the only line of defence.
+# evidence about it and the parameter boundary is the only line of defense.
 class Receiver extends RefCounted:
 	func take(pair: (int, String)) -> void:
 		print("took ", pair)

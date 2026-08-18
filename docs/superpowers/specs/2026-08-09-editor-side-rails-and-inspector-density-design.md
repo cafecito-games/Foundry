@@ -31,11 +31,11 @@ implementation:
 
 | # | Decision |
 |---|---|
-| D1 | Rail buttons show **icon plus label**, the label drawn rotated. Icon-only is the automatic fallback when the labelled rail does not fit (§4.5), not a user-facing preference. |
+| D1 | Rail buttons show **icon plus label**, the label drawn rotated. Icon-only is the automatic fallback when the labeled rail does not fit (§4.5), not a user-facing preference. |
 | D2 | A collapsed side shows **one dock at a time**. Clicking another rail toggle switches to it; clicking the active one closes the drawer, leaving a bare rail. |
 | D3 | Left and right are **fully independent**. No setting, shortcut, or state couples them. |
 | D4 | The inspector density setting ships with three levels. **Compact** is the level the change exists to enable. |
-| D5 | **The bottom panel does not change.** No behavioural edits to `EditorBottomPanel`, `EditorBottomDrawerStrip`, `BottomDrawerGeometry`, or `BottomDrawerLayout`. Shared code may be extracted, but observable bottom-panel behaviour must be identical before and after. |
+| D5 | **The bottom panel does not change.** No behavioral edits to `EditorBottomPanel`, `EditorBottomDrawerStrip`, `BottomDrawerGeometry`, or `BottomDrawerLayout`. Shared code may be extracted, but observable bottom-panel behavior must be identical before and after. |
 | D6 | Unpinned/floating side drawers are **out of scope** for this design. See §7. |
 | **D7** | **The rails target the per-tile dock region (`EditorTileDockRegion`), not the global `EditorDockManager` side slots.** That is where Scene tree, Inspector, Signals, Groups and History actually live (§3.1). The global side columns are out of scope. |
 | **D8** | **A rail is never a child of a `SplitContainer` whose offsets are persisted positionally.** Rails are mounted in a wrapper `HBoxContainer` outside the split (§4.3). This is a hard constraint, not a style preference — see the offset-aliasing hazard in §4.6. |
@@ -79,7 +79,7 @@ ScenePaneTile
 ```
 
 - `right_tabs` is a plain `TabContainer` (`editor/editor_tile_dock_region.cpp:50-57`), which
-  makes it a *structurally exact* analogue of the bottom drawer's `TabContainer`. The rail
+  makes it a *structurally exact* analog of the bottom drawer's `TabContainer`. The rail
   can mirror it the way `EditorBottomDrawerStrip` mirrors the bottom panel, and
   "one dock at a time" is already native to it.
 - Signals / Groups / History can be individually disabled
@@ -213,7 +213,7 @@ onto `dock_hsplit_N` in both directions (`editor/docks/editor_dock_manager.cpp:7
 
 ### 4.4 `EditorSideRailStrip`
 
-New control, `editor/gui/editor_side_rail_strip.{h,cpp}`, modelled directly on
+New control, `editor/gui/editor_side_rail_strip.{h,cpp}`, modeled directly on
 `EditorBottomDrawerStrip` and carrying over its structure:
 
 - Constructed with the side it represents and the source it mirrors — a `TabContainer` for
@@ -260,9 +260,9 @@ overriding `_draw` and `get_minimum_size`:
   space.
 
 **Overflow fallback.** The right rail mirrors up to four docks (Inspector, Signals, Groups,
-History); labelled toggles for four will not fit a short tile, and a tile is shorter than
+History); labeled toggles for four will not fit a short tile, and a tile is shorter than
 the window whenever the workspace is split. The rail measures the summed minimum height of
-its labelled toggles against its own available height and, when they do not fit, rebuilds
+its labeled toggles against its own available height and, when they do not fit, rebuilds
 itself icon-only. This is automatic, not a preference (D1). The fallback re-evaluates on
 resize and on the dock set changing, and must be hysteretic (§4.5.1) so it cannot oscillate.
 
@@ -271,7 +271,7 @@ resize and on the dock set changing, and must be hysteretic (§4.5.1) so it cann
 Rebuilding icon-only shrinks the rail's own minimum width, which can change the layout that
 produced the height measurement. The fit decision must therefore be computed against the
 rail's *available height*, which the parent `HBoxContainer` fixes independently of the
-rail's width, and the return-to-labelled threshold must exceed the drop-to-icon threshold by
+rail's width, and the return-to-labeled threshold must exceed the drop-to-icon threshold by
 at least one toggle's label height. Both thresholds are parameters of the pure function in
 §8, and the non-oscillation property is a test case, not an assumption.
 
@@ -285,7 +285,7 @@ New per-side keys in the tile's own layout section, written by
 | `tile_rail_left`, `tile_rail_right` | bool | `true` when that side is `RAILED` |
 | `tile_drawer_dock_left`, `tile_drawer_dock_right` | String | `get_effective_layout_key()` of the active drawer dock, empty when the drawer is closed |
 
-Absent keys mean `DOCKED` with no drawer dock, which is exactly today's behaviour. Per the
+Absent keys mean `DOCKED` with no drawer dock, which is exactly today's behavior. Per the
 project's clean-break rule there is no migration of older layouts.
 
 **Existing bug this feature would otherwise trip over.** `EditorTileDockRegion::save_layout`
@@ -342,7 +342,7 @@ Two new bindings via `ED_SHORTCUT_AND_COMMAND`, so they also appear in the Comma
 
 The `docks/` namespace is the established one for dock-related shortcuts. Each acts on the
 **focused tile only**, toggling that side between `DOCKED` and `RAILED` and restoring the
-last active drawer dock when re-entering `RAILED` — the per-side analogue of `Ctrl/Cmd+J`'s
+last active drawer dock when re-entering `RAILED` — the per-side analog of `Ctrl/Cmd+J`'s
 "reopen the last opened bottom dock" (`editor/editor_node.cpp:11080`). Neither may rebind
 `Ctrl/Cmd+J`, `Escape`, or `Shift+F12` (D5).
 
@@ -450,7 +450,7 @@ Ordered by dependency. Sizes are relative.
 | 1 | `inspector-density-setting` | The setting, the theme-config field, the hash entry, and the density factor applied to the inspector styleboxes, the derived height and the section constants in both themes (§5). | — | M |
 | 2 | `tile-dock-offset-identity` | Make `EditorTileDockRegion` save/load its body split offsets by identity rather than position, skipping absent gaps (§4.6). Standalone bugfix; lands before any collapse state exists. | — | M |
 | 3 | `dock-tooltip-fallback` | One shared tooltip helper falling back to the display title; adopted by the bottom strip and the dock manager's tab tooltips (§4.7). | — | S |
-| 4 | `editor-side-rail-widget` | `EditorSideRailStrip` and `EditorSideRailButton`: mirroring, restyling, rotated labels, hysteretic icon-only overflow fallback, mounted in the tile's rail wrapper (§4.3, §4.4, §4.5). Rendering only; no collapse behaviour yet. | 3 | L |
+| 4 | `editor-side-rail-widget` | `EditorSideRailStrip` and `EditorSideRailButton`: mirroring, restyling, rotated labels, hysteretic icon-only overflow fallback, mounted in the tile's rail wrapper (§4.3, §4.4, §4.5). Rendering only; no collapse behavior yet. | 3 | L |
 | 5 | `tile-side-collapse-state` | The per-side state machine, the show/hide implementation, `focus_dock` integration, per-tile persistence (§4.1, §4.2, §4.6). | 2, 4 | L |
 | 6 | `tile-side-collapse-shortcuts` | The two `ED_SHORTCUT_AND_COMMAND` bindings, focused-tile scoped, plus `_focus_leaf_*_dock` awareness (§4.8). | 5 | S |
 | 7 | `tile-empty-side-keeps-rail` | A side with no enabled docks keeps its rail (§4.10). | 5 | S |
@@ -464,9 +464,9 @@ columns. It is filed separately as an independent bugfix, not as part of this ep
 
 ## 7. Out of scope
 
-- **Any bottom-panel behaviour change** (D5), other than the additive tooltip fallback.
+- **Any bottom-panel behavior change** (D5), other than the additive tooltip fallback.
 - **Rails on the global `EditorDockManager` side columns** (D7). Import and FileSystem keep
-  today's behaviour.
+  today's behavior.
 - **Unpinned / floating side drawers** (D6).
 - **Right-click dock context menu on a tile rail toggle** (§4.4). The existing popup is
   manager-scoped and tile docks are not registered with the manager; a tile-scoped
@@ -477,7 +477,7 @@ columns. It is filed separately as an independent bugfix, not as part of this ep
 
 ## 8. Test plan
 
-Following the repo rule that a test asserts on observable behaviour, never on source text.
+Following the repo rule that a test asserts on observable behavior, never on source text.
 
 **The available seams, verified.**
 
@@ -487,12 +487,12 @@ Following the repo rule that a test asserts on observable behaviour, never on so
 - `EditorDockManager` is **not** constructible without an `EditorNode`: its constructor
   dereferences `EditorNode::get_singleton()` unconditionally
   (`editor/docks/editor_dock_manager.cpp:1119-1134`). Any coverage of manager-owned
-  behaviour must go through a pure extracted function, never a constructed manager.
+  behavior must go through a pure extracted function, never a constructed manager.
 
 **Headless unit tests.** Any pure geometry or state-transition logic goes in a scene-free
 header with a matching doctest, exactly as `editor/gui/bottom_drawer_geometry.h` pairs with
 `tests/editor/test_bottom_drawer_geometry.h`. At minimum: the per-side state machine's
-transition table (§4.1) table-driven; the labelled-versus-icon-only overflow decision as a
+transition table (§4.1) table-driven; the labeled-versus-icon-only overflow decision as a
 function of available height, measured toggle heights and the two hysteresis thresholds,
 including a no-oscillation case (§4.5.1); and the offset-gap identity mapping of §4.6 as a
 function of the visible-child list.

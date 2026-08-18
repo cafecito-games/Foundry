@@ -56,7 +56,7 @@ struct TileDockGapMap {
 // p_child_visible has one entry per non-internal body child, in
 // get_child(i, false) order. An entry is true only when that child is a
 // non-top-level visible Control — the same predicate SplitContainer uses for
-// valid_children. p_center_child_index is the centre host's get_index(false)
+// valid_children. p_center_child_index is the center host's get_index(false)
 // in that same list. Gap g sits between the g-th and (g+1)-th *true* entries.
 inline TileDockGapMap tile_dock_gap_map(const Vector<bool> &p_child_visible, int p_center_child_index) {
 	TileDockGapMap map;
@@ -100,15 +100,15 @@ enum class SideRailSide {
 
 // Whether a side rail's toggles currently show icon plus rotated label, or
 // icon only. The overflow fallback (issue #1991) rebuilds icon-only when the
-// labelled toggles do not fit the rail's available height.
+// labeled toggles do not fit the rail's available height.
 enum class SideRailLabelMode {
 	LABELLED,
 	ICON_ONLY,
 };
 
 // The two hysteresis thresholds a rail's fit decision is made against. Derived
-// from the labelled-mode minimum heights of its toggles: dropping to icon-only
-// requires less than the summed labelled height, and returning to labelled
+// from the labeled-mode minimum heights of its toggles: dropping to icon-only
+// requires less than the summed labeled height, and returning to labeled
 // requires at least that sum plus the tallest single toggle's height. The gap
 // between the two thresholds is what makes the decision non-oscillating: a
 // rebuild that drops to icon-only shrinks the rail's own minimum width, never
@@ -119,7 +119,7 @@ struct SideRailFitThresholds {
 	real_t return_to_labelled = 0;
 };
 
-// p_toggle_labelled_heights are each toggle's minimum height in labelled mode,
+// p_toggle_labelled_heights are each toggle's minimum height in labeled mode,
 // regardless of the rail's current mode.
 inline SideRailFitThresholds side_rail_fit_thresholds(const Vector<real_t> &p_toggle_labelled_heights) {
 	SideRailFitThresholds thresholds;

@@ -223,7 +223,7 @@ TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into
 	// PanelContainer's minimum size already includes its children's minimum
 	// sizes. So by the time this deferred rebuild runs and creates the
 	// toggle buttons, the strip's own get_size() is never smaller than the
-	// sum of their labelled minimum heights -- the same quantity
+	// sum of their labeled minimum heights -- the same quantity
 	// drop_to_icon_only is computed from -- so the decision can never see a
 	// bogus zero baseline. This test pins that behavior so a future change
 	// to sizing (e.g. removing the minimum-size clamp, or computing minimum
@@ -233,7 +233,7 @@ TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into
 	fixture.add_right_dock("Signals");
 
 	// A standalone strip outside the scene tree has no window ancestor to
-	// resolve a theme through, so its buttons' labelled heights would stay
+	// resolve a theme through, so its buttons' labeled heights would stay
 	// zero and the hysteresis thresholds below would be zero too -- unable to
 	// exercise the scenario this test covers. Root it under the real tree,
 	// with no explicit size set, exactly mirroring production construction
@@ -408,7 +408,7 @@ TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the render
 }
 
 TEST_CASE("[Editor][SideRailButton] composed icon and label share rotation, separation, and containment") {
-	// Issue #2039: labelled toggles must rotate icon and label together as one
+	// Issue #2039: labeled toggles must rotate icon and label together as one
 	// unit, keep them separated by the theme gap, and keep their union inside
 	// the stylebox content rect. Geometry is asserted from measured rects, not
 	// from source text.
@@ -453,7 +453,7 @@ TEST_CASE("[Editor][SideRailButton] non-square icons swap axes under the shared 
 	memdelete(button);
 }
 
-TEST_CASE("[Editor][SideRailButton] labelled mode without an icon still contains the rotated label") {
+TEST_CASE("[Editor][SideRailButton] labeled mode without an icon still contains the rotated label") {
 	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
@@ -598,14 +598,14 @@ TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one d
 	memdelete(button);
 }
 
-TEST_CASE("[Editor][SideRailButton] undersized labelled mode overflows in one direction only") {
+TEST_CASE("[Editor][SideRailButton] undersized labeled mode overflows in one direction only") {
 	const int margin = 3;
 	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
-	// Narrow and short vs the labelled strip so both axes clamp.
+	// Narrow and short vs the labeled strip so both axes clamp.
 	button->set_size(Size2(12, 20));
 	button->set_rail_icon(_make_side_rail_test_icon(16));
 	button->set_rail_label("Inspector");
@@ -758,7 +758,7 @@ TEST_CASE("[Editor][SideRailButton] icon-only mode centers an upright icon witho
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
 	button->set_rail_icon(_make_side_rail_test_icon(16));
-	button->set_rail_label("A very long dock title that would dominate the labelled height");
+	button->set_rail_label("A very long dock title that would dominate the labeled height");
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
 
@@ -767,9 +767,9 @@ TEST_CASE("[Editor][SideRailButton] icon-only mode centers an upright icon witho
 	const Size2 icon_only_size = button->get_minimum_size();
 
 	CHECK(icon_only_size.height < labelled_size.height);
-	// The labelled-mode size is always available regardless of the current
+	// The labeled-mode size is always available regardless of the current
 	// mode, since the rail's fit decision needs it to know whether returning
-	// to labelled mode would fit.
+	// to labeled mode would fit.
 	CHECK(button->get_labelled_minimum_size().height == doctest::Approx(labelled_size.height));
 
 	button->set_size(Size2(40, 40));
@@ -787,7 +787,7 @@ TEST_CASE("[Editor][SideRailButton] icon-only mode centers an upright icon witho
 	CHECK(Math::abs(geometry.icon_rect.get_center().y - geometry.content_rect.get_center().y) <= 0.5);
 	// Draw feeds icon_strip_position through content_transform in both modes;
 	// with the identity transform it must resolve to the icon rect's top-left
-	// (labelled mode resolves to the rect's bottom-left instead).
+	// (labeled mode resolves to the rect's bottom-left instead).
 	CHECK(geometry.content_transform.xform(geometry.icon_strip_position) == geometry.icon_rect.position);
 
 	memdelete(button);
@@ -802,19 +802,19 @@ TEST_CASE("[Editor][SideRailState] fit decision hysteresis") {
 
 	CHECK(thresholds.drop_to_icon_only == doctest::Approx(140));
 	CHECK(thresholds.return_to_labelled == doctest::Approx(200));
-	// Required by design: returning to labelled must need strictly more
+	// Required by design: returning to labeled must need strictly more
 	// available height than dropping to icon-only did, by at least the
 	// tallest single toggle's height.
 	CHECK(thresholds.return_to_labelled - thresholds.drop_to_icon_only >= 60);
 
-	SUBCASE("labelled mode drops when it no longer fits") {
+	SUBCASE("labeled mode drops when it no longer fits") {
 		CHECK(side_rail_fit_label_mode(SideRailLabelMode::LABELLED, 150, thresholds) == SideRailLabelMode::LABELLED);
 		CHECK(side_rail_fit_label_mode(SideRailLabelMode::LABELLED, 139, thresholds) == SideRailLabelMode::ICON_ONLY);
 	}
 
 	SUBCASE("icon-only mode stays icon-only in the hysteresis band") {
-		// Available height that would satisfy "fits when labelled" (>=
-		// drop_to_icon_only) but not yet "return to labelled"
+		// Available height that would satisfy "fits when labeled" (>=
+		// drop_to_icon_only) but not yet "return to labeled"
 		// (>= return_to_labelled) must not oscillate back.
 		CHECK(side_rail_fit_label_mode(SideRailLabelMode::ICON_ONLY, 150, thresholds) == SideRailLabelMode::ICON_ONLY);
 		CHECK(side_rail_fit_label_mode(SideRailLabelMode::ICON_ONLY, 199, thresholds) == SideRailLabelMode::ICON_ONLY);
