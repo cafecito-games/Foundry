@@ -34,6 +34,7 @@
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
 #include "../fs_build_task_bootstrap_loader.h"
+#include "../fs_reflection.h"
 
 #include "core/config/foundry_build_task_registry.h"
 #include "core/config/project_settings.h"
@@ -251,6 +252,56 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads a provider that ca
 	CHECK_EQ(loader.load_registered_providers(registry), OK);
 	CHECK_MESSAGE(loader.get_diagnostics().is_empty(), bootstrap_diagnostics_to_string(loader.get_diagnostics()));
 	CHECK(loader.has_loaded_provider("bootstrap.builtin_hint"));
+}
+
+static const char *bootstrap_reflection_provider_source =
+		"class_name BootstrapReflectionProvider extends FoundryBuildTask\n"
+		"\n"
+		"func reflected_method_count() -> int:\n"
+		"\treturn foundry.reflection.get_methods(self).size()\n";
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads a reflection-using provider after a language finish cycle") {
+	ScopedBuildTaskProject project("build_task_bootstrap_reflection_after_finish");
+	const String script_path = project.write_script(
+			"res://addons/bootstrap/reflection_after_finish_provider.fs", bootstrap_reflection_provider_source);
+
+	// A finished language keeps its plain global constants but drops the `foundry` reflection
+	// surface, so a provider that reads `foundry.reflection` can only be analyzed once the
+	// language is brought back up.
+	FSLanguage::get_singleton()->init();
+	FSLanguage::get_singleton()->finish();
+	REQUIRE(FSLanguage::get_singleton()->get_namespace_singleton().is_null());
+	REQUIRE(FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted")));
+
+	FoundryBuildTaskRegistry registry;
+	registry.register_provider_descriptor(
+			make_bootstrap_provider("bootstrap.reflection_after_finish", script_path, "BootstrapReflectionProvider"),
+			make_bootstrap_source("bootstrap.reflection_after_finish"));
+
+	FoundryBuildTaskBootstrapLoader loader;
+	CHECK_EQ(loader.load_registered_providers(registry), OK);
+	CHECK_MESSAGE(loader.get_diagnostics().is_empty(), bootstrap_diagnostics_to_string(loader.get_diagnostics()));
+	CHECK(loader.has_loaded_provider("bootstrap.reflection_after_finish"));
+	CHECK(FSLanguage::get_singleton()->get_namespace_singleton().is_valid());
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads a reflection-using provider without a finish cycle") {
+	ScopedBuildTaskProject project("build_task_bootstrap_reflection_initialized");
+	const String script_path = project.write_script(
+			"res://addons/bootstrap/reflection_provider.fs", bootstrap_reflection_provider_source);
+
+	FSLanguage::get_singleton()->init();
+	REQUIRE(FSLanguage::get_singleton()->get_namespace_singleton().is_valid());
+
+	FoundryBuildTaskRegistry registry;
+	registry.register_provider_descriptor(
+			make_bootstrap_provider("bootstrap.reflection", script_path, "BootstrapReflectionProvider"),
+			make_bootstrap_source("bootstrap.reflection"));
+
+	FoundryBuildTaskBootstrapLoader loader;
+	CHECK_EQ(loader.load_registered_providers(registry), OK);
+	CHECK_MESSAGE(loader.get_diagnostics().is_empty(), bootstrap_diagnostics_to_string(loader.get_diagnostics()));
+	CHECK(loader.has_loaded_provider("bootstrap.reflection"));
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads the native command provider") {
