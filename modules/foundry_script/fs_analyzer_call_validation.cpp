@@ -267,21 +267,40 @@ void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSPars
 	}
 
 	// A gradual argument can launder any value through the erased parameter, so it always needs the
-	// check. A statically typed one needs it exactly when the analyzer accepted it on the promise of a
-	// run-time check: `allows_runtime_narrowing()` is that promise, and an erased destination is the one
-	// place that never keeps it, so an `Object` holding a `Node` would otherwise reach a `T := Resource`
-	// parameter and come back out typed as a `Resource`. An argument the destination provably accepts
-	// needs nothing further, including one the language converts implicitly: a numeric conversion is a
-	// property of the concrete argument boundary, and moving it here would make one boundary's rule
-	// depend on whether the callee happened to be generic.
+	// check. A statically typed one needs it exactly when the analyzer's acceptance promised work the
+	// erased callee never performs. `allows_runtime_narrowing()` is one such promise, so an `Object`
+	// holding a `Node` would otherwise reach a `T := Resource` parameter and come back out typed as a
+	// `Resource`. An implicit conversion is the other: the analyzer accepts it because a concrete
+	// parameter of the substituted type converts the value at its binding, and an erased parameter has
+	// no binding to convert at, so the call site records the check and the runtime conversion — the
+	// declared-width re-check included — runs there instead. An argument the destination accepts
+	// without conversion needs nothing further, and a constant keeps its analyzer re-typing toward the
+	// substituted type, which lands it in the no-conversion case.
 	const FSParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
 	if (argument == nullptr) {
 		return;
 	}
 	const FSParser::DataType argument_type = argument->get_datatype();
 	if (argument_type.is_set() && !argument_type.is_variant()) {
-		if (FSTypeCompatibility::is_compatible(p_substituted_type, argument_type) ||
-				!analyzer->allows_runtime_narrowing(p_substituted_type, argument_type)) {
+		FSTypeCompatibility::Options conversion_options;
+		conversion_options.allow_implicit_conversion = true;
+		if (argument->is_constant) {
+			conversion_options.constant_source_value = &argument->reduced_value;
+		}
+		const FSTypeCompatibility::Result relation = FSTypeCompatibility::check(p_substituted_type, argument_type, conversion_options);
+		if (relation.compatible) {
+			// A widening between two integer carriers (`uint` into `long`) is accepted because every
+			// value of the source is representable in the target, not because anything converts it:
+			// there is no registered `Variant` conversion across the signed/unsigned carriers, so a
+			// recorded check could only reject a value the analyzer proved valid. The value passes
+			// through unconverted, exactly as it did before this boundary learned to convert.
+			const bool integer_carrier_widening = FSNumericConversion::is_numeric_builtin(p_substituted_type) &&
+					FSNumericConversion::is_numeric_builtin(argument_type) &&
+					p_substituted_type.builtin_type != Variant::FLOAT && argument_type.builtin_type != Variant::FLOAT;
+			if (!relation.uses_implicit_conversion || argument->is_constant || integer_carrier_widening) {
+				return;
+			}
+		} else if (!analyzer->allows_runtime_narrowing(p_substituted_type, argument_type)) {
 			return;
 		}
 	}
