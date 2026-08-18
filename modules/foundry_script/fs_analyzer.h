@@ -475,6 +475,7 @@ private:
 	bool datatype_contains_self_type_parameter(const FSParser::DataType &p_type) const;
 	bool self_parameter_satisfied_by_receiver_identity(const FSParser::DataType &p_expected_type, const FSParser::ExpressionNode *p_argument, const FSParser::CallNode *p_call);
 	bool datatype_matches_self_parameter_contract(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) const;
+	bool type_parameter_bound_reaches(const FSParser::DataType &p_parameter, const FSParser::DataType &p_other, bool p_allow_implicit_conversion);
 	bool type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion);
 	bool allows_runtime_narrowing(const FSParser::DataType &p_target, const FSParser::DataType &p_source);
 	String make_type_handle_argument_error(

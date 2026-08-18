@@ -16834,23 +16834,37 @@ static String _make_set_operation_error(const FSParser::DataType &p_a, const FSP
 			Variant::get_operator_name(p_operation), p_pair_error);
 }
 
-// A type parameter as the source of an assignment is a downcast shape: the value is erased, so the
-// destination is settled by a runtime type test rather than statically. That licence reaches exactly
-// as far as the parameter's bound does. An erased `T: Node` can still turn out to be a `Node2D`, but
-// no value of it is ever an `int`. `Self` puts that question in front of ordinary code -- `self` is
-// typed `Self` in every body of a class -- so a destination that the bound can neither satisfy nor be
-// narrowed to is refused here instead of compiling and failing the callee's own check at runtime.
-bool FSAnalyzer::type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion) {
-	if (p_source.kind != FSParser::DataType::TYPE_PARAMETER || p_target.kind == FSParser::DataType::TYPE_PARAMETER ||
-			!p_target.is_set() || p_target.is_variant()) {
+// A type parameter stands for a value the frame cannot name, so an assignment across one is settled by
+// a runtime type test rather than statically. That licence reaches exactly as far as the parameter's
+// bound does, in both directions: an erased `T: Node` can still turn out to be a `Node2D`, and a
+// `Node2D` can still be the `T` a caller picked, but neither is ever an `int`. `Self` puts that
+// question in front of ordinary code -- `self` is typed `Self` in every body of a class -- so a
+// counterpart the bound can neither satisfy nor be narrowed to is refused where it is written instead
+// of compiling and failing a runtime check that can only ever fail.
+bool FSAnalyzer::type_parameter_bound_reaches(const FSParser::DataType &p_parameter, const FSParser::DataType &p_other, bool p_allow_implicit_conversion) {
+	if (!p_other.is_set() || p_other.is_variant() || p_other.kind == FSParser::DataType::TYPE_PARAMETER) {
 		return true;
 	}
-	const FSParser::DataType bound = _resolve_type_parameter_bound_chain(p_source);
+	if (p_other.kind == FSParser::DataType::BUILTIN && p_other.builtin_type == Variant::NIL) {
+		// `null` is answered by the nullability rules, which run on their own terms.
+		return true;
+	}
+	const FSParser::DataType bound = _resolve_type_parameter_bound_chain(p_parameter);
 	if (bound.kind == FSParser::DataType::TYPE_PARAMETER || !bound.is_set() || bound.is_variant()) {
 		return true;
 	}
-	return is_type_compatible(p_target, bound, p_allow_implicit_conversion) ||
-			is_type_compatible(bound, p_target, p_allow_implicit_conversion);
+	return is_type_compatible(p_other, bound, p_allow_implicit_conversion) ||
+			is_type_compatible(bound, p_other, p_allow_implicit_conversion);
+}
+
+bool FSAnalyzer::type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion) {
+	if (p_source.kind == FSParser::DataType::TYPE_PARAMETER && p_target.kind != FSParser::DataType::TYPE_PARAMETER) {
+		return type_parameter_bound_reaches(p_source, p_target, p_allow_implicit_conversion);
+	}
+	if (p_target.kind == FSParser::DataType::TYPE_PARAMETER && p_source.kind != FSParser::DataType::TYPE_PARAMETER) {
+		return type_parameter_bound_reaches(p_target, p_source, p_allow_implicit_conversion);
+	}
+	return true;
 }
 
 // The promise a runtime-checked narrowing rests on -- that the check can still be performed and can
