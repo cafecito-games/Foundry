@@ -62,6 +62,7 @@
 #include "main/app_icon.gen.h"
 #include "main/cli_help.h"
 #include "main/cli_parser.h"
+#include "main/cli_user_root.h"
 #include "main/global_class_scan_policy.h"
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
@@ -933,15 +934,14 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (user_data_root.is_empty()) {
 			user_data_root = OS::get_singleton()->get_temp_path();
 		}
-		// `test benchmark` gets its own leaf so measuring a corpus alongside a running
-		// suite cannot erase that suite's `user://` tree when this root is recreated clean.
+		// A benchmark run and a scoped fixture run are both meant to be started while a suite,
+		// or a sibling of the same verb, is already running, and this root is recreated clean.
+		// Their leaves are therefore per-process: a shared one would erase a concurrent run's
+		// `user://` tree.
 		String leaf;
 		if (kind == Kind::TEST_BENCHMARK) {
-			leaf = "user-benchmark";
+			leaf = vformat("user-benchmark-%d", OS::get_singleton()->get_process_id());
 		} else if (kind == Kind::TEST_FIXTURES) {
-			// A scoped fixture run is meant to be started while a suite, or another scoped run,
-			// is already running, and this root is recreated clean. The leaf is therefore
-			// per-process: a shared one would erase a concurrent run's `user://` tree.
 			leaf = vformat("user-fixtures-%d", OS::get_singleton()->get_process_id());
 		} else if (cli_parse.invocation.test_shard_total > 1) {
 			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
@@ -981,6 +981,23 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		OS::get_singleton()->ensure_user_data_dir();
 	}
 
+	// A per-process root belongs to one run alone, so it is removed once that run is done with
+	// it; leaving it behind would accumulate one directory per invocation, including per failed
+	// invocation. Every exit below goes through this.
+	Vector<String> owned_user_root_artifacts;
+	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES;
+	if (kind == Kind::TEST_BENCHMARK) {
+		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_output);
+		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
+	} else if (kind == Kind::TEST_FIXTURES) {
+		owned_user_root_artifacts.push_back(cli_parse.invocation.fixtures_output);
+	}
+	const auto remove_owned_user_root = [&]() {
+		if (owns_user_root) {
+			FoundryCLIUserRoot::remove_owned_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
+		}
+	};
+
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	bool project_loaded_for_build_pipeline = false;
 	const bool old_foundry_build_trusted = ProjectBuildTrustStore::is_cli_trusted_execution();
@@ -989,6 +1006,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		const Error project_err = ProjectSettings::get_singleton()->setup(test_project_path, String(), false, false);
 		if (project_err != OK) {
 			ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
+			remove_owned_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
@@ -1012,6 +1030,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 				"Foundry pre_compile test stage", &pre_compile_ran_any_task);
 		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
 		if (!pre_compile_ok) {
+			remove_owned_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
@@ -1024,6 +1043,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	int status = EXIT_SUCCESS;
+
 	if (kind == Kind::TEST_RUN) {
 		Vector<CharString> test_arg_storage;
 		Vector<char *> test_argv;
@@ -1092,19 +1112,6 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			options.passes = FSTests::FSFixtureCLI::PASS_BYTECODE;
 		}
 		status = FSTests::FSFixtureCLI::run_cli(options);
-
-		// The per-process `user://` leaf is nobody else's to reuse, so this run removes its
-		// own rather than leaving one directory behind per invocation. A report written under
-		// that root is the artifact the run was asked to produce, so it keeps the root instead.
-		const String fixtures_user_root = OS::get_singleton()->get_user_data_root_override();
-		const bool fixtures_report_inside_user_root =
-				FSTests::FSFixtureCLI::report_path_is_inside_root(options.output_path, fixtures_user_root);
-		if (!fixtures_report_inside_user_root && !fixtures_user_root.is_empty() && DirAccess::exists(fixtures_user_root)) {
-			Ref<DirAccess> fixtures_user_dir = DirAccess::open(fixtures_user_root);
-			if (fixtures_user_dir.is_valid() && fixtures_user_dir->erase_contents_recursive() == OK) {
-				DirAccess::remove_absolute(fixtures_user_root);
-			}
-		}
 #else
 		ERR_PRINT("foundry test fixtures requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
@@ -1135,6 +1142,9 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		}
 	}
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+	// Nothing writes `user://` past this point, including the project's post-compile stage.
+	remove_owned_user_root();
 	test_cleanup();
 	return status;
 #else

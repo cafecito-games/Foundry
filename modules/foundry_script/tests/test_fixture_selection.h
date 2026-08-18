@@ -197,16 +197,6 @@ TEST_SUITE("[Modules][FoundryScript][FixtureSelection]") {
 		CHECK_EQ(String(entry["pass"]), "bytecode");
 	}
 
-	TEST_CASE("A report path is recognized as living inside the run's user-data root") {
-		CHECK(FSFixtureCLI::report_path_is_inside_root("/scratch/user-fixtures-9/report.json", "/scratch/user-fixtures-9"));
-		CHECK(FSFixtureCLI::report_path_is_inside_root("/scratch/user-fixtures-9/nested/report.json", "/scratch/user-fixtures-9/"));
-		// A sibling whose name merely starts with the root's name is not contained.
-		CHECK_FALSE(FSFixtureCLI::report_path_is_inside_root("/scratch/user-fixtures-91/report.json", "/scratch/user-fixtures-9"));
-		CHECK_FALSE(FSFixtureCLI::report_path_is_inside_root("/scratch/report.json", "/scratch/user-fixtures-9"));
-		CHECK_FALSE(FSFixtureCLI::report_path_is_inside_root("", "/scratch/user-fixtures-9"));
-		CHECK_FALSE(FSFixtureCLI::report_path_is_inside_root("/scratch/user-fixtures-9/report.json", ""));
-	}
-
 	TEST_CASE("An unwritable report path fails the run") {
 		TemporaryProjectTree tree("fixture_selection_report_path");
 		tree.write_file("project.foundry",
