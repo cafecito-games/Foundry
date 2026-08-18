@@ -35,6 +35,7 @@
 #include "fs_analyzer.h"
 #include "fs_compiler.h"
 #include "fs_parser.h"
+#include "fs_reflection.h"
 
 #include "core/config/project_build_pipeline_config.h"
 #include "core/config/project_build_pipeline_status.h"
@@ -195,7 +196,15 @@ Error FoundryBuildTaskBootstrapLoader::_compile_provider(
 		return err;
 	}
 
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+	// A provider is analyzed against the fully initialized language, including the `foundry`
+	// reflection surface. `FSLanguage::finish()` tears that surface down while leaving the plain
+	// global constants in place, so the presence of a leftover global says nothing about whether
+	// the language is usable. Ask for the state the analysis actually needs: the reflection
+	// namespace singleton, which exists only between `init()` and `finish()`. This deliberately
+	// asserts nothing about a `finish()` having run to completion — the singleton is released
+	// before any of that function's later failure points, so a half-torn-down language still
+	// re-initializes here instead of analyzing against a missing reflection surface.
+	if (FSLanguage::get_singleton()->get_namespace_singleton().is_null()) {
 		FSLanguage::get_singleton()->init();
 	}
 
