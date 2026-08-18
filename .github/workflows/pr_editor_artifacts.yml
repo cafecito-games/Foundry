@@ -180,23 +180,30 @@ jobs:
 
       - name: Setup Linux dependencies
         if: ${{ matrix.os == 'linux' && steps.existing.outputs.found != 'true' }}
-        timeout-minutes: 6
+        timeout-minutes: 5
         run: |
           set -uo pipefail
+          # wayland-scanner is the only thing this step provides. Probe first: the
+          # runner image often ships it, and then apt is never touched.
           if command -v wayland-scanner >/dev/null 2>&1; then
             echo "wayland-scanner already present; skipping apt"
             exit 0
           fi
-          for attempt in 1 2 3; do
-            if sudo apt-get -o DPkg::Lock::Timeout=120 update \
-              && sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends libwayland-bin; then
-              exit 0
-            fi
-            echo "::warning::apt attempt ${attempt} failed; retrying"
-            sleep 15
-          done
-          echo "::error::failed to install libwayland-bin after 3 attempts"
-          exit 1
+          # Try the install against the image's existing package lists first. The
+          # `update` is the mirror-dependent half and is what stalls; skipping it
+          # succeeds outright on most runners.
+          sudo apt-get -o DPkg::Lock::Timeout=45 install -y --no-install-recommends libwayland-bin || \
+            { sudo apt-get -o DPkg::Lock::Timeout=45 update \
+              && sudo apt-get -o DPkg::Lock::Timeout=45 install -y --no-install-recommends libwayland-bin; } || true
+          # Best effort by design. A stalled mirror must not fail a build job; if
+          # the tool is genuinely missing, Compilation says so with a real error
+          # instead of this step guessing.
+          if command -v wayland-scanner >/dev/null 2>&1; then
+            echo "wayland-scanner installed"
+          else
+            echo "::warning::wayland-scanner unavailable after apt; continuing and letting the build report it"
+          fi
+          exit 0
 
       - name: Free Linux runner disk space
         if: ${{ matrix.os == 'linux' && steps.existing.outputs.found != 'true' }}
