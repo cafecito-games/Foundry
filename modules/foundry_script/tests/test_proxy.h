@@ -36,6 +36,7 @@
 #include "../fs_parser.h"
 #include "../fs_proxy.h"
 #include "../fs_reflection.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "tests/test_macros.h"
 
@@ -46,9 +47,7 @@ namespace FSTests {
 // that compilation depends on.
 struct ScopedProxyLanguage {
 	ScopedProxyLanguage() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 };
 

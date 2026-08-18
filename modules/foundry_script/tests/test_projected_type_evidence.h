@@ -34,6 +34,7 @@
 #include "../fs_analyzer.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/variant/container_type_validate.h"
 
@@ -48,9 +49,7 @@ namespace FSTests {
 
 struct ScopedProjectedEvidenceLanguage {
 	ScopedProjectedEvidenceLanguage() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 };
 

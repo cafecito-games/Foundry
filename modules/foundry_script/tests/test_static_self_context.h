@@ -37,6 +37,7 @@
 #include "../fs_function.h"
 #include "../fs_parser.h"
 #include "../fs_static_self_callable.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/object/callable_method_pointer.h"
 #include "core/os/thread.h"
@@ -65,9 +66,7 @@ static void static_self_probe() {
 
 struct StaticSelfLanguageScope {
 	StaticSelfLanguageScope() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 		static_self_probe_records().clear();
 	}
 	~StaticSelfLanguageScope() {

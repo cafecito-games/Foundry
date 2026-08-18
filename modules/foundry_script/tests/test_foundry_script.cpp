@@ -50,6 +50,7 @@
 #include "../fs_script_test_guard.h"
 #include "../fs_tokenizer.h"
 #include "../fs_tokenizer_buffer.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -1075,10 +1076,7 @@ struct ScopedFSNativeGlobals {
 	bool initialized = false;
 
 	ScopedFSNativeGlobals() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-			initialized = true;
-		}
+		initialized = FSTests::ensure_fs_language_initialized();
 	}
 
 	~ScopedFSNativeGlobals() {
@@ -5404,9 +5402,7 @@ TEST_CASE("[Modules][FoundryScript] Cleared script refuses to instantiate") {
 	// can keep the cleared script alive and hand it out again on a later cache-hit load.
 	// Such a script must report itself as non-instantiable and fail construction loudly instead
 	// of producing a half-constructed instance whose member defaults never ran.
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 
 	const String source =
 			"var health: int = 10\n"
@@ -5458,9 +5454,7 @@ TEST_CASE("[Modules][FoundryScript] Docs are generated lazily on request after r
 	// eagerly (doc generation was ~22% of cold script load time and is only needed by editor
 	// surfaces, never to load/instantiate a scene). get_documentation() must still return the
 	// correct docs by generating them lazily on first request.
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 
 	const String source =
 			"## The current health.\n"

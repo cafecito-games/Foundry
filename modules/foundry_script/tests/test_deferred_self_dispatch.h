@@ -37,6 +37,7 @@
 #include "../fs_function.h"
 #include "../fs_parser.h"
 #include "../fs_static_self_callable.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/io/file_access.h"
 
@@ -52,9 +53,7 @@ namespace FSTests {
 
 struct DeferredSelfLanguageScope {
 	DeferredSelfLanguageScope() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 };
 

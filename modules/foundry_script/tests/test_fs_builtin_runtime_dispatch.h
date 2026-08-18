@@ -41,12 +41,13 @@
 // forced-dispatch allow-list, which makes named builtin identities take the stripped path in a
 // build that does have the front-end.
 
+#include "../foundry_script.h"
 #include "../fs_builtin_sources.h"
 #include "../fs_bytecode_export.h"
 #include "../fs_cache.h"
-#include "../foundry_script.h"
 #include "fs_builtin_test_utils.h"
 #include "fs_temporary_project_tree.h"
+#include "fs_test_language_lifecycle.h"
 #include "fs_test_runner.h"
 // TestFSCacheAccessor, for asserting which paths the cache holds entries for.
 #include "fs_test_runner_suite.h"
@@ -90,9 +91,7 @@ struct BuiltinRuntimeDispatchFixture {
 
 	explicit BuiltinRuntimeDispatchFixture(const String &p_name) :
 			tree("fs_builtin_runtime_dispatch_" + p_name + "_" + itos(OS::get_singleton()->get_ticks_usec())) {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 		// The mapped artifact path is a fixed `res://.foundry/builtin/` prefix, so `res://` is
 		// pointed at the throwaway tree for the duration of the case. Writing the companions into
 		// the real test project would leave build products in a tracked fixture directory.

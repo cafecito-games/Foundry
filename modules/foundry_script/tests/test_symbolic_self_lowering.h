@@ -37,6 +37,7 @@
 #include "../fs_conformance_registry.h"
 #include "../fs_function.h"
 #include "../fs_parser.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/io/file_access.h"
 
@@ -56,9 +57,7 @@ namespace FSTests {
 
 struct SymbolicSelfLanguageScope {
 	SymbolicSelfLanguageScope() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 };
 

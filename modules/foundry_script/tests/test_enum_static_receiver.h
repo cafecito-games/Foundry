@@ -35,6 +35,7 @@
 #include "../fs_compiler.h"
 #include "../fs_function.h"
 #include "../fs_parser.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/error/error_macros.h"
 #include "core/object/callable_method_pointer.h"
@@ -79,9 +80,7 @@ static Variant enum_static_receiver_probe_callable() {
 
 struct EnumStaticReceiverLanguageScope {
 	EnumStaticReceiverLanguageScope() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 		enum_static_receiver_probe_records().clear();
 	}
 	~EnumStaticReceiverLanguageScope() {

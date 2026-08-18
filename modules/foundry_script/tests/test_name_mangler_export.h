@@ -46,6 +46,7 @@
 #include "modules/foundry_script/fs_name_mangler_analysis.h"
 #include "modules/foundry_script/fs_name_mangler_application.h"
 #include "modules/foundry_script/fs_tokenizer_buffer.h"
+#include "modules/foundry_script/tests/fs_test_language_lifecycle.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
 #include "core/config/project_settings.h"
@@ -186,9 +187,7 @@ struct NameManglerExportFixture {
 
 	explicit NameManglerExportFixture(const String &p_name) :
 			tree("fs_name_mangler_export_" + p_name + "_" + itos(OS::get_singleton()->get_ticks_usec())) {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 
 	~NameManglerExportFixture() {
