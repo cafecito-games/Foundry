@@ -1,0 +1,14 @@
+FS_TEST_OK
+pick 1
+cell
+pick 2
+cell
+pick 5
+cell
+pick 6
+extra
+boxed extra
+tupled extra
+pick 3
+pick 4
+derived derived
