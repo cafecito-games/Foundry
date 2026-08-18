@@ -1159,6 +1159,62 @@ static bool call_argument_is_same_receiver(
 	return expression_is_same_reference(subscript->base, p_argument);
 }
 
+// An unqualified call, a `self`-qualified call, and a `super` call all run against the calling frame's
+// own receiver, so the callee's `Self` and the caller's `Self` denote the same value there.
+static bool call_receiver_is_current_self(const FSParser::CallNode *p_call) {
+	if (p_call == nullptr) {
+		return false;
+	}
+	if (p_call->is_super || p_call->get_callee_type() == FSParser::Node::IDENTIFIER) {
+		return true;
+	}
+	if (p_call->get_callee_type() != FSParser::Node::SUBSCRIPT) {
+		return false;
+	}
+	const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_call->callee);
+	return subscript->is_attribute && subscript->base != nullptr && subscript->base->type == FSParser::Node::SELF;
+}
+
+// A `Self` parameter position denotes the callee frame's own receiver, so two values whose static
+// types both render as `Self` are interchangeable only when they name the same receiver: the
+// argument's `Self` is the calling frame's receiver, while the parameter's is whatever the receiver
+// expression turns out to be at run time. A type-level match that leans on that coincidence is
+// therefore only sound when the call runs through the calling frame's own receiver, or when the
+// argument is the receiver expression itself -- the latter answered separately by receiver identity.
+//
+// Only a position the call site resolved as its receiver contract asks that question. A `Self` that
+// reached the signature through a carrier's element type, a class type argument, or an explicit method
+// type argument was written in the calling frame and already denotes the caller's own receiver, so it
+// stays governed by ordinary type equality.
+//
+// Final `Self` bindings name exactly one class and keep the ordinary substitution rules. Only an
+// anonymous tuple carries the requirement inward, matching the positions receiver identity itself can
+// answer: a typed carrier is checked against its declared element type invariantly and gains no
+// exception here.
+static bool _self_parameter_contract_match_needs_receiver_identity(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type) {
+	if (_datatype_self_bindings_are_final(p_expected_type)) {
+		return false;
+	}
+	if (_is_bare_self_value_parameter(p_expected_type)) {
+		return p_expected_type.is_receiver_self_contract && _is_self_type_parameter(p_argument_type);
+	}
+	if (p_expected_type.kind != FSParser::DataType::TUPLE || p_expected_type.tuple_name != StringName() ||
+			p_argument_type.kind != FSParser::DataType::TUPLE || p_argument_type.tuple_name != StringName() ||
+			p_expected_type.container_element_types.size() != p_argument_type.container_element_types.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_expected_type.container_element_types.size(); i++) {
+		if (_self_parameter_contract_match_needs_receiver_identity(
+					p_expected_type.container_element_types[i],
+					p_argument_type.container_element_types[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
 	if (p_class == nullptr) {
 		return "<unknown>";
@@ -15350,8 +15406,11 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		// overrides may narrow it. Static calls and signature validation use concrete substitution.
 		const bool parameter_self_is_receiver_contract =
 				p_self_type_override == nullptr && !p_is_constructor && !found_function->is_static;
-		const FSParser::DataType parameter_self_type =
-				parameter_self_is_receiver_contract ? _self_type_parameter_from_bound(self_type) : self_type;
+		FSParser::DataType parameter_self_type = self_type;
+		if (parameter_self_is_receiver_contract) {
+			parameter_self_type = _self_type_parameter_from_bound(self_type);
+			parameter_self_type.is_receiver_self_contract = true;
+		}
 		for (int i = 0; i < found_function->parameters.size(); i++) {
 			r_par_types.push_back(substitute_member_type(
 					found_function->parameters[i]->get_datatype(), specialized_base, found_function, &parameter_self_type));
@@ -17251,7 +17310,7 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 			// The admissions that do not need identity -- `null` for a nullable element, a `final` class's
 			// single binding, a value the analyzer substituted itself -- answer the same question one
 			// nesting level down, so an element consults them before identity is required of it.
-			if (_datatype_matches_self_parameter_contract(expected_element, element_type)) {
+			if (self_parameter_contract_admits_argument_type(expected_element, element_type, p_call)) {
 				continue;
 			}
 			if (!self_parameter_satisfied_by_receiver_identity(expected_element, element, p_call)) {
@@ -17271,8 +17330,16 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 	return true;
 }
 
-bool FSAnalyzer::datatype_matches_self_parameter_contract(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) const {
-	return _datatype_matches_self_parameter_contract(p_expected_type, p_argument_type);
+bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) const {
+	if (!_datatype_matches_self_parameter_contract(p_expected_type, p_argument_type)) {
+		return false;
+	}
+	if (!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, p_argument_type)) {
+		return true;
+	}
+	// With no call node there is no receiver expression to compare against, so the type-level answer
+	// stands rather than turning an argument no receiver can be named for into an error.
+	return p_call == nullptr || call_receiver_is_current_self(p_call);
 }
 
 String FSAnalyzer::make_type_handle_argument_error(

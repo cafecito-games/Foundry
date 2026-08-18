@@ -232,6 +232,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Copy and assignment preser
 	original.is_nullable = true;
 	original.numeric_type_is_carrier_erased = true;
 	original.is_substituted_self = true;
+	original.is_receiver_self_contract = true;
 	original.has_method_signature = true;
 	original.has_explicit_method_signature = true;
 	original.signature_is_async = true;
@@ -265,6 +266,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Copy and assignment preser
 		CHECK(copy->is_nullable == original.is_nullable);
 		CHECK(copy->numeric_type_is_carrier_erased == original.numeric_type_is_carrier_erased);
 		CHECK(copy->is_substituted_self == original.is_substituted_self);
+		CHECK(copy->is_receiver_self_contract == original.is_receiver_self_contract);
 		CHECK(copy->has_method_signature == original.has_method_signature);
 		CHECK(copy->has_explicit_method_signature == original.has_explicit_method_signature);
 		CHECK(copy->signature_is_async == original.signature_is_async);
