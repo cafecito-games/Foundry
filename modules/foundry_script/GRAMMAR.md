@@ -412,6 +412,14 @@ type_arguments = "[", type, { ",", type }, "]" ;
 - `extends` accepts a path string (`extends "res://base.fs"`), an inheritance chain of
   identifiers (`extends A.B.C`), or a path string followed by an inner-class chain. A
   generic base may carry `type_arguments` (`extends List[int]`).
+- An `extends` edge into a generic class must spell **every** type argument; a bare generic base
+  (`class Bad extends Box` for `class Box[T]`) is an error reported at the base class name. The
+  edge defines the inherited member types of the whole subclass, so unbound base parameters would
+  silently erase every inherited member that depends on them. The rule holds for local, nested,
+  preloaded, global, and namespaced Foundry Script bases; it applies only once the base resolves
+  and is known to declare type parameters, so native and non-generic bases are unaffected. A raw
+  generic *annotation* or *value* (`var b: Box`) stays legal, as do forwarded child parameters
+  (`class Child[T] extends Box[T]`) and F-bounded declarations (`class Recursive[T: Recursive]`).
 - `uses` mixes in one or more traits, each optionally specialized with type arguments.
 - A trait's type arguments are fixed by the first class in an inheritance chain that applies
   it. A subclass may re-apply the same trait only with the same arguments; re-applying it with
