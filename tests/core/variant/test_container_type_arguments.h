@@ -473,9 +473,8 @@ TEST_CASE("[ContainerType] An object slot is named by its script rather than its
 	specialized.type_arguments.push_back(make_builtin(Variant::INT));
 
 	CHECK(specialized.get_type_name() == "TestBox[int]");
-	// A nested element renders the script name too. Its type arguments are a separate, pre-existing
-	// gap in the element renderer and are not what this case pins.
-	CHECK(make_array_of(specialized).get_type_name() == "Array[TestBox]");
+	// A nested element renders the script name and its type arguments, exactly like the top level.
+	CHECK(make_array_of(specialized).get_type_name() == "Array[TestBox[int]]");
 
 	ContainerType handle = specialized;
 	handle.is_type_handle = true;
@@ -496,6 +495,34 @@ TEST_CASE("[ContainerType] A nameless script still renders its engine base") {
 	nameless.script = script;
 
 	CHECK(nameless.get_type_name() == "RefCounted");
+}
+
+TEST_CASE("[ContainerType] A nested element keeps its type arguments") {
+	const ContainerType specialized = make_specialized_class(SNAME("RefCounted"), { make_builtin(Variant::INT) });
+	CHECK(specialized.get_type_name() == "RefCounted[int]");
+
+	// The element renderer and the top-level renderer are the same renderer, so nesting never drops
+	// arguments regardless of the position the element sits in.
+	CHECK(make_array_of(specialized).get_type_name() == "Array[RefCounted[int]]");
+	CHECK(make_dictionary_of(specialized, make_builtin(Variant::STRING)).get_type_name() == "Dictionary[RefCounted[int], String]");
+	CHECK(make_dictionary_of(make_builtin(Variant::STRING), specialized).get_type_name() == "Dictionary[String, RefCounted[int]]");
+	CHECK(make_array_of(make_array_of(specialized)).get_type_name() == "Array[Array[RefCounted[int]]]");
+
+	ContainerType handle = specialized;
+	handle.is_type_handle = true;
+	CHECK(make_array_of(handle).get_type_name() == "Array[Type[RefCounted[int]]]");
+
+	// A nested element with arguments of its own renders them recursively.
+	const ContainerType nested_argument = make_specialized_class(SNAME("RefCounted"), { specialized });
+	CHECK(make_array_of(nested_argument).get_type_name() == "Array[RefCounted[RefCounted[int]]]");
+
+	// An unspecialized element is unaffected.
+	CHECK(make_array_of(make_specialized_class(SNAME("RefCounted"), {})).get_type_name() == "Array[RefCounted]");
+
+	// Naming only: an element type still validates exactly as before.
+	Array array;
+	array.set_typed(specialized);
+	CHECK(array.get_element_type() == specialized);
 }
 
 } // namespace TestContainerTypeArguments
