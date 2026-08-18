@@ -857,6 +857,18 @@ class StaticChecksWorkflowTests(WorkflowContractTestCase):
             self.workflow.step_key("static-checks", resolve, "env")["EVENT_NAME"],
         )
 
+    def test_uv_is_installed_before_the_hooks_run(self) -> None:
+        """The foundry-test-adapter hook is `uv run ...`, so prek needs uv on PATH."""
+
+        self.assertRegex(
+            self.workflow.step_key("static-checks", "Install uv", "uses"),
+            r"^astral-sh/setup-uv@v\d+$",
+        )
+        self.assertLess(
+            self.workflow.step_index("static-checks", "Install uv"),
+            self.workflow.step_index("static-checks", "Style checks via prek"),
+        )
+
     def test_the_resolved_scope_is_what_the_hooks_run_over(self) -> None:
         checks = self.workflow.step_with("static-checks", "Style checks via prek")
         self.assertEqual("${{ env.PREK_ARGS }}", workflow_graph.normalize_expression(checks["extra-args"]))
