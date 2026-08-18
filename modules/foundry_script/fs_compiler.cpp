@@ -5799,6 +5799,12 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 			const Vector<FSParser::DataType> &base_specialization = p_class->base_type.type_arguments;
 			for (KeyValue<StringName, FoundryScript::MemberInfo> &E : p_script->member_indices) {
 				_rebind_self_data_type(E.value.data_type, p_script);
+				if (E.value.tuple_slot_shape.kind == FSDataType::TUPLE) {
+					// The shape's ordinals index the declaring class's parameters, so they are re-specialized
+					// through this `extends` step exactly as the binding beside them is. Without it a
+					// `Fixed extends Crate[String]` would index its own (possibly empty) parameter list.
+					_substitute_binding_type_parameters(E.value.tuple_slot_shape, base_specialization, p_script, true);
+				}
 				_specialize_type_argument_binding(E.value.type_argument_binding, base_specialization, p_script);
 			}
 
@@ -5977,14 +5983,31 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				}
 				const FSParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
 				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
+				const FlattenedTraitArguments *applied_trait = flattened_trait_arguments.getptr(members_to_compile[i]);
 				if (_slot_is_tuple_shaped(member_datatype)) {
 					// The slot type stays the erased Array carrier; the shape travels beside it so a
-					// reflective write validates the same thing an in-body store does. Type parameters are
-					// erased here: a member's binding to a class parameter is expressed by
-					// `type_argument_binding`, and a tuple element naming one has no argument to resolve
-					// against at this point, so it degrades to accepting anything rather than to a demand
-					// nothing can satisfy.
-					minfo.tuple_slot_shape = _gdtype_tuple_test_type_from_datatype(member_datatype, p_script);
+					// reflective write validates the same thing an in-body store does. An instance member's
+					// shape keeps its class type parameter nodes so the receiver's reified arguments resolve
+					// them at the reflective boundary, exactly as an in-body store resolves them from the
+					// frame's receiver. A static member's shape stays fully erased: a static slot has no
+					// per-instance reification, so a preserved node there could only degrade to gradual.
+					const Vector<FSParser::TypeParameterNode *> &declaring_type_parameters =
+							applied_trait != nullptr ? applied_trait->trait->type_parameters : p_class->type_parameters;
+					bool shape_is_sound = true;
+					// A tuple shape travels to run time as an `FSDataType`, which is the one place a nullable
+					// node is still evidence, so the whole tuple spine is asked with nullability expressible.
+					const bool shape_depends_on_receiver = !variable->is_static &&
+							_type_depends_on_declared_type_parameters(
+									member_datatype, declaring_type_parameters, shape_is_sound, true) &&
+							shape_is_sound;
+					minfo.tuple_slot_shape = _gdtype_tuple_test_type_from_datatype(
+							member_datatype, p_script, shape_depends_on_receiver);
+					if (shape_depends_on_receiver && applied_trait != nullptr) {
+						// A member flattened in from a generic trait names the TRAIT's parameters; substitute the
+						// arguments this class applied so the stored ordinals index the implementer's own.
+						_substitute_binding_type_parameters(
+								minfo.tuple_slot_shape, applied_trait->arguments, p_script, true);
+					}
 				}
 
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
@@ -5993,7 +6016,6 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record which type
 					// argument it stands for so writes can validate against it at runtime (e.g. rejecting
 					// `box.value = "x"` on a `Box[int]`).
-					const FlattenedTraitArguments *applied_trait = flattened_trait_arguments.getptr(members_to_compile[i]);
 					const int ordinal = member_datatype.type_parameter_index;
 					if (applied_trait != nullptr) {
 						// A member flattened in from a generic trait is typed by the TRAIT's parameters, whose
@@ -6029,7 +6051,6 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 					// slot takes any value at run time. Bake the whole declared shape with its parameter nodes
 					// preserved; projection resolves those leaves against the receiver's reified arguments and
 					// enforces the concrete parts of the shape regardless.
-					const FlattenedTraitArguments *applied_trait = flattened_trait_arguments.getptr(members_to_compile[i]);
 					const Vector<FSParser::TypeParameterNode *> &declaring_type_parameters =
 							applied_trait != nullptr ? applied_trait->trait->type_parameters : p_class->type_parameters;
 					bool binding_is_sound = true;

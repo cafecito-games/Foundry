@@ -532,14 +532,70 @@ static bool _erase_specialized_class_handle_for_native_data_type(const FSDataTyp
 	return true;
 }
 
+// The tuple shape a reflective member write is checked against, with every surviving class type
+// parameter replaced by what this receiver reified for it. This is the member-side counterpart of the
+// resolution `_data_type_from_tuple_descriptor()` performs for an in-body store, and it accepts and
+// rejects exactly what that path does: a node no receiver resolved degrades to `VARIANT` and leaves
+// only that node gradual, and a declared `T?` keeps admitting null whatever the argument is.
+//
+// Both `container_element_types` and `type_arguments` are walked. The compiler only ever emits
+// parameter nodes on the tuple spine, but a `.fsb` may carry one elsewhere and it must not survive
+// into `is_type()`, where a `TYPE_PARAMETER` node accepts anything.
+static FSDataType _resolve_tuple_shape_type_parameters(const FSDataType &p_shape, const Vector<ContainerType> &p_leaf_type_arguments, int p_depth = 0) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return FSDataType();
+	}
+
+	if (p_shape.kind == FSDataType::TYPE_PARAMETER) {
+		if (p_shape.type_parameter_scope != FSDataType::TYPE_PARAMETER_CLASS ||
+				p_shape.type_parameter_index < 0 || p_shape.type_parameter_index >= p_leaf_type_arguments.size()) {
+			return FSDataType();
+		}
+		const ContainerType &argument = p_leaf_type_arguments[p_shape.type_parameter_index];
+		FSDataType resolved;
+		if (p_shape.is_type_handle) {
+			// `Type[T]` reifies as a class handle for the argument, not an instance of it. A non-object
+			// argument has no handle form to describe, so that node stays gradual.
+			if (argument.builtin_type != Variant::OBJECT) {
+				return FSDataType();
+			}
+			resolved = FSDataType::from_type_handle_container_type(argument);
+		} else {
+			resolved = FSDataType::from_container_type(argument);
+		}
+		// A `T?` element admits null whatever the applied argument turns out to be, so the declared
+		// nullability survives resolution rather than being replaced along with the node.
+		resolved.is_nullable = p_shape.is_nullable;
+		return resolved;
+	}
+
+	FSDataType resolved = p_shape;
+	for (int i = 0; i < resolved.container_element_types.size(); i++) {
+		resolved.container_element_types.write[i] =
+				_resolve_tuple_shape_type_parameters(resolved.container_element_types[i], p_leaf_type_arguments, p_depth + 1);
+	}
+	for (int i = 0; i < resolved.type_arguments.size(); i++) {
+		resolved.type_arguments.write[i] =
+				_resolve_tuple_shape_type_parameters(resolved.type_arguments[i], p_leaf_type_arguments, p_depth + 1);
+	}
+	return resolved;
+}
+
 // Nothing is converted on the tuple leg: tuple elements are invariant, and `Variant::construct()` on
 // the Array carrier could only reproduce the value the shape already rejected.
-bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Variant &p_original, Variant &r_value) {
+bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Variant &p_original, Variant &r_value, const Vector<ContainerType> &p_leaf_type_arguments) {
 	if (p_member.tuple_slot_shape.kind == FSDataType::TUPLE) {
-		if (!p_member.tuple_slot_shape.is_type(r_value)) {
+		const FSDataType resolved_shape =
+				_resolve_tuple_shape_type_parameters(p_member.tuple_slot_shape, p_leaf_type_arguments);
+		if (!resolved_shape.is_type(r_value)) {
+#ifdef DEBUG_ENABLED
+			// The neighboring member legs all report, so a dropped tuple write says why in the same
+			// sentence the in-body store prints for the same value.
+			ERR_PRINT(fs_tuple_store_rejection_message(resolved_shape, r_value));
+#endif // DEBUG_ENABLED
 			return false;
 		}
-		r_value = fs_canonical_tuple_value(p_member.tuple_slot_shape, r_value);
+		r_value = fs_canonical_tuple_value(resolved_shape, r_value);
 		return true;
 	}
 	if (!p_member.data_type.is_type(r_value)) {
@@ -2168,7 +2224,7 @@ bool FoundryScript::_set(const StringName &p_name, const Variant &p_value) {
 				return false;
 			}
 			_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
-			if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+			if (!FoundryScript::_coerce_member_write(*member, p_value, value, Vector<ContainerType>())) {
 				return false;
 			}
 			if (likely(top->valid) && member->setter) {
@@ -2973,9 +3029,10 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (member->tuple_slot_shape.kind == FSDataType::TUPLE) {
 				// A tuple member whose declared type mentions a class parameter also carries a binding, but
 				// that binding is the same erased Array its slot type is and would enforce only the carrier.
-				// The recorded shape keeps the arity and every concrete element, so it is the stricter of the
-				// two and answers first; a parameter element stays gradual there, as it does in the slot.
-				if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+				// The recorded shape keeps the arity, every concrete element, and every parameter element,
+				// so it is the stricter of the two and answers first; the parameter elements are resolved
+				// against this instance's reified arguments, exactly as an in-body store resolves them.
+				if (!FoundryScript::_coerce_member_write(*member, p_value, value, type_arguments)) {
 					return false;
 				}
 			} else if (member->type_argument_binding.kind != FoundryScript::TypeArgumentBinding::NONE) {
@@ -2989,7 +3046,7 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 				}
 			} else {
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
-				if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+				if (!FoundryScript::_coerce_member_write(*member, p_value, value, type_arguments)) {
 					return false;
 				}
 			}
@@ -3021,7 +3078,7 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 					return false;
 				}
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
-				if (!FoundryScript::_coerce_member_write(*member, p_value, value)) {
+				if (!FoundryScript::_coerce_member_write(*member, p_value, value, Vector<ContainerType>())) {
 					return false;
 				}
 				if (likely(sptr->valid) && member->setter) {

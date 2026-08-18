@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+[7, 8]
+[7, "eight"]
+>> ERROR: Trying to assign a value of type "Array" to a variable of type "(int, Variant)".
+[7, "eight"]
