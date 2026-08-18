@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_foundry_cli_benchmark_user_root.h                              */
+/*  test_foundry_cli_benchmark_user_root.h                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
