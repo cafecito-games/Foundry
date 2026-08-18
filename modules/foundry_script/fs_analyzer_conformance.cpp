@@ -99,9 +99,15 @@ static bool _native_classes_are_on_one_chain(const StringName &p_class, const St
 // ancestor's arguments dispatches the descendant's witness, which is the same incoherence
 // `trait_binding_conflicts_with_chain()` rejects for a script-class chain.
 //
-// `p_pending` carries the conformances the file currently being analyzed has validated so far. Its
-// own previously-registered entries were cleared before this pass, so the registry only contributes
-// other files and the two sources never double-report.
+// `p_pending` carries the conformances the file currently being analyzed has validated so far, and
+// `p_source_file`'s own registry entries are dropped: they are what this analysis is about to replace,
+// so comparing against them would make an unchanged reanalysis contradict itself.
+//
+// This is an early diagnostic, not the authority. `FSConformanceRegistry` decides the same question
+// again under its own lock when the file's declarations are published, because an answer read here has
+// already expired by the time the write happens. Reporting it here is what keeps a rejected
+// declaration out of the analysis that follows, so one contradiction produces one diagnostic instead
+// of also producing the downstream signature errors a doomed conformance would raise.
 //
 // Precision is bounded by what the registry can record: whatever `RecordedTypeArgument` cannot
 // identify with certainty is an absence of evidence and never a wildcard. That bound is shared with
@@ -110,7 +116,7 @@ static bool _native_classes_are_on_one_chain(const StringName &p_class, const St
 // declaration side and the use side diverge.
 static bool _native_chain_binding_conflicts(const StringName &p_native_class, const StringName &p_identity,
 		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
-		const Vector<FSConformanceRegistry::Conformance> &p_pending,
+		const Vector<FSConformanceRegistry::Conformance> &p_pending, const String &p_source_file,
 		StringName &r_conflicting_class, String &r_conflicting_source) {
 	if (p_native_class == StringName() || p_identity == StringName() || p_applied.is_empty()) {
 		return false;
@@ -132,7 +138,7 @@ static bool _native_chain_binding_conflicts(const StringName &p_native_class, co
 	}
 
 	for (const FSConformanceRegistry::NativeConformanceRecord &record :
-			FSConformanceRegistry::get_singleton()->get_native_conformance_records(p_identity)) {
+			FSConformanceRegistry::get_singleton()->get_native_conformance_records(p_identity, false, p_source_file)) {
 		if (!_native_classes_are_on_one_chain(p_native_class, record.native_class)) {
 			continue;
 		}
@@ -909,14 +915,22 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	const String source_file = parser->script_path;
 
 	// Re-analysis of a file replaces its previously-registered conformances wholesale, mirroring how
-	// global classes are re-registered, so stale duplicates never accumulate.
+	// global classes are re-registered, so stale duplicates never accumulate. The replacement is one
+	// atomic registry operation rather than a clear followed by a later write: nothing observes this
+	// file's conformances as absent while it is being reanalyzed, and the cross-file conflicts the
+	// registry is authoritative for are decided against the store as it stands at the moment of the
+	// write. The checks below run against a registry that still holds this file's previous entries, so
+	// each of them drops `source_file` from what it compares against.
 	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
-		registry->clear_file(source_file);
+		registry->try_replace_file_conformances(source_file, Vector<FSConformanceRegistry::Conformance>());
 		return;
 	}
 
-	registry->clear_file(source_file);
+	// This file's previous declarations stay in the store for every other reader, but they are what this
+	// pass is about to replace, so they are hidden from this thread: without that, a witness would find
+	// its own stale registration as the method it overrides and contradict itself.
+	FSConformanceRegistry::ScopedInFlightReplacement in_flight_replacement(source_file);
 
 	// Track the declaration that first emitted each `(target, trait)` membership. Two paths through
 	// the same declaration may share an implied supertrait (a diamond), but an explicit duplicate or
@@ -926,6 +940,14 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	// collisions across different trait conformances.
 	HashMap<String, HashMap<StringName, StringName>> seen_witnesses_by_target;
 	Vector<FSConformanceRegistry::Conformance> valid_entries;
+	// Declarations an early cross-file diagnostic already reported. The registry re-decides the same
+	// conflicts authoritatively and returns its own records; one of them naming a declaration already
+	// reported here is the same contradiction seen twice, not a second one.
+	HashSet<int> reported_declarations;
+	// How each trait identity this file emits should be spelled in a diagnostic. The registry answers
+	// with identity names, which are fully qualified for a trait declared without an explicit name, so
+	// the label is remembered here where the parse tree is at hand.
+	HashMap<StringName, String> identity_labels;
 
 	for (int conformance_index = 0; conformance_index < p_class->conformances.size(); conformance_index++) {
 		FSParser::ConformanceNode *conformance = p_class->conformances[conformance_index];
@@ -1063,7 +1085,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					StringName conflicting_class;
 					String conflicting_source;
 					if (_native_chain_binding_conflicts(StringName(target->fqcn), trait_identities[identity_index],
-								identity_arguments[identity_index], valid_entries, conflicting_class, conflicting_source)) {
+								identity_arguments[identity_index], valid_entries, source_file, conflicting_class,
+								conflicting_source)) {
 						chain_conflict_message = _chain_conflict_message(
 								_class_or_trait_name(trait_identity_nodes[identity_index]), String(conflicting_class),
 								conflicting_source, source_file);
@@ -1084,6 +1107,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			}
 			if (chain_conflict) {
 				push_error(chain_conflict_message, conformance);
+				reported_declarations.insert(conformance_index);
 				continue;
 			}
 
@@ -1110,6 +1134,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 									   _class_or_trait_name(target), String(identity), _localize_script_path(other_source)),
 							conformance);
 					membership_conflict = true;
+					reported_declarations.insert(conformance_index);
 					break;
 				}
 			}
@@ -1145,6 +1170,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 										   _class_or_trait_name(target), witness_name, _localize_script_path(other_witness_source)),
 								conformance);
 						conformance_witness_collision = true;
+						reported_declarations.insert(conformance_index);
 						continue;
 					}
 				}
@@ -1187,6 +1213,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				entry.trait_type_arguments = identity_arguments[identity_index];
 				valid_entries.push_back(entry);
 				seen_membership_conformances.insert(pair_key, conformance_index);
+				identity_labels.insert(identity, _class_or_trait_name(trait_identity_nodes[identity_index]));
 			}
 			if (witness_trait_label == StringName()) {
 				witness_trait_label = trait_identity;
@@ -1203,7 +1230,46 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 		}
 	}
 
-	registry->register_file_conformances(source_file, valid_entries);
+	// One submission decides and publishes everything the registry is authoritative for. The checks
+	// above are early diagnostics read from a registry state that has already expired by now; this is
+	// where the outcome is actually fixed, against the store as it is at the moment of the write.
+	// Diagnostics are produced from the returned value records afterwards, with the registry lock
+	// already released and each rejection anchored back to the `ConformanceNode` its
+	// `conformance_index` names.
+	const FSConformanceRegistry::RegistrationResult result =
+			registry->try_replace_file_conformances(source_file, valid_entries);
+	for (const FSConformanceRegistry::RegistrationConflict &conflict : result.conflicts) {
+		if (reported_declarations.has(conflict.conformance_index)) {
+			continue;
+		}
+		FSParser::ConformanceNode *conformance = conflict.conformance_index >= 0 &&
+						conflict.conformance_index < p_class->conformances.size()
+				? p_class->conformances[conflict.conformance_index]
+				: nullptr;
+		if (conformance == nullptr) {
+			continue;
+		}
+		switch (conflict.kind) {
+			case FSConformanceRegistry::RegistrationConflict::DUPLICATE_MEMBERSHIP: {
+				push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in "%s".)",
+								   conflict.target_label, String(conflict.trait_name),
+								   _localize_script_path(conflict.conflicting_source_file)),
+						conformance);
+			} break;
+			case FSConformanceRegistry::RegistrationConflict::WITNESS_COLLISION: {
+				push_error(vformat(R"*(Class "%s" already has a witness for method "%s()" via a conformance in "%s".)*",
+								   conflict.target_label, conflict.method_name,
+								   _localize_script_path(conflict.conflicting_source_file)),
+						conformance);
+			} break;
+			case FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE: {
+				const String *trait_label = identity_labels.getptr(conflict.trait_name);
+				push_error(_chain_conflict_message(trait_label != nullptr ? *trait_label : String(conflict.trait_name),
+								   conflict.conflicting_target_label, conflict.conflicting_source_file, source_file),
+						conformance);
+			} break;
+		}
+	}
 }
 
 void FSAnalyzer::resolve_conformance_bodies(FSParser::ClassNode *p_class) {

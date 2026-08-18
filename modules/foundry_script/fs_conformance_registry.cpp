@@ -32,11 +32,14 @@
 
 #include "foundry_script.h"
 #include "fs_function.h"
+#include "fs_type.h"
 
 #include "core/object/class_db.h"
+#include "core/templates/hash_set.h"
 
 FSConformanceRegistry *FSConformanceRegistry::singleton = nullptr;
 thread_local const FSConformanceRegistry::Visibility *FSConformanceRegistry::active_visibility = nullptr;
+thread_local String FSConformanceRegistry::in_flight_source_file;
 
 FSConformanceRegistry::ScopedVisibility::ScopedVisibility(const Visibility *p_visibility) {
 	previous = active_visibility;
@@ -47,7 +50,19 @@ FSConformanceRegistry::ScopedVisibility::~ScopedVisibility() {
 	active_visibility = previous;
 }
 
+FSConformanceRegistry::ScopedInFlightReplacement::ScopedInFlightReplacement(const String &p_source_file) {
+	previous = in_flight_source_file;
+	in_flight_source_file = p_source_file;
+}
+
+FSConformanceRegistry::ScopedInFlightReplacement::~ScopedInFlightReplacement() {
+	in_flight_source_file = previous;
+}
+
 bool FSConformanceRegistry::_is_visible(const String &p_source_file) {
+	if (!in_flight_source_file.is_empty() && p_source_file == in_flight_source_file) {
+		return false;
+	}
 	return active_visibility == nullptr || active_visibility->can_see(p_source_file);
 }
 
@@ -234,6 +249,214 @@ void FSConformanceRegistry::register_file_conformances(const String &p_source_fi
 		conformances_by_file[p_source_file] = stored;
 	}
 	_rebuild_index();
+}
+
+// A conformance whose target is an engine class rather than a script class. The target is keyed by the
+// bare engine-class name and belongs to no script file, so a script class that happens to share a name
+// with an engine class is never mistaken for one.
+static bool _is_native_target(const FSConformanceRegistry::Conformance &p_conformance) {
+	return p_conformance.target_script_path.is_empty() && ClassDB::class_exists(p_conformance.target_fqcn);
+}
+
+// Whether two engine classes are on one ClassDB inheritance chain, excluding the class itself. A
+// conformance declared on either one answers for receivers of the other, which is what makes two
+// declarations along the chain describe the same trait for overlapping values.
+static bool _native_classes_are_on_one_chain(const StringName &p_class, const StringName &p_other) {
+	return p_class != p_other &&
+			(ClassDB::is_parent_class(p_class, p_other) || ClassDB::is_parent_class(p_other, p_class));
+}
+
+// Whether a conformance declared on `p_declared_on` answers for receivers whose static chain bottoms
+// out at `p_terminal`. Unlike the engine-only rule, this is one-directional: a script class extending
+// `RefCounted` is answered for by `RefCounted` and by every `RefCounted` ancestor, but never by a
+// `RefCounted` *subclass* it has no values in common with.
+static bool _native_ancestry_answers_for(const StringName &p_terminal, const StringName &p_declared_on) {
+	if (p_terminal == StringName() || p_declared_on == StringName()) {
+		return false;
+	}
+	return p_terminal == p_declared_on || ClassDB::is_parent_class(p_terminal, p_declared_on);
+}
+
+bool FSConformanceRegistry::_declaration_witnesses_collide(const Conformance &p_candidate,
+		const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const {
+	if (p_candidate.target_fqcn.is_empty() || p_candidate.witnesses.is_empty()) {
+		return false;
+	}
+	// A witness collision is a property of the program, not of what one file loads: two files supplying
+	// the same method name for one target contradict each other whether or not either can see the other.
+	for (const KeyValue<StringName, FSParser::FunctionNode *> &witness : p_candidate.witnesses) {
+		if (witness.key == StringName()) {
+			continue;
+		}
+		for (const Conformance *existing : p_view) {
+			if (!existing->target_keys.has(p_candidate.target_fqcn) || !existing->witnesses.has(witness.key)) {
+				continue;
+			}
+			r_conflict.kind = RegistrationConflict::WITNESS_COLLISION;
+			r_conflict.conformance_index = p_candidate.conformance_index;
+			r_conflict.target_label = p_candidate.target_label;
+			r_conflict.trait_name = p_candidate.trait_name;
+			r_conflict.method_name = witness.key;
+			r_conflict.conflicting_target_label = existing->target_label;
+			r_conflict.conflicting_source_file = existing->source_file;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate, const String &p_source_file,
+		const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const {
+	if (p_candidate.trait_name == StringName()) {
+		return false;
+	}
+	// A candidate this submission already accepted belongs to the file being replaced, which the
+	// in-flight suppression deliberately hides from this thread's queries. It is still what the file is
+	// about to declare, so it takes part in the comparison rather than being read out of the store.
+	const auto reaches_candidate = [&](const Conformance &p_existing) {
+		return p_existing.source_file == p_source_file || _is_visible(p_existing.source_file);
+	};
+	const bool candidate_is_native = _is_native_target(p_candidate);
+	const StringName candidate_native_class = candidate_is_native ? StringName(p_candidate.target_fqcn) : StringName();
+
+	// Chain coherence runs before membership so a contradiction between two levels of one chain is
+	// reported as the contradiction it is rather than as an unrelated duplicate on some shared alias.
+	if (!p_candidate.trait_type_arguments.is_empty()) {
+		for (const Conformance *existing : p_view) {
+			if (existing->trait_name != p_candidate.trait_name) {
+				continue;
+			}
+			const bool existing_is_native = _is_native_target(*existing);
+			bool answers_for_same_receivers = false;
+			if (candidate_is_native && existing_is_native) {
+				answers_for_same_receivers =
+						_native_classes_are_on_one_chain(candidate_native_class, StringName(existing->target_fqcn));
+			} else if (candidate_is_native) {
+				// A script class whose chain bottoms out on this engine class, or on a subclass of it, is
+				// answered for by the candidate. An engine declaration reaches a script class the way an
+				// import does, so only a declaration the caller may see decides how it binds the trait.
+				answers_for_same_receivers = reaches_candidate(*existing) &&
+						_native_ancestry_answers_for(existing->target_native_base, candidate_native_class);
+			} else if (existing_is_native) {
+				answers_for_same_receivers = reaches_candidate(*existing) &&
+						_native_ancestry_answers_for(p_candidate.target_native_base, StringName(existing->target_fqcn));
+			}
+			if (!answers_for_same_receivers) {
+				continue;
+			}
+			if (!FSTypeCompatibility::recorded_arguments_conflict(existing->trait_type_arguments,
+						p_candidate.trait_type_arguments)) {
+				continue;
+			}
+			r_conflict.kind = RegistrationConflict::CHAIN_COHERENCE;
+			r_conflict.conformance_index = p_candidate.conformance_index;
+			r_conflict.target_label = p_candidate.target_label;
+			r_conflict.trait_name = p_candidate.trait_name;
+			r_conflict.conflicting_target_label =
+					existing->target_label.is_empty() ? existing->target_fqcn : existing->target_label;
+			r_conflict.conflicting_source_file = existing->source_file;
+			return true;
+		}
+	}
+
+	// Duplicate membership. Matching is on the candidate's exact fully-qualified name against the other
+	// side's alias set, which is the same identity relation the flattened lookup index answers with.
+	if (!p_candidate.target_fqcn.is_empty()) {
+		for (const Conformance *existing : p_view) {
+			if (existing->trait_name != p_candidate.trait_name ||
+					!existing->target_keys.has(p_candidate.target_fqcn)) {
+				continue;
+			}
+			r_conflict.kind = RegistrationConflict::DUPLICATE_MEMBERSHIP;
+			r_conflict.conformance_index = p_candidate.conformance_index;
+			r_conflict.target_label = p_candidate.target_label;
+			r_conflict.trait_name = p_candidate.trait_name;
+			r_conflict.conflicting_target_label =
+					existing->target_label.is_empty() ? existing->target_fqcn : existing->target_label;
+			r_conflict.conflicting_source_file = existing->source_file;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_file_conformances(
+		const String &p_source_file, const Vector<Conformance> &p_candidates) {
+	RegistrationResult result;
+
+	MutexLock lock(mutex);
+
+	Vector<Conformance> normalized = p_candidates;
+	for (Conformance &conformance : normalized) {
+		conformance.target_keys = _identifying_target_keys(
+				conformance.target_keys, conformance.target_script_path, conformance.target_is_root_class);
+	}
+
+	// The view the candidates are judged against. The submitting file's previous entries are excluded so
+	// an unchanged reanalysis cannot conflict with itself; they stay in `conformances_by_file` until the
+	// replacement below commits, so no reader ever sees the file's conformances missing.
+	Vector<const Conformance *> view;
+	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		if (file_entry.key == p_source_file) {
+			continue;
+		}
+		for (const Conformance &conformance : file_entry.value) {
+			view.push_back(&conformance);
+		}
+	}
+	const int foreign_entry_count = view.size();
+
+	Vector<Conformance> accepted;
+	// One `ConformanceNode` is the unit of rejection, so the candidates are walked declaration by
+	// declaration: a conflict on any identity or witness one of them emits drops every entry it emitted,
+	// including the ones its implied supertraits produced.
+	int declaration_start = 0;
+	while (declaration_start < normalized.size()) {
+		int declaration_end = declaration_start + 1;
+		while (declaration_end < normalized.size() &&
+				normalized[declaration_end].conformance_index == normalized[declaration_start].conformance_index) {
+			declaration_end++;
+		}
+
+		RegistrationConflict conflict;
+		bool conflicts = false;
+		// Membership and chain coherence are per identity; the witness map is shared by every entry the
+		// declaration emitted, so it is checked once, and last, so a contradiction is reported as the
+		// membership or chain contradiction it is rather than as the witness collision it also implies.
+		for (int entry_index = declaration_start; entry_index < declaration_end && !conflicts; entry_index++) {
+			conflicts = _candidate_conflicts(normalized[entry_index], p_source_file, view, conflict);
+		}
+		if (!conflicts) {
+			conflicts = _declaration_witnesses_collide(normalized[declaration_start], view, conflict);
+		}
+
+		if (conflicts) {
+			result.conflicts.push_back(conflict);
+		} else {
+			for (int entry_index = declaration_start; entry_index < declaration_end; entry_index++) {
+				accepted.push_back(normalized[entry_index]);
+			}
+			// `Vector` is copy-on-write and may reallocate, so the borrowed view is rebuilt rather than
+			// appended to.
+			view.resize(foreign_entry_count);
+			for (const Conformance &entry : accepted) {
+				view.push_back(&entry);
+			}
+		}
+
+		declaration_start = declaration_end;
+	}
+
+	if (accepted.is_empty()) {
+		conformances_by_file.erase(p_source_file);
+	} else {
+		conformances_by_file[p_source_file] = accepted;
+	}
+	_rebuild_index();
+
+	result.registered_count = accepted.size();
+	return result;
 }
 
 void FSConformanceRegistry::clear_file(const String &p_source_file) {
