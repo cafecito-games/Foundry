@@ -15,3 +15,12 @@ jobs:
   linux-build:
     name: Linux
     uses: ./.github/workflows/linux_builds.yml
+
+  # The direct triggers of static_checks.yml sweep the whole tree; this caller
+  # only exists so a pull request sees the fast changed-files style gate.
+  static-checks:
+    name: Code style, file formatting, and docs
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/static_checks.yml

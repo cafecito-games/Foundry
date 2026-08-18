@@ -866,6 +866,39 @@ class StaticChecksWorkflowTests(WorkflowContractTestCase):
         )
 
 
+class RunnerWorkflowTests(WorkflowContractTestCase):
+    """The pull-request entry point has to reach the style gate without coupling jobs."""
+
+    workflow: workflow_graph.Workflow
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.workflow = load_workflow("runner.yml")
+
+    def test_pull_requests_call_the_reusable_static_checks_workflow(self) -> None:
+        self.assertEqual("./.github/workflows/static_checks.yml", self.workflow.uses("static-checks"))
+        self.assertEqual("Code style, file formatting, and docs", self.workflow.job_name("static-checks"))
+        self.assertEqual("github.event_name == 'pull_request'", self.workflow.job_if("static-checks"))
+        # The caller must stay a pure workflow call; a second copy of the gate's
+        # steps would drift from the reusable workflow, and the gate must be
+        # allowed to fail the pull request.
+        self.assertNotIn("steps", self.workflow.job("static-checks"))
+        self.assertNotIn("continue-on-error", self.workflow.job("static-checks"))
+
+    def test_the_style_gate_is_read_only(self) -> None:
+        self.assertEqual({"contents": "read"}, self.workflow.job_mapping("static-checks", "permissions"))
+
+    def test_the_style_gate_is_independent_of_the_linux_build(self) -> None:
+        for job_name in ("static-checks", "linux-build"):
+            with self.subTest(job=job_name):
+                self.assertIs(False, self.workflow.has_needs(job_name))
+
+    def test_the_runner_entry_point_never_pulls_untrusted_code(self) -> None:
+        triggers = self.workflow.triggers()
+        self.assertIn("pull_request", triggers)
+        self.assertNotIn("pull_request_target", triggers)
+
+
 class PreCommitRegistrationTests(WorkflowContractTestCase):
     def test_one_hook_runs_every_workflow_graph_contract(self) -> None:
         hook = local_hook(WORKFLOW_GRAPH_HOOK)
@@ -887,6 +920,7 @@ class PreCommitRegistrationTests(WorkflowContractTestCase):
                 ".github/workflows/pr_editor_artifacts.yml",
                 ".github/workflows/pr_platform_checks.yml",
                 ".github/workflows/release.yml",
+                ".github/workflows/runner.yml",
                 ".github/workflows/web_builds.yml",
                 ".github/workflows/windows_builds.yml",
             ),
