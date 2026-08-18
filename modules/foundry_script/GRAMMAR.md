@@ -1174,6 +1174,12 @@ arguments were never recorded.
 - `is` and `as` are therefore **strictly stronger** than the declaration. `value is Crate[int]` is
   false for a value the declaration `var slot: Crate[int] = value` accepts. A guarded test is the way
   to demand the arguments.
+- Knownness is **per component**, not per argument. A composite argument such as `Pair[int, U]` states
+  its first component and leaves its second on an unreified type parameter, so the first is compared
+  against the destination and only the second stays open. A contradiction at any depth rejects; an
+  open component leaves only its own sub-position undecided and never erases its siblings. This holds
+  wherever two trait arguments meet: at a store, at a type test, and where a subclass or a retroactive
+  conformance re-applies a trait its chain already bound.
 - The rule is the same for a class target and for a trait target, and the same in the analyzer and at
   run time. The two layers differ only in the evidence they can read: the analyzer reads the source's
   static type, and the runtime reads the value's actual one. So a store whose source is a `Variant`

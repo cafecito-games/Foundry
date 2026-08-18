@@ -1,0 +1,7 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 27: Cannot return value of type "Partial[float]" because the function return type is "Keeper[Pair[String, float]]".
+>> ERROR at line 31: Cannot assign a value of type Partial[float] to variable "slot" with specified type Keeper[Pair[String, float]].
+>> ERROR at line 33: Invalid argument for "take()" function: argument 1 should be "Keeper[Pair[String, float]]" but is "Partial[float]".
+>> ERROR at line 35: Value of type "Partial[float]" cannot be assigned to a variable of type "Keeper[Pair[String, float]]".
+>> ERROR at line 38: Expression is of type "Partial[float]" so it can't be of type "Keeper[Pair[String, float]]".
+>> ERROR at line 39: Invalid cast. Cannot convert from "Partial[float]" to "Keeper[Pair[String, float]]".

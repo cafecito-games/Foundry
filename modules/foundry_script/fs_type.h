@@ -181,6 +181,36 @@ public:
 	// proves nothing about it and a destination must not reject on it.
 	static bool names_any_type_parameter(const FSParser::DataType &p_type);
 
+	// How much a trait argument observed on a value's conformance says about the argument a
+	// destination declares. A composite argument is rarely wholly known or wholly unknown: `Pair[int,
+	// U]` states its first component and says nothing about its second, so a single boolean would
+	// have to discard the whole position and let a contradiction in the known half through.
+	//
+	// `CONFLICT` at any depth makes the whole position a conflict; an `UNKNOWN` leaves only its own
+	// subtree open and its siblings are still compared. A position is `MATCH` only when every node it
+	// traverses matched. Callers reject on `CONFLICT` alone: `MATCH` and `UNKNOWN` both accept, which
+	// is the gradual rule this relation rests on.
+	enum class ArgumentEvidence : uint8_t {
+		MATCH,
+		UNKNOWN,
+		CONFLICT,
+	};
+
+	// Compares a trait argument projected from a value's conformance against the argument a
+	// destination declares. Asymmetric: only the projected side may report `UNKNOWN`, because the
+	// destination's argument is a statement by its author and is compared literally even when it
+	// names a type parameter -- a concrete value entering a `Keeper[X]` slot is a conflict, not an
+	// absence of evidence.
+	static ArgumentEvidence compare_projected_argument(const FSParser::DataType &p_projected,
+			const FSParser::DataType &p_expected);
+
+	// Compares two trait arguments that may each be partially unknown, as when a subclass re-applies a
+	// trait its base already bound. Symmetric: either side may report `UNKNOWN`, and two nodes naming
+	// different type parameters are unknown rather than conflicting, because the enclosing class may
+	// still instantiate them identically.
+	static ArgumentEvidence compare_open_arguments(const FSParser::DataType &p_left,
+			const FSParser::DataType &p_right);
+
 	// How `p_source`'s class chain binds `p_trait`'s type parameters, expressed in `p_source`'s own
 	// type arguments. Writes one entry per trait parameter, an unset entry meaning the chain proves
 	// nothing for that position, and returns false when no class on the chain binds the trait at all.

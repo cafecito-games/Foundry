@@ -1,0 +1,10 @@
+FS_TEST_OK
+agreeing store: true
+agreeing test: true
+agreeing boxed store: true
+raw store: true
+raw test: false
+raw boxed test: false
+open component store: true
+open component test: false
+open component boxed store: true

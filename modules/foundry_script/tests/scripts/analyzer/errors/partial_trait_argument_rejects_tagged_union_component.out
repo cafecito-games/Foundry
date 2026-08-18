@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 19: Cannot return value of type "Partial" because the function return type is "Keeper[partial_trait_argument_rejects_tagged_union_component.fs.Result[String, float]]".
