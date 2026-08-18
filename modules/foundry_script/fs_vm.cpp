@@ -196,6 +196,12 @@ static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type
 			position, expected_type->get_source_type_name(), _get_var_type(&failed_value), reason);
 }
 
+String fs_tuple_store_rejection_message(const FSDataType &p_tuple_type, const Variant &p_value) {
+	return vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".%s)",
+			_get_var_type(&p_value), p_tuple_type.get_source_type_name(),
+			_tuple_store_container_element_hint(p_tuple_type, p_value));
+}
+
 void FSFunction::_profile_native_call(uint64_t p_t_taken, const String &p_func_name, const String &p_instance_class_name) {
 	HashMap<String, Profile::NativeProfile>::Iterator inner_prof = profile.native_calls.find(p_func_name);
 	if (inner_prof) {
@@ -3856,9 +3862,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						: tuple_type.is_type(*src);
 				if (!matches) {
 #ifdef DEBUG_ENABLED
-					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "%s".%s)",
-							_get_var_type(src), tuple_type.get_source_type_name(),
-							_tuple_store_container_element_hint(tuple_type, *src));
+					err_text = fs_tuple_store_rejection_message(tuple_type, *src);
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}

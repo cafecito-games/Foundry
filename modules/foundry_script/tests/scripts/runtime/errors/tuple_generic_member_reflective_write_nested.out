@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Trying to assign a value of type "Array" to a variable of type "(int, (String, String))".
+[0, ["", <null>]]
+[7, ["a", "b"]]

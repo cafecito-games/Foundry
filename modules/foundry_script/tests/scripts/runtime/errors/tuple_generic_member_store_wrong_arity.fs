@@ -1,7 +1,7 @@
 # A tuple member whose declared type names a class type parameter carries a type-argument binding, but
 # that binding is the same erased Array its slot is. The declared shape is what enforces the arity and
 # the concrete `int` beside the parameter, and it resolves the parameter element against the receiver's
-# reified argument.
+# reified argument. A reflective rejection reports the same sentence the in-body store does.
 class Crate[T] extends RefCounted:
 	var pair: (int, T) = (0, null)
 

@@ -1,3 +1,4 @@
 FS_TEST_RUNTIME_ERROR
 >> ERROR: Trying to assign a value of type "Array" to a variable of type "(int, String)".
-[0, "zero"]
+[0, <null>]
+[7, "eight"]

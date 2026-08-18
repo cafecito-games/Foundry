@@ -227,10 +227,12 @@ class FoundryScript : public Script {
 
 	// A member write reached reflectively -- through `Object.set()` or a bare-class static write --
 	// coerced and validated against the member's declared slot. A tuple member is validated against
-	// `MemberInfo::tuple_slot_shape` rather than its erased Array carrier, and the accepted value is
-	// normalized to the canonical read-only, untyped carrier, so one declared type does not mean two
-	// things depending on whether the write arrived in a body or through reflection.
-	static bool _coerce_member_write(const MemberInfo &p_member, const Variant &p_original, Variant &r_value);
+	// `MemberInfo::tuple_slot_shape` rather than its erased Array carrier, after that shape's surviving
+	// class type parameters are resolved against `p_leaf_type_arguments` -- the receiver's reified
+	// arguments -- so the declared type means the same thing here as it does in a body. The accepted
+	// value is normalized to the canonical read-only, untyped carrier for the same reason. A static
+	// member has no per-instance reification and is passed an empty argument vector.
+	static bool _coerce_member_write(const MemberInfo &p_member, const Variant &p_original, Variant &r_value, const Vector<ContainerType> &p_leaf_type_arguments);
 
 public:
 	// Resolves the recursive type evidence a binding carries for a receiver whose reified arguments are
