@@ -56,44 +56,27 @@ static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
 //
 // Mirrors `FSCompiler::_conformance_trait_type_arguments()` position for position: the parse-side
 // record and the runtime record must describe the same conformance identically, or the analyzer and
-// the runtime disagree about what a conformance proved. In particular the whole vector is dropped
-// when any projected position is unset or still a bare type parameter.
+// the runtime disagree about what a conformance proved. Both are projected by
+// `fs_project_conformance_trait_arguments()` and differ only in how one projected position is stored.
+//
+// Each position is reduced on its own. A position that stayed open -- unset, or still a bare type
+// parameter such as `Self` on a non-final target -- reduces to `RecordedTypeArgument::UNKNOWN`, which
+// the comparator treats as an absence of evidence at that position alone. It never erases what a
+// concrete sibling position proved.
 static Vector<FSConformanceRegistry::RecordedTypeArgument> _recorded_conformance_trait_arguments(
 		const FSParser::ClassNode *p_direct_trait,
 		const Vector<FSParser::DataType> &p_conformance_arguments,
 		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
 		const FSParser::ClassNode *p_identity_trait) {
-	Vector<FSConformanceRegistry::RecordedTypeArgument> arguments;
-	if (p_direct_trait == nullptr || p_identity_trait == nullptr || p_identity_trait->type_parameters.is_empty()) {
-		return arguments;
-	}
-
 	Vector<FSParser::DataType> resolved;
-	if (p_identity_trait == p_direct_trait) {
-		if (p_conformance_arguments.size() != p_identity_trait->type_parameters.size()) {
-			return arguments;
-		}
-		resolved = p_conformance_arguments;
-	} else {
-		const HashMap<StringName, FSParser::DataType> substitution =
-				fs_trait_type_argument_bindings(p_direct_trait, p_identity_trait);
-		for (const FSParser::TypeParameterNode *type_parameter : p_identity_trait->type_parameters) {
-			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
-				return Vector<FSConformanceRegistry::RecordedTypeArgument>();
-			}
-			const FSParser::DataType *bound = substitution.getptr(type_parameter->identifier->name);
-			if (bound == nullptr) {
-				return Vector<FSConformanceRegistry::RecordedTypeArgument>();
-			}
-			resolved.push_back(FSParser::DataType::substitute(*bound, p_direct_bindings));
-		}
+	if (!fs_project_conformance_trait_arguments(p_direct_trait, p_conformance_arguments, p_direct_bindings,
+				p_identity_trait, resolved)) {
+		return Vector<FSConformanceRegistry::RecordedTypeArgument>();
 	}
 
+	Vector<FSConformanceRegistry::RecordedTypeArgument> arguments;
 	arguments.resize(resolved.size());
 	for (int i = 0; i < resolved.size(); i++) {
-		if (!resolved[i].is_set() || resolved[i].is_type_parameter()) {
-			return Vector<FSConformanceRegistry::RecordedTypeArgument>();
-		}
 		arguments.write[i] = FSConformanceRegistry::reduce_type_argument(resolved[i]);
 	}
 	return arguments;

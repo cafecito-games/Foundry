@@ -1263,6 +1263,64 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 89);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] A partially open conformance argument vector survives serialization") {
+	// `Duo[int, Self]` on a non-final target records one concrete position and one open one. The
+	// vector travels whole: dropping it because a single position is open would erase the `int` the
+	// conformance really proved, and the loaded record has to describe the same conformance the
+	// compiled one did.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Duo[A, B]:\n"
+			"\tabstract func first() -> A\n"
+			"\n"
+			"\tabstract func accept(item: B) -> void\n"
+			"\n"
+			"class Gadget:\n"
+			"\tpass\n"
+			"\n"
+			"extend Gadget uses Duo[int, Self]:\n"
+			"\tfunc first() -> int:\n"
+			"\t\treturn 7\n"
+			"\n"
+			"\tfunc accept(item: Self) -> void:\n"
+			"\t\tpass\n");
+	REQUIRE(original->is_valid());
+	if (!original->is_valid()) {
+		return;
+	}
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const auto check_recorded_vector = [](const Vector<FSConformanceRegistry::RuntimeConformance> &p_conformances) {
+		REQUIRE_EQ(p_conformances.size(), 1);
+		const Vector<FSWeakContainerType> &arguments = p_conformances[0].trait_type_arguments;
+		REQUIRE_EQ(arguments.size(), 2);
+		CHECK_EQ(arguments[0].builtin_type, Variant::INT);
+		// The open position carries no constraint at all, which is what makes a store at that
+		// position accept every destination argument.
+		CHECK_EQ(arguments[1].builtin_type, Variant::NIL);
+		CHECK(arguments[1].class_name == StringName());
+		CHECK_FALSE(arguments[1].script_id.is_valid());
+	};
+
+	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Marker conformances survive compiled-bytecode loading") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"trait Marker:\n"

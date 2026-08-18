@@ -33,6 +33,7 @@
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_conformance_registry.h"
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_trait_utils.h"
 #include "modules/foundry_script/fs_type.h"
 
 #include "tests/test_macros.h"
@@ -185,7 +186,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A native trait target rej
 	// A subclass reaches the same conformance through the ancestor walk and is checked against it.
 	CHECK_FALSE(FSTypeCompatibility::check(fixture.keeper_of(make_builtin(Variant::STRING)),
 			make_native(StringName("Resource")))
-						.compatible);
+					.compatible);
 }
 
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A native trait target accepts a recorded argument that agrees") {
@@ -387,6 +388,216 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A recorded argument from 
 			fixture.retro_target->fqcn, StringName("Keeper"), recorded));
 	CHECK_FALSE(registry->get_builtin_recorded_trait_arguments(
 			Variant::INT, StringName("Keeper"), recorded));
+}
+
+// A conformance whose application mixes a concrete argument with one that stays open, so the
+// registry has to record the two positions independently: `Duo[int, Self]` on a non-final target
+// proves `int` at position 0 and proves nothing at position 1.
+class PartiallyOpenTraitArgumentFixture {
+public:
+	static constexpr const char *SOURCE_PATH = "user://partially_open_trait_arguments.fs";
+
+	FSParser parser;
+	FSParser::ClassNode *duo = nullptr;
+	FSParser::ClassNode *pair = nullptr;
+	FSParser::ClassNode *direct_target = nullptr;
+	FSParser::ClassNode *supertrait_target = nullptr;
+	FSParser::ClassNode *composite_target = nullptr;
+	FSParser::ClassNode *wholly_open_target = nullptr;
+
+	PartiallyOpenTraitArgumentFixture() {
+		const char *source = R"(
+trait Duo[A, B]:
+	abstract func first() -> A
+
+	abstract func accept(item: B) -> void
+
+
+trait DuoSub[A, B]:
+	uses Duo[A, B]
+
+	abstract func label() -> String
+
+
+class Pair[A, B]:
+	pass
+
+
+class DirectTarget:
+	pass
+
+
+class SupertraitTarget:
+	pass
+
+
+class CompositeTarget:
+	pass
+
+
+class WhollyOpenTarget:
+	pass
+
+
+extend DirectTarget uses Duo[int, Self]:
+	func first() -> int:
+		return 0
+
+	func accept(item: Self) -> void:
+		pass
+
+
+extend SupertraitTarget uses DuoSub[int, Self]:
+	func first() -> int:
+		return 0
+
+	func accept(item: Self) -> void:
+		pass
+
+	func label() -> String:
+		return "sub"
+
+
+extend CompositeTarget uses Duo[int, Pair[int, Self]]:
+	func first() -> int:
+		return 0
+
+	func accept(item: Pair[int, Self]) -> void:
+		pass
+
+
+extend WhollyOpenTarget uses Duo[Self, Self]:
+	func first() -> Self:
+		return self
+
+	func accept(item: Self) -> void:
+		pass
+
+
+func test() -> void:
+	pass
+)";
+		REQUIRE_EQ(parser.parse(source, SOURCE_PATH, false), OK);
+		FSAnalyzer analyzer(&parser);
+		REQUIRE_EQ(analyzer.analyze(), OK);
+
+		FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		duo = find_member_class(tree, StringName("Duo"));
+		pair = find_member_class(tree, StringName("Pair"));
+		direct_target = find_member_class(tree, StringName("DirectTarget"));
+		supertrait_target = find_member_class(tree, StringName("SupertraitTarget"));
+		composite_target = find_member_class(tree, StringName("CompositeTarget"));
+		wholly_open_target = find_member_class(tree, StringName("WhollyOpenTarget"));
+		REQUIRE(duo != nullptr);
+		REQUIRE(pair != nullptr);
+		REQUIRE(direct_target != nullptr);
+		REQUIRE(supertrait_target != nullptr);
+		REQUIRE(composite_target != nullptr);
+		REQUIRE(wholly_open_target != nullptr);
+	}
+
+	~PartiallyOpenTraitArgumentFixture() {
+		FSConformanceRegistry::get_singleton()->clear_file(SOURCE_PATH);
+	}
+
+	StringName duo_identity() const { return fs_trait_identity_name(duo); }
+
+	FSParser::DataType duo_of(const FSParser::DataType &p_first, const FSParser::DataType &p_second) const {
+		return make_class(duo, { p_first, p_second });
+	}
+
+	FSParser::DataType pair_of(const FSParser::DataType &p_first, const FSParser::DataType &p_second) const {
+		return make_class(pair, { p_first, p_second });
+	}
+
+	FSParser::DataType source_of(FSParser::ClassNode *p_target) const {
+		return make_class(p_target, Vector<FSParser::DataType>());
+	}
+};
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A conformance records a concrete argument beside an open one") {
+	PartiallyOpenTraitArgumentFixture fixture;
+	const FSParser::DataType source = fixture.source_of(fixture.direct_target);
+
+	Vector<RecordedTypeArgument> recorded;
+	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
+	REQUIRE_EQ(recorded.size(), 2);
+	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::BUILTIN);
+	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
+	// `Self` on a non-final target is not reified here, so the position stays open rather than
+	// erasing the `int` its sibling proved.
+	CHECK_EQ(recorded[1].kind, RecordedTypeArgument::UNKNOWN);
+
+	CHECK_FALSE(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::STRING), source), source)
+					.compatible);
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::INT), make_builtin(Variant::STRING)), source)
+					.compatible);
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::INT), make_builtin(Variant::FLOAT)), source)
+					.compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A supertrait identity records the same open position as a direct one") {
+	PartiallyOpenTraitArgumentFixture fixture;
+	const FSParser::DataType source = fixture.source_of(fixture.supertrait_target);
+
+	Vector<RecordedTypeArgument> recorded;
+	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
+	REQUIRE_EQ(recorded.size(), 2);
+	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::BUILTIN);
+	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
+	CHECK_EQ(recorded[1].kind, RecordedTypeArgument::UNKNOWN);
+
+	CHECK_FALSE(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::STRING), source), source)
+					.compatible);
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::INT), make_builtin(Variant::STRING)), source)
+					.compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A composite argument keeps its known component beside an open one") {
+	PartiallyOpenTraitArgumentFixture fixture;
+	const FSParser::DataType source = fixture.source_of(fixture.composite_target);
+
+	Vector<RecordedTypeArgument> recorded;
+	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
+	REQUIRE_EQ(recorded.size(), 2);
+	REQUIRE_EQ(recorded[1].kind, RecordedTypeArgument::SCRIPT_CLASS);
+	REQUIRE_EQ(recorded[1].type_arguments.size(), 2);
+	CHECK_EQ(recorded[1].type_arguments[0].kind, RecordedTypeArgument::BUILTIN);
+	CHECK_EQ(recorded[1].type_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(recorded[1].type_arguments[1].kind, RecordedTypeArgument::UNKNOWN);
+
+	CHECK_FALSE(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::INT), fixture.pair_of(make_builtin(Variant::STRING), source)), source)
+					.compatible);
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::INT),
+					fixture.pair_of(make_builtin(Variant::INT), make_builtin(Variant::STRING))),
+			source)
+					.compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A wholly open argument vector accepts every specialization") {
+	PartiallyOpenTraitArgumentFixture fixture;
+	const FSParser::DataType source = fixture.source_of(fixture.wholly_open_target);
+
+	Vector<RecordedTypeArgument> recorded;
+	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
+	REQUIRE_EQ(recorded.size(), 2);
+	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::UNKNOWN);
+	CHECK_EQ(recorded[1].kind, RecordedTypeArgument::UNKNOWN);
+
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::STRING), make_builtin(Variant::FLOAT)), source)
+					.compatible);
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::INT), make_builtin(Variant::INT)), source)
+					.compatible);
 }
 
 } // namespace FSRecordedTraitArgumentTests

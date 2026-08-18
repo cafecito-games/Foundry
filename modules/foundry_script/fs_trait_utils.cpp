@@ -154,6 +154,44 @@ HashMap<StringName, FSParser::DataType> fs_trait_type_argument_bindings(
 	return _trait_type_argument_bindings(p_class, p_trait, 0);
 }
 
+bool fs_project_conformance_trait_arguments(
+		const FSParser::ClassNode *p_direct_trait,
+		const Vector<FSParser::DataType> &p_conformance_arguments,
+		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
+		const FSParser::ClassNode *p_identity_trait,
+		Vector<FSParser::DataType> &r_arguments) {
+	r_arguments.clear();
+	if (p_direct_trait == nullptr || p_identity_trait == nullptr || p_identity_trait->type_parameters.is_empty()) {
+		return false;
+	}
+
+	if (p_identity_trait == p_direct_trait) {
+		// A bare application of a generic trait supplies nothing at all, which states nothing about
+		// the identity's parameters rather than leaving each of them open.
+		if (p_conformance_arguments.size() != p_identity_trait->type_parameters.size()) {
+			return false;
+		}
+		r_arguments = p_conformance_arguments;
+		return true;
+	}
+
+	const HashMap<StringName, FSParser::DataType> substitution =
+			fs_trait_type_argument_bindings(p_direct_trait, p_identity_trait);
+	Vector<FSParser::DataType> projected;
+	for (const FSParser::TypeParameterNode *type_parameter : p_identity_trait->type_parameters) {
+		if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+			return false;
+		}
+		const FSParser::DataType *bound = substitution.getptr(type_parameter->identifier->name);
+		if (bound == nullptr) {
+			return false;
+		}
+		projected.push_back(FSParser::DataType::substitute(*bound, p_direct_bindings));
+	}
+	r_arguments = projected;
+	return true;
+}
+
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include "fs_cache.h"
