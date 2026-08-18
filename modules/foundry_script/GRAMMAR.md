@@ -1197,6 +1197,29 @@ arguments were never recorded.
   does, so a raw `Crate` handle fails that store while a `Crate[int]` handle passes it. The gradual
   rule covers declarations whose type names a class or a trait, never one that names a class handle.
 
+##### Members of a raw generic receiver
+
+Naming a generic class or trait without type arguments stays legal everywhere a value is written, and
+by itself it is never diagnosed. What is diagnosed is a *use*: a member whose type still names one of
+the parameters that receiver never bound denotes a value nothing decides, so every typed boundary it
+crosses is reported exactly as the equivalent `Variant` crossing is.
+
+- The declaration is silent. `var crate: Crate = Crate[String].new()`, a raw bound, a raw `is`/`as`
+  target, and a raw container element type all keep their meaning and produce no diagnostic.
+- A value read out of such a receiver is unsafe where it enters a typed slot: passed as an argument,
+  assigned to a declared destination, or returned from a function with a declared return type. A
+  parameter slot typed by an unbound parameter is unsafe in the same way when a concrete value is
+  passed into it.
+- The signal is the analyzer's ordinary unsafe-boundary reporting, not a diagnostic of its own, so it
+  follows the same warning configuration as every other unsafe crossing and escalates with it.
+- Precision is per component, as it is for stored arguments. Where a member's type is
+  `Pair[T, String]` and `T` is unbound, reading the `T` component is unsafe and reading the `String`
+  component is not.
+- A receiver whose arguments are known is unaffected, whether they were written (`Crate[int]`) or
+  recovered through inheritance or a trait application. A member that names no parameter at all is
+  unaffected on every receiver. Inside a generic declaration its own parameters are in scope, so the
+  declaration's own bodies are unaffected as well.
+
 #### `await`
 
 ```ebnf
