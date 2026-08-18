@@ -1,4 +1,6 @@
-FS_TEST_OK
+FS_TEST_RUNTIME_ERROR
 [1, "one"]
+>> ERROR: Trying to assign a value of type "Array" to a variable of type "(int, String)".
 [1, "one"]
+>> ERROR: Trying to assign a value of type "Array" to a variable of type "(int, String)".
 [1, "one"]

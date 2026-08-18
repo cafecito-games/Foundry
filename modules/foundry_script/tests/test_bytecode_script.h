@@ -3841,9 +3841,63 @@ TEST_CASE("[FoundryScript][BytecodeScript] A tuple parameter's shape survives a 
 	CHECK(write_valid);
 	CHECK(Array(instance->get(SNAME("field"))) == accepted);
 	write_valid = false;
+	ERR_PRINT_OFF;
 	instance->set(SNAME("field"), rejected, &write_valid);
+	ERR_PRINT_ON;
 	CHECK_FALSE(write_valid);
 	CHECK(Array(instance->get(SNAME("field"))) == accepted);
+
+	restored->clear();
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A generic tuple member's shape round-trips with its parameter nodes") {
+	// An instance member's shape keeps the class type parameter nodes the receiver resolves at the
+	// reflective boundary. The encoder already writes every field such a node carries, so this asserts
+	// empirically that the format needs no change: a bytecode-loaded `Crate[String]` must reject the
+	// same wrong element the source-built one does rather than falling back to a gradual slot.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Crate[T] extends RefCounted:\n"
+			"\tvar pair: (int, T) = (0, null)\n");
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	TestFSBytecodeScriptAccessor::check_member_tables_match(original, restored);
+
+	const HashMap<StringName, Ref<FoundryScript>> &subclasses = restored->get_subclasses();
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = subclasses.find(SNAME("Crate"));
+	REQUIRE(crate != subclasses.end());
+
+	ContainerType string_type;
+	string_type.builtin_type = Variant::STRING;
+	Vector<ContainerType> type_arguments;
+	type_arguments.push_back(string_type);
+
+	Callable::CallError error;
+	const Variant instance_variant = crate->value->_new_specialized(nullptr, 0, type_arguments, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	Object *instance = instance_variant;
+	REQUIRE(instance != nullptr);
+
+	Array accepted;
+	accepted.push_back(7);
+	accepted.push_back("seven");
+	accepted.make_read_only();
+	bool write_valid = false;
+	instance->set(SNAME("pair"), accepted, &write_valid);
+	CHECK(write_valid);
+	CHECK(Array(instance->get(SNAME("pair"))) == accepted);
+
+	Array rejected;
+	rejected.push_back(7);
+	rejected.push_back(8);
+	rejected.make_read_only();
+	write_valid = false;
+	ERR_PRINT_OFF;
+	instance->set(SNAME("pair"), rejected, &write_valid);
+	ERR_PRINT_ON;
+	CHECK_FALSE(write_valid);
+	CHECK(Array(instance->get(SNAME("pair"))) == accepted);
 
 	restored->clear();
 }

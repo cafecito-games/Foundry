@@ -520,6 +520,14 @@ public:
 // as the caller wrote to it again. Defined beside the store in `fs_vm.cpp`, whose rule it is.
 Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value);
 
+#ifdef DEBUG_ENABLED
+// The single sentence a rejected tuple store reports, wherever the store was reached from. The
+// in-body opcode and the reflective member write both check the same resolved shape, so they say the
+// same thing about a value that shape rejected -- including the clause that names the one element at
+// fault. Defined beside the store in `fs_vm.cpp`, whose rule it is.
+String fs_tuple_store_rejection_message(const FSDataType &p_tuple_type, const Variant &p_value);
+#endif // DEBUG_ENABLED
+
 // The exact class handle a static call was made through, delivered to the frame it starts.
 //
 // Static dispatch may select an implementation declared on an ancestor, on a retroactive-conformance
