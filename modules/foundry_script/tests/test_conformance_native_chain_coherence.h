@@ -33,6 +33,7 @@
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_conformance_registry.h"
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_trait_utils.h"
 
 #include "tests/test_macros.h"
 
@@ -65,6 +66,21 @@ public:
 
 	~NativeChainFixture() {
 		FSConformanceRegistry::get_singleton()->clear_file(SOURCE_PATH);
+	}
+
+	// A trait declared without `trait_name` is identified by its file-scoped fully-qualified name, so
+	// a registry lookup has to ask the parse tree for it rather than assume the written spelling.
+	StringName trait_identity(const StringName &p_name) {
+		FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		for (const FSParser::ClassNode::Member &member : tree->members) {
+			if (member.type == FSParser::ClassNode::Member::CLASS && member.m_class != nullptr &&
+					member.m_class->identifier != nullptr && member.m_class->identifier->name == p_name) {
+				return fs_trait_identity_name(member.m_class);
+			}
+		}
+		FAIL("trait not found in the parse tree");
+		return StringName();
 	}
 
 	bool has_error_containing(const String &p_fragment) const {
@@ -226,7 +242,8 @@ func test() -> void:
 	REQUIRE(fixture.error_messages.is_empty());
 
 	const Vector<FSConformanceRegistry::NativeConformanceRecord> records =
-			FSConformanceRegistry::get_singleton()->get_native_conformance_records(StringName("NccRecordKeeper"));
+			FSConformanceRegistry::get_singleton()->get_native_conformance_records(
+					fixture.trait_identity(StringName("NccRecordKeeper")));
 	// A builtin value type and a Foundry Script class have no ClassDB chain to share, so neither may
 	// be mistaken for an engine class the chain rule would compare against.
 	REQUIRE_EQ(records.size(), 1);

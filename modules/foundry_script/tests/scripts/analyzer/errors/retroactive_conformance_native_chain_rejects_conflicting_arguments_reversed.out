@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 12: Trait "analyzer/errors/retroactive_conformance_native_chain_rejects_conflicting_arguments_reversed.fs::RnccrKeeper" is already applied with different type arguments by the conformance for "RefCounted" in "res://analyzer/errors/retroactive_conformance_native_chain_rejects_conflicting_arguments_reversed.fs"; conformances on one inheritance chain must apply it with the same type arguments.
+>> ERROR at line 12: Trait "RnccrKeeper" is already applied with different type arguments by the conformance for "RefCounted" in this file; conformances on one inheritance chain must apply it with the same type arguments.

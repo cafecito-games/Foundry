@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 6: Could not resolve trait "RnccxKeeper".
+>> ERROR at line 6: Trait "RnccxKeeper" is already applied with different type arguments by the conformance for "Object" in "res://analyzer/errors/rncc_chain_ancestor_source.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.
