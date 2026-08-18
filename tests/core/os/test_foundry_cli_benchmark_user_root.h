@@ -36,6 +36,10 @@
 
 #include "tests/test_macros.h"
 
+// The benchmark verb exits with a failure when the Foundry Script module is disabled, so
+// these tests only describe behavior a module-enabled build has.
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+
 namespace TestFoundryCLIBenchmarkUserRoot {
 
 // A benchmark run owns the `user://` root it is given, and recreates it clean at startup. These
@@ -360,3 +364,5 @@ TEST_CASE("[FoundryCLI][TestBenchmark] A filesystem output leaves no user data d
 }
 
 } // namespace TestFoundryCLIBenchmarkUserRoot
+
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
