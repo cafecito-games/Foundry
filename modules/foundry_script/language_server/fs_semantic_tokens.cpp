@@ -286,6 +286,24 @@ private:
 	void walk_variable(const FSParser::VariableNode *p_variable, bool p_is_member);
 };
 
+// A receiver typed as a type parameter carries the members of its bound -- `self`, typed as `Self`,
+// above all -- so classifying what is reached through one resolves the bound chain first. Only a
+// receiver is resolved this way: a type parameter written in a type position stays a type parameter.
+// The analyzer rejects a cyclic bound before classification runs; the depth cap only keeps a malformed
+// chain from looping here.
+FSParser::DataType resolve_receiver_bound(const FSParser::DataType &p_datatype) {
+	FSParser::DataType datatype = p_datatype;
+	for (int depth = 0; depth < 16; depth++) {
+		if (datatype.kind != FSParser::DataType::TYPE_PARAMETER || datatype.type_parameter_bound.is_empty()) {
+			break;
+		}
+		const bool is_meta_type = datatype.is_meta_type;
+		datatype = datatype.type_parameter_bound[0];
+		datatype.is_meta_type = is_meta_type;
+	}
+	return datatype;
+}
+
 // Whether a data type names something that only the engine defines, so a reference to it carries
 // `defaultLibrary`. A project symbol that happens to share the spelling resolves to a script or
 // class type instead and is left without the modifier.
@@ -1381,7 +1399,7 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 		return;
 	}
 
-	const FSParser::DataType base_type = p_subscript->base != nullptr ? p_subscript->base->get_datatype() : FSParser::DataType();
+	const FSParser::DataType base_type = resolve_receiver_bound(p_subscript->base != nullptr ? p_subscript->base->get_datatype() : FSParser::DataType());
 	const FSParser::DataType attribute_type = p_subscript->attribute->get_datatype();
 
 	// `.Ok` names a case of a union supplied by the expected type, so it reads exactly like the
@@ -1621,7 +1639,7 @@ void DocumentClassifier::walk_call(const FSParser::CallNode *p_call) {
 				return;
 			}
 			walk_subscript(subscript, true);
-			const FSParser::DataType base_type = subscript->base != nullptr ? subscript->base->get_datatype() : FSParser::DataType();
+			const FSParser::DataType base_type = resolve_receiver_bound(subscript->base != nullptr ? subscript->base->get_datatype() : FSParser::DataType());
 			const FSParser::IdentifierNode::Source attribute_source = subscript->attribute->source;
 			const bool is_resolved_property = attribute_source == FSParser::IdentifierNode::MEMBER_VARIABLE ||
 					attribute_source == FSParser::IdentifierNode::STATIC_VARIABLE ||
