@@ -167,6 +167,24 @@ public:
 		~ScopedVisibility();
 	};
 
+	// Hides one declaring file from *this thread's* registry queries until it goes out of scope.
+	//
+	// A file being reanalyzed must not read its own previous declarations back as part of the surface it
+	// is validating against: a witness would find its own stale registration as the method it overrides
+	// and contradict itself, and the coherence rules would see the file arguing with the version of
+	// itself they are about to replace. The entries stay in the store, so every other reader keeps
+	// seeing the file's conformances right up to the moment its replacement commits; only the thread
+	// performing that replacement looks past them.
+	//
+	// Nests, restoring the previous file, so a nested analysis cannot un-hide an outer one's file.
+	class ScopedInFlightReplacement {
+		String previous;
+
+	public:
+		explicit ScopedInFlightReplacement(const String &p_source_file);
+		~ScopedInFlightReplacement();
+	};
+
 	// Runtime witnesses for a single (target, trait) conformance, keyed by method name. These are
 	// compiled `FSFunction *` owned by the conformance-declaring `FoundryScript`; the registry only
 	// borrows them and must drop them (via `clear_runtime_witnesses`) when that script is reloaded
@@ -193,6 +211,46 @@ public:
 		WitnessFunctionMap functions;
 	};
 
+	// One candidate declaration the registry refused, as a value a caller can turn into a diagnostic
+	// after the registry lock is released.
+	//
+	// Deliberately holds no parser or AST pointer. The registry outlives every parse tree it describes
+	// and runs its comparisons while holding the mutex, so a record that borrowed a node would either
+	// dangle or force diagnostics to be produced under the lock. `conformance_index` is the position of
+	// the rejected `ConformanceNode` in the submitting file's root-class conformance list, which is what
+	// lets the caller re-find the node in the live tree it already holds.
+	struct RegistrationConflict {
+		enum Kind : uint8_t {
+			// Another file already registered this (target, trait) membership.
+			DUPLICATE_MEMBERSHIP,
+			// Another file already supplies a witness for this method on this target.
+			WITNESS_COLLISION,
+			// Another declaration on the same native or mixed script/native ancestry applies the trait
+			// with contradicting type arguments.
+			CHAIN_COHERENCE,
+		};
+		Kind kind = DUPLICATE_MEMBERSHIP;
+		int conformance_index = -1;
+		// The candidate's own target, as a diagnostic should spell it, and the trait identity the
+		// conflict was found on. The caller renders the trait's own label from the identity.
+		String target_label;
+		StringName trait_name;
+		// The colliding witness method, for `WITNESS_COLLISION` only.
+		StringName method_name;
+		// The already-registered side: how the conflicting target should be spelled, and the file that
+		// declared it. The declaring file may be the submitting file itself, when one of its own
+		// accepted declarations is what the rejected one contradicts.
+		String conflicting_target_label;
+		String conflicting_source_file;
+	};
+
+	// The outcome of one atomic validate-and-replace. `registered_count` counts the entries actually
+	// stored, which is the candidate set minus every entry belonging to a rejected declaration.
+	struct RegistrationResult {
+		Vector<RegistrationConflict> conflicts;
+		int registered_count = 0;
+	};
+
 	// Validates that a runtime entry cannot serialize witnesses against a different member layout
 	// than the target its authoritative aliases denote. Native and builtin targets deliberately use
 	// the declaring FoundryScript as a codegen stand-in; that is the only pointer/alias mismatch
@@ -206,6 +264,8 @@ public:
 private:
 	static FSConformanceRegistry *singleton;
 	static thread_local const Visibility *active_visibility;
+	// The declaring file whose replacement this thread is currently computing, if any.
+	static thread_local String in_flight_source_file;
 
 	// True when the installed `Visibility`, if any, allows `p_source_file`. Guards the queries the type
 	// system asks — never the cross-file collision diagnostics, which must see every declaring file to
@@ -243,6 +303,19 @@ private:
 	// membership index used by `is`/`as` and typed assignment checks.
 	HashMap<String, HashMap<StringName, RuntimeTraitEntry>> runtime_trait_index;
 
+	// The conflict, if any, that rejects `p_candidate`. `p_view` is every entry the candidate must agree
+	// with: the store minus the submitting file's own previous entries, plus the candidates this
+	// submission has already accepted. The pointers are borrowed for the duration of one locked
+	// replacement and never stored. Callers must hold `mutex`.
+	bool _candidate_conflicts(const Conformance &p_candidate, const String &p_source_file,
+			const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const;
+
+	// The witness-name collision, if any, between one candidate declaration and `p_view`. Checked once
+	// per declaration because every entry a declaration emits borrows the same witness map. Callers must
+	// hold `mutex`.
+	bool _declaration_witnesses_collide(const Conformance &p_candidate, const Vector<const Conformance *> &p_view,
+			RegistrationConflict &r_conflict) const;
+
 	// The declaration-side arguments recorded for `p_target_key`'s visible conformance to
 	// `p_trait_name`. Callers must hold `mutex`.
 	bool _recorded_trait_arguments_for_key(const String &p_target_key, const StringName &p_trait_name,
@@ -266,6 +339,34 @@ public:
 	// they are stored, so every consumer — index lookups, witness scans, and bytecode serialization —
 	// observes the same identity rules regardless of which producer built the entry.
 	void register_file_conformances(const String &p_source_file, const Vector<Conformance> &p_conformances);
+
+	// Validates `p_candidates` against the rest of the registry and replaces `p_source_file`'s entries
+	// with the ones that survive, as one indivisible step.
+	//
+	// The check-then-register shape this replaces could not be made correct by locking each half: two
+	// analyzers reanalyzing two files could both observe the absence of the other's conformance and both
+	// publish, leaving the registry holding an incoherent pair no single-file analysis can detect
+	// afterwards. Under one lock the answer is decided against the store as it actually is at the moment
+	// of the write.
+	//
+	// The view a candidate is judged against deliberately excludes `p_source_file`'s *previous* entries,
+	// so reanalysis of an unchanged file never conflicts with itself, and includes the candidates this
+	// same call has already accepted, so two declarations in one file are held to the same rule two
+	// declarations in two files are. Those previous entries stay visible to every other reader until the
+	// replacement commits: reanalysis opens no window in which the file's conformances do not exist.
+	//
+	// Rejection granularity is one `ConformanceNode`: a conflict on any identity or witness a declaration
+	// emits registers none of that declaration's entries, including the ones its implied supertraits
+	// produced, because a partially registered declaration would answer some membership queries with a
+	// conformance the program was told it does not have. Other declarations in the same file are
+	// unaffected, and for non-conflicting declarations the outcome does not depend on submission order.
+	//
+	// An empty `p_candidates` is a replacement like any other: it drops the file's entries.
+	//
+	// Returns value-only conflict records. Diagnostics must be produced from them after this call
+	// returns, never from inside the registry, which holds the mutex and knows nothing about source
+	// locations.
+	RegistrationResult try_replace_file_conformances(const String &p_source_file, const Vector<Conformance> &p_candidates);
 
 	// Drops every conformance previously registered by `p_source_file`.
 	void clear_file(const String &p_source_file);
