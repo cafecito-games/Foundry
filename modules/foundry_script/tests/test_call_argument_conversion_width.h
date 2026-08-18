@@ -124,7 +124,7 @@ TEST_CASE("[Modules][FoundryScript][CallArgumentWidth] A converted call argument
 	ScriptInstance *restored_instance = instantiate_call_argument_width_script(restored, restored_owner);
 
 	const auto check_accepted = [](ScriptInstance *p_instance, const char *p_method, const Variant &p_argument,
-									const Variant &p_expected) {
+										const Variant &p_expected) {
 		CAPTURE(p_method);
 		Callable::CallError error;
 		const Variant result = call_with_single_argument(p_instance, StringName(p_method), p_argument, error);
@@ -136,7 +136,7 @@ TEST_CASE("[Modules][FoundryScript][CallArgumentWidth] A converted call argument
 	// A rejection has to name the offending argument and the parameter's carrier, since a caller that
 	// only sees `CALL_ERROR_INVALID_ARGUMENT` cannot tell which value it was.
 	const auto check_rejected = [](ScriptInstance *p_instance, const char *p_method, const Variant &p_argument,
-									Variant::Type p_expected_carrier) {
+										Variant::Type p_expected_carrier) {
 		CAPTURE(p_method);
 		Callable::CallError error;
 		ERR_PRINT_OFF;
