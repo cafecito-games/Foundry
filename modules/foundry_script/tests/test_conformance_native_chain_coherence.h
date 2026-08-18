@@ -83,6 +83,21 @@ public:
 		return StringName();
 	}
 
+	// A class's fully-qualified name is derived from the file it was parsed under, so a registry lookup
+	// that must not match a same-named class elsewhere reads it from the parse tree.
+	String class_fqcn(const StringName &p_name) {
+		FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		for (const FSParser::ClassNode::Member &member : tree->members) {
+			if (member.type == FSParser::ClassNode::Member::CLASS && member.m_class != nullptr &&
+					member.m_class->identifier != nullptr && member.m_class->identifier->name == p_name) {
+				return member.m_class->fqcn;
+			}
+		}
+		FAIL("class not found in the parse tree");
+		return String();
+	}
+
 	bool has_error_containing(const String &p_fragment) const {
 		for (const String &message : error_messages) {
 			if (message.contains(p_fragment)) {
@@ -540,6 +555,252 @@ func test() -> void:
 	// The conflict is on the implied `NccBaseKeeper` identity, not on the trait the declaration names.
 	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
 	CHECK(fixture.has_error_containing("NccBaseKeeper"));
+}
+
+// One semantic chain does not begin at the engine ancestry: it runs from a script class through every
+// script base above it. A retroactive conformance on a script ancestor answers for the descendant's
+// receivers too, so the two declarations bind one trait for overlapping values and must agree, exactly
+// as they must on the engine half of the same chain.
+TEST_CASE("[Modules][FoundryScript][Conformance] A conformance conflicts with its script ancestor's conformance") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorKeeper[T]:
+	abstract func make() -> T
+
+
+class NccAncestorMiddle:
+	pass
+
+
+class NccAncestorHolder extends NccAncestorMiddle:
+	pass
+
+
+extend NccAncestorMiddle uses NccAncestorKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccAncestorHolder uses NccAncestorKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccAncestorKeeper"));
+	CHECK(fixture.has_error_containing("NccAncestorMiddle"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] The script-ancestor rule does not depend on declaration order") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorOrderKeeper[T]:
+	abstract func make() -> T
+
+
+class NccAncestorOrderMiddle:
+	pass
+
+
+class NccAncestorOrderHolder extends NccAncestorOrderMiddle:
+	pass
+
+
+extend NccAncestorOrderHolder uses NccAncestorOrderKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+extend NccAncestorOrderMiddle uses NccAncestorOrderKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccAncestorOrderKeeper"));
+	CHECK(fixture.has_error_containing("NccAncestorOrderHolder"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A descendant's uses clause conflicts with a script ancestor's conformance") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorUsesKeeper[T]:
+	abstract func make() -> T
+
+
+class NccAncestorUsesMiddle:
+	pass
+
+
+class NccAncestorUsesHolder extends NccAncestorUsesMiddle uses NccAncestorUsesKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+extend NccAncestorUsesMiddle uses NccAncestorUsesKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccAncestorUsesKeeper"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A rejected script-ancestor conformance registers nothing") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorRejectedKeeper[T]:
+	abstract func make() -> T
+
+
+class NccAncestorRejectedMiddle:
+	pass
+
+
+class NccAncestorRejectedHolder extends NccAncestorRejectedMiddle:
+	pass
+
+
+extend NccAncestorRejectedMiddle uses NccAncestorRejectedKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccAncestorRejectedHolder uses NccAncestorRejectedKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+	REQUIRE(fixture.has_error_containing("is already applied with different type arguments"));
+
+	// The ancestor's declaration is coherent on its own and stays; the contradicting descendant publishes
+	// neither a membership nor a witness, so nothing dispatches through a conformance the program was
+	// rejected over.
+	const StringName identity = fixture.trait_identity(StringName("NccAncestorRejectedKeeper"));
+	const Vector<FSConformanceRegistry::ScriptConformanceRecord> records =
+			FSConformanceRegistry::get_singleton()->get_script_conformance_records(identity);
+	REQUIRE_EQ(records.size(), 1);
+	CHECK(records[0].target_label.contains("NccAncestorRejectedMiddle"));
+	String witness_source;
+	int witness_conformance_index = -1;
+	CHECK_FALSE(FSConformanceRegistry::get_singleton()->find_witness_location(
+			fixture.class_fqcn(StringName("NccAncestorRejectedHolder")), StringName("make"), witness_source,
+			witness_conformance_index));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A script class may repeat its script ancestor's arguments") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorAgreeKeeper[T]:
+	abstract func make() -> T
+
+
+class NccAncestorAgreeMiddle:
+	pass
+
+
+class NccAncestorAgreeHolder extends NccAncestorAgreeMiddle:
+	pass
+
+
+extend NccAncestorAgreeMiddle uses NccAncestorAgreeKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccAncestorAgreeHolder uses NccAncestorAgreeKeeper[int]:
+	func make() -> int:
+		return 11
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Script classes on different branches may bind a trait differently") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorBranchKeeper[T]:
+	abstract func make() -> T
+
+
+class NccAncestorBranchMiddle:
+	pass
+
+
+class NccAncestorBranchSibling:
+	pass
+
+
+extend NccAncestorBranchMiddle uses NccAncestorBranchKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccAncestorBranchSibling uses NccAncestorBranchKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+
+	// Neither class inherits from the other, so no value ever reaches both conformances.
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] An implied supertrait identity is checked across a script ancestry") {
+	NativeChainFixture fixture(R"(
+trait NccAncestorBaseKeeper[T]:
+	abstract func make() -> T
+
+
+trait NccAncestorDerivedKeeper[T] uses NccAncestorBaseKeeper[T]:
+	abstract func label() -> String
+
+
+class NccAncestorImpliedMiddle:
+	pass
+
+
+class NccAncestorImpliedHolder extends NccAncestorImpliedMiddle:
+	pass
+
+
+extend NccAncestorImpliedMiddle uses NccAncestorBaseKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccAncestorImpliedHolder uses NccAncestorDerivedKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+	func label() -> String:
+		return "holder"
+
+
+func test() -> void:
+	pass
+)");
+
+	// The conflict is on the implied `NccAncestorBaseKeeper` identity, not on the trait the declaration
+	// names.
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccAncestorBaseKeeper"));
 }
 
 } // namespace FSNativeChainCoherenceTests

@@ -277,6 +277,21 @@ static bool _native_ancestry_answers_for(const StringName &p_terminal, const Str
 	return p_terminal == p_declared_on || ClassDB::is_parent_class(p_terminal, p_declared_on);
 }
 
+// Whether two script-class conformances sit on one script inheritance chain, either way round. A
+// conformance on a script ancestor answers for the descendant's receivers, so widening a value to the
+// ancestor's type would otherwise switch which arguments apply — the same incoherence the engine half
+// of the rule rejects, one level further up the same semantic chain. Symmetric because either
+// declaration may be the one being submitted.
+static bool _script_classes_are_on_one_chain(const FSConformanceRegistry::Conformance &p_conformance,
+		const FSConformanceRegistry::Conformance &p_other) {
+	if (p_conformance.target_fqcn.is_empty() || p_other.target_fqcn.is_empty() ||
+			p_conformance.target_fqcn == p_other.target_fqcn) {
+		return false;
+	}
+	return p_conformance.target_script_ancestor_fqcns.has(p_other.target_fqcn) ||
+			p_other.target_script_ancestor_fqcns.has(p_conformance.target_fqcn);
+}
+
 bool FSConformanceRegistry::_declaration_witnesses_collide(const Conformance &p_candidate,
 		const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const {
 	if (p_candidate.target_fqcn.is_empty() || p_candidate.witnesses.is_empty()) {
@@ -340,6 +355,13 @@ bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate,
 			} else if (existing_is_native) {
 				answers_for_same_receivers = reaches_candidate(*existing) &&
 						_native_ancestry_answers_for(p_candidate.target_native_base, StringName(existing->target_fqcn));
+			} else {
+				// Two script classes. The chain a conformance binds on does not start at the engine
+				// ancestry: a script base one level up answers for the same receivers, and a conformance
+				// reaches the class asking the way an import does, so only a declaration the candidate may
+				// see decides how it binds the trait.
+				answers_for_same_receivers =
+						reaches_candidate(*existing) && _script_classes_are_on_one_chain(p_candidate, *existing);
 			}
 			if (!answers_for_same_receivers) {
 				continue;
@@ -936,6 +958,7 @@ Vector<FSConformanceRegistry::ScriptConformanceRecord> FSConformanceRegistry::ge
 			record.target_fqcn = conformance.target_fqcn;
 			record.target_label = conformance.target_label.is_empty() ? conformance.target_fqcn : conformance.target_label;
 			record.target_native_base = conformance.target_native_base;
+			record.target_script_ancestor_fqcns = conformance.target_script_ancestor_fqcns;
 			record.source_file = conformance.source_file;
 			record.trait_type_arguments = conformance.trait_type_arguments;
 			records.push_back(record);
