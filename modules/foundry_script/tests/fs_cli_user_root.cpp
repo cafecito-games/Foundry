@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_fixture_cli.h                                                      */
+/*  fs_cli_user_root.cpp                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,49 +28,38 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#include "fs_cli_user_root.h"
 
-#include "core/string/ustring.h"
-#include "core/templates/vector.h"
-#include "core/variant/dictionary.h"
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 
 namespace FSTests {
 
-// `foundry test fixtures` entry point: runs a named slice of the `.fs` fixture corpus and
-// reports the outcome as data. The same corpus runs inside a single doctest case, which can
-// only be selected as a whole, so this is the addressable path to one fixture.
-class FSFixtureCLI {
-public:
-	// Which corpus passes to execute. The doctest suite runs the plain pass and the
-	// compiled-bytecode round-trip as two separate cases; PASS_ALL reproduces both.
-	enum PassSelection {
-		PASS_ALL,
-		PASS_TEXT,
-		PASS_BYTECODE,
-	};
+bool artifact_is_inside_user_root(const String &p_artifact_path, const String &p_user_root) {
+	if (p_artifact_path.is_empty() || p_user_root.is_empty()) {
+		return false;
+	}
+	const String root = p_user_root.simplify_path().trim_suffix("/");
+	const String artifact = ProjectSettings::get_singleton()->globalize_path(p_artifact_path).simplify_path();
+	// Compared with the separator attached so a sibling directory whose name merely starts with
+	// the root's name (`/scratch/user-benchmark-9` next to `/scratch/user-benchmark-91`) does
+	// not look contained.
+	return artifact == root || artifact.begins_with(root + "/");
+}
 
-	struct Options {
-		String corpus_dir;
-		// Corpus-relative glob or substring patterns; empty runs the whole corpus.
-		Vector<String> patterns;
-		// Pure-JSON report destination. Empty prints the report to stdout instead, which
-		// the engine's own startup output shares.
-		String output_path;
-		bool print_filenames = false;
-		// Tokenize the plain pass from a token buffer, mirroring the binary-tokens CI run.
-		bool binary_tokens = false;
-		PassSelection passes = PASS_ALL;
-	};
-
-	// Runs the selection and returns the report. Owns the script language lifecycle for each
-	// pass. `r_failed_count` counts fixture executions whose output did not match expected
-	// output, and is -1 when the corpus could not be collected at all.
-	static Dictionary run(const Options &p_options, int &r_failed_count);
-
-	// Process entry point: runs the selection, emits the report, and returns the exit code.
-	// A selection that matches no fixture is a scoping mistake, not an empty success, so it
-	// fails the same way an unmatched `test run --case` pattern does.
-	static int run_cli(const Options &p_options);
-};
+void remove_per_process_user_root(const String &p_user_root, const Vector<String> &p_artifact_paths) {
+	if (p_user_root.is_empty() || !DirAccess::exists(p_user_root)) {
+		return;
+	}
+	for (const String &artifact_path : p_artifact_paths) {
+		if (artifact_is_inside_user_root(artifact_path, p_user_root)) {
+			return;
+		}
+	}
+	Ref<DirAccess> user_dir = DirAccess::open(p_user_root);
+	if (user_dir.is_valid() && user_dir->erase_contents_recursive() == OK) {
+		DirAccess::remove_absolute(p_user_root);
+	}
+}
 
 } // namespace FSTests

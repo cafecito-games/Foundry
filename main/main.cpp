@@ -162,6 +162,7 @@
 #endif // TOOLS_ENABLED
 #ifdef TESTS_ENABLED
 #include "modules/foundry_script/tests/fs_benchmark_runner.h"
+#include "modules/foundry_script/tests/fs_cli_user_root.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/tests/fs_fixture_cli.h"
 #endif // TOOLS_ENABLED
@@ -933,15 +934,14 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (user_data_root.is_empty()) {
 			user_data_root = OS::get_singleton()->get_temp_path();
 		}
-		// `test benchmark` gets its own leaf so measuring a corpus alongside a running
-		// suite cannot erase that suite's `user://` tree when this root is recreated clean.
+		// A benchmark run and a scoped fixture run are both meant to be started while a suite,
+		// or a sibling of the same verb, is already running, and this root is recreated clean.
+		// Their leaves are therefore per-process: a shared one would erase a concurrent run's
+		// `user://` tree.
 		String leaf;
 		if (kind == Kind::TEST_BENCHMARK) {
-			leaf = "user-benchmark";
+			leaf = vformat("user-benchmark-%d", OS::get_singleton()->get_process_id());
 		} else if (kind == Kind::TEST_FIXTURES) {
-			// A scoped fixture run is meant to be started while a suite, or another scoped run,
-			// is already running, and this root is recreated clean. The leaf is therefore
-			// per-process: a shared one would erase a concurrent run's `user://` tree.
 			leaf = vformat("user-fixtures-%d", OS::get_singleton()->get_process_id());
 		} else if (cli_parse.invocation.test_shard_total > 1) {
 			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
@@ -1093,18 +1093,9 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		}
 		status = FSTests::FSFixtureCLI::run_cli(options);
 
-		// The per-process `user://` leaf is nobody else's to reuse, so this run removes its
-		// own rather than leaving one directory behind per invocation. A report written under
-		// that root is the artifact the run was asked to produce, so it keeps the root instead.
-		const String fixtures_user_root = OS::get_singleton()->get_user_data_root_override();
-		const bool fixtures_report_inside_user_root =
-				FSTests::FSFixtureCLI::report_path_is_inside_root(options.output_path, fixtures_user_root);
-		if (!fixtures_report_inside_user_root && !fixtures_user_root.is_empty() && DirAccess::exists(fixtures_user_root)) {
-			Ref<DirAccess> fixtures_user_dir = DirAccess::open(fixtures_user_root);
-			if (fixtures_user_dir.is_valid() && fixtures_user_dir->erase_contents_recursive() == OK) {
-				DirAccess::remove_absolute(fixtures_user_root);
-			}
-		}
+		Vector<String> fixtures_artifacts;
+		fixtures_artifacts.push_back(options.output_path);
+		FSTests::remove_per_process_user_root(OS::get_singleton()->get_user_data_root_override(), fixtures_artifacts);
 #else
 		ERR_PRINT("foundry test fixtures requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
@@ -1116,6 +1107,11 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 				: cli_parse.invocation.command_args[0];
 		status = FSTests::FSBenchmarkRunner::run_cli(corpus, cli_parse.invocation.benchmark_output,
 				cli_parse.invocation.benchmark_profile, cli_parse.invocation.benchmark_profile_output);
+
+		Vector<String> benchmark_artifacts;
+		benchmark_artifacts.push_back(cli_parse.invocation.benchmark_output);
+		benchmark_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
+		FSTests::remove_per_process_user_root(OS::get_singleton()->get_user_data_root_override(), benchmark_artifacts);
 #else
 		// Reporting success here would let automation accept a missing benchmark
 		// artifact as a completed measurement.

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_fixture_cli.h                                                      */
+/*  fs_cli_user_root.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -32,45 +32,21 @@
 
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
-#include "core/variant/dictionary.h"
 
 namespace FSTests {
 
-// `foundry test fixtures` entry point: runs a named slice of the `.fs` fixture corpus and
-// reports the outcome as data. The same corpus runs inside a single doctest case, which can
-// only be selected as a whole, so this is the addressable path to one fixture.
-class FSFixtureCLI {
-public:
-	// Which corpus passes to execute. The doctest suite runs the plain pass and the
-	// compiled-bytecode round-trip as two separate cases; PASS_ALL reproduces both.
-	enum PassSelection {
-		PASS_ALL,
-		PASS_TEXT,
-		PASS_BYTECODE,
-	};
+// `user://` root policy shared by the test CLI verbs that own their root. Those verbs
+// recreate the root clean at startup, so each invocation is given a per-process root: a
+// shared one would erase the `user://` tree of a run started next to it.
 
-	struct Options {
-		String corpus_dir;
-		// Corpus-relative glob or substring patterns; empty runs the whole corpus.
-		Vector<String> patterns;
-		// Pure-JSON report destination. Empty prints the report to stdout instead, which
-		// the engine's own startup output shares.
-		String output_path;
-		bool print_filenames = false;
-		// Tokenize the plain pass from a token buffer, mirroring the binary-tokens CI run.
-		bool binary_tokens = false;
-		PassSelection passes = PASS_ALL;
-	};
+// Whether a requested artifact path resolves inside a per-process `user://` root. A
+// `user://` output path lands in the root the run owns, so the caller has to keep the root
+// when it holds the artifact the run was asked to produce.
+bool artifact_is_inside_user_root(const String &p_artifact_path, const String &p_user_root);
 
-	// Runs the selection and returns the report. Owns the script language lifecycle for each
-	// pass. `r_failed_count` counts fixture executions whose output did not match expected
-	// output, and is -1 when the corpus could not be collected at all.
-	static Dictionary run(const Options &p_options, int &r_failed_count);
-
-	// Process entry point: runs the selection, emits the report, and returns the exit code.
-	// A selection that matches no fixture is a scoping mistake, not an empty success, so it
-	// fails the same way an unmatched `test run --case` pattern does.
-	static int run_cli(const Options &p_options);
-};
+// Removes a finished run's per-process `user://` root. The root is nobody else's to reuse,
+// so leaving it behind would accumulate one directory per invocation; it is kept when it
+// holds one of `p_artifact_paths`.
+void remove_per_process_user_root(const String &p_user_root, const Vector<String> &p_artifact_paths);
 
 } // namespace FSTests
