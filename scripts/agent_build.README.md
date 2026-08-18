@@ -184,7 +184,8 @@ invocation can never be read as this one's. It carries `invocation_id`, `argv`, 
 `run_end` is the last record of every invocation, emitted exactly once alongside the `RESULT:` line
 and with the same `status` and `exit_code`, including when the run aborts during startup and when it
 runs tests. It carries `invocation_id`, `status`, `step`, `exit_code`, `duration_ms`, `binary_path`,
-`binary_before`, `binary_after`, `binary_changed`, `child_disposition`, and `child_exit_code`.
+`binary_before`, `binary_after`, `binary_changed`, `binary_resolution`, `child_disposition`, and
+`child_exit_code`.
 
 A binary identity block — `binary_before`, `binary_after`, and the `binary_after` on `build_summary` —
 is `{"path": ..., "size": ..., "mtime_ns": ...}`, or `null` when the file is absent. `binary_changed`
@@ -194,6 +195,12 @@ file was before the build, not against the predicted name. `run_start`'s `binary
 predicted path's pre-build identity; `run_end`'s is the reported path's. It is not a failure when
 `binary_changed` is `false`: a no-op incremental build legitimately leaves the binary untouched, and
 the field exists so a caller can decide.
+
+`binary_resolution` says how the reported path was chosen: `relinked` when this invocation rewrote it,
+`unchanged` when the build was a no-op on the predicted name, `sole-candidate` when a rename the
+wrapper cannot reconstruct left exactly one binary, `ambiguous` when several could equally be meant,
+and `missing` when the build directory holds none. Only `ambiguous` and `missing` end the run without
+a binary; `unchanged` is a normal successful build.
 
 ### Waiting for a build from another process
 
@@ -259,13 +266,16 @@ The exit codes are exhaustive:
 | `127` | required tooling (SCons, Ninja, ccache) or platform support is missing |
 | `130` | interrupted |
 
-A missing binary is a failure unconditionally, not only under `--test`: the wrapper always requests
-`target=editor`, so an invocation that produced nothing to run must not be mistaken for a validated
-build. Build settings rename the binary (`precision`, `extra_suffix`, sanitizers, alternate
-toolchains), so when the expected name is absent the wrapper falls back to the sole editor binary in
-the same directory and reports that path; only a directory with no editor binary, or an ambiguous one,
-is `binary-missing`. An unchanged binary timestamp is never a failure, because a no-op incremental
-build legitimately leaves the binary untouched.
+A missing binary is a failure unconditionally, not only under `--test`: an invocation that produced
+nothing to run must not be mistaken for a validated build. Build settings rename the binary
+(`precision`, `extra_suffix`, sanitizers, fuzzer instrumentation, alternate toolchains, and the
+implicit `.llvm` a clang host adds), so the expected name is a prediction rather than evidence. The
+wrapper therefore reports the binary whose identity this invocation changed, even when a stale binary
+still sits under the predicted name; when nothing was relinked it reports the predicted name if it
+exists, or the sole editor binary in the directory. A directory with no editor binary, and one where
+several binaries could equally be the build's output, are both `binary-missing`, and the ambiguous
+case names the candidates so the stale ones can be removed. An unchanged binary timestamp is never a
+failure, because a no-op incremental build legitimately leaves the binary untouched.
 
 A test command that cannot be launched at all reports `test-failure` with exit code `127`.
 
