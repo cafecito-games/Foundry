@@ -2458,12 +2458,8 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		// where the receiver is the as-yet-unbound instance. Lowering it to the `@Self` type parameter
 		// (bound to the declaring class) carries the marker the runtime needs to re-bind each position
 		// to the running instance's leaf script; collapsing it to the class directly would drop that
-		// marker. The `uses_receiver_relative_self` flag is only meaningful inside a function body.
-		FSParser::DataType self_type = _self_type_parameter_for_class(parser->current_class);
-		if (parser->current_function != nullptr) {
-			parser->current_function->uses_receiver_relative_self = true;
-		}
-		return finalize_datatype(self_type);
+		// marker.
+		return finalize_datatype(_self_type_parameter_for_class(parser->current_class));
 	}
 
 	if (first_id->suite && first_id->suite->has_local(first)) {
@@ -7827,7 +7823,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				FSParser::SubscriptNode *receiver_access = static_cast<FSParser::SubscriptNode *>(subscript->base);
 				if (receiver_access->is_attribute && receiver_access->attribute != nullptr && receiver_access->base != nullptr) {
 					reduce_expression(receiver_access->base);
-					FSParser::DataType receiver_type = receiver_access->base->get_datatype();
+					// A receiver typed as a type parameter -- `self`, typed as `Self`, above all -- declares
+					// its methods on the bound, so the lookup follows the bound chain exactly as ordinary
+					// member resolution does.
+					FSParser::DataType receiver_type = _resolve_type_parameter_bound_chain(receiver_access->base->get_datatype());
 					const StringName &method_name = receiver_access->attribute->name;
 					bool receiver_found_member = false;
 					generic_method = find_generic_method(receiver_type.class_type, method_name, receiver_found_member);
@@ -11621,7 +11620,6 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			p_identifier->set_datatype(FSParser::DataType());
 			return;
 		}
-		parser->current_function->uses_receiver_relative_self = true;
 		// A lambda in an instance method must keep the enclosing receiver, exactly like one that reads a
 		// member: without it the lambda frame runs with nothing to resolve `Self` against. A static
 		// function has no instance to capture, and a self-capturing lambda cannot be created without
@@ -12113,17 +12111,26 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 	finalize_preload();
 }
 
+// `self` evaluates to the frame's receiver, so it is typed as `Self` -- the receiver-relative type
+// parameter -- in every body of a class, unconditionally. The type of an expression cannot depend on
+// what the rest of the enclosing function happens to mention: `Self` named in an unrelated declaration
+// used to retype `self` for the whole body, so deleting an unused local changed what an unrelated
+// statement was allowed to do with `self`, and two functions differing only by that local disagreed
+// about what `self` is.
+//
+// The two exceptions are the two receivers that are not an open instance of the enclosing class. An
+// enum host binds `self` to the enum value, and a builtin conformance target (`extend int uses ...`)
+// has no class handle and no subclass, so its receiver is exactly the builtin it extends and is typed
+// as one -- `self + 10` in such a body is arithmetic on an `int`, not on a type parameter.
 void FSAnalyzer::reduce_self(FSParser::SelfNode *p_self) {
 	p_self->is_constant = false;
 	FSParser::DataType enum_type = enum_self_type(parser->current_function);
 	if (enum_type.is_set()) {
 		p_self->set_datatype(enum_type);
-	} else if (parser->current_function != nullptr &&
-			(parser->current_function->uses_receiver_relative_self ||
-					_datatype_contains_self_type_parameter(parser->current_function->get_datatype()))) {
-		p_self->set_datatype(_self_type_parameter_for_class(parser->current_class));
-	} else {
+	} else if (parser->current_class != nullptr && parser->current_class->is_builtin_conformance_shim) {
 		p_self->set_datatype(type_from_metatype(parser->current_class->get_datatype()));
+	} else {
+		p_self->set_datatype(_self_type_parameter_for_class(parser->current_class));
 	}
 	mark_lambda_use_self();
 }
@@ -15840,9 +15847,6 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 
 			const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
 			if (receiver_relative_self) {
-				if (parser->current_function != nullptr) {
-					parser->current_function->uses_receiver_relative_self = true;
-				}
 				r_type_argument = _self_type_parameter_for_class(parser->current_class);
 			} else {
 				FSParser::DataType self_type = _self_type_for_class(parser->current_class);

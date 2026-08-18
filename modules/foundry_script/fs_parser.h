@@ -1478,7 +1478,6 @@ public:
 
 		bool resolved_signature = false;
 		bool resolved_body = false;
-		bool uses_receiver_relative_self = false;
 
 		_FORCE_INLINE_ bool is_vararg() const { return rest_parameter != nullptr; }
 
