@@ -52,39 +52,9 @@ static String _numeric_type_diagnostic_name(NumericType p_numeric_type) {
 
 // The runtime type names below are not debug-only: a rejected call argument names both the value it
 // received and the parameter it was checked against in every build, so a shipped game's error log
-// carries the same sentence a development build prints.
-static String _get_element_type(const ContainerType &p_type) {
-	if (p_type.builtin_type == Variant::ARRAY && !p_type.element_types.is_empty()) {
-		return vformat("Array[%s]", _get_element_type(p_type.element_types[0]));
-	}
-	if (p_type.builtin_type == Variant::DICTIONARY && !p_type.element_types.is_empty()) {
-		const String key = p_type.element_types.size() > 0 ? _get_element_type(p_type.element_types[0]) : String("Variant");
-		const String value = p_type.element_types.size() > 1 ? _get_element_type(p_type.element_types[1]) : String("Variant");
-		return vformat("Dictionary[%s, %s]", key, value);
-	}
-	if (p_type.is_type_handle) {
-		// A class-handle slot must not be reported as its represented instance type: `Array[Node]`
-		// for an `Array[Type[Node]]` describes the wrong expectation to the reader.
-		ContainerType represented_type = p_type;
-		represented_type.is_type_handle = false;
-		return vformat("Type[%s]", _get_element_type(represented_type));
-	}
-	if (p_type.script.is_valid() && p_type.script->is_valid()) {
-		return FoundryScript::debug_get_script_name(p_type.script);
-	}
-	if (p_type.class_name != StringName()) {
-		return p_type.class_name.operator String();
-	}
-	// The carrier alone cannot tell a declared `uint` from a declared `ulong`: both are stored as
-	// `Variant::UINT`. `ContainerType::numeric_type` is where the declared width survives, so a
-	// script-facing message must consult it instead of falling through to the carrier's name, mirroring
-	// `ContainerTypeValidate::_get_value_type_name()` in core/variant/container_type_validate.cpp.
-	if (p_type.numeric_type != NumericType::NONE && numeric_type_is_carrier_consistent(p_type.numeric_type, p_type.builtin_type)) {
-		return numeric_type_has_public_name(p_type.numeric_type) ? numeric_type_public_name(p_type.numeric_type) : numeric_type_name(p_type.numeric_type);
-	}
-	return Variant::get_type_name(p_type.builtin_type);
-}
-
+// carries the same sentence a development build prints. Container names come from
+// `ContainerType::get_type_name()` so the opcodes here spell a declared type exactly the way every
+// other boundary does; a renderer of its own is how `Array[Box[int]]` degraded to `Array[Box]`.
 static String _get_var_type(const Variant *p_var) {
 	String basestr;
 
@@ -116,14 +86,14 @@ static String _get_var_type(const Variant *p_var) {
 			basestr = "Array";
 			const Array *p_array = VariantInternal::get_array(p_var);
 			if (p_array->is_typed()) {
-				basestr += "[" + _get_element_type(p_array->get_element_type()) + "]";
+				basestr += "[" + p_array->get_element_type().get_type_name() + "]";
 			}
 		} else if (p_var->get_type() == Variant::DICTIONARY) {
 			basestr = "Dictionary";
 			const Dictionary *p_dictionary = VariantInternal::get_dictionary(p_var);
 			if (p_dictionary->is_typed()) {
-				basestr += "[" + _get_element_type(p_dictionary->get_key_type()) +
-						", " + _get_element_type(p_dictionary->get_value_type()) + "]";
+				basestr += "[" + p_dictionary->get_key_type().get_type_name() +
+						", " + p_dictionary->get_value_type().get_type_name() + "]";
 			}
 		} else {
 			basestr = Variant::get_type_name(p_var->get_type());
@@ -3553,7 +3523,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (src->get_type() != Variant::ARRAY) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "Array[%s]".)",
-							_get_var_type(src), _get_element_type(expected_type));
+							_get_var_type(src), expected_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -3563,7 +3533,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (array->get_element_type() != expected_type) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign an array of type "%s" to a variable of type "Array[%s]".)",
-							_get_var_type(src), _get_element_type(expected_type));
+							_get_var_type(src), expected_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -3604,8 +3574,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (src->get_type() != Variant::DICTIONARY) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "Dictionary[%s, %s]".)",
-							_get_var_type(src), _get_element_type(expected_key_type),
-							_get_element_type(expected_value_type));
+							_get_var_type(src), expected_key_type.get_type_name(),
+							expected_value_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -3615,8 +3585,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (dictionary->get_key_type() != expected_key_type || dictionary->get_value_type() != expected_value_type) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign a dictionary of type "%s" to a variable of type "Dictionary[%s, %s]".)",
-							_get_var_type(src), _get_element_type(expected_key_type),
-							_get_element_type(expected_value_type));
+							_get_var_type(src), expected_key_type.get_type_name(),
+							expected_value_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -3970,7 +3940,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (src->get_type() != Variant::ARRAY) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "Array[%s]".)",
-							_get_var_type(src), _get_element_type(expected_type));
+							_get_var_type(src), expected_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -4015,8 +3985,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (src->get_type() != Variant::DICTIONARY) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "Dictionary[%s, %s]".)",
-							_get_var_type(src), _get_element_type(expected_key_type),
-							_get_element_type(expected_value_type));
+							_get_var_type(src), expected_key_type.get_type_name(),
+							expected_value_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -5763,7 +5733,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (r->get_type() != Variant::ARRAY) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "Array[%s]".)",
-							Variant::get_type_name(r->get_type()), _get_element_type(expected_type));
+							Variant::get_type_name(r->get_type()), expected_type.get_type_name());
 #endif
 					OPCODE_BREAK;
 				}
@@ -5773,7 +5743,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (array->get_element_type() != expected_type) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to return an array of type "%s" where expected return type is "Array[%s]".)",
-							_get_var_type(r), _get_element_type(expected_type));
+							_get_var_type(r), expected_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -5815,8 +5785,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (r->get_type() != Variant::DICTIONARY) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to return a value of type "%s" where expected return type is "Dictionary[%s, %s]".)",
-							_get_var_type(r), _get_element_type(expected_key_type),
-							_get_element_type(expected_value_type));
+							_get_var_type(r), expected_key_type.get_type_name(),
+							expected_value_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
@@ -5826,8 +5796,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (dictionary->get_key_type() != expected_key_type || dictionary->get_value_type() != expected_value_type) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to return a dictionary of type "%s" where expected return type is "Dictionary[%s, %s]".)",
-							_get_var_type(r), _get_element_type(expected_key_type),
-							_get_element_type(expected_value_type));
+							_get_var_type(r), expected_key_type.get_type_name(),
+							expected_value_type.get_type_name());
 #endif // DEBUG_ENABLED
 					OPCODE_BREAK;
 				}
