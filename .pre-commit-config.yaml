@@ -306,7 +306,7 @@ repos:
         entry: python -m unittest discover -s .github/scripts/tests -t .github/scripts/tests
         additional_dependencies: [PyYAML]
         pass_filenames: false
-        # Only the extracted release helpers and their tests; the workflows that call them
+        # Only the extracted workflow helpers and their tests; the workflows that call them
         # no longer carry logic these tests execute, so editing a workflow does not trigger
         # them. Discovery also picks up the workflow graph contracts, which is why this hook
         # needs PyYAML; running them a second time is cheap and loses nothing.
@@ -315,6 +315,7 @@ repos:
             prune_prereleases\.py|
             resolve_channel_tag_freshness\.sh|
             resolve_container_alias\.py|
+            resolve_hook_scope\.py|
             verify_container_version_metadata\.py|
             verify_headless_image\.sh|
             tests/.*\.py
