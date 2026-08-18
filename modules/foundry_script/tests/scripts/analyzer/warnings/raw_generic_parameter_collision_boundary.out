@@ -1,0 +1,3 @@
+FS_TEST_OK
+~~ WARNING at line 21: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "consume()" requires the subtype "T" but the supertype "T" was provided.
+~~ WARNING at line 29: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "consume()" requires the subtype "V" but the supertype "T" was provided.

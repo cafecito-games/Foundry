@@ -28,3 +28,10 @@ func return_from_specialized(box: Box[int]) -> int:
 
 func return_independent_member(box: Box) -> int:
 	return box.size()
+
+
+class HolderSame[T]:
+	# A parameter named like the raw receiver's is still a different parameter, so the value the raw
+	# receiver hands over does not satisfy this frame's return type either.
+	func return_collision(box: Box) -> T:
+		return box.get_value()

@@ -1215,6 +1215,9 @@ crosses is reported exactly as the equivalent `Variant` crossing is.
 - Precision is per component, as it is for stored arguments. Where a member's type is
   `Pair[T, String]` and `T` is unbound, reading the `T` component is unsafe and reading the `String`
   component is not.
+- A type parameter belongs to the declaration that declares it. A slot typed by another declaration's
+  parameter that merely shares a name is still a boundary the undecided value crosses; only a slot
+  naming the very parameter the value carries is not.
 - A receiver whose arguments are known is unaffected, whether they were written (`Crate[int]`) or
   recovered through inheritance or a trait application. A member that names no parameter at all is
   unaffected on every receiver. Inside a generic declaration its own parameters are in scope, so the

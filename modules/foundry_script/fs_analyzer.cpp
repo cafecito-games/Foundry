@@ -3209,6 +3209,7 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 			if (parameter != nullptr && parameter->identifier != nullptr) {
 				FSParser::DataType projection = _class_type_parameter_handle(parameter, i);
 				projection.is_raw_generic_projection = true;
+				projection.raw_generic_projection_owner = p_base.class_type;
 				bindings.insert(parameter->identifier->name, projection);
 			}
 		}
@@ -3233,6 +3234,18 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 	return FSParser::DataType::substitute(p_member_type, bindings);
 }
 
+// Two handles of the same declaration may be distinct nodes across parses, so the owner is compared
+// the way a class type is: by node, falling back to the fully qualified name.
+static bool _same_raw_generic_projection_owner(const FSParser::ClassNode *p_left, const FSParser::ClassNode *p_right) {
+	if (p_left == p_right) {
+		return true;
+	}
+	if (p_left == nullptr || p_right == nullptr) {
+		return false;
+	}
+	return p_left->fqcn == p_right->fqcn;
+}
+
 bool FSAnalyzer::is_raw_generic_projection(const FSParser::DataType &p_type) {
 	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.is_raw_generic_projection;
 }
@@ -3248,9 +3261,17 @@ bool FSAnalyzer::raw_generic_projection_crosses_boundary(const FSParser::DataTyp
 		// A Variant slot states nothing the erased value fails to satisfy.
 		return false;
 	}
-	// Both sides naming the same unbound parameter is the one flow that stays inside the erased world:
-	// the value is exactly what the slot asks for, whatever the receiver turns out to hold.
-	return !(p_destination.kind == FSParser::DataType::TYPE_PARAMETER && p_destination == p_source);
+	// Both sides naming the same unbound parameter of the same declaration is the one flow that stays
+	// inside the erased world: the value is exactly what the slot asks for, whatever the receiver turns
+	// out to hold. A type parameter's identity is only its name, scope, and ordinal, so the owner has to
+	// be compared as well -- otherwise a raw `Box[T]`'s `T` would pass for the `T` of whatever generic
+	// declaration the use site sits in, and the crossing would go silent exactly when both declarations
+	// use the conventional name.
+	if (!is_raw_generic_projection(p_destination) || !is_raw_generic_projection(p_source)) {
+		return true;
+	}
+	return !(_same_raw_generic_projection_owner(p_destination.raw_generic_projection_owner, p_source.raw_generic_projection_owner) &&
+			p_destination == p_source);
 }
 
 static FSParser::DataType _substitute_self_type_parameter(

@@ -665,7 +665,7 @@ private:
 	// parameters that receiver never bound. Nothing decides such a value: the parameter is erased at
 	// run time and no argument states what it holds, so every typed boundary it crosses is exactly as
 	// unchecked as one a Variant crosses. The boundary checks ask this instead of inspecting member
-	// lookups, so the same answer drives call arguments, assignments, returns, and container elements.
+	// lookups, so the same answer drives call arguments, assignments, and returns.
 	static bool is_raw_generic_projection(const FSParser::DataType &p_type);
 	// True when a raw generic projection flowing into p_destination is unsafe: a destination that is
 	// the very same unbound parameter states no more than the value already carries, so only a

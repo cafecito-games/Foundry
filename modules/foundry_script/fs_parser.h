@@ -189,6 +189,12 @@ public:
 		// it is exactly as unchecked at a typed boundary as a Variant value is, and the unsafe-boundary
 		// checks route it the same way. Provenance only: it takes no part in type identity.
 		bool is_raw_generic_projection = false;
+		// The declaration whose parameter list a raw generic projection came out of. A type parameter's
+		// identity is only its name, scope, and ordinal, so two declarations that spell their parameters
+		// alike produce indistinguishable handles; the projection carries its owner so the boundary check
+		// can tell a raw receiver's parameter from an identically named one the use site already binds.
+		// Provenance only: it takes no part in type identity.
+		ClassNode *raw_generic_projection_owner = nullptr;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;

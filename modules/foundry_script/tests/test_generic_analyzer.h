@@ -2152,6 +2152,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Raw generic members mark a
 	CHECK(unsafe_lines.has(22)); // return box.get_value() with a raw receiver.
 	CHECK_FALSE(unsafe_lines.has(26)); // The same return with a Box[int] receiver.
 	CHECK_FALSE(unsafe_lines.has(30)); // return box.size(), which names no type parameter.
+	CHECK(unsafe_lines.has(37)); // return box.get_value() into an identically named parameter of another class.
 }
 
 TEST_CASE("[Modules][FoundryScript][GenericTypeModel] A raw generic crossing escalates with its warning") {

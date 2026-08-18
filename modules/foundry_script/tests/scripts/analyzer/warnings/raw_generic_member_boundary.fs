@@ -63,6 +63,12 @@ func no_exec_inherited(box: IntBox) -> void:
 	box.set_value(5) # No warning.
 
 
+# Declaring a raw element type is silent, but reading a member through one of those elements is the
+# same crossing as reading through any other raw receiver, so it is reported the same way.
+func no_exec_container_element(boxes: Array[Box]) -> void:
+	want_int(boxes[0].get_value())
+
+
 func no_exec_declarations() -> void:
 	var _raw: Box = Box.new() # No warning: holding a raw value is not a boundary.
 	var _elements: Array[Box] = [] # No warning: a raw element type is not a boundary.
