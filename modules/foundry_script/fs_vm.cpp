@@ -146,52 +146,70 @@ static bool _profile_count_as_native(const Object *p_base_obj, const StringName 
 	return ClassDB::class_exists(cname) && ClassDB::has_method(cname, p_methodname, false);
 }
 
-// The extra clause a rejected tuple store adds when exactly one element failed, and failed only on
-// its container element typing. Naming the whole tuple type leaves the reader unable to tell that the
-// arity and every other element agreed and that the offending element disagreed only on its own
-// element typing, which is the one failure the declaration's spelling cannot explain by itself. Any
-// other shape of failure is left to the plain message, and nothing is reported when more than one
-// element disagrees, since the clause would then be describing only part of the story.
-static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type, const Variant &p_value) {
-	if (p_value.get_type() != Variant::ARRAY) {
-		return String();
+// Walks a rejected tuple store down to the one element that failed, following a failing element that
+// is itself a tuple so a nested culprit is found at whatever depth it sits. Every index taken is
+// appended to `r_path`, and success means the whole chain reduced to a single element failing only on
+// its container element typing -- the one failure a declaration's spelling cannot explain by itself.
+// A level where more than one element disagrees, or where the sole culprit failed for any other
+// reason, ends the walk unsuccessfully: the clause would then be describing only part of the story.
+static bool _tuple_store_failed_element_path(const FSDataType &p_tuple_type, const Variant &p_value,
+		Vector<int> &r_path, const FSDataType **r_expected_type, Variant &r_failed_value) {
+	// Acceptance is asked through the same helpers `FSDataType::is_type()`'s `TUPLE` branch uses, so the
+	// element this walk blames is by construction an element the real type test rejected.
+	if (!p_tuple_type.tuple_carrier_matches(p_value)) {
+		return false;
 	}
 	const Array array = p_value;
-	if (array.size() != p_tuple_type.container_element_types.size()) {
-		return String();
-	}
 
 	int failed_element = -1;
 	for (int i = 0; i < p_tuple_type.container_element_types.size(); i++) {
-		const FSDataType &element_type = p_tuple_type.container_element_types[i];
-		const Variant element = array[i];
-		// The tuple test rejects null in a non-nullable object element even though `is_type()` accepts
-		// it for assignment compatibility, so the same rule has to be applied here or such an element
-		// counts as passing and the clause claims a sole culprit it does not have.
-		const bool rejected_null = element.get_type() == Variant::NIL && !element_type.is_nullable &&
-				(element_type.kind == FSDataType::NATIVE || element_type.kind == FSDataType::SCRIPT ||
-						element_type.kind == FSDataType::FOUNDRY_SCRIPT);
-		if (!rejected_null && element_type.is_type(element)) {
+		if (p_tuple_type.container_element_types[i].accepts_as_tuple_element(array[i])) {
 			continue;
 		}
-		// The carrier already agrees and the declaration asks for element typing, so the element test
-		// had nothing left to reject but the value's own element type.
-		const bool container_element_typing_only = element_type.kind == FSDataType::BUILTIN &&
-				(element_type.builtin_type == Variant::ARRAY || element_type.builtin_type == Variant::DICTIONARY) &&
-				element.get_type() == element_type.builtin_type &&
-				!element_type.container_element_types.is_empty();
-		if (!container_element_typing_only || failed_element != -1) {
-			return String();
+		if (failed_element != -1) {
+			return false;
 		}
 		failed_element = i;
 	}
 	if (failed_element == -1) {
+		return false;
+	}
+
+	const FSDataType &failed_type = p_tuple_type.container_element_types[failed_element];
+	const Variant failed_value = array[failed_element];
+	r_path.push_back(failed_element);
+	if (failed_type.kind == FSDataType::TUPLE) {
+		return _tuple_store_failed_element_path(failed_type, failed_value, r_path, r_expected_type, r_failed_value);
+	}
+	// The carrier already agrees and the declaration asks for element typing, so the element test had
+	// nothing left to reject but the value's own element type.
+	const bool container_element_typing_only = failed_type.kind == FSDataType::BUILTIN &&
+			(failed_type.builtin_type == Variant::ARRAY || failed_type.builtin_type == Variant::DICTIONARY) &&
+			failed_value.get_type() == failed_type.builtin_type &&
+			!failed_type.container_element_types.is_empty();
+	if (!container_element_typing_only) {
+		return false;
+	}
+	*r_expected_type = &failed_type;
+	r_failed_value = failed_value;
+	return true;
+}
+
+// The extra clause a rejected tuple store adds when exactly one element failed, and failed only on
+// its container element typing. Naming the whole tuple type leaves the reader unable to tell that the
+// arity and every other element agreed and that the offending element disagreed only on its own
+// element typing. A nested tuple element is named by its full path -- element 1's element 1 -- so the
+// reader is pointed at the position that actually disagreed rather than at the outermost declaration.
+static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type, const Variant &p_value) {
+	Vector<int> path;
+	const FSDataType *expected_type = nullptr;
+	Variant failed_value;
+	if (!_tuple_store_failed_element_path(p_tuple_type, p_value, path, &expected_type, failed_value)) {
 		return String();
 	}
 
 	// An untyped value and a differently typed one fail the same test but need opposite advice: one has
 	// to acquire element typing, the other already has some and simply disagrees.
-	const Variant &failed_value = array[failed_element];
 	const bool value_is_typed = failed_value.get_type() == Variant::ARRAY
 			? Array(failed_value).is_typed()
 			: Dictionary(failed_value).is_typed();
@@ -199,9 +217,13 @@ static String _tuple_store_container_element_hint(const FSDataType &p_tuple_type
 			? String("a tuple store never converts, so a container element's own typing has to match exactly.")
 			: String("a tuple store never converts, so a container element has to arrive already typed.");
 
-	return vformat(R"( Tuple element %d expects "%s", but the value is "%s": %s)",
-			failed_element, p_tuple_type.container_element_types[failed_element].get_source_type_name(),
-			_get_var_type(&failed_value), reason);
+	String position = vformat("Tuple element %d", path[0]);
+	for (int i = 1; i < path.size(); i++) {
+		position += vformat("'s element %d", path[i]);
+	}
+
+	return vformat(R"( %s expects "%s", but the value is "%s": %s)",
+			position, expected_type->get_source_type_name(), _get_var_type(&failed_value), reason);
 }
 
 void FSFunction::_profile_native_call(uint64_t p_t_taken, const String &p_func_name, const String &p_instance_class_name) {
