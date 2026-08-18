@@ -3734,11 +3734,32 @@ String FSLanguage::get_extension() const {
 	return "fs";
 }
 
+namespace {
+
+// Holds a re-entrancy flag raised for the lifetime of a scope and lowers it again on every exit,
+// including early returns taken by error macros.
+class FinishingFlagGuard {
+	bool &flag;
+
+public:
+	explicit FinishingFlagGuard(bool &p_flag) :
+			flag(p_flag) { flag = true; }
+	~FinishingFlagGuard() { flag = false; }
+
+	FinishingFlagGuard(const FinishingFlagGuard &) = delete;
+	FinishingFlagGuard &operator=(const FinishingFlagGuard &) = delete;
+};
+
+} // namespace
+
 void FSLanguage::finish() {
 	if (finishing) {
 		return;
 	}
-	finishing = true;
+	// The flag is restored by the guard rather than by an assignment at the end of the function, so
+	// that no exit path -- including an `ERR_FAIL_*` in a diagnostic check -- can strand the language
+	// as permanently "finishing" and turn every later `finish()` into a silent no-op.
+	FinishingFlagGuard finishing_guard(finishing);
 
 	clear_global_annotations();
 	clear_conformance_files();
@@ -3832,13 +3853,14 @@ void FSLanguage::finish() {
 		for (const Ref<Resource> &res : cached_resources) {
 			const Ref<FoundryScript> script = res;
 			if (script.is_valid()) {
-				ERR_FAIL_MSG(vformat("FoundryScript '%s' still registered in ResourceCache after FSLanguage::finish().", script->get_path()));
+				// A stale cache entry reports state that finalization has already walked past, so the
+				// sweep only reports and keeps going: it names every offender rather than just the
+				// first, and finalization is never abandoned over a diagnostic.
+				ERR_PRINT(vformat("FoundryScript '%s' still registered in ResourceCache after FSLanguage::finish().", script->get_path()));
 			}
 		}
 	}
 #endif // DEV_ENABLED
-
-	finishing = false;
 }
 
 void FSLanguage::profiling_start() {
