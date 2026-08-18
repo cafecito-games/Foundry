@@ -41,7 +41,7 @@
 
 namespace TestTileDockOffsets {
 
-TEST_CASE("[Editor][TileDockOffsets] gap map resolves identities relative to the centre") {
+TEST_CASE("[Editor][TileDockOffsets] gap map resolves identities relative to the center") {
 	struct Case {
 		const char *name = nullptr;
 		Vector<bool> visible;
@@ -56,11 +56,11 @@ TEST_CASE("[Editor][TileDockOffsets] gap map resolves identities relative to the
 		{ "left hidden", Vector<bool>{ false, true, true }, 1, TileDockGapMap::ABSENT, 0, 1 },
 		{ "right hidden", Vector<bool>{ true, true, false }, 1, 0, TileDockGapMap::ABSENT, 1 },
 		{ "both sides hidden", Vector<bool>{ false, true, false }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 0 },
-		{ "centre hidden", Vector<bool>{ true, false, true }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 1 },
+		{ "center hidden", Vector<bool>{ true, false, true }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 1 },
 		{ "two left docks", Vector<bool>{ true, true, true, true }, 2, 1, 2, 3 },
 		{ "two left docks, first hidden", Vector<bool>{ false, true, true, true }, 2, 0, 1, 2 },
-		{ "centre index -1", Vector<bool>{ true, true, true }, -1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
-		{ "centre index out of range", Vector<bool>{ true, true, true }, 3, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
+		{ "center index -1", Vector<bool>{ true, true, true }, -1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
+		{ "center index out of range", Vector<bool>{ true, true, true }, 3, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
 		{ "empty child list", Vector<bool>(), 0, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 0 },
 	};
 
@@ -203,7 +203,7 @@ TEST_CASE("[Editor][TileDockOffsets] save skips a gap index beyond the offsets a
 	CHECK(int(config->get_value(section, "tile_dock_hsplit_2")) == 999);
 }
 
-TEST_CASE("[Editor][TileDockOffsets] save and load ignore keys when the centre is hidden") {
+TEST_CASE("[Editor][TileDockOffsets] save and load ignore keys when the center is hidden") {
 	TileDockFixture fixture;
 	fixture.set_column_visible(true, false, true);
 
@@ -357,7 +357,7 @@ TEST_CASE("[Editor][TileDockOffsets] internal split-container children are not c
 	CHECK(offsets[1] == 260 * EDSCALE);
 }
 
-TEST_CASE("[Editor][TileDockOffsets] internal children do not invent a centre-right gap when the right is hidden") {
+TEST_CASE("[Editor][TileDockOffsets] internal children do not invent a center-right gap when the right is hidden") {
 	TileDockFixture fixture;
 	fixture.set_column_visible(true, true, false);
 	fixture.body->add_child(memnew(Control), false, Node::INTERNAL_MODE_BACK);

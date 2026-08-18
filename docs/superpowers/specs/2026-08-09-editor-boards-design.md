@@ -253,7 +253,7 @@ impossibility:
 2. Reduces each board's preview render resolution to match its on-screen size,
    via `SubViewportContainer::set_stretch_shrink()` (see
    [Performance](#performance)).
-3. Tweens `EditorBoardView::scale` down and `scroll_x` to centre the active
+3. Tweens `EditorBoardView::scale` down and `scroll_x` to center the active
    board.
 4. Fades in the caption overlay.
 
@@ -461,7 +461,7 @@ shippable and independently testable:
 
 - **Closing the last board** is refused, mirroring the existing rule that the
   sole leaf is never collapsed.
-- **Cancelling an unsaved-changes prompt** during a board close aborts the whole
+- **Canceling an unsaved-changes prompt** during a board close aborts the whole
   close; the board and every scene in it are left intact.
 - **A cross-board drop with an unresolvable source pane** returns `nullptr` from
   `handle_tab_drop`, exactly as an unresolvable same-board drop does today. No
@@ -494,7 +494,7 @@ breaks, so it gets a dedicated test. Refusing to close the last board.
 text tabs, saved and restored to identical trees, tabs, and per-board focus.
 Scratch files under `FOUNDRY_TEST_SCRATCH`.
 
-**Legacy config is ignored, not honoured.** A config carrying a legacy
+**Legacy config is ignored, not honored.** A config carrying a legacy
 `[Workspace]` section and no `[Boards]` section restores as a single default
 board, with no leaves adopted from the stale section. This pins the clean-break
 decision so a partial read can't be reintroduced later by accident.
@@ -533,7 +533,7 @@ This is a change whose correctness is judged visually, so it ships with a
 `scripts/review_gallery.py` **walkthrough** board:
 
 1. Single board, normal editing.
-2. A switch caught mid-slide, with the neighbouring board visible at the edge.
+2. A switch caught mid-slide, with the neighboring board visible at the edge.
 3. Overview with every board live.
 4. Mid-drag, with the drop rosette lit on a *different* board than the drag
    started in.

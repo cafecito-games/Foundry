@@ -87,7 +87,7 @@ Verified in this checkout. Getting these wrong wastes a build cycle each time.
   in `doc/classes/EditorSettings.xml` (see `interface/theme/spacing_preset` at
   `doc/classes/EditorSettings.xml:1230`). A new setting without a doc entry fails the
   pre-commit doc check.
-- **Test authoring rules** (`CLAUDE.md`): assert on observable behaviour — a returned
+- **Test authoring rules** (`CLAUDE.md`): assert on observable behavior — a returned
   value, a computed constant, a written config key. Never assert that a source file
   contains a substring, never slice a source file on a signature, never assert that
   another test exists.
@@ -124,8 +124,8 @@ Verified in this checkout. Getting these wrong wastes a build cycle each time.
 
 ## Do not touch
 
-- Per D5, observable bottom-panel behaviour must be identical before and after this epic.
-  Do not edit behaviour in `editor/gui/editor_bottom_panel.{h,cpp}`,
+- Per D5, observable bottom-panel behavior must be identical before and after this epic.
+  Do not edit behavior in `editor/gui/editor_bottom_panel.{h,cpp}`,
   `editor/gui/bottom_drawer_geometry.h`, or `editor/gui/bottom_drawer_layout.h`. Issue 3's
   touch of `editor_bottom_drawer_strip.cpp` is the sole exception and is additive only.
 - Per D7, do not change `EditorDockManager` slot visibility, `dock_slot_index`, or the
@@ -248,7 +248,7 @@ a pattern; hash the density field the way `spacing_preset` is hashed at line 61.
       and desynchronise the theme hash.
 - [ ] Add a `<member name="interface/theme/inspector_density" type="String" ...>` entry to
       `doc/classes/EditorSettings.xml`, cross-referencing
-      `[member interface/theme/spacing_preset]` the way the neighbouring spacing settings do
+      `[member interface/theme/spacing_preset]` the way the neighboring spacing settings do
       (`doc/classes/EditorSettings.xml:1182-1230`).
 
 ### Acceptance criteria
@@ -269,7 +269,7 @@ a pattern; hash the density field the way `spacing_preset` is hashed at line 61.
 - [ ] Density composes with `spacing_preset`: for each of the three `spacing_preset`
       values, `Compact` density yields a smaller measured property height than `Default`
       density at that same preset.
-- [ ] Both `theme_modern` and `theme_classic` honour the setting (no theme is left behind).
+- [ ] Both `theme_modern` and `theme_classic` honor the setting (no theme is left behind).
 - [ ] `doc/classes/EditorSettings.xml` documents the setting and `pre-commit run --all-files`
       passes its doc checks.
 
@@ -352,7 +352,7 @@ Two facts make "resolve by identity, skip absent gaps" correct and sufficient:
 ### Acceptance criteria
 
 - [ ] With all three columns visible, save writes both keys with today's meanings and
-      values — byte-identical to current behaviour.
+      values — byte-identical to current behavior.
 - [ ] With the left dock hidden, save leaves `tile_dock_hsplit_1` at its previous stored
       value and writes the surviving gap to `tile_dock_hsplit_2`.
 - [ ] With the right tabs hidden, save leaves `tile_dock_hsplit_2` at its previous stored
@@ -361,7 +361,7 @@ Two facts make "resolve by identity, skip absent gaps" correct and sufficient:
       widths are restored.
 - [ ] Load ignores a key whose gap is currently absent rather than applying it to the wrong
       divider.
-- [ ] No behaviour change for the all-visible case (the overwhelmingly common one).
+- [ ] No behavior change for the all-visible case (the overwhelmingly common one).
 
 ### Tests
 
@@ -370,12 +370,12 @@ named `[Editor][TileDockOffsets] ...`:
 
 - [ ] The identity-mapping function, table-driven over every visible-child combination,
       asserted with no controls constructed.
-- [ ] All five behavioural criteria above against a real `ConfigFile` and a real tile built
+- [ ] All five behavioral criteria above against a real `ConfigFile` and a real tile built
       with `EditorSceneWorkspace::create_single_leaf_workspace` — the seam existing tests
       already use (`tests/editor/test_scene_workspace.h:243`).
 
 If a real tile turns out not to be constructible in some configuration, cover the
-behavioural criteria against a bare `HSplitContainer` with stand-in children rather than
+behavioral criteria against a bare `HSplitContainer` with stand-in children rather than
 dropping them, and record which route was taken in the PR description.
 
 ---
@@ -434,7 +434,7 @@ exists, by the rail.
       `EditorDockManager::_update_tab_style`. Note the dock-manager site *appends* to an
       existing `tooltip` string — preserve that composition, changing only what the shortcut
       clause contributes when there is no bound key.
-- [ ] No other change to strip or tab behaviour: button text, icon resolution, colour
+- [ ] No other change to strip or tab behavior: button text, icon resolution, colour
       overrides, ordering and close-button placement are untouched.
 
 ### Acceptance criteria
@@ -447,7 +447,7 @@ exists, by the rail.
 - [ ] Every bottom-strip toggle has a non-empty tooltip.
 - [ ] The dock-manager tab tooltip keeps whatever prefix it composed before the shortcut
       clause, with the fallback appended under the same rules.
-- [ ] No observable change to any other bottom-panel behaviour (D5).
+- [ ] No observable change to any other bottom-panel behavior (D5).
 
 ### Tests
 
@@ -460,7 +460,7 @@ it needs neither a strip nor a manager.
 
 ## Issue 4 — `EditorSideRailStrip` and `EditorSideRailButton`
 
-**Depends on:** Issue 3. **Widget only — no collapse behaviour.**
+**Depends on:** Issue 3. **Widget only — no collapse behavior.**
 
 ### Context
 
@@ -512,7 +512,7 @@ Two new controls, mounted and rendering. Clicking a toggle focuses a dock (exist
       of scope (see the epic's out-of-scope list).
 - [ ] Overflow fallback: put the fit decision in `editor/gui/side_rail_state.h` as a pure
       function of available height, measured toggle heights and two thresholds. The
-      return-to-labelled threshold must exceed the drop-to-icon threshold by at least one
+      return-to-labeled threshold must exceed the drop-to-icon threshold by at least one
       toggle's label height, so a rebuild cannot flip the decision back and oscillate.
       Re-evaluate on resize and on the dock set changing. This is automatic, never a user
       setting.
@@ -533,7 +533,7 @@ Two new controls, mounted and rendering. Clicking a toggle focuses a dock (exist
 - [ ] Toggles render icon and rotated label; the label reads bottom-to-top on both sides.
 - [ ] `get_minimum_size` accounts for the rotated text, so no label is clipped at any
       editor scale or font size.
-- [ ] When the labelled toggles do not fit the available height, the rail rebuilds
+- [ ] When the labeled toggles do not fit the available height, the rail rebuilds
       icon-only; when they fit again after a resize, labels return.
 - [ ] The fit decision cannot oscillate: no sequence of resizes produces an unbounded
       rebuild loop.
@@ -630,7 +630,7 @@ land first.**
       `get_effective_layout_key()`, empty when closed) in the tile's own layout section,
       written by `EditorTileDockRegion::save_layout`
       (`editor/editor_tile_dock_region.cpp:131-168`). Absent keys mean `DOCKED` with no
-      drawer dock — today's behaviour. Per the project's clean-break rule, no migration of
+      drawer dock — today's behavior. Per the project's clean-break rule, no migration of
       older layouts.
 - [ ] A stored `tile_drawer_dock_*` naming a dock that no longer exists, or that is
       currently disabled, loads as "drawer closed" rather than erroring.
@@ -657,7 +657,7 @@ land first.**
 - [ ] Collapsing a side in one tile of a split workspace leaves every sibling tile
       unchanged.
 - [ ] A side whose every dock is disabled still shows its rail (Issue 7 covers the rest of
-      the empty-side behaviour; this criterion only requires the rail not to vanish).
+      the empty-side behavior; this criterion only requires the rail not to vanish).
 
 ### Tests
 
@@ -685,7 +685,7 @@ in `tests/test_main.cpp`, cases named `[Editor][SideRail] ...`:
 Two `ED_SHORTCUT_AND_COMMAND` bindings, `docks/toggle_left_tile_rail` and
 `docks/toggle_right_tile_rail`, each acting on the **focused tile only** and toggling that
 side between `DOCKED` and `RAILED`, restoring the last active drawer dock when re-entering
-`RAILED` — the per-side analogue of `Ctrl/Cmd+J`'s "reopen the last opened bottom dock"
+`RAILED` — the per-side analog of `Ctrl/Cmd+J`'s "reopen the last opened bottom dock"
 (`editor/editor_node.cpp:11080`).
 
 The `docks/` namespace is the established one for dock-related shortcuts (`docks/open_*`);
@@ -713,7 +713,7 @@ The `docks/` namespace is the established one for dock-related shortcuts (`docks
       palette commands open the dock in the drawer when its side is `RAILED`.
 - [ ] Both new commands appear in the Command Palette.
 - [ ] No collision with any existing editor shortcut on any platform.
-- [ ] `Ctrl/Cmd+J`, `Escape` and `Shift+F12` retain their current bindings and behaviour.
+- [ ] `Ctrl/Cmd+J`, `Escape` and `Shift+F12` retain their current bindings and behavior.
 
 ### Tests
 
@@ -793,7 +793,7 @@ that silently swaps the two tile column widths on every save while collapsed.
 - [ ] `./bin/foundry.* --headless test run --force-colors` reports
       `[doctest] Status: SUCCESS!`, run with `DISPLAY=:1` on Linux.
 - [ ] `pre-commit run --all-files` passes, including the class-reference doc checks.
-- [ ] Observable bottom-panel behaviour is unchanged (D5), verified by the bottom-panel
+- [ ] Observable bottom-panel behavior is unchanged (D5), verified by the bottom-panel
       tests still passing untouched.
 - [ ] The global dock columns behave exactly as before (D7), verified by the existing dock
       and workspace tests passing untouched.

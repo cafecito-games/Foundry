@@ -70,8 +70,8 @@ void EditorSideRailButton::_update_theme_cache() {
 	theme_cache.icon_label_separation = get_theme_constant(SNAME("h_separation"));
 	theme_cache.align_to_largest_stylebox = get_theme_constant(SNAME("align_to_largest_stylebox"));
 
-	// Mirror Button's align_to_largest_stylebox behaviour so active/hovered
-	// toggles keep the same content margins as their neighbours.
+	// Mirror Button's align_to_largest_stylebox behavior so active/hovered
+	// toggles keep the same content margins as their neighbors.
 	// RTL *_mirrored styleboxes are intentionally not consulted: the rail is
 	// LTR in production (strip order and -PI/2 rotation assume LTR reading),
 	// and editor-theme margins are symmetric.

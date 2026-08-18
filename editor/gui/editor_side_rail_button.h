@@ -127,7 +127,7 @@ public:
 
 	// The size this button would report with the label shown, regardless of
 	// is_label_visible(). Used by the rail's overflow fit decision to know
-	// whether returning to labelled mode would fit.
+	// whether returning to labeled mode would fit.
 	Size2 get_labelled_minimum_size() const;
 
 	ComposedGeometry get_composed_geometry() const;

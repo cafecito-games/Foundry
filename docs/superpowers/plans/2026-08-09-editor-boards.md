@@ -218,7 +218,7 @@ WorkspaceLeafIdAllocator *EditorSceneWorkspace::get_leaf_id_allocator() {
 python3 scripts/agent_build.py --backend ninja
 ./bin/foundry.* --headless test run --suite "*[Editor][Boards]*" --suite "*[Editor][SceneWorkspace]*" --force-colors
 ```
-Expected: `[doctest] Status: SUCCESS!`. The pre-existing workspace tests must pass with no edits — this task is behaviour-preserving.
+Expected: `[doctest] Status: SUCCESS!`. The pre-existing workspace tests must pass with no edits — this task is behavior-preserving.
 
 - [ ] **Step 7: Commit**
 
@@ -347,7 +347,7 @@ Expected: `[doctest] Status: SUCCESS!`
 ```bash
 git add editor/editor_scene_workspace.h editor/editor_scene_workspace.cpp editor/editor_node.cpp \
         tests/editor/test_editor_board_persistence.h tests/test_main.cpp
-git commit -m "refactor(editor): parameterise workspace persistence by config section"
+git commit -m "refactor(editor): parameterize workspace persistence by config section"
 ```
 
 ---
@@ -721,7 +721,7 @@ TEST_CASE("[Editor][Boards] An out-of-range active_board clamps") {
 
 - [ ] **Step 2: Run and confirm it fails**
 
-Expected: compile errors — `add_board`, `set_active_board`, `save_to_config`, `has_board_session`, `restore_from_config` do not exist on the strip. `add_board`/`set_active_board` are added properly in Task 5; add minimal versions here (append a board; set `active_index` and toggle dormancy) and let Task 5 layer the focus and signal behaviour on top.
+Expected: compile errors — `add_board`, `set_active_board`, `save_to_config`, `has_board_session`, `restore_from_config` do not exist on the strip. `add_board`/`set_active_board` are added properly in Task 5; add minimal versions here (append a board; set `active_index` and toggle dormancy) and let Task 5 layer the focus and signal behavior on top.
 
 - [ ] **Step 3: Add the strip persistence API**
 
@@ -839,7 +839,7 @@ git commit -m "feat(editor): persist and restore multiple boards"
 - [ ] `add_board()` returns a board whose workspace has one leaf, registered with `EditorData::register_tile`.
 - [ ] `set_active_board(i)` wakes the incoming board before sleeping the outgoing one, and restores that board's remembered focused leaf.
 - [ ] `close_board(i)` routes every scene in the board through the existing scene-close path, so unsaved-changes prompts fire per scene.
-- [ ] Cancelling any prompt aborts the whole close; the board and all its scenes survive intact.
+- [ ] Canceling any prompt aborts the whole close; the board and all its scenes survive intact.
 - [ ] `close_board()` on the only remaining board is refused and returns false.
 - [ ] Signals `board_added`, `board_removed`, `active_board_changed` fire exactly once per operation.
 
@@ -1085,7 +1085,7 @@ git commit -m "fix(editor): route documentation refresh and layout probing acros
 - Modify: `editor/editor_node.cpp:11311` (insert after `project_run_bar`)
 
 **Acceptance Criteria:**
-- [ ] One button per board, labelled with the board title, with the active board visually distinguished.
+- [ ] One button per board, labeled with the board title, with the active board visually distinguished.
 - [ ] Double-clicking a board button renames it inline; the new title persists across a save/restore cycle.
 - [ ] A `+` button adds a board and activates it.
 - [ ] `editor/previous_board` and `editor/next_board` are registered via `ED_SHORTCUT_AND_COMMAND` with defaults `CMD_OR_CTRL | ALT | LEFT` and `CMD_OR_CTRL | ALT | RIGHT`, and appear in the command palette.
@@ -1184,7 +1184,7 @@ TEST_CASE("[Editor][BoardView] Point hit-testing selects the right board") {
 	EditorBoardView view;
 	view.enter_overview(3, 1, viewport);
 
-	// The centred active board contains the viewport centre.
+	// The centered active board contains the viewport center.
 	CHECK(view.index_at_point(Point2(800, 450), 3, viewport) == 1);
 	// Far above every board is empty space.
 	CHECK(view.index_at_point(Point2(800, 5), 3, viewport) == -1);
@@ -1193,7 +1193,7 @@ TEST_CASE("[Editor][BoardView] Point hit-testing selects the right board") {
 
 - [ ] **Step 2: Implement `EditorBoardView`**
 
-State: `real_t scroll_x`, `real_t scale`, `int active_index`, plus target values and a normalised `transition` in `[0, 1]` advanced by `advance(delta)` with an ease-out curve. It exposes `get_transform()` returning the `Transform2D` the strip applies, and `is_animating()`.
+State: `real_t scroll_x`, `real_t scale`, `int active_index`, plus target values and a normalized `transition` in `[0, 1]` advanced by `advance(delta)` with an ease-out curve. It exposes `get_transform()` returning the `Transform2D` the strip applies, and `is_animating()`.
 
 `OVERVIEW_GUTTER` is a `static constexpr real_t` on the class so the test and the implementation cannot drift.
 
@@ -1337,7 +1337,7 @@ A sibling `Control` of the boards, drawn after them, positioned from `EditorBoar
 **Acceptance Criteria:**
 - [ ] `move_board(from, to)` reorders both the `boards` vector and the child order, and emits `board_moved` once.
 - [ ] The active board remains active across a reorder, even when its index changes.
-- [ ] `scroll_x` is retuned so the dragged board stays under the cursor.
+- [ ] `scroll_x` is adjusted so the dragged board stays under the cursor.
 - [ ] Board order round-trips through save/restore.
 - [ ] No workspace state is touched by a reorder — leaf ids, tabs, and scene ownership are unchanged.
 
@@ -1361,7 +1361,7 @@ A sibling `Control` of the boards, drawn after them, positioned from `EditorBoar
 
 ### Task 13: Board-aware editor automation
 
-**Goal:** Let an agent observe and drive boards, so every behaviour above is verifiable through the GUI.
+**Goal:** Let an agent observe and drive boards, so every behavior above is verifiable through the GUI.
 
 **Files:**
 - Modify: `editor/automation/editor_automation_workspace.{h,cpp}:42`
@@ -1398,7 +1398,7 @@ A sibling `Control` of the boards, drawn after them, positioned from `EditorBoar
 - Create: gallery output only (no tracked source changes)
 
 **Acceptance Criteria:**
-- [ ] A `walkthrough` board with five ordered, captioned shots: single board; a switch caught mid-slide with the neighbour visible at the edge; overview with every board live; mid-drag with the drop rosette lit on a *different* board than the drag started in; landed, back on one board with the pane in its new home.
+- [ ] A `walkthrough` board with five ordered, captioned shots: single board; a switch caught mid-slide with the neighbor visible at the edge; overview with every board live; mid-drag with the drop rosette lit on a *different* board than the drag started in; landed, back on one board with the pane in its new home.
 - [ ] Every caption states what the reviewer should confirm, not what the shot is.
 - [ ] The gallery is served with `--public --basic-auth <user>:<pass>` and the URL is in the PR body.
 
@@ -1427,7 +1427,7 @@ python3 scripts/review_gallery.py serve --public --basic-auth reviewer:<password
 - Detaching a board into its own OS window (`WindowWrapper` path).
 - Per-board bottom panel or FileSystem dock state.
 - Any migration of legacy `editor_layout.cfg` layouts — see the spec's *Persistence* section; a pre-boards config restores as a single default board.
-- Any startup behaviour beyond restoring what the user had.
+- Any startup behavior beyond restoring what the user had.
 
 ## Risks
 

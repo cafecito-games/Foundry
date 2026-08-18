@@ -42,7 +42,7 @@ class VBoxContainer;
 
 // Vertical transposition of EditorBottomDrawerStrip (editor_bottom_drawer_strip.h),
 // mirroring one side of a tile's dock region. A pure mirror: it owns no dock
-// state of its own, exactly like the strip it is modelled on. The per-side
+// state of its own, exactly like the strip it is modeled on. The per-side
 // collapse state lives in EditorTileDockRegion; the rail only drives its
 // transitions and reflects the result.
 class EditorSideRailStrip : public PanelContainer {

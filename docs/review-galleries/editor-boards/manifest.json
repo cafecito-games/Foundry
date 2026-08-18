@@ -13,7 +13,7 @@
         },
         {
           "file": "shots/ab29a77df3b74e31.png",
-          "caption": "Confirm the neighbouring board is still on screen at the right edge during the switch: Board 3's own scene tab ('terrain') and its own Scene dock (Terrain/Grass/Soil/Title/Rock) are visible beside the arriving Board 2. Two boards sharing the frame is what proves the switch travels through space rather than swapping one board's content for another's in place.",
+          "caption": "Confirm the neighboring board is still on screen at the right edge during the switch: Board 3's own scene tab ('terrain') and its own Scene dock (Terrain/Grass/Soil/Title/Rock) are visible beside the arriving Board 2. Two boards sharing the frame is what proves the switch travels through space rather than swapping one board's content for another's in place.",
           "type": "image",
           "order": 1
         },

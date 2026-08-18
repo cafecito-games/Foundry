@@ -81,7 +81,7 @@ private:
 	real_t target_scale = 1.0;
 	real_t target_pitch_gutter = 0.0;
 
-	// Normalised transition progress in [0, 1]. 1 means idle: origin, scale,
+	// Normalized transition progress in [0, 1]. 1 means idle: origin, scale,
 	// and pitch_gutter already equal their targets.
 	real_t transition = 1.0;
 

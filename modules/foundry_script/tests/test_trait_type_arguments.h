@@ -141,7 +141,7 @@ class C:
 	CHECK(trait_arguments_binding(bindings, "T") == "float");
 }
 
-TEST_CASE("[Modules][FoundryScript][Traits] An argument-less use is skipped in favour of a later binding use") {
+TEST_CASE("[Modules][FoundryScript][Traits] An argument-less use is skipped in favor of a later binding use") {
 	FSParser parser;
 	const String source = R"(
 trait Storage[T]:

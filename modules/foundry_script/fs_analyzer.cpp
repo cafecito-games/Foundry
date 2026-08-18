@@ -16856,7 +16856,7 @@ static bool _datatype_disjointness_is_decidable(const FSParser::DataType &p_type
 }
 
 // A type parameter stands for a value the frame cannot name, so an assignment across one is settled by
-// a runtime type test rather than statically. That licence reaches exactly as far as the parameter's
+// a runtime type test rather than statically. That license reaches exactly as far as the parameter's
 // bound does, in both directions: an erased `T: Node` can still turn out to be a `Node2D`, and a
 // `Node2D` can still be the `T` a caller picked, but neither is ever an `int`. `Self` puts that
 // question in front of ordinary code -- `self` is typed `Self` in every body of a class -- so a
