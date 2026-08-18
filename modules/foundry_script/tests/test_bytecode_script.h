@@ -1351,7 +1351,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A composite conformance argument keep
 			"\n"
 			"extend Gadget uses Duo[Pair[int, Self], int]:\n"
 			"\tfunc first() -> Pair[int, Self]:\n"
-			"\t\treturn null\n"
+			"\t\treturn Pair[int, Self].new()\n"
 			"\n"
 			"\tfunc accept(item: int) -> void:\n"
 			"\t\tpass\n");
