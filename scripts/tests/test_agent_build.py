@@ -1507,7 +1507,11 @@ class BuildTargetSelectionTests(unittest.TestCase):
             target = agent_build.BuildTarget(
                 "macos", root / "foundry.macos.template_release.arm64", None, "template_release"
             )
-            self.assertEqual(agent_build.resolve_linked_binary(target), release)
+            identity = agent_build.binary_identity(release)
+            assert identity is not None
+            resolution = agent_build.resolve_linked_binary(target, {str(release): identity})
+            self.assertEqual(resolution.path, release)
+            self.assertEqual(resolution.reason, "sole-candidate")
 
     def test_ninja_state_is_specific_to_the_target(self) -> None:
         target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
@@ -2408,6 +2412,121 @@ class ProgressStreamIdentityTests(WrapperHarness):
         self.assertEqual(run_end_for(records, "second"), records[-1])
         self.assertEqual(run_end_for(records, "first"), records[2])
         self.assertIsNone(run_end_for(records, "third"))
+
+
+class MixedBuildDirectoryTests(WrapperHarness):
+    """A build directory holding several editor binaries must resolve to the one this run linked."""
+
+    def build_directory(self, root: Path) -> Path:
+        directory = root / "bin"
+        directory.mkdir()
+        return directory
+
+    def test_a_freshly_linked_renamed_binary_wins_over_a_stale_expected_one(self) -> None:
+        with scratch_directory() as root:
+            build_directory = self.build_directory(root)
+            stale = build_directory / "foundry.macos.editor.dev.arm64"
+            stale.write_bytes(b"stale editor binary from an earlier configuration")
+            stale_identity = stale.stat().st_mtime_ns
+            fresh = build_directory / "foundry.macos.editor.dev.arm64.llvm"
+            scons = linking_fake_scons(root, fresh, b"freshly linked editor binary")
+            exit_code, log_path, progress_path, stdout = self.run_wrapper(
+                root, scons, binary_path=stale, extra_argv=["--invocation-id", "mixed-directory"]
+            )
+            line = self.result_line(log_path)
+            run_end = run_end_for(progress_events(progress_path), "mixed-directory")
+            stale_after = stale.stat().st_mtime_ns
+        assert run_end is not None
+        self.assertEqual(exit_code, 0)
+        self.assertIn(f"{RESULT_PREFIX} success ", line)
+        self.assertIn(f"binary={fresh} binary_present=yes", line)
+        self.assertEqual(run_end["binary_path"], str(fresh))
+        self.assertEqual(run_end["binary_resolution"], "relinked")
+        self.assertIn(f"[agent-build] built binary: {fresh}", stdout)
+        self.assertEqual(stale_after, stale_identity)
+
+    def test_a_directory_of_untouched_binaries_fails_instead_of_guessing(self) -> None:
+        with scratch_directory() as root:
+            build_directory = self.build_directory(root)
+            for suffix in (".llvm", ".san"):
+                (build_directory / f"foundry.macos.editor.dev.arm64{suffix}").write_bytes(b"stale editor binary")
+            scons = fake_scons(root, exit_code=0, lines=["scons: `.' is up to date."])
+            exit_code, log_path, progress_path, _ = self.run_wrapper(
+                root,
+                scons,
+                binary_path=build_directory / "foundry.macos.editor.dev.arm64",
+                extra_argv=["--invocation-id", "unresolvable"],
+            )
+            line = self.result_line(log_path)
+            run_end = run_end_for(progress_events(progress_path), "unresolvable")
+        assert run_end is not None
+        self.assertEqual(exit_code, 1)
+        self.assertIn(f"{RESULT_PREFIX} binary-missing ", line)
+        self.assertIn("binary_present=no", line)
+        self.assertEqual(run_end["binary_resolution"], "ambiguous")
+
+    def test_an_untouched_expected_binary_beside_another_still_succeeds(self) -> None:
+        with scratch_directory() as root:
+            build_directory = self.build_directory(root)
+            expected = build_directory / "foundry.macos.editor.dev.arm64"
+            expected.write_bytes(b"already linked editor binary")
+            (build_directory / "foundry.macos.editor.dev.arm64.san").write_bytes(b"another configuration")
+            scons = fake_scons(root, exit_code=0, lines=["scons: `.' is up to date."])
+            exit_code, log_path, progress_path, _ = self.run_wrapper(
+                root, scons, binary_path=expected, extra_argv=["--invocation-id", "no-op-mixed"]
+            )
+            line = self.result_line(log_path)
+            run_end = run_end_for(progress_events(progress_path), "no-op-mixed")
+        assert run_end is not None
+        self.assertEqual(exit_code, 0)
+        self.assertIn(f"{RESULT_PREFIX} success ", line)
+        self.assertIn(f"binary={expected} binary_present=yes", line)
+        self.assertFalse(run_end["binary_changed"])
+        self.assertEqual(run_end["binary_resolution"], "unchanged")
+
+
+class LinkedBinaryResolutionTests(unittest.TestCase):
+    """`resolve_linked_binary` decides from pre-build identities, not from the predicted name."""
+
+    def resolve(self, directory: Path, before: dict[str, dict[str, object]]) -> agent_build.BinaryResolution:
+        target = agent_build.BuildTarget("macos", directory / "foundry.macos.editor.dev.arm64", None)
+        return agent_build.resolve_linked_binary(target, before)
+
+    def write(self, path: Path, content: bytes) -> Path:
+        path.write_bytes(content)
+        return path
+
+    def test_a_sole_renamed_binary_is_still_resolved_when_nothing_was_relinked(self) -> None:
+        with scratch_directory() as root:
+            renamed = self.write(root / "foundry.macos.editor.dev.arm64.llvm", b"editor binary")
+            identity = agent_build.binary_identity(renamed)
+            assert identity is not None
+            resolution = self.resolve(root, {str(renamed): identity})
+        self.assertEqual(resolution.path, renamed)
+        self.assertEqual(resolution.reason, "sole-candidate")
+
+    def test_an_empty_build_directory_is_missing_rather_than_ambiguous(self) -> None:
+        with scratch_directory() as root:
+            resolution = self.resolve(root, {})
+        self.assertIsNone(resolution.path)
+        self.assertEqual(resolution.reason, "missing")
+
+    def test_the_expected_name_wins_when_several_binaries_were_relinked(self) -> None:
+        with scratch_directory() as root:
+            expected = self.write(root / "foundry.macos.editor.dev.arm64", b"editor binary")
+            self.write(root / "foundry.macos.editor.dev.arm64.llvm", b"editor binary")
+            resolution = self.resolve(root, {})
+        self.assertEqual(resolution.path, expected)
+        self.assertEqual(resolution.reason, "relinked")
+
+    def test_several_relinked_binaries_without_the_expected_name_are_ambiguous(self) -> None:
+        with scratch_directory() as root:
+            first = self.write(root / "foundry.macos.editor.dev.arm64.llvm", b"editor binary")
+            second = self.write(root / "foundry.macos.editor.dev.arm64.san", b"editor binary")
+            resolution = self.resolve(root, {})
+        self.assertIsNone(resolution.path)
+        self.assertEqual(resolution.reason, "ambiguous")
+        self.assertEqual(set(resolution.candidates), {first, second})
 
 
 def recording_fake_scons(directory: Path, binary_path: Path, arguments_path: Path) -> Path:
