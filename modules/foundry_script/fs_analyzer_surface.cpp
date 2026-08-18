@@ -2181,11 +2181,24 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, bool p_re
 	}
 }
 
-bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::DataType &p_chain_base, FSParser::ClassNode *p_trait,
+bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::ClassNode *p_implementer, FSParser::ClassNode *p_trait,
 		const Vector<FSParser::DataType> &p_applied_arguments, const FSParser::Node *p_source,
 		String &r_inherited_arguments, String &r_applied_arguments, const FSParser::ClassNode *&r_binding_ancestor) {
-	if (p_trait == nullptr || p_trait->type_parameters.is_empty() || p_applied_arguments.is_empty()) {
+	if (p_implementer == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty() ||
+			p_applied_arguments.is_empty()) {
 		return false;
+	}
+
+	const FSParser::DataType p_chain_base = p_implementer->base_type;
+
+	// The ancestor side arrives through `project_class_trait_arguments()`, which reifies each ancestor's
+	// `Self` against that ancestor. Reifying the applied side here against the class that wrote it is
+	// what puts both sides in the same terms: a `final` implementer's `Pair[int, Self]` is
+	// `Pair[int, Sub]`, which an ancestor's `Pair[int, String]` contradicts.
+	Vector<FSParser::DataType> applied_arguments;
+	applied_arguments.resize(p_applied_arguments.size());
+	for (int i = 0; i < p_applied_arguments.size(); i++) {
+		applied_arguments.write[i] = fs_reify_self_in_trait_argument(p_implementer, p_applied_arguments[i]);
 	}
 
 	// The chain's bindings live on the ancestors' own `uses` clauses, which have to be resolved before
@@ -2205,28 +2218,28 @@ bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::DataType &p_
 
 	Vector<FSParser::DataType> inherited;
 	if (!FSTypeCompatibility::project_class_trait_arguments(p_chain_base, p_trait, inherited) ||
-			inherited.size() != p_applied_arguments.size()) {
+			inherited.size() != applied_arguments.size()) {
 		return false;
 	}
 
 	bool conflicts = false;
-	String inherited_arguments;
-	String applied_arguments;
+	String rendered_inherited;
+	String rendered_applied;
 	for (int i = 0; i < inherited.size(); i++) {
 		if (i > 0) {
-			inherited_arguments += ", ";
-			applied_arguments += ", ";
+			rendered_inherited += ", ";
+			rendered_applied += ", ";
 		}
-		inherited_arguments += inherited[i].to_string();
-		applied_arguments += p_applied_arguments[i].to_string();
-		if (!inherited[i].is_set() || !p_applied_arguments[i].is_set()) {
+		rendered_inherited += inherited[i].to_string();
+		rendered_applied += applied_arguments[i].to_string();
+		if (!inherited[i].is_set() || !applied_arguments[i].is_set()) {
 			continue;
 		}
 		// Both sides may be partially unknown, so they are compared component by component: two
 		// components left on an unreified parameter prove nothing about each other, while concrete
 		// components on both sides still contradict each other inside a composite argument.
 		conflicts = conflicts ||
-				FSTypeCompatibility::compare_open_arguments(p_applied_arguments[i], inherited[i]) ==
+				FSTypeCompatibility::compare_open_arguments(applied_arguments[i], inherited[i]) ==
 						FSTypeCompatibility::ArgumentEvidence::CONFLICT;
 	}
 	if (!conflicts) {
@@ -2243,8 +2256,8 @@ bool FSAnalyzer::trait_binding_conflicts_with_chain(const FSParser::DataType &p_
 			break;
 		}
 	}
-	r_inherited_arguments = inherited_arguments;
-	r_applied_arguments = applied_arguments;
+	r_inherited_arguments = rendered_inherited;
+	r_applied_arguments = rendered_applied;
 	return true;
 }
 
@@ -2360,7 +2373,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		String inherited_arguments;
 		String rendered_applied_arguments;
 		const FSParser::ClassNode *binding_ancestor = nullptr;
-		if (!trait_binding_conflicts_with_chain(p_class->base_type, p_seen_trait, applied_arguments,
+		if (!trait_binding_conflicts_with_chain(p_class, p_seen_trait, applied_arguments,
 					p_binding_source, inherited_arguments, rendered_applied_arguments, binding_ancestor)) {
 			return true;
 		}

@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Trait "FsrKeeper" is already applied with type arguments ("FsrPair[int, String]") by "FsrBase"; "FsrSub" cannot re-apply it with ("FsrPair[int, FsrSub]").

@@ -107,6 +107,17 @@ public:
 		return (int)(*bindings)[p_binding_index].kind;
 	}
 
+	// The evidence a per-ancestor binding produces for an unspecialized receiver, which is what a
+	// Variant-routed store against that ancestor's parameters is decided on.
+	static ProjectedContainerType project_ancestor_binding(const Ref<FoundryScript> &p_script, FoundryScript *p_ancestor,
+			int p_binding_index) {
+		const Vector<FoundryScript::TypeArgumentBinding> *bindings = p_script->type_parameter_bindings_by_ancestor.getptr(p_ancestor);
+		if (bindings == nullptr || p_binding_index < 0 || p_binding_index >= bindings->size()) {
+			return ProjectedContainerType();
+		}
+		return FoundryScript::project_type_argument_binding((*bindings)[p_binding_index], Vector<ContainerType>());
+	}
+
 	static int get_member_binding_kind(const Ref<FoundryScript> &p_script, const StringName &p_member) {
 		const FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
 		return member_info != nullptr ? (int)member_info->type_argument_binding.kind : -1;
@@ -1319,6 +1330,130 @@ TEST_CASE("[FoundryScript][BytecodeScript] A partially open conformance argument
 	REQUIRE(loader.load_full(buffer, restored) == OK);
 
 	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A composite conformance argument keeps its known parts around an open Self") {
+	// `Duo[Pair[int, Self], int]` on a non-final target proves the `Pair` shell, its `int` child, and
+	// the sibling `int` position; only the `Self` child is open. Recording the whole composite as
+	// unconstrained -- which is what dropping any argument containing `Self` amounts to -- would make a
+	// Variant-routed store accept a `Pair[float, ...]` destination the analyzer rejects.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Pair[A, B]:\n"
+			"\tpass\n"
+			"\n"
+			"trait Duo[A, B]:\n"
+			"\tabstract func first() -> A\n"
+			"\n"
+			"\tabstract func accept(item: B) -> void\n"
+			"\n"
+			"class Gadget:\n"
+			"\tpass\n"
+			"\n"
+			"extend Gadget uses Duo[Pair[int, Self], int]:\n"
+			"\tfunc first() -> Pair[int, Self]:\n"
+			"\t\treturn Pair[int, Self].new()\n"
+			"\n"
+			"\tfunc accept(item: int) -> void:\n"
+			"\t\tpass\n");
+	REQUIRE(original->is_valid());
+	if (!original->is_valid()) {
+		return;
+	}
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const auto check_recorded_vector = [](const Vector<FSConformanceRegistry::RuntimeConformance> &p_conformances) {
+		REQUIRE_EQ(p_conformances.size(), 1);
+		const Vector<FSWeakContainerType> &arguments = p_conformances[0].trait_type_arguments;
+		REQUIRE_EQ(arguments.size(), 2);
+
+		// The composite keeps its shell, its arity, and its known child.
+		const FSWeakContainerType &composite = arguments[0];
+		CHECK_EQ(composite.builtin_type, Variant::OBJECT);
+		CHECK(composite.script_id.is_valid());
+		REQUIRE_EQ(composite.type_arguments.size(), 2);
+		CHECK_EQ(composite.type_arguments[0].builtin_type, Variant::INT);
+		// Only the `Self` subtree is unconstrained.
+		CHECK_EQ(composite.type_arguments[1].builtin_type, Variant::NIL);
+		CHECK(composite.type_arguments[1].class_name == StringName());
+		CHECK_FALSE(composite.type_arguments[1].script_id.is_valid());
+
+		CHECK_EQ(arguments[1].builtin_type, Variant::INT);
+	};
+
+	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A declared trait binding projects an open Self as a partial composite") {
+	// The declared-`uses` half of the same rule, read through the projection a store is actually
+	// decided on. `Pair[int, Self]` on a non-final implementer is evidence equivalent to
+	// `Pair[int, ?]`: known enough to reject a `float` first argument, open enough to accept any
+	// second one. A bare `Self` has no structure to keep, so it stays wholly unknown.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Pair[A, B]:\n"
+			"\tpass\n"
+			"\n"
+			"trait Keeper[T]:\n"
+			"\tfunc label() -> String:\n"
+			"\t\treturn \"keeper\"\n"
+			"\n"
+			"class OpenSelf:\n"
+			"\tuses Keeper[Pair[int, Self]]\n"
+			"\n"
+			"class BareOpenSelf:\n"
+			"\tuses Keeper[Self]\n"
+			"\n"
+			"final class Closed:\n"
+			"\tuses Keeper[Pair[int, Self]]\n");
+	REQUIRE(original->is_valid());
+	if (!original->is_valid()) {
+		return;
+	}
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	const auto check_projections = [](const Ref<FoundryScript> &p_root) {
+		REQUIRE(p_root->get_subclasses().has(SNAME("Keeper")));
+		FoundryScript *keeper = p_root->get_subclasses().find(SNAME("Keeper"))->value.ptr();
+
+		const ProjectedContainerType open =
+				TestFSBytecodeScriptAccessor::project_ancestor_binding(
+						p_root->get_subclasses().find(SNAME("OpenSelf"))->value, keeper, 0);
+		CHECK_EQ(open.state, ProjectedContainerType::PARTIAL);
+		CHECK(open.get_type_name() == "Pair[int, ?]");
+
+		const ProjectedContainerType bare =
+				TestFSBytecodeScriptAccessor::project_ancestor_binding(
+						p_root->get_subclasses().find(SNAME("BareOpenSelf"))->value, keeper, 0);
+		CHECK_EQ(bare.state, ProjectedContainerType::UNKNOWN);
+
+		// A final non-generic implementer reifies `Self`, so nothing is left open at all.
+		const ProjectedContainerType closed =
+				TestFSBytecodeScriptAccessor::project_ancestor_binding(
+						p_root->get_subclasses().find(SNAME("Closed"))->value, keeper, 0);
+		CHECK_EQ(closed.state, ProjectedContainerType::EXACT);
+		CHECK(closed.get_type_name() == "Pair[int, Closed]");
+	};
+
+	check_projections(original);
+	check_projections(restored);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Marker conformances survive compiled-bytecode loading") {

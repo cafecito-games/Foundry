@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 23: Trait "FssKeeper" is already applied with type arguments ("FssPair[int, String]") by "FssBase"; "FssSub" cannot re-apply it with ("FssPair[int, FssSub]").

@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 22: Trait "FsqKeeper" is already applied with type arguments ("FsqPair[int, String]") by "FsqBase"; the conformance for "FsqSub" cannot record ("FsqPair[int, FsqSub]").

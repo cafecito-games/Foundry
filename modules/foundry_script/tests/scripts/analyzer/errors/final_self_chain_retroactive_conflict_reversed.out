@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 20: Trait "FsyKeeper" is already applied with type arguments ("FsyPair[int, String]") by "FsyBase"; the conformance for "FsySub" cannot record ("FsyPair[int, FsySub]").

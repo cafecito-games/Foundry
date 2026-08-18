@@ -1,0 +1,13 @@
+FS_TEST_OK
+declared store: true
+declared test: false
+supertrait store: true
+supertrait test: false
+array store: true
+dictionary store: true
+bare store: true
+bare test: false
+concrete store: true
+concrete test: true
+retro store: true
+retro test: false
