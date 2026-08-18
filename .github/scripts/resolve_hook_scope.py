@@ -31,7 +31,10 @@ def resolve_hook_scope(event_name: str, changed_files: list[str]) -> str:
     if event_name != CHANGED_FILES_EVENT:
         return ALL_FILES
 
-    paths = [path for path in (raw.strip() for raw in changed_files) if path]
+    # Only blank lines are dropped. Git permits a pathname with leading or trailing
+    # spaces, so trimming a path would hand `prek` a file that does not exist and
+    # leave the real one unchecked.
+    paths = [path for path in changed_files if path]
     if not paths:
         return ALL_FILES
     if any(character in path for path in paths for character in UNREPRESENTABLE_CHARACTERS):

@@ -37,7 +37,15 @@ class ResolveHookScopeTests(unittest.TestCase):
     def test_blank_diff_lines_are_dropped(self) -> None:
         self.assertEqual(
             "--files './main/main.cpp'",
-            resolve_hook_scope.resolve_hook_scope("pull_request", ["", "main/main.cpp", "   "]),
+            resolve_hook_scope.resolve_hook_scope("pull_request", ["", "main/main.cpp", ""]),
+        )
+
+    def test_a_path_with_edge_whitespace_is_passed_through_verbatim(self) -> None:
+        # Git allows a pathname with leading or trailing spaces; trimming one would
+        # name a file that does not exist and leave the changed file unchecked.
+        self.assertEqual(
+            "--files './ spaced.txt '",
+            resolve_hook_scope.resolve_hook_scope("pull_request", [" spaced.txt "]),
         )
 
     def test_a_pull_request_with_no_changed_files_falls_back_to_the_whole_tree(self) -> None:
