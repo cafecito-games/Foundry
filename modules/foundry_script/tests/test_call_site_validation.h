@@ -328,6 +328,80 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A statically typed gener
 	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An implicitly converted generic argument is marked for a call-site check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: float) -> void:\n"
+			"\tidentity[int](value)\n",
+			"user://generic_argument_converted.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<FSParser::CallNode::GenericArgumentCheck> checks = call_site_generic_argument_checks(parser.get_tree(), SNAME("test"));
+	REQUIRE(checks.size() == 1);
+	CHECK(checks[0].argument_index == 0);
+	CHECK(checks[0].substituted_type.kind == FSParser::DataType::BUILTIN);
+	CHECK(checks[0].substituted_type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A convertible hard-typed argument stays an inference conflict") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func pick_tail[T](_head: T, tail: T) -> T:\n"
+			"\treturn tail\n"
+			"func test(head: int, tail: float) -> void:\n"
+			"\tpick_tail(head, tail)\n",
+			"user://generic_argument_inference_conflict.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, "conflicting types"));
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A pair with no implicit conversion keeps its static rejection") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(unsigned_target: float, floating_target: long) -> void:\n"
+			"\tidentity[uint](unsigned_target)\n"
+			"\tidentity[float](floating_target)\n",
+			"user://generic_argument_statically_rejected.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, "Invalid argument for \"identity()\" function"));
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An out-of-range constant keeps its analyzer re-typing error") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test() -> void:\n"
+			"\tidentity[int](2147483648.0)\n",
+			"user://generic_argument_constant_rejected.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, "Cannot convert 2147483648.0 to \"int\""));
+}
+
 TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An ordinary non-generic call records no check") {
 	FSParser parser;
 	const Error error = parser.parse(

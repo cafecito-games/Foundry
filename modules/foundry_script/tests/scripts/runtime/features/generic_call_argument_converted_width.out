@@ -1,0 +1,16 @@
+FS_TEST_OK
+~~ WARNING at line 27: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 28: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 32: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 49: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 54: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 54: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+2 7
+2 7
+2 -2147483649
+3 9.0
+2 1
+21 label
+2 2
+[1, -1]
+generic call argument conversion ok

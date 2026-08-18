@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 12: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+before call
+>> SCRIPT ERROR at runtime/errors/generic_call_argument_converted_width_rejected.fs:12 on test(): Cannot pass a value of type "float" as argument 1 of "identity()"; expected "int".
