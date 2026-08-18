@@ -149,3 +149,7 @@ class BenchmarkAgentBuildTests(unittest.TestCase):
             output_blocks=6,
             error=None,
         )
+
+
+if __name__ == "__main__":
+    unittest.main()

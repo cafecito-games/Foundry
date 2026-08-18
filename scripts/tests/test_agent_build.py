@@ -19,7 +19,7 @@ import unittest
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "agent_build.py"
@@ -1379,7 +1379,7 @@ class BuildTargetSelectionTests(unittest.TestCase):
         args = agent_build.parse_args(["--platform", "macos", "--scons-arg", "arch=arm64", *argv])
         target = agent_build.resolve_build_target(args)
         with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
-            return agent_build.build_command(args, target)
+            return cast("list[str]", agent_build.build_command(args, target))
 
     def parse_error(self, argv: list[str]) -> str:
         stderr = io.StringIO()
