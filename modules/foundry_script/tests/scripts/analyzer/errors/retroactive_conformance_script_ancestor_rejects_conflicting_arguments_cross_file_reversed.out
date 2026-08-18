@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Trait "SayKeeper" is already applied with different type arguments by the conformance for "SayHolder" in "res://analyzer/errors/say_ancestor_holder.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.

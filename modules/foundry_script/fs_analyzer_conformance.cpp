@@ -205,6 +205,42 @@ static StringName _terminal_native_class(const FSParser::ClassNode *p_class) {
 	return StringName();
 }
 
+// Every script class above `p_class` on its inheritance chain, identified the way the registry
+// identifies a conformance target. A base reached as a bare script reference has no `ClassNode` to
+// read a fully-qualified name from, so it contributes the identities a root class can be registered
+// under — its path, and its global name when it has one — and the walk stops there rather than
+// guessing at what lies further up.
+static Vector<String> _script_ancestor_keys(const FSParser::ClassNode *p_class) {
+	Vector<String> keys;
+	if (p_class == nullptr) {
+		return keys;
+	}
+	int depth = 0;
+	FSParser::DataType current = p_class->base_type;
+	while (depth++ <= Variant::MAX_RECURSION_DEPTH) {
+		if (current.kind == FSParser::DataType::CLASS && current.class_type != nullptr) {
+			if (!current.class_type->fqcn.is_empty()) {
+				keys.push_back(current.class_type->fqcn);
+			}
+			current = current.class_type->base_type;
+			continue;
+		}
+		if (current.kind == FSParser::DataType::SCRIPT) {
+			if (!current.script_path.is_empty()) {
+				keys.push_back(current.script_path);
+			}
+			if (current.script_type.is_valid()) {
+				const StringName global_name = current.script_type->get_global_name();
+				if (global_name != StringName()) {
+					keys.push_back(String(global_name));
+				}
+			}
+		}
+		break;
+	}
+	return keys;
+}
+
 // The arguments `p_class` binds `p_identity_trait`'s own type parameters to through its `uses`
 // clauses, flattened the way the registry records a conformance's arguments. Empty when the class
 // applies the trait without ever supplying arguments, which proves nothing.
@@ -294,6 +330,76 @@ bool FSAnalyzer::trait_binding_conflicts_with_native_ancestry(const FSParser::Cl
 	return false;
 }
 
+bool FSAnalyzer::trait_binding_conflicts_with_script_ancestry(const FSParser::ClassNode *p_class,
+		const FSParser::ClassNode *p_identity_trait,
+		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
+		const Vector<FSConformanceRegistry::Conformance> &p_pending, String &r_message) const {
+	// A trait declaration has no receivers of its own, and an engine or builtin stand-in sits on no
+	// script chain: the engine half of the rule answers for those.
+	if (p_class == nullptr || p_class->is_trait || p_class->is_native_conformance_shim ||
+			p_class->is_builtin_conformance_shim || p_identity_trait == nullptr || p_applied.is_empty()) {
+		return false;
+	}
+	const StringName identity = fs_trait_identity_name(p_identity_trait);
+	if (identity == StringName() || p_class->fqcn.is_empty()) {
+		return false;
+	}
+
+	const String source_file = parser->script_path;
+	const String trait_label = _class_or_trait_name(p_identity_trait);
+	const Vector<String> ancestor_keys = _script_ancestor_keys(p_class);
+	// Either declaration may be the one being analyzed, so both directions of the chain relation are
+	// asked: the other target may stand above `p_class` or below it.
+	const auto answers_for_same_receivers = [&](const String &p_other_fqcn,
+											 const Vector<String> &p_other_ancestor_keys) {
+		return !p_other_fqcn.is_empty() && p_other_fqcn != p_class->fqcn &&
+				(ancestor_keys.has(p_other_fqcn) || p_other_ancestor_keys.has(p_class->fqcn));
+	};
+
+	for (const FSConformanceRegistry::Conformance &pending : p_pending) {
+		if (pending.trait_name != identity || pending.target_script_path.is_empty() ||
+				!answers_for_same_receivers(pending.target_fqcn, pending.target_script_ancestor_fqcns)) {
+			continue;
+		}
+		if (FSTypeCompatibility::recorded_arguments_conflict(pending.trait_type_arguments, p_applied)) {
+			r_message = _chain_conflict_message(trait_label, pending.target_label, pending.source_file, source_file);
+			return true;
+		}
+	}
+
+	// A class's own `uses` clause registers nothing, so a descendant declared in this file is read from
+	// the parse tree. Only the descendant direction is read here: a binding an *ancestor* class carries
+	// through its own `uses` is what `trait_binding_conflicts_with_chain()` already rejects, with the
+	// diagnostic that names the two argument lists.
+	Vector<const FSParser::ClassNode *> declared_classes;
+	_collect_declared_classes(parser->head, declared_classes);
+	for (const FSParser::ClassNode *declared : declared_classes) {
+		if (declared == p_class || declared->is_trait || !declared->resolved_trait_uses ||
+				!_script_ancestor_keys(declared).has(p_class->fqcn)) {
+			continue;
+		}
+		const Vector<FSConformanceRegistry::RecordedTypeArgument> used =
+				_recorded_class_trait_arguments(declared, p_identity_trait);
+		if (FSTypeCompatibility::recorded_arguments_conflict(used, p_applied)) {
+			r_message = _chain_conflict_message(trait_label, _class_or_trait_name(declared), source_file, source_file);
+			return true;
+		}
+	}
+
+	for (const FSConformanceRegistry::ScriptConformanceRecord &record :
+			FSConformanceRegistry::get_singleton()->get_script_conformance_records(identity, true, source_file)) {
+		if (!answers_for_same_receivers(record.target_fqcn, record.target_script_ancestor_fqcns)) {
+			continue;
+		}
+		if (FSTypeCompatibility::recorded_arguments_conflict(record.trait_type_arguments, p_applied)) {
+			r_message = _chain_conflict_message(trait_label, record.target_label, record.source_file, source_file);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool FSAnalyzer::native_conformance_conflicts_with_script_chain(const StringName &p_native_class,
 		const FSParser::ClassNode *p_identity_trait,
 		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
@@ -352,15 +458,18 @@ bool FSAnalyzer::native_conformance_conflicts_with_script_chain(const StringName
 	return false;
 }
 
-void FSAnalyzer::check_trait_uses_against_native_ancestry(FSParser::ClassNode *p_class) {
+void FSAnalyzer::check_trait_uses_against_conformance_chain(FSParser::ClassNode *p_class) {
 	if (p_class == nullptr || p_class->is_trait || !p_class->resolved_trait_uses) {
 		return;
 	}
 	for (const FSParser::ClassNode *applied_trait : p_class->resolved_traits) {
 		String message;
-		if (trait_binding_conflicts_with_native_ancestry(p_class, applied_trait,
-					_recorded_class_trait_arguments(p_class, applied_trait),
-					Vector<FSConformanceRegistry::Conformance>(), message)) {
+		const Vector<FSConformanceRegistry::RecordedTypeArgument> applied =
+				_recorded_class_trait_arguments(p_class, applied_trait);
+		if (trait_binding_conflicts_with_native_ancestry(p_class, applied_trait, applied,
+					Vector<FSConformanceRegistry::Conformance>(), message) ||
+				trait_binding_conflicts_with_script_ancestry(p_class, applied_trait, applied,
+						Vector<FSConformanceRegistry::Conformance>(), message)) {
 			push_error(message, p_class);
 			return;
 		}
@@ -1100,7 +1209,9 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 						break;
 					}
 				} else if (trait_binding_conflicts_with_native_ancestry(target, trait_identity_nodes[identity_index],
-								   identity_arguments[identity_index], valid_entries, chain_conflict_message)) {
+								   identity_arguments[identity_index], valid_entries, chain_conflict_message) ||
+						trait_binding_conflicts_with_script_ancestry(target, trait_identity_nodes[identity_index],
+								identity_arguments[identity_index], valid_entries, chain_conflict_message)) {
 					chain_conflict = true;
 					break;
 				}
@@ -1193,6 +1304,9 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			// one without re-loading this file's parse tree.
 			if (!target->is_native_conformance_shim && !target->is_builtin_conformance_shim) {
 				entry.target_native_base = _terminal_native_class(target);
+				// The script half of the same chain: a conformance on a script base answers for this
+				// target's receivers too, and another file cannot see that from the target's name alone.
+				entry.target_script_ancestor_fqcns = _script_ancestor_keys(target);
 			}
 			entry.target_label = _class_or_trait_name(target);
 			entry.source_file = source_file;
