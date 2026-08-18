@@ -183,6 +183,12 @@ public:
 		// caller -- still denotes the calling frame's receiver. Provenance only: it takes no part in
 		// type identity.
 		bool is_receiver_self_contract = false;
+		// True when this type parameter reached a use site through a raw generic receiver -- a generic
+		// class or trait named without type arguments -- which therefore never bound it. The parameter
+		// is erased to a Variant at run time and no argument decides what it holds, so a value typed by
+		// it is exactly as unchecked at a typed boundary as a Variant value is, and the unsafe-boundary
+		// checks route it the same way. Provenance only: it takes no part in type identity.
+		bool is_raw_generic_projection = false;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;

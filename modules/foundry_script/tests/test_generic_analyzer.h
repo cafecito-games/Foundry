@@ -2136,4 +2136,23 @@ func test() -> void:
 	CHECK(generic_has_error_containing(parser, R"(Type argument 1 for generic class "Box" is not a valid type:)"));
 }
 
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Raw generic members mark assignments and returns unsafe") {
+	// Assignment and return have no unsafe-boundary warning of their own for any gradual source, so
+	// the observable effect of the crossing is the unsafe line the analyzer records for it.
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "raw_generic_projection_unsafe_lines.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+
+	const HashSet<int> &unsafe_lines = parser.get_unsafe_lines();
+	CHECK(unsafe_lines.has(12)); // var local: int = box.get_value() with a raw receiver.
+	CHECK_FALSE(unsafe_lines.has(17)); // The same assignment with a Box[int] receiver.
+	CHECK(unsafe_lines.has(22)); // return box.get_value() with a raw receiver.
+	CHECK_FALSE(unsafe_lines.has(26)); // The same return with a Box[int] receiver.
+	CHECK_FALSE(unsafe_lines.has(30)); // return box.size(), which names no type parameter.
+}
+#endif // DEBUG_ENABLED
+
 } // namespace FSTests

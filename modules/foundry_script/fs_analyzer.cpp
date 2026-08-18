@@ -3164,6 +3164,15 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	return finalize_datatype(result);
 }
 
+bool FSAnalyzer::class_encloses_analysis_scope(const FSParser::ClassNode *p_class) const {
+	for (const FSParser::ClassNode *scope = parser->current_class; scope != nullptr; scope = scope->outer) {
+		if (scope == p_class) {
+			return true;
+		}
+	}
+	return false;
+}
+
 FSParser::DataType FSAnalyzer::substitute_member_type(
 		const FSParser::DataType &p_member_type,
 		const FSParser::DataType &p_base,
@@ -3186,6 +3195,23 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 				bindings.insert(parameter->identifier->name, p_base.type_arguments[i]);
 			}
 		}
+	} else if (p_base.class_type != nullptr && p_base.kind != FSParser::DataType::ENUM &&
+			!p_base.class_type->type_parameters.is_empty() && !class_encloses_analysis_scope(p_base.class_type)) {
+		// A raw receiver -- a generic class or trait named without type arguments -- bound none of its
+		// parameters, so every member position that still names one denotes a value nothing decides.
+		// Each parameter is bound to a marked handle of itself: the parameter keeps its identity, the
+		// substitution walk carries the marker to exactly the positions that name it (a concrete
+		// sibling in `Pair[T, String]` stays concrete), and the unsafe-boundary checks read the marker
+		// where the value crosses into a typed slot instead of at the declaration.
+		const Vector<FSParser::TypeParameterNode *> &type_parameters = p_base.class_type->type_parameters;
+		for (int i = 0; i < type_parameters.size(); i++) {
+			const FSParser::TypeParameterNode *parameter = type_parameters[i];
+			if (parameter != nullptr && parameter->identifier != nullptr) {
+				FSParser::DataType projection = _class_type_parameter_handle(parameter, i);
+				projection.is_raw_generic_projection = true;
+				bindings.insert(parameter->identifier->name, projection);
+			}
+		}
 	}
 	if (p_self_type != nullptr && p_self_type->is_set()) {
 		bindings.insert(SNAME("@Self"), *p_self_type);
@@ -3205,6 +3231,26 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 		return p_member_type;
 	}
 	return FSParser::DataType::substitute(p_member_type, bindings);
+}
+
+bool FSAnalyzer::is_raw_generic_projection(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.is_raw_generic_projection;
+}
+
+bool FSAnalyzer::raw_generic_projection_crosses_boundary(const FSParser::DataType &p_destination, const FSParser::DataType &p_source) {
+	if (!is_raw_generic_projection(p_source) && !is_raw_generic_projection(p_destination)) {
+		return false;
+	}
+	if (!p_destination.is_set() || !p_source.is_set()) {
+		return false;
+	}
+	if (p_destination.is_variant()) {
+		// A Variant slot states nothing the erased value fails to satisfy.
+		return false;
+	}
+	// Both sides naming the same unbound parameter is the one flow that stays inside the erased world:
+	// the value is exactly what the slot asks for, whatever the receiver turns out to hold.
+	return !(p_destination.kind == FSParser::DataType::TYPE_PARAMETER && p_destination == p_source);
 }
 
 static FSParser::DataType _substitute_self_type_parameter(
@@ -5174,6 +5220,11 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 								p_assignable->initializer);
 					}
 				}
+			} else if (raw_generic_projection_crosses_boundary(specified_type, initializer_type)) {
+				// The value came out of a receiver that bound nothing, so the declared type is a claim
+				// no store validates. The declaration stays legal -- raw generic values are a gradual
+				// feature -- but the line is unsafe the same way a Variant initializer is.
+				mark_node_unsafe(p_assignable->initializer);
 			} else if ((specified_type.has_container_element_type(0) && !initializer_type.has_container_element_type(0)) || (specified_type.has_container_element_type(1) && !initializer_type.has_container_element_type(1))) {
 				mark_node_unsafe(p_assignable->initializer);
 #ifdef DEBUG_ENABLED
@@ -6271,6 +6322,10 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 							p_return);
 				}
 			}
+		} else if (raw_generic_projection_crosses_boundary(compatibility_expected_type, result)) {
+			// The returned value came out of a receiver that bound nothing, so the declared return type
+			// is a claim the frame never validates. The return stays legal and the line is unsafe.
+			mark_node_unsafe(p_return);
 #ifdef DEBUG_ENABLED
 		} else if (expected_type.builtin_type == Variant::INT && result.builtin_type == Variant::FLOAT) {
 			parser->push_warning(p_return, FSWarning::NARROWING_CONVERSION);
@@ -7208,6 +7263,11 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					// weak non-variant assignee and incompatible result
 					downgrades_assignee = true;
 				}
+			} else if (raw_generic_projection_crosses_boundary(assignee_type, op_type)) {
+				// The result came out of a receiver that bound nothing, so the assignee's declared type
+				// is a claim the store never validates. The assignment stays legal and the line is
+				// unsafe, exactly as it is for a Variant result.
+				mark_node_unsafe(p_assignment);
 			} else if ((assignee_type.has_container_element_type(0) && !op_type.has_container_element_type(0)) || (assignee_type.has_container_element_type(1) && !op_type.has_container_element_type(1))) {
 				// Typed assignee and untyped result.
 				mark_node_unsafe(p_assignment);
