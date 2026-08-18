@@ -1153,6 +1153,21 @@ static bool call_argument_is_same_receiver(
 		return false;
 	}
 	const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_call->callee);
+	if (!subscript->is_attribute) {
+		// `receiver.method[T](...)`: the explicit type-argument list wraps the member access, so the
+		// receiver is one level further in. `name[T](...)` has an identifier base instead and dispatches
+		// on the calling frame's own receiver, exactly like the unqualified form above.
+		if (subscript->base == nullptr) {
+			return false;
+		}
+		if (subscript->base->type == FSParser::Node::IDENTIFIER) {
+			return p_argument->type == FSParser::Node::SELF;
+		}
+		if (subscript->base->type != FSParser::Node::SUBSCRIPT) {
+			return false;
+		}
+		subscript = static_cast<const FSParser::SubscriptNode *>(subscript->base);
+	}
 	if (!subscript->is_attribute || subscript->base == nullptr) {
 		return false;
 	}
@@ -1161,9 +1176,17 @@ static bool call_argument_is_same_receiver(
 
 // An unqualified call, a `self`-qualified call, and a `super` call all run against the calling frame's
 // own receiver, so the callee's `Self` and the caller's `Self` denote the same value there.
+//
+// `reduce_call()` already resolves which receiver a call dispatches on and records the answer, which
+// is the only form that recognizes the explicit-type-argument spellings `name[T](...)` and
+// `self.name[T](...)`: their callee is a non-attribute subscript that names no receiver by itself.
+// The syntactic reading below stays as the answer for a call that never went through that resolution.
 static bool call_receiver_is_current_self(const FSParser::CallNode *p_call) {
 	if (p_call == nullptr) {
 		return false;
+	}
+	if (p_call->receiver_is_current_self) {
+		return true;
 	}
 	if (p_call->is_super || p_call->get_callee_type() == FSParser::Node::IDENTIFIER) {
 		return true;
@@ -7941,6 +7964,11 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		mark_node_unsafe(p_call);
 		return;
 	}
+
+	// Every callee shape has now named its receiver, so record whether it is the calling frame's own.
+	// Argument validation reads this instead of re-deriving the receiver from callee syntax, which
+	// cannot see through the explicit-type-argument forms `name[T](...)` and `self.name[T](...)`.
+	p_call->receiver_is_current_self = is_self;
 
 	// A named tuple declaration is callable as its own constructor, e.g. `Vec2(1.0, 2.0)`.
 	{

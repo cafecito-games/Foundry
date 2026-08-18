@@ -637,6 +637,19 @@ FSParser::ArrayNode *FSAnalyzer::CallSiteValidationContext::array_literal_argume
 	return static_cast<FSParser::ArrayNode *>(argument);
 }
 
+// A `Self` parameter is a *receiver contract* only for the direct call the signature was looked up
+// for, where the call site names the receiver expression and identity can be decided. A signature
+// captured into a `Callable` -- or reached reflectively through `call()`/`rpc()` -- is checked later
+// against whatever target the callable holds, which no argument at that site can be compared with. The
+// member-reference producer (`value.method`) builds the same signature without the provenance, so
+// clearing it here keeps two producers of one static callable type interchangeable.
+static void clear_receiver_self_contract(FSParser::DataType &r_type) {
+	r_type.is_receiver_self_contract = false;
+	for (int i = 0; i < r_type.container_element_types.size(); i++) {
+		clear_receiver_self_contract(r_type.container_element_types.write[i]);
+	}
+}
+
 bool FSAnalyzer::CallSiteValidationContext::callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type) {
 	FSParser::DataType return_type;
 	List<FSParser::DataType> parameter_types;
@@ -649,6 +662,7 @@ bool FSAnalyzer::CallSiteValidationContext::callable_type_from_method(const FSPa
 	Vector<FSParser::DataType> parameter_type_vector;
 	for (const FSParser::DataType &parameter_type : parameter_types) {
 		parameter_type_vector.push_back(parameter_type);
+		clear_receiver_self_contract(parameter_type_vector.write[parameter_type_vector.size() - 1]);
 	}
 	r_callable_type = explicit_callable_type_from_signature(return_type, parameter_type_vector, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), method_flags.has_flag(METHOD_FLAG_ASYNC));
 	return true;
