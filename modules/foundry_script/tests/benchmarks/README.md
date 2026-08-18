@@ -60,6 +60,14 @@ The command exits `0` only when every discovered variant compiled and ran and ev
 requested artifact was written; discovery failures, an empty corpus, a failing variant,
 and an unwritable output file all exit `1`.
 
+## Concurrent runs
+
+A benchmark run redirects `user://` to a per-process root under the shared test scratch
+space and recreates it clean at startup, so two runs started at the same time — or a run
+started next to the test suite — cannot erase each other's `user://` tree. The root is
+removed when the run finishes, unless a requested artifact was written inside it (an
+`--output user://...` path), in which case the artifact stays where it was asked to go.
+
 ## Output format
 
 Results are a flat JSON object keyed by `foundry_script:<case>/<variant>`, valued in

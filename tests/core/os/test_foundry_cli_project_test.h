@@ -1414,7 +1414,8 @@ TEST_CASE("[FoundryCLI][TestBenchmark] A missing corpus directory fails the run"
 
 // A benchmark run recreates its user-data root clean on startup, so it must not share a
 // leaf with `test run`; otherwise measuring a corpus would erase a concurrent suite's
-// `user://` tree.
+// `user://` tree. Its own root is per-process and is removed once the run is done, so the
+// suite's leaf is what is left standing here.
 TEST_CASE("[FoundryCLI][TestBenchmark] A benchmark run does not disturb a concurrent suite user directory") {
 	const String scratch = benchmark_scratch_root("user-leaf");
 	const String suite_leaf = scratch.path_join("user-unsharded");
@@ -1438,7 +1439,6 @@ TEST_CASE("[FoundryCLI][TestBenchmark] A benchmark run does not disturb a concur
 	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
 	INFO("Subprocess output:\n", output);
 	CHECK_EQ(exit_code, 0);
-	CHECK(DirAccess::exists(scratch.path_join("user-benchmark")));
 	CHECK(FileAccess::exists(suite_sentinel));
 	if (FileAccess::exists(suite_sentinel)) {
 		CHECK_EQ(FileAccess::get_file_as_string(suite_sentinel), "suite-owned");
