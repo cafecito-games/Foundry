@@ -7902,13 +7902,19 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				FSParser::SubscriptNode *receiver_access = static_cast<FSParser::SubscriptNode *>(subscript->base);
 				if (receiver_access->is_attribute && receiver_access->attribute != nullptr && receiver_access->base != nullptr) {
 					reduce_expression(receiver_access->base);
+					const FSParser::DataType receiver_type = receiver_access->base->get_datatype();
 					// A receiver typed as a type parameter -- `self`, typed as `Self`, above all -- declares
 					// its methods on the bound, so the lookup follows the bound chain exactly as ordinary
-					// member resolution does.
-					FSParser::DataType receiver_type = _resolve_type_parameter_bound_chain(receiver_access->base->get_datatype());
+					// member resolution does. Only the *lookup* does: the receiver the signature is
+					// specialized against stays the receiver's own type, because that is what decides the
+					// `Self` positions of the signature. `get_function_signature()` derives the self type
+					// from it and then follows the same bound chain itself, so handing it the already
+					// resolved bound would resolve `Self` to the bound and make the bracket spelling
+					// disagree with the bracket-free one on the very same call.
+					const FSParser::DataType lookup_type = _resolve_type_parameter_bound_chain(receiver_type);
 					const StringName &method_name = receiver_access->attribute->name;
 					bool receiver_found_member = false;
-					generic_method = find_generic_method(receiver_type.class_type, method_name, receiver_found_member);
+					generic_method = find_generic_method(lookup_type.class_type, method_name, receiver_found_member);
 					if (generic_method != nullptr) {
 						base_type = receiver_type;
 						is_self = receiver_access->base->type == FSParser::Node::SELF;

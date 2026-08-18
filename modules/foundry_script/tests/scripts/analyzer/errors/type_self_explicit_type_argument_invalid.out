@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 11: Type argument "int" does not satisfy the bound "Resource" of type parameter "T" of generic method "pick()".
