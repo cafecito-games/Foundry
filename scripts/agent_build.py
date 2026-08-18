@@ -1489,9 +1489,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     if args.test_case or args.test_suite:
         args.test = True
     if args.test and not _is_scons_true(effective_companion_setting(args, "tests")):
+        # A template target also defaults the Foundry Script front-end off, and SCons refuses
+        # tests=yes without it, so naming only tests=yes here would send the caller into a
+        # configuration error.
+        enable_tests = (
+            "add --scons-arg tests=yes"
+            if args.target == "editor"
+            else "add --scons-arg tests=yes --scons-arg foundry_script_frontend=yes"
+        )
         parser.error(
             f"--target {args.target} builds tests=no, so there is no test runner to run; "
-            "use --target editor or add --scons-arg tests=yes"
+            f"use --target editor or {enable_tests}"
         )
     try:
         job_selection = resolve_job_selection(args.jobs, os.environ, os.cpu_count())

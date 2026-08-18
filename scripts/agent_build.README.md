@@ -47,8 +47,9 @@ Rules where `--target` meets the raw escape hatch:
   setting is exactly the silent-mismatch risk this flag exists to remove.
 - `--dev-build` applies to `--target editor` only.
 - `--test` requires a build that has tests. `--target template_release --test` is rejected rather
-  than running a binary with no test runner in it; add `--scons-arg tests=yes` if that is what you
-  want.
+  than running a binary with no test runner in it. A template that should carry the test runner
+  needs `--scons-arg tests=yes --scons-arg foundry_script_frontend=yes`, because a template target
+  also defaults the Foundry Script front-end off and SCons refuses `tests=yes` without it.
 
 ## Build concurrency
 
