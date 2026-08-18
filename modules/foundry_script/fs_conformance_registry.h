@@ -324,6 +324,19 @@ public:
 	bool get_builtin_conformance_type_arguments(Variant::Type p_type, const StringName &p_trait_name,
 			Vector<ContainerType> &r_arguments) const;
 
+	// One declaration-side conformance of an engine class to a trait, as a coherence diagnostic needs
+	// to see it: which class was extended, which file said so, and what arguments it recorded.
+	struct NativeConformanceRecord {
+		StringName native_class;
+		String source_file;
+		Vector<RecordedTypeArgument> trait_type_arguments;
+	};
+
+	// Every ClassDB-registered engine class with a declared conformance to `p_trait_name`. Deliberately
+	// unfiltered by `Visibility`, like the other cross-file collision diagnostics: a contradiction
+	// between two declarations is a property of the program, not of what one file happens to load.
+	Vector<NativeConformanceRecord> get_native_conformance_records(const StringName &p_trait_name) const;
+
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.
 	// Useful for diagnosing cross-file duplicate conformances.
 	String get_conformance_source(const String &p_target_key, const StringName &p_trait_name) const;

@@ -33,9 +33,11 @@
 #include "foundry_script.h"
 #include "fs_conformance_registry.h"
 #include "fs_trait_utils.h"
+#include "fs_type.h"
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/object/class_db.h"
 #include "core/object/script_language.h"
 
 static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
@@ -95,6 +97,70 @@ static Vector<FSConformanceRegistry::RecordedTypeArgument> _recorded_conformance
 		arguments.write[i] = FSConformanceRegistry::reduce_type_argument(resolved[i]);
 	}
 	return arguments;
+}
+
+// Whether two engine classes are on one ClassDB inheritance chain, excluding the class itself. A
+// conformance declared on either one answers for receivers of the other, which is what makes two
+// declarations along the chain describe the same trait for overlapping values.
+static bool _native_classes_are_on_one_chain(const StringName &p_class, const StringName &p_other) {
+	return p_class != p_other &&
+			(ClassDB::is_parent_class(p_class, p_other) || ClassDB::is_parent_class(p_other, p_class));
+}
+
+// Finds a conformance on `p_native_class`'s ClassDB chain that binds `p_identity` to different type
+// arguments than `p_applied`.
+//
+// `native_class_conforms()` resolves membership by walking the chain, nearest conformance first, so
+// two declarations along one chain bind the same trait for overlapping receivers. Widening a value to
+// the ancestor's type then silently switches which arguments apply: a call typed against the
+// ancestor's arguments dispatches the descendant's witness, which is the same incoherence
+// `trait_binding_conflicts_with_chain()` rejects for a script-class chain.
+//
+// `p_pending` carries the conformances the file currently being analyzed has validated so far. Its
+// own previously-registered entries were cleared before this pass, so the registry only contributes
+// other files and the two sources never double-report.
+//
+// Precision is bounded by what the registry can record: whatever `RecordedTypeArgument` cannot
+// identify with certainty is an absence of evidence and never a wildcard. That bound is shared with
+// the store check in `FSTypeCompatibility`, which reads the same recorded form through the same
+// comparator, so widening what the form can carry lifts both at once rather than letting the
+// declaration side and the use side diverge.
+static bool _native_chain_binding_conflicts(const StringName &p_native_class, const StringName &p_identity,
+		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
+		const Vector<FSConformanceRegistry::Conformance> &p_pending,
+		StringName &r_conflicting_class, String &r_conflicting_source) {
+	if (p_native_class == StringName() || p_identity == StringName() || p_applied.is_empty()) {
+		return false;
+	}
+
+	for (const FSConformanceRegistry::Conformance &pending : p_pending) {
+		if (pending.trait_name != p_identity || !pending.target_script_path.is_empty()) {
+			continue;
+		}
+		const StringName pending_class = StringName(pending.target_fqcn);
+		if (!ClassDB::class_exists(pending_class) || !_native_classes_are_on_one_chain(p_native_class, pending_class)) {
+			continue;
+		}
+		if (FSTypeCompatibility::recorded_arguments_conflict(pending.trait_type_arguments, p_applied)) {
+			r_conflicting_class = pending_class;
+			r_conflicting_source = pending.source_file;
+			return true;
+		}
+	}
+
+	for (const FSConformanceRegistry::NativeConformanceRecord &record :
+			FSConformanceRegistry::get_singleton()->get_native_conformance_records(p_identity)) {
+		if (!_native_classes_are_on_one_chain(p_native_class, record.native_class)) {
+			continue;
+		}
+		if (FSTypeCompatibility::recorded_arguments_conflict(record.trait_type_arguments, p_applied)) {
+			r_conflicting_class = record.native_class;
+			r_conflicting_source = record.source_file;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 static String _localize_script_path(const String &p_path) {
@@ -784,6 +850,42 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				}
 			}
 
+			// What this declaration proves for each identity in the trait's closure, flattened the way
+			// the registry stores it. Computed once: the chain-coherence check below and the registry
+			// entries built at the end of this loop must record the same thing.
+			const HashMap<StringName, FSParser::DataType> substitution = fs_trait_use_type_argument_bindings(trait, trait_use);
+			Vector<Vector<FSConformanceRegistry::RecordedTypeArgument>> identity_arguments;
+			for (const FSParser::ClassNode *identity_node : trait_identity_nodes) {
+				identity_arguments.push_back(_recorded_conformance_trait_arguments(trait,
+						trait_use.resolved_type_arguments, substitution, identity_node));
+			}
+
+			// The ClassDB counterpart of the chain rule above: an engine-class target inherits nothing
+			// through `uses` clauses, so its chain's bindings live in the conformance registry instead.
+			if (target->is_native_conformance_shim) {
+				bool chain_conflict = false;
+				for (int identity_index = 0; identity_index < trait_identities.size(); identity_index++) {
+					StringName conflicting_class;
+					String conflicting_source;
+					if (!_native_chain_binding_conflicts(StringName(target->fqcn), trait_identities[identity_index],
+								identity_arguments[identity_index], valid_entries, conflicting_class, conflicting_source)) {
+						continue;
+					}
+					const String conflicting_location = conflicting_source == source_file
+							? String("this file")
+							: vformat(R"("%s")", _localize_script_path(conflicting_source));
+					push_error(vformat(R"(Trait "%s" is already applied with different type arguments by the conformance for "%s" in %s; conformances on one inheritance chain must apply it with the same type arguments.)",
+									   _class_or_trait_name(trait_identity_nodes[identity_index]),
+									   String(conflicting_class), conflicting_location),
+							conformance);
+					chain_conflict = true;
+					break;
+				}
+				if (chain_conflict) {
+					continue;
+				}
+			}
+
 			// Coherence applies to the whole implied identity closure. A repeated implied identity within
 			// this declaration is the ordinary diamond case; a repeated direct identity or an overlap with
 			// another declaration remains an error.
@@ -850,7 +952,6 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				continue;
 			}
 
-			const HashMap<StringName, FSParser::DataType> substitution = fs_trait_use_type_argument_bindings(trait, trait_use);
 			if (!validate_conformance(conformance, target, trait, substitution)) {
 				continue;
 			}
@@ -875,8 +976,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					continue;
 				}
 				entry.trait_name = identity;
-				entry.trait_type_arguments = _recorded_conformance_trait_arguments(trait,
-						trait_use.resolved_type_arguments, substitution, trait_identity_nodes[identity_index]);
+				entry.trait_type_arguments = identity_arguments[identity_index];
 				valid_entries.push_back(entry);
 				seen_membership_conformances.insert(pair_key, conformance_index);
 			}
