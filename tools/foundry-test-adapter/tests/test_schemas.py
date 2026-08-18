@@ -17,7 +17,7 @@ CAPABILITIES = {
 
 RANGE = {"start": {"line": 0, "character": 0}, "end": {"line": 20, "character": 0}}
 
-RECORDS = {
+RECORDS: dict[str, dict[str, object]] = {
     "discovery_start": {"event": "discovery_start", "root": "res://tests"},
     "suite": {
         "event": "suite",
