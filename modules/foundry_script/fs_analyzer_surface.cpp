@@ -847,6 +847,23 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		base_class = base_class->base_type.class_type;
 	}
 
+	// An inheritance edge into a generic class must spell every type argument. The edge defines the
+	// inherited member types of the whole subclass, so leaving the base parameters unbound would
+	// silently erase every inherited member that depends on them. A raw generic *value* stays legal;
+	// only the declaration-site edge is constrained.
+	if (p_class->extends_used && p_class->extends_type_arguments.is_empty() &&
+			result.kind == FSParser::DataType::CLASS && result.class_type != nullptr &&
+			!result.class_type->type_parameters.is_empty()) {
+		const GenericDeclaration declaration = class_generic_declaration(result);
+		const FSParser::Node *source = p_class->extends.is_empty()
+				? static_cast<const FSParser::Node *>(p_class)
+				: p_class->extends[p_class->extends.size() - 1];
+		push_error(vformat(R"(%s "%s" expects %d type argument(s), but 0 were given.)",
+						   declaration.generic_kind, declaration.name, declaration.parameters.size()),
+				source);
+		return ERR_PARSE_ERROR;
+	}
+
 	p_class->base_type = result;
 	class_type.native_type = result.native_type;
 	p_class->set_datatype(class_type);
@@ -2317,8 +2334,8 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 	// ones makes a statically valid call through the base type land in a body typed for the other
 	// arguments.
 	auto check_inherited_trait_binding = [&](FSParser::ClassNode *p_seen_trait,
-											  const HashMap<StringName, FSParser::DataType> &p_binding,
-											  const FSParser::Node *p_binding_source) -> bool {
+												 const HashMap<StringName, FSParser::DataType> &p_binding,
+												 const FSParser::Node *p_binding_source) -> bool {
 		if (p_binding.is_empty() || p_seen_trait == nullptr) {
 			return true;
 		}

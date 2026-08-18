@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Generic class "Box" expects 1 type argument(s), but 0 were given.

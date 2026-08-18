@@ -101,12 +101,6 @@ static const char *projected_evidence_source =
 		"\tpass\n"
 		"\n"
 		"class VariantLeaf extends Mid[Variant]:\n"
-		"\tpass\n"
-		"\n"
-		"class RawLeaf extends Mid:\n"
-		"\tpass\n"
-		"\n"
-		"class RawLeafHeir[W] extends RawLeaf:\n"
 		"\tpass\n";
 
 // The same shape with a nullable dependent argument. `ContainerType` cannot express "this type or
@@ -223,32 +217,6 @@ TEST_CASE("[Modules][FoundryScript][Generics] An explicit Variant argument stays
 	ContainerType string_argument;
 	string_argument.builtin_type = Variant::STRING;
 	CHECK(variant_argument.conflicts_with_expected(string_argument));
-}
-
-TEST_CASE("[Modules][FoundryScript][Generics] A raw extends step cannot collide with a later ordinal") {
-	ScopedProjectedEvidenceLanguage language;
-	const Ref<FoundryScript> script = compile_projected_evidence_source(projected_evidence_source);
-	const Ref<FoundryScript> base = projected_evidence_subclass(script, "Base");
-	const Ref<FoundryScript> raw_leaf = projected_evidence_subclass(script, "RawLeaf");
-	const Ref<FoundryScript> raw_leaf_heir = projected_evidence_subclass(script, "RawLeafHeir");
-	REQUIRE(base.is_valid());
-	REQUIRE(raw_leaf.is_valid());
-	REQUIRE(raw_leaf_heir.is_valid());
-
-	// `class RawLeaf extends Mid` supplies nothing for `U`, so `U` is permanently unresolved.
-	const ProjectedContainerType raw = project_onto_base(raw_leaf, base, Vector<ContainerType>());
-	REQUIRE_EQ(raw.type_arguments.size(), 2);
-	CHECK_EQ(raw.type_arguments[0].to_container_type().builtin_type, Variant::INT);
-	CHECK_FALSE(raw.type_arguments[1].is_known());
-
-	// `class RawLeafHeir[W] extends RawLeaf` declares its own parameter at the very ordinal `U` used to
-	// occupy. Reifying `W` must not resurrect evidence for the unrelated `U`.
-	ContainerType reified_string;
-	reified_string.builtin_type = Variant::STRING;
-	const ProjectedContainerType heir = project_onto_base(raw_leaf_heir, base, { reified_string });
-	REQUIRE_EQ(heir.type_arguments.size(), 2);
-	CHECK_EQ(heir.type_arguments[0].to_container_type().builtin_type, Variant::INT);
-	CHECK_FALSE(heir.type_arguments[1].is_known());
 }
 
 TEST_CASE("[Modules][FoundryScript][Generics] A nullable binding leaves only its own slot gradual") {

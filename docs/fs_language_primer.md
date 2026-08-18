@@ -430,6 +430,10 @@ func measured() -> void:
 - Generic class use sites provide type arguments: `Box[Actor].new()`.
 - Generic method calls infer type arguments when possible: `identity(10)`. Use explicit arguments when inference is
   ambiguous: `identity[int](10)`.
+- Inheriting a generic class must spell every type argument: `class Crate extends Box[Actor]` or
+  `class Crate[T: Damageable] extends Box[T]`, never a bare `class Crate extends Box`. The `extends` edge defines the
+  inherited member types of the whole subclass, so an unbound base parameter would erase every inherited member that
+  depends on it. Raw generic annotations and values such as `var b: Box` remain legal.
 - Generic class instances are reified at runtime. Generic methods are checked statically and erased at runtime.
 - A specialized declaration such as `var slot: Box[int] = value` always checks the value's class or trait identity, but
   checks its type arguments only when the value carries them: an argument-erased `Box.new()` is stored, while a
