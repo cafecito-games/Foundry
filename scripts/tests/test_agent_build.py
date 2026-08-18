@@ -1547,13 +1547,27 @@ def fake_scons(directory: Path, *, exit_code: int, lines: list[str]) -> Path:
     return script
 
 
-def linking_fake_scons(directory: Path, binary_path: Path, content: bytes, *, settle_seconds: float = 0.0) -> Path:
-    """A stand-in SCons that writes the editor binary, the way a real build's final link does."""
-    script = directory / f"linking_fake_scons_{abs(hash((str(binary_path), content, settle_seconds))) % 10**8}.py"
+def linking_fake_scons(
+    directory: Path,
+    binary_path: Path,
+    content: bytes,
+    *,
+    settle_seconds: float = 0.0,
+    sidecar_suffixes: tuple[str, ...] = (),
+) -> Path:
+    """A stand-in SCons that writes the editor binary, the way a real build's final link does.
+
+    `sidecar_suffixes` adds the files a build writes beside the executable, such as the separate
+    debug symbols a Linux build with `separate_debug_symbols=yes` produces.
+    """
+    key = (str(binary_path), content, settle_seconds, sidecar_suffixes)
+    script = directory / f"linking_fake_scons_{abs(hash(key)) % 10**8}.py"
     script.write_text(
         "import pathlib\n"
         "import time\n"
         f"pathlib.Path({str(binary_path)!r}).write_bytes({content!r})\n"
+        f"for suffix in {sidecar_suffixes!r}:\n"
+        f"    pathlib.Path({str(binary_path)!r} + suffix).write_bytes(b'debug symbols')\n"
         f"time.sleep({settle_seconds!r})\n"
         "print('scons: done building targets.')\n",
         encoding="utf-8",
@@ -2444,6 +2458,26 @@ class MixedBuildDirectoryTests(WrapperHarness):
         self.assertEqual(run_end["binary_resolution"], "relinked")
         self.assertIn(f"[agent-build] built binary: {fresh}", stdout)
         self.assertEqual(stale_after, stale_identity)
+
+    def test_debug_symbols_written_beside_a_renamed_binary_do_not_create_ambiguity(self) -> None:
+        with scratch_directory() as root:
+            build_directory = self.build_directory(root)
+            fresh = build_directory / "foundry.macos.editor.dev.arm64.llvm"
+            scons = linking_fake_scons(
+                root, fresh, b"freshly linked editor binary", sidecar_suffixes=(".debugsymbols",)
+            )
+            exit_code, log_path, progress_path, _ = self.run_wrapper(
+                root,
+                scons,
+                binary_path=build_directory / "foundry.macos.editor.dev.arm64",
+                extra_argv=["--invocation-id", "with-debug-symbols"],
+            )
+            line = self.result_line(log_path)
+            run_end = run_end_for(progress_events(progress_path), "with-debug-symbols")
+        assert run_end is not None
+        self.assertEqual(exit_code, 0)
+        self.assertIn(f"binary={fresh} binary_present=yes", line)
+        self.assertEqual(run_end["binary_path"], str(fresh))
 
     def test_a_directory_of_untouched_binaries_fails_instead_of_guessing(self) -> None:
         with scratch_directory() as root:

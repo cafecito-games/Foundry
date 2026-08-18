@@ -77,6 +77,9 @@ INTERRUPTED_EXIT_CODE = 130
 # table. Missing one here makes the wrapper predict the wrong binary name for a build that disabled
 # the setting, and then resolve a stale binary from an earlier configuration.
 SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "none", "off"})
+# What a build writes beside the executable and never as the executable: separate debug symbols.
+# `.dSYM` is a directory on macOS and would be filtered anyway; naming both keeps the rule explicit.
+DEBUG_SYMBOL_SUFFIXES = (".debugsymbols", ".dSYM")
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
 DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
 DEFAULT_PROC_CGROUP = Path("/proc/self/cgroup")
@@ -1031,13 +1034,17 @@ class BinaryResolution(NamedTuple):
 
 
 def editor_binary_candidates(target: BuildTarget) -> list[Path]:
-    """Every file in the build directory that this platform and target could have produced."""
+    """Every runnable file in the build directory that this platform and target could have produced.
+
+    A build with separate debug symbols writes a sidecar next to the executable that shares its whole
+    name, so counting it as a candidate would make a renamed build look like two competing binaries.
+    """
     candidates = {target.binary_path} if target.binary_path.is_file() else set()
     try:
         candidates.update(
             path
             for path in target.binary_path.parent.glob(f"foundry.{target.scons_platform}.{target.scons_target}*")
-            if path.is_file()
+            if path.is_file() and not path.name.endswith(DEBUG_SYMBOL_SUFFIXES)
         )
     except OSError:
         pass
