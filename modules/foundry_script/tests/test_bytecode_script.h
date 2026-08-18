@@ -3841,7 +3841,9 @@ TEST_CASE("[FoundryScript][BytecodeScript] A tuple parameter's shape survives a 
 	CHECK(write_valid);
 	CHECK(Array(instance->get(SNAME("field"))) == accepted);
 	write_valid = false;
+	ERR_PRINT_OFF;
 	instance->set(SNAME("field"), rejected, &write_valid);
+	ERR_PRINT_ON;
 	CHECK_FALSE(write_valid);
 	CHECK(Array(instance->get(SNAME("field"))) == accepted);
 

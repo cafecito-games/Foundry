@@ -589,7 +589,7 @@ bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Varia
 				_resolve_tuple_shape_type_parameters(p_member.tuple_slot_shape, p_leaf_type_arguments);
 		if (!resolved_shape.is_type(r_value)) {
 #ifdef DEBUG_ENABLED
-			// The neighbouring member legs all report, so a dropped tuple write says why in the same
+			// The neighboring member legs all report, so a dropped tuple write says why in the same
 			// sentence the in-body store prints for the same value.
 			ERR_PRINT(fs_tuple_store_rejection_message(resolved_shape, r_value));
 #endif // DEBUG_ENABLED
