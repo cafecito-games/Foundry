@@ -5075,7 +5075,7 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 				if (!type_handle_error.is_empty()) {
 					push_error(type_handle_error, p_assignable->initializer);
 				} else if (!nullable_mismatch && !is_constant && !receiver_validation_is_unavailable(specified_type) &&
-						FSTypeCompatibility::allows_runtime_narrowing(specified_type, initializer_type)) {
+						allows_runtime_narrowing(specified_type, initializer_type)) {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
@@ -6179,7 +6179,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 					!compatibility_expected_type.is_nullable && !compatibility_expected_type.is_variant();
 			mark_node_unsafe(p_return);
 			if (nullable_mismatch || receiver_validation_is_unavailable(compatibility_expected_type) ||
-					!FSTypeCompatibility::allows_runtime_narrowing(compatibility_expected_type, result)) {
+					!allows_runtime_narrowing(compatibility_expected_type, result)) {
 				if (nullable_mismatch) {
 					push_error(vformat(R"(Cannot return nullable value of type "%s"; expected non-nullable "%s".)",
 									   result.to_string(),
@@ -6623,7 +6623,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 				return;
 			}
 			if (!receiver_validation_is_unavailable(expected_type) &&
-					FSTypeCompatibility::allows_runtime_narrowing(expected_type, actual_type)) {
+					allows_runtime_narrowing(expected_type, actual_type)) {
 				mark_node_unsafe(element_node);
 				continue;
 			}
@@ -6703,7 +6703,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 			if (!receiver_validation_is_unavailable(expected_key_type) &&
-					FSTypeCompatibility::allows_runtime_narrowing(expected_key_type, actual_key_type)) {
+					allows_runtime_narrowing(expected_key_type, actual_key_type)) {
 				mark_node_unsafe(key_element_node);
 			} else {
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
@@ -6763,7 +6763,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 			if (!receiver_validation_is_unavailable(expected_value_type) &&
-					FSTypeCompatibility::allows_runtime_narrowing(expected_value_type, actual_value_type)) {
+					allows_runtime_narrowing(expected_value_type, actual_value_type)) {
 				mark_node_unsafe(value_element_node);
 			} else {
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
@@ -7100,7 +7100,7 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					if (!type_handle_error.is_empty()) {
 						push_error(type_handle_error, p_assignment->assigned_value);
 					} else if (!nullable_mismatch && !receiver_validation_is_unavailable(assignee_type) &&
-							FSTypeCompatibility::allows_runtime_narrowing(assignee_type, op_type)) {
+							allows_runtime_narrowing(assignee_type, op_type)) {
 						// hard non-variant assignee and maybe compatible result
 						p_assignment->use_conversion_assign = true;
 					} else {
@@ -14658,7 +14658,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				}
 
 				return !is_type_compatible(p_expected_type, argument_type, true) &&
-						!FSTypeCompatibility::allows_runtime_narrowing(p_expected_type, argument_type);
+						!allows_runtime_narrowing(p_expected_type, argument_type);
 			};
 			auto bound_argument_conflicts_with_rest_tail = [&](const FSParser::ExpressionNode *p_argument) -> bool {
 				if (!p_base_type.has_method_rest_parameter_type()) {
@@ -16834,6 +16834,32 @@ static String _make_set_operation_error(const FSParser::DataType &p_a, const FSP
 			Variant::get_operator_name(p_operation), p_pair_error);
 }
 
+// A type parameter as the source of an assignment is a downcast shape: the value is erased, so the
+// destination is settled by a runtime type test rather than statically. That licence reaches exactly
+// as far as the parameter's bound does. An erased `T: Node` can still turn out to be a `Node2D`, but
+// no value of it is ever an `int`. `Self` puts that question in front of ordinary code -- `self` is
+// typed `Self` in every body of a class -- so a destination that the bound can neither satisfy nor be
+// narrowed to is refused here instead of compiling and failing the callee's own check at runtime.
+bool FSAnalyzer::type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion) {
+	if (p_source.kind != FSParser::DataType::TYPE_PARAMETER || p_target.kind == FSParser::DataType::TYPE_PARAMETER ||
+			!p_target.is_set() || p_target.is_variant()) {
+		return true;
+	}
+	const FSParser::DataType bound = _resolve_type_parameter_bound_chain(p_source);
+	if (bound.kind == FSParser::DataType::TYPE_PARAMETER || !bound.is_set() || bound.is_variant()) {
+		return true;
+	}
+	return is_type_compatible(p_target, bound, p_allow_implicit_conversion) ||
+			is_type_compatible(bound, p_target, p_allow_implicit_conversion);
+}
+
+// The promise a runtime-checked narrowing rests on -- that the check can still be performed and can
+// still succeed -- also requires the source to be able to reach the destination at all.
+bool FSAnalyzer::allows_runtime_narrowing(const FSParser::DataType &p_target, const FSParser::DataType &p_source) {
+	return FSTypeCompatibility::allows_runtime_narrowing(p_target, p_source) &&
+			type_parameter_source_reaches_target(p_target, p_source, true);
+}
+
 bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node, const FSParser::ExpressionNode *p_constant_source) {
 #ifdef DEBUG_ENABLED
 	if (p_source_node) {
@@ -16881,6 +16907,10 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 			return true;
 		}
 	}
+	if (!type_parameter_source_reaches_target(p_target, p_source, p_allow_implicit_conversion)) {
+		return false;
+	}
+
 	FSTypeCompatibility::Options options;
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	options.strict_dynamic = strict_dynamic_checks;
