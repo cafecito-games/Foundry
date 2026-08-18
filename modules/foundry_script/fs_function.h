@@ -186,6 +186,32 @@ public:
 	// pays nothing for it.
 	bool _script_specialization_matches(Object *p_object, const Variant &p_value, bool p_narrowing) const;
 
+	// The two halves of the tuple acceptance rule, exposed so the runtime's rejected-store diagnostic
+	// asks the same question `is_type()`'s `TUPLE` branch asks instead of re-deriving it. A diagnostic
+	// that walks its own copy of the rule can name a culprit the real test does not have, and this
+	// subsystem has already paid for that class of duplication several times.
+	//
+	// Carrier and arity: named identity is erased at runtime, so the test is structural -- an Array of
+	// the right arity. Any shape-compatible Array therefore satisfies a named tuple test, the same class
+	// of erasure that int-backed enum tests already have.
+	bool tuple_carrier_matches(const Variant &p_value) const {
+		if (kind != TUPLE || p_value.get_type() != Variant::ARRAY) {
+			return false;
+		}
+		return Array(p_value).size() == container_element_types.size();
+	}
+
+	// One element against its declared element type, this type being that element type.
+	bool accepts_as_tuple_element(const Variant &p_element, bool p_narrowing = false) const {
+		// Object kinds accept null for assignment compatibility, which an `is` test must not:
+		// `null is Node` is false, so a null element only satisfies a nullable slot.
+		if (p_element.get_type() == Variant::NIL && !is_nullable &&
+				(kind == NATIVE || kind == SCRIPT || kind == FOUNDRY_SCRIPT)) {
+			return false;
+		}
+		return is_type(p_element, false, p_narrowing);
+	}
+
 	// `p_narrowing` is threaded down from the `is` operator through the `TUPLE` element recursion; every
 	// store leaves it at the default. It selects the specialization rule only: a declared integer width
 	// is fully observable on the value, so the `BUILTIN` branch enforces it in both modes.
@@ -309,27 +335,15 @@ public:
 				return _script_specialization_matches(obj, p_variant, p_narrowing);
 			} break;
 			case TUPLE: {
-				// Named identity is erased at runtime, so the test is structural: an Array of the
-				// right arity whose elements pass their own type tests. Any shape-compatible Array
-				// therefore satisfies a named tuple test, the same class of erasure that int-backed
-				// enum tests already have.
-				if (p_variant.get_type() != Variant::ARRAY) {
+				// The structural carrier test plus each element's own type test, both asked through
+				// the shared helpers above so the runtime's rejected-store diagnostic can ask exactly
+				// the same questions when it hunts for the element that failed.
+				if (!tuple_carrier_matches(p_variant)) {
 					return false;
 				}
 				const Array array = p_variant;
-				if (array.size() != container_element_types.size()) {
-					return false;
-				}
 				for (int i = 0; i < container_element_types.size(); i++) {
-					const FSDataType &element_type = container_element_types[i];
-					const Variant element = array[i];
-					// Object kinds accept null for assignment compatibility, which an `is` test must
-					// not: `null is Node` is false, so a null element only satisfies a nullable slot.
-					if (element.get_type() == Variant::NIL && !element_type.is_nullable &&
-							(element_type.kind == NATIVE || element_type.kind == SCRIPT || element_type.kind == FOUNDRY_SCRIPT)) {
-						return false;
-					}
-					if (!element_type.is_type(element, false, p_narrowing)) {
+					if (!container_element_types[i].accepts_as_tuple_element(array[i], p_narrowing)) {
 						return false;
 					}
 				}

@@ -154,25 +154,16 @@ static bool _profile_count_as_native(const Object *p_base_obj, const StringName 
 // reason, ends the walk unsuccessfully: the clause would then be describing only part of the story.
 static bool _tuple_store_failed_element_path(const FSDataType &p_tuple_type, const Variant &p_value,
 		Vector<int> &r_path, const FSDataType **r_expected_type, Variant &r_failed_value) {
-	if (p_value.get_type() != Variant::ARRAY) {
+	// Acceptance is asked through the same helpers `FSDataType::is_type()`'s `TUPLE` branch uses, so the
+	// element this walk blames is by construction an element the real type test rejected.
+	if (!p_tuple_type.tuple_carrier_matches(p_value)) {
 		return false;
 	}
 	const Array array = p_value;
-	if (array.size() != p_tuple_type.container_element_types.size()) {
-		return false;
-	}
 
 	int failed_element = -1;
 	for (int i = 0; i < p_tuple_type.container_element_types.size(); i++) {
-		const FSDataType &element_type = p_tuple_type.container_element_types[i];
-		const Variant element = array[i];
-		// The tuple test rejects null in a non-nullable object element even though `is_type()` accepts
-		// it for assignment compatibility, so the same rule has to be applied here or such an element
-		// counts as passing and the clause claims a sole culprit it does not have.
-		const bool rejected_null = element.get_type() == Variant::NIL && !element_type.is_nullable &&
-				(element_type.kind == FSDataType::NATIVE || element_type.kind == FSDataType::SCRIPT ||
-						element_type.kind == FSDataType::FOUNDRY_SCRIPT);
-		if (!rejected_null && element_type.is_type(element)) {
+		if (p_tuple_type.container_element_types[i].accepts_as_tuple_element(array[i])) {
 			continue;
 		}
 		if (failed_element != -1) {
