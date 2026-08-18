@@ -350,10 +350,10 @@ public:
 	virtual void font_clear_size_cache(const RID &p_font_rid) = 0;
 	virtual void font_remove_size_cache(const RID &p_font_rid, const Vector2i &p_size) = 0;
 	virtual TypedArray<Dictionary> font_get_size_cache_info(const RID &p_font_rid) const = 0;
-		// Diagnostics: number of times the underlying font face has been opened
-		// (parsed/decompressed). With a shared-face text server this is 1 per
-		// font regardless of sizes; returns UINT32_MAX when not tracked.
-		virtual uint32_t font_get_debug_face_open_count() const { return UINT32_MAX; }
+	// Diagnostics: number of times the underlying font face has been opened
+	// (parsed/decompressed). With a shared-face text server this is 1 per
+	// font regardless of sizes; returns UINT32_MAX when not tracked.
+	virtual uint32_t font_get_debug_face_open_count() const { return UINT32_MAX; }
 
 	virtual void font_set_ascent(const RID &p_font_rid, int64_t p_size, double p_ascent) = 0;
 	virtual double font_get_ascent(const RID &p_font_rid, int64_t p_size) const = 0;

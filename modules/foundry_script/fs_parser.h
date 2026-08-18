@@ -176,6 +176,13 @@ public:
 		// conformance target, and the receiver information is unrecoverable. Provenance only: it takes
 		// no part in type identity.
 		bool is_substituted_self = false;
+		// True when this `Self` type parameter is a call site's receiver contract: an instance call
+		// resolves it against the receiver expression's run-time class rather than against the calling
+		// frame's own receiver. A `Self` that reached a signature any other way -- through a carrier's
+		// element type, a class type argument, or an explicit method type argument written in the
+		// caller -- still denotes the calling frame's receiver. Provenance only: it takes no part in
+		// type identity.
+		bool is_receiver_self_contract = false;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;
