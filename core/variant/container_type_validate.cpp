@@ -84,25 +84,9 @@ bool ContainerType::operator!=(const ContainerType &p_type) const {
 }
 
 String ContainerType::get_type_name() const {
-	// The handle wrapper is applied last so a specialized handle renders as `Type[Box[int]]` rather
-	// than `Type[Box][int]`.
-	ContainerType value_type = *this;
-	value_type.is_type_handle = false;
-	String name = ContainerTypeValidate(value_type).get_type_name();
-	if (!type_arguments.is_empty()) {
-		String arguments;
-		for (int i = 0; i < type_arguments.size(); i++) {
-			if (i > 0) {
-				arguments += ", ";
-			}
-			arguments += type_arguments[i].get_type_name();
-		}
-		name += "[" + arguments + "]";
-	}
-	if (is_type_handle) {
-		name = "Type[" + name + "]";
-	}
-	return name;
+	// One renderer for both shapes: a nested element is named through `ContainerTypeValidate`, so any
+	// second implementation here would let `Array[Box[int]]` and its element disagree.
+	return ContainerTypeValidate(*this).get_type_name();
 }
 
 ContainerTypeValidate::ContainerTypeValidate(const ContainerType &p_type) {
@@ -133,11 +117,9 @@ ContainerType ContainerTypeValidate::get_container_type() const {
 
 String ContainerTypeValidate::get_type_name() const {
 	String name = _get_value_type_name();
-	if (!is_type_handle) {
-		return name;
-	}
-	// A handle names the specialization it represents, so a nested `Type[Box[int]]` element does not
-	// degrade to `Type[Box]`.
+	// Type arguments belong to the value, not to the handle wrapper, so they are appended before the
+	// wrapper: a specialized handle renders as `Type[Box[int]]` rather than `Type[Box][int]`, and a
+	// nested element keeps its arguments whether or not it is a handle.
 	if (!type_arguments.is_empty()) {
 		String arguments;
 		for (int i = 0; i < type_arguments.size(); i++) {
@@ -148,7 +130,10 @@ String ContainerTypeValidate::get_type_name() const {
 		}
 		name += "[" + arguments + "]";
 	}
-	return "Type[" + name + "]";
+	if (is_type_handle) {
+		return "Type[" + name + "]";
+	}
+	return name;
 }
 
 String ContainerTypeValidate::_get_value_type_name() const {
