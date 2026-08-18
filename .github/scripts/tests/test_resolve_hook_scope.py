@@ -18,7 +18,7 @@ SCRIPT = REPO_ROOT / ".github/scripts/resolve_hook_scope.py"
 class ResolveHookScopeTests(unittest.TestCase):
     def test_a_pull_request_is_checked_over_its_own_diff(self) -> None:
         self.assertEqual(
-            "--files ./core/object/object.cpp ./doc/classes/Node.xml",
+            "--files './core/object/object.cpp' './doc/classes/Node.xml'",
             resolve_hook_scope.resolve_hook_scope("pull_request", ["core/object/object.cpp", "doc/classes/Node.xml"]),
         )
 
@@ -36,7 +36,7 @@ class ResolveHookScopeTests(unittest.TestCase):
 
     def test_blank_diff_lines_are_dropped(self) -> None:
         self.assertEqual(
-            "--files ./main/main.cpp",
+            "--files './main/main.cpp'",
             resolve_hook_scope.resolve_hook_scope("pull_request", ["", "main/main.cpp", "   "]),
         )
 
@@ -51,6 +51,17 @@ class ResolveHookScopeTests(unittest.TestCase):
             resolve_hook_scope.resolve_hook_scope("pull_request", ["misc/dist/my file.txt"]),
         )
 
+    def test_a_path_the_argument_splitter_cannot_carry_sweeps_the_whole_tree(self) -> None:
+        # `string-argv` has no escape syntax, so a quote or a backslash in a path
+        # cannot be expressed; sweeping everything checks that file instead of
+        # silently dropping it from the gate.
+        for path in ("misc/dist/it's.txt", 'misc/dist/say "hi".txt', "misc/dist/back\\slash.txt"):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    resolve_hook_scope.ALL_FILES,
+                    resolve_hook_scope.resolve_hook_scope("pull_request", ["main/main.cpp", path]),
+                )
+
     def test_the_command_line_reads_the_diff_from_standard_input(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(SCRIPT), "--event-name", "pull_request"],
@@ -59,7 +70,7 @@ class ResolveHookScopeTests(unittest.TestCase):
             text=True,
             check=True,
         )
-        self.assertEqual("--files ./main/main.cpp ./SConstruct", completed.stdout.strip())
+        self.assertEqual("--files './main/main.cpp' './SConstruct'", completed.stdout.strip())
 
     def test_the_command_line_sweeps_the_whole_tree_for_a_schedule(self) -> None:
         completed = subprocess.run(

@@ -9,19 +9,23 @@ is otherwise never reported and survives on `develop` indefinitely.
 from __future__ import annotations
 
 import argparse
-import shlex
 import sys
 
 ALL_FILES = "--all-files"
 CHANGED_FILES_EVENT = "pull_request"
+# `prek-action` splits `extra-args` with `string-argv`, which understands quoted
+# spans but has no escape syntax at all, so a path carrying a quote or a backslash
+# has no faithful representation in that argument string.
+UNREPRESENTABLE_CHARACTERS = "'\"\\"
 
 
 def resolve_hook_scope(event_name: str, changed_files: list[str]) -> str:
     """Return the `prek` arguments for `event_name` over `changed_files`.
 
-    An empty changed-file set falls back to the full sweep: `--files` with no
-    operand is an error, and a pull request whose diff lists nothing is degenerate
-    enough that checking more than strictly necessary is the safe answer.
+    Falls back to the full sweep whenever the changed-file list cannot be expressed
+    faithfully: an empty diff (`--files` with no operand is an error) or a path the
+    action's argument splitter would mangle. Checking a superset is always correct,
+    and silently dropping a file from the gate never is.
     """
 
     if event_name != CHANGED_FILES_EVENT:
@@ -30,7 +34,11 @@ def resolve_hook_scope(event_name: str, changed_files: list[str]) -> str:
     paths = [path for path in (raw.strip() for raw in changed_files) if path]
     if not paths:
         return ALL_FILES
-    return "--files " + " ".join(shlex.quote(f"./{path}") for path in paths)
+    if any(character in path for path in paths for character in UNREPRESENTABLE_CHARACTERS):
+        return ALL_FILES
+    # Single quotes survive `string-argv` intact and keep a path containing spaces
+    # as one argument.
+    return "--files " + " ".join(f"'./{path}'" for path in paths)
 
 
 def parse_args() -> argparse.Namespace:
