@@ -351,7 +351,7 @@ bool FSAnalyzer::trait_binding_conflicts_with_script_ancestry(const FSParser::Cl
 	// Either declaration may be the one being analyzed, so both directions of the chain relation are
 	// asked: the other target may stand above `p_class` or below it.
 	const auto answers_for_same_receivers = [&](const String &p_other_fqcn,
-											 const Vector<String> &p_other_ancestor_keys) {
+													const Vector<String> &p_other_ancestor_keys) {
 		return !p_other_fqcn.is_empty() && p_other_fqcn != p_class->fqcn &&
 				(ancestor_keys.has(p_other_fqcn) || p_other_ancestor_keys.has(p_class->fqcn));
 	};
