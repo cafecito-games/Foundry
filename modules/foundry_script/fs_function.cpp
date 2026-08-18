@@ -160,11 +160,20 @@ static bool _projected_arguments_satisfy(const Vector<ContainerType> &p_expected
 }
 
 // A recorded conformance argument vector is already expressed against the trait's own parameters, so
-// it needs no projection: every position is exact evidence exactly as it was declared.
-static Vector<ProjectedContainerType> _exact_projection(const Vector<ContainerType> &p_arguments) {
+// it needs no projection: every position is evidence exactly as it was declared.
+//
+// A position the declaration left open -- `Self` on a non-final target, or a forwarded parameter --
+// was recorded as an unconstrained descriptor, which is an absence of evidence rather than a claim
+// that the position is `Variant`. Reading it as exact would let an open position reject every
+// destination argument, so it becomes `UNKNOWN` evidence while its concrete siblings stay exact.
+static Vector<ProjectedContainerType> _recorded_projection(const Vector<ContainerType> &p_arguments) {
 	Vector<ProjectedContainerType> projected;
 	projected.resize(p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
+		if (p_arguments[i].builtin_type == Variant::NIL && p_arguments[i].script.is_null() &&
+				p_arguments[i].class_name == StringName()) {
+			continue;
+		}
 		projected.write[i] = ProjectedContainerType::exact(p_arguments[i]);
 	}
 	return projected;
@@ -231,7 +240,7 @@ bool FSDataType::trait_specialization_matches(const Vector<ContainerType> &p_exp
 	Vector<ContainerType> recorded_arguments;
 	if (_find_retroactive_conformance_arguments(p_trait_name, p_object, p_value, recorded_arguments)) {
 		had_evidence = true;
-		if (_projected_arguments_satisfy(p_expected_arguments, _exact_projection(recorded_arguments), p_narrowing)) {
+		if (_projected_arguments_satisfy(p_expected_arguments, _recorded_projection(recorded_arguments), p_narrowing)) {
 			return true;
 		}
 	}
