@@ -224,6 +224,12 @@ public:
 	static bool recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
 			const FSParser::DataType &p_expected);
 
+	// The same rule between two already-flattened argument vectors, which is what comparing two
+	// *declarations* of one trait needs: neither side is a live parse type. A differing arity is an
+	// absence of evidence, exactly like an empty vector.
+	static bool recorded_arguments_conflict(const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_recorded,
+			const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_other);
+
 	// The trait arguments a retroactive conformance on `p_source`'s class chain recorded for
 	// `p_trait_name`. The nearest conforming level wins; false when no level recorded any.
 	static bool project_registry_trait_arguments(const FSParser::DataType &p_source,

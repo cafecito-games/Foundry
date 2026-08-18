@@ -653,6 +653,21 @@ static bool _recorded_arguments_conflict(const Vector<FSConformanceRegistry::Rec
 	return false;
 }
 
+// The same, between two already-flattened vectors: what two *declarations* of the same trait have to
+// be compared with, since neither side is a live parse type.
+static bool _recorded_vectors_conflict(const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_recorded,
+		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_other) {
+	if (p_recorded.size() != p_other.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_recorded.size(); i++) {
+		if (_recorded_arguments_disagree(p_recorded[i], p_other[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // Reads the trait arguments a *retroactive* conformance recorded for `p_source`'s class chain, the
 // way `_class_has_trait()` reads membership from the same registry. The nearest conforming level
 // wins, including a conformance declared on the native class the chain bottoms out at. Returns false
@@ -1532,6 +1547,11 @@ bool FSTypeCompatibility::project_class_trait_arguments(const FSParser::DataType
 bool FSTypeCompatibility::recorded_argument_conflicts(const FSConformanceRegistry::RecordedTypeArgument &p_recorded,
 		const FSParser::DataType &p_expected) {
 	return _recorded_argument_conflicts(p_recorded, p_expected);
+}
+
+bool FSTypeCompatibility::recorded_arguments_conflict(const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_recorded,
+		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_other) {
+	return _recorded_vectors_conflict(p_recorded, p_other);
 }
 
 bool FSTypeCompatibility::project_registry_trait_arguments(const FSParser::DataType &p_source,

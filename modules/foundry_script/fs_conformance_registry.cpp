@@ -663,6 +663,31 @@ bool FSConformanceRegistry::get_builtin_conformance_type_arguments(Variant::Type
 	return get_conformance_type_arguments(Variant::get_type_name(p_type), p_trait_name, r_arguments);
 }
 
+Vector<FSConformanceRegistry::NativeConformanceRecord> FSConformanceRegistry::get_native_conformance_records(
+		const StringName &p_trait_name) const {
+	Vector<NativeConformanceRecord> records;
+	if (p_trait_name == StringName()) {
+		return records;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		for (const Conformance &conformance : file_entry.value) {
+			// A native target is keyed by the bare engine-class name and belongs to no script file, so
+			// a script class that happens to share a name with an engine class is never mistaken for one.
+			if (conformance.trait_name != p_trait_name || !conformance.target_script_path.is_empty() ||
+					!ClassDB::class_exists(conformance.target_fqcn)) {
+				continue;
+			}
+			NativeConformanceRecord record;
+			record.native_class = StringName(conformance.target_fqcn);
+			record.source_file = conformance.source_file;
+			record.trait_type_arguments = conformance.trait_type_arguments;
+			records.push_back(record);
+		}
+	}
+	return records;
+}
+
 String FSConformanceRegistry::get_conformance_source(const String &p_target_key, const StringName &p_trait_name) const {
 	if (p_target_key.is_empty() || p_trait_name == StringName()) {
 		return String();
