@@ -126,6 +126,12 @@ struct ConcurrentSubmission {
 private:
 	SafeNumeric<int> arrived;
 	SafeFlag released;
+	// The arm asked to hesitate after the barrier (0 for the first, 1 for the second, -1 for neither).
+	// Only used to nudge an order the unbiased barrier has not produced on its own; what actually
+	// happened is still read back from the results.
+	int delayed_arm = -1;
+
+	static constexpr uint32_t BIAS_DELAY_USEC = 200;
 
 	struct Arm {
 		ConcurrentSubmission *submission = nullptr;
@@ -141,6 +147,9 @@ private:
 		while (!submission->released.is_set()) {
 			OS::get_singleton()->delay_usec(1);
 		}
+		if (submission->delayed_arm == (arm->is_first ? 0 : 1)) {
+			OS::get_singleton()->delay_usec(BIAS_DELAY_USEC);
+		}
 		FSConformanceRegistry::RegistrationResult result =
 				FSConformanceRegistry::get_singleton()->try_replace_file_conformances(
 						arm->is_first ? submission->first_file : submission->second_file,
@@ -153,9 +162,10 @@ private:
 	}
 
 public:
-	void run() {
+	void run(int p_delayed_arm = -1) {
 		arrived.set(0);
 		released.clear();
+		delayed_arm = p_delayed_arm;
 		first_result = FSConformanceRegistry::RegistrationResult();
 		second_result = FSConformanceRegistry::RegistrationResult();
 
@@ -163,20 +173,33 @@ public:
 		Arm second_arm{ this, false };
 		Thread first_thread;
 		Thread second_thread;
-		first_thread.start(_run, &first_arm);
-		second_thread.start(_run, &second_arm);
-		while (arrived.get() < 2) {
+		const bool first_started = first_thread.start(_run, &first_arm) != Thread::UNASSIGNED_ID;
+		const bool second_started = second_thread.start(_run, &second_arm) != Thread::UNASSIGNED_ID;
+		// A thread that never started never arrives, so the barrier waits only for the arrivals that can
+		// still happen: a failed start reports itself instead of spinning the main thread forever.
+		const int expected_arrivals = (first_started ? 1 : 0) + (second_started ? 1 : 0);
+		while (arrived.get() < expected_arrivals) {
 			OS::get_singleton()->delay_usec(1);
 		}
 		released.set();
-		first_thread.wait_to_finish();
-		second_thread.wait_to_finish();
+		if (first_started) {
+			first_thread.wait_to_finish();
+		}
+		if (second_started) {
+			second_thread.wait_to_finish();
+		}
+		REQUIRE(first_started);
+		REQUIRE(second_started);
 	}
+
+	// Which side took the registry lock first, recovered from the outcome: the thread that got there
+	// first is the one whose declaration was accepted.
+	bool first_won() const { return first_result.conflicts.is_empty(); }
 
 	// The invariant every conflicting pair owes, stated without naming a winner: one side registered
 	// its declaration, the other registered nothing and was told exactly why.
 	void check_exactly_one_accepted(FSConformanceRegistry::RegistrationConflict::Kind p_kind) const {
-		const bool first_won = first_result.conflicts.is_empty();
+		const bool first_won = this->first_won();
 		const FSConformanceRegistry::RegistrationResult &winner = first_won ? first_result : second_result;
 		const FSConformanceRegistry::RegistrationResult &loser = first_won ? second_result : first_result;
 
@@ -191,7 +214,65 @@ public:
 	}
 };
 
+// Repetitions run with no bias at all, letting the platform decide the order.
 static constexpr int CONCURRENCY_REPETITIONS = 24;
+// Upper bound on the biased repetitions added when one order has still not appeared. A machine that
+// consistently hands the lock to the same thread needs the nudge; one that alternates never gets here.
+static constexpr int CONCURRENCY_REPETITION_CAP = 200;
+
+// Both mutex-acquisition orders have to be exercised for the "whichever thread wins" invariants to
+// mean anything, so each repetition's winner is recorded and both outcomes are required by the end.
+struct InterleavingCoverage {
+	bool first_won_observed = false;
+	bool second_won_observed = false;
+
+	void record(bool p_first_won) {
+		if (p_first_won) {
+			first_won_observed = true;
+		} else {
+			second_won_observed = true;
+		}
+	}
+
+	bool is_complete() const { return first_won_observed && second_won_observed; }
+
+	// The arm to slow down next: the one that keeps winning, so the other order gets its turn. Reported
+	// coverage still comes from what the run actually did, never from what the bias asked for.
+	int arm_to_delay() const {
+		if (is_complete()) {
+			return -1;
+		}
+		if (first_won_observed) {
+			return 0;
+		}
+		if (second_won_observed) {
+			return 1;
+		}
+		return -1;
+	}
+};
+
+// Runs one conflicting pair repeatedly from a registry that holds neither file, checking `p_check`
+// after every repetition and stopping once the base repetitions are spent and both lock orders have
+// been seen.
+template <typename Check>
+static void run_both_interleavings(ConcurrentSubmission &p_submission, const Check &p_check) {
+	InterleavingCoverage coverage;
+	for (int repetition = 0; repetition < CONCURRENCY_REPETITION_CAP; repetition++) {
+		FSConformanceRegistry::get_singleton()->clear_file(p_submission.first_file);
+		FSConformanceRegistry::get_singleton()->clear_file(p_submission.second_file);
+
+		p_submission.run(repetition < CONCURRENCY_REPETITIONS ? -1 : coverage.arm_to_delay());
+		coverage.record(p_submission.first_won());
+		p_check();
+
+		if (repetition + 1 >= CONCURRENCY_REPETITIONS && coverage.is_complete()) {
+			break;
+		}
+	}
+	CHECK(coverage.first_won_observed);
+	CHECK(coverage.second_won_observed);
+}
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent duplicate memberships leave exactly one owner") {
 	RegistryScope scope;
@@ -210,12 +291,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent duplicate membership
 			script_conformance("user://atomic_duplicate_target.fs", "AtomicDuplicateTarget", "AtomicDuplicateTrait", 0));
 	submission.second_candidates.write[0].source_file = second_file;
 
-	for (int repetition = 0; repetition < CONCURRENCY_REPETITIONS; repetition++) {
-		FSConformanceRegistry::get_singleton()->clear_file(first_file);
-		FSConformanceRegistry::get_singleton()->clear_file(second_file);
-
-		submission.run();
-
+	run_both_interleavings(submission, [&]() {
 		submission.check_exactly_one_accepted(
 				FSConformanceRegistry::RegistrationConflict::DUPLICATE_MEMBERSHIP);
 		// One membership, one owner: the surviving declaration is the only one the index answers with.
@@ -227,7 +303,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent duplicate membership
 		const bool second_registered =
 				!FSConformanceRegistry::get_singleton()->get_file_conformances(second_file).is_empty();
 		CHECK_NE(first_registered, second_registered);
-	}
+	});
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent witness collisions leave exactly one witness") {
@@ -253,19 +329,15 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent witness collisions l
 	submission.first_candidates.push_back(first);
 	submission.second_candidates.push_back(second);
 
-	for (int repetition = 0; repetition < CONCURRENCY_REPETITIONS; repetition++) {
-		FSConformanceRegistry::get_singleton()->clear_file(first_file);
-		FSConformanceRegistry::get_singleton()->clear_file(second_file);
-
-		submission.run();
-
+	run_both_interleavings(submission, [&]() {
 		submission.check_exactly_one_accepted(
 				FSConformanceRegistry::RegistrationConflict::WITNESS_COLLISION);
 		const FSConformanceRegistry::RegistrationResult &loser =
-				submission.first_result.conflicts.is_empty() ? submission.second_result : submission.first_result;
+				submission.first_won() ? submission.second_result : submission.first_result;
+		REQUIRE_EQ(loser.conflicts.size(), 1);
 		CHECK_EQ(loser.conflicts[0].method_name, StringName("atomic_witness_label"));
 		CHECK_EQ(loser.conflicts[0].target_label, String("AtomicWitnessTarget"));
-	}
+	});
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent native-chain contradictions reject exactly one") {
@@ -289,18 +361,13 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent native-chain contrad
 	submission.first_candidates.push_back(first);
 	submission.second_candidates.push_back(second);
 
-	for (int repetition = 0; repetition < CONCURRENCY_REPETITIONS; repetition++) {
-		FSConformanceRegistry::get_singleton()->clear_file(first_file);
-		FSConformanceRegistry::get_singleton()->clear_file(second_file);
-
-		submission.run();
-
+	run_both_interleavings(submission, [&]() {
 		submission.check_exactly_one_accepted(
 				FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
 		const Vector<FSConformanceRegistry::NativeConformanceRecord> records =
 				FSConformanceRegistry::get_singleton()->get_native_conformance_records("AtomicNativeChainTrait");
 		CHECK_EQ(records.size(), 1);
-	}
+	});
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent mixed script/native contradictions reject exactly one") {
@@ -326,12 +393,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent mixed script/native 
 	submission.first_candidates.push_back(native);
 	submission.second_candidates.push_back(script);
 
-	for (int repetition = 0; repetition < CONCURRENCY_REPETITIONS; repetition++) {
-		FSConformanceRegistry::get_singleton()->clear_file(native_file);
-		FSConformanceRegistry::get_singleton()->clear_file(script_file);
-
-		submission.run();
-
+	run_both_interleavings(submission, [&]() {
 		submission.check_exactly_one_accepted(
 				FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
 		const int native_records =
@@ -339,7 +401,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent mixed script/native 
 		const int script_records =
 				FSConformanceRegistry::get_singleton()->get_script_conformance_records("AtomicMixedChainTrait").size();
 		CHECK_EQ(native_records + script_records, 1);
-	}
+	});
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Two non-conflicting files registered concurrently both survive") {
@@ -496,6 +558,52 @@ TEST_CASE("[Modules][FoundryScript][Conformance] A conflict on one identity reje
 	CHECK_EQ(result.registered_count, 0);
 	CHECK(registry->get_conformance_source("AtomicGroupTarget", "AtomicGroupTrait").is_empty());
 	CHECK_EQ(registry->get_conformance_source("AtomicGroupTarget", "AtomicGroupSuperTrait"), other_file);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Interleaved declaration entries are still rejected as a whole") {
+	RegistryScope scope;
+	const String owner_file = "user://atomic_interleaved_group.fs";
+	const String other_file = "user://atomic_interleaved_group_other.fs";
+	scope.track(owner_file);
+	scope.track(other_file);
+
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+
+	// Another file already owns one identity of the second declaration.
+	Vector<FSConformanceRegistry::Conformance> foreign;
+	foreign.push_back(script_conformance(other_file, "AtomicInterleavedTarget", "AtomicInterleavedSuperTrait", 0));
+	foreign.write[0].target_script_path = "user://atomic_interleaved_target.fs";
+	REQUIRE_EQ(registry->try_replace_file_conformances(other_file, foreign).registered_count, 1);
+
+	// Two declarations whose entries arrive interleaved rather than grouped. The conflicting one must
+	// still be rejected in full, and the coherent one accepted in full.
+	Vector<FSConformanceRegistry::Conformance> candidates;
+	FSConformanceRegistry::Conformance coherent_direct =
+			script_conformance(owner_file, "AtomicInterleavedOther", "AtomicInterleavedTrait", 0);
+	coherent_direct.target_script_path = "user://atomic_interleaved_other.fs";
+	FSConformanceRegistry::Conformance conflicting_direct =
+			script_conformance(owner_file, "AtomicInterleavedTarget", "AtomicInterleavedTrait", 1);
+	conflicting_direct.target_script_path = "user://atomic_interleaved_target.fs";
+	FSConformanceRegistry::Conformance coherent_implied =
+			script_conformance(owner_file, "AtomicInterleavedOther", "AtomicInterleavedSuperTrait", 0);
+	coherent_implied.target_script_path = "user://atomic_interleaved_other.fs";
+	FSConformanceRegistry::Conformance conflicting_implied =
+			script_conformance(owner_file, "AtomicInterleavedTarget", "AtomicInterleavedSuperTrait", 1);
+	conflicting_implied.target_script_path = "user://atomic_interleaved_target.fs";
+	candidates.push_back(coherent_direct);
+	candidates.push_back(conflicting_direct);
+	candidates.push_back(coherent_implied);
+	candidates.push_back(conflicting_implied);
+
+	const FSConformanceRegistry::RegistrationResult result =
+			registry->try_replace_file_conformances(owner_file, candidates);
+	REQUIRE_EQ(result.conflicts.size(), 1);
+	CHECK_EQ(result.conflicts[0].conformance_index, 1);
+	CHECK_EQ(result.registered_count, 2);
+	CHECK_EQ(registry->get_conformance_source("AtomicInterleavedOther", "AtomicInterleavedTrait"), owner_file);
+	CHECK_EQ(registry->get_conformance_source("AtomicInterleavedOther", "AtomicInterleavedSuperTrait"), owner_file);
+	CHECK(registry->get_conformance_source("AtomicInterleavedTarget", "AtomicInterleavedTrait").is_empty());
+	CHECK_EQ(registry->get_conformance_source("AtomicInterleavedTarget", "AtomicInterleavedSuperTrait"), other_file);
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Non-conflicting declarations register regardless of order") {

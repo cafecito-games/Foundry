@@ -162,11 +162,18 @@ static String _localize_script_path(const String &p_path) {
 
 // The one diagnostic every chain-coherence rejection uses, so the same contradiction reads the same
 // way whichever of the two declarations is the one being analyzed.
-static String _chain_conflict_message(const String &p_trait_label, const String &p_conflicting_target,
-		const String &p_conflicting_source, const String &p_analyzed_file) {
-	const String location = p_conflicting_source == p_analyzed_file
+// How a conflicting declaration's location is spelled in a diagnostic: a contradiction with another
+// declaration in the file being analyzed reads as "this file", the same way the in-file checks phrase
+// it, and any other file is named by its localized path.
+static String _conflict_location(const String &p_conflicting_source, const String &p_analyzed_file) {
+	return p_conflicting_source == p_analyzed_file
 			? String("this file")
 			: vformat(R"("%s")", _localize_script_path(p_conflicting_source));
+}
+
+static String _chain_conflict_message(const String &p_trait_label, const String &p_conflicting_target,
+		const String &p_conflicting_source, const String &p_analyzed_file) {
+	const String location = _conflict_location(p_conflicting_source, p_analyzed_file);
 	return vformat(R"(Trait "%s" is already applied with different type arguments by the conformance for "%s" in %s; conformances on one inheritance chain must apply it with the same type arguments.)",
 			p_trait_label, p_conflicting_target, location);
 }
@@ -1238,6 +1245,9 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 									   _class_or_trait_name(target), String(identity)),
 							conformance);
 					membership_conflict = true;
+					// The declaration is rejected here, so the registry's own verdict on it below would be
+					// the same contradiction reported twice.
+					reported_declarations.insert(conformance_index);
 					break;
 				}
 
@@ -1273,6 +1283,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 										   _class_or_trait_name(target), witness_name, String(*existing_trait)),
 								conformance);
 						conformance_witness_collision = true;
+						// As above: this declaration has already been told why it is rejected.
+						reported_declarations.insert(conformance_index);
 						continue;
 					}
 
@@ -1367,15 +1379,15 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 		}
 		switch (conflict.kind) {
 			case FSConformanceRegistry::RegistrationConflict::DUPLICATE_MEMBERSHIP: {
-				push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in "%s".)",
+				push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in %s.)",
 								   conflict.target_label, String(conflict.trait_name),
-								   _localize_script_path(conflict.conflicting_source_file)),
+								   _conflict_location(conflict.conflicting_source_file, source_file)),
 						conformance);
 			} break;
 			case FSConformanceRegistry::RegistrationConflict::WITNESS_COLLISION: {
-				push_error(vformat(R"*(Class "%s" already has a witness for method "%s()" via a conformance in "%s".)*",
+				push_error(vformat(R"*(Class "%s" already has a witness for method "%s()" via a conformance in %s.)*",
 								   conflict.target_label, conflict.method_name,
-								   _localize_script_path(conflict.conflicting_source_file)),
+								   _conflict_location(conflict.conflicting_source_file, source_file)),
 						conformance);
 			} break;
 			case FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE: {
