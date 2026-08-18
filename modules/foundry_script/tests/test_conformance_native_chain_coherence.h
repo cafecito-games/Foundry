@@ -803,4 +803,227 @@ func test() -> void:
 	CHECK(fixture.has_error_containing("NccAncestorBaseKeeper"));
 }
 
+TEST_CASE("[Modules][FoundryScript][Conformance] A final descendant's reified Self conflicts with its ancestor's binding") {
+	NativeChainFixture fixture(R"(
+trait NccSelfKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+class NccSelfPair[A, B]:
+	pass
+
+
+class NccSelfBase:
+	uses NccSelfKeeper[NccSelfPair[int, String]]
+
+
+final class NccSelfSub extends NccSelfBase:
+	uses NccSelfKeeper[NccSelfPair[int, Self]]
+
+
+func test() -> void:
+	pass
+)");
+
+	// The applied vector is reified before the chain comparison, so the descendant's `Self` is read as
+	// `NccSelfSub` and contradicts the `String` the ancestor fixed. The diagnostic renders the reified
+	// form rather than the `Self` the author typed.
+	CHECK(fixture.has_error_containing(R"(cannot re-apply it with ("NccSelfPair[int, NccSelfSub]"))"));
+	CHECK(fixture.has_error_containing(R"(already applied with type arguments ("NccSelfPair[int, String]") by "NccSelfBase")"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] The reified-Self chain rule does not depend on declaration order") {
+	NativeChainFixture fixture(R"(
+trait NccSelfOrderKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+final class NccSelfOrderSub extends NccSelfOrderBase:
+	uses NccSelfOrderKeeper[NccSelfOrderPair[int, Self]]
+
+
+class NccSelfOrderBase:
+	uses NccSelfOrderKeeper[NccSelfOrderPair[int, String]]
+
+
+class NccSelfOrderPair[A, B]:
+	pass
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing(R"(cannot re-apply it with ("NccSelfOrderPair[int, NccSelfOrderSub]"))"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A retroactive conformance reifies Self against its target") {
+	NativeChainFixture fixture(R"(
+trait NccSelfRetroKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+class NccSelfRetroPair[A, B]:
+	pass
+
+
+class NccSelfRetroBase:
+	uses NccSelfRetroKeeper[NccSelfRetroPair[int, String]]
+
+
+final class NccSelfRetroSub extends NccSelfRetroBase:
+	pass
+
+
+extend NccSelfRetroSub uses NccSelfRetroKeeper[NccSelfRetroPair[int, Self]]:
+	pass
+
+
+func test() -> void:
+	pass
+)");
+
+	// The conformance target, not the declaring file's head class, is what `Self` names here.
+	CHECK(fixture.has_error_containing(R"(cannot record ("NccSelfRetroPair[int, NccSelfRetroSub]"))"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A rejected reified-Self conformance registers nothing") {
+	NativeChainFixture fixture(R"(
+trait NccSelfRejectedKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+class NccSelfRejectedPair[A, B]:
+	pass
+
+
+class NccSelfRejectedBase:
+	uses NccSelfRejectedKeeper[NccSelfRejectedPair[int, String]]
+
+
+final class NccSelfRejectedSub extends NccSelfRejectedBase:
+	pass
+
+
+extend NccSelfRejectedSub uses NccSelfRejectedKeeper[NccSelfRejectedPair[int, Self]]:
+	pass
+
+
+func test() -> void:
+	pass
+)");
+
+	REQUIRE(fixture.has_error_containing("cannot record"));
+
+	// A rejected declaration publishes neither membership nor argument evidence, so the registry holds
+	// nothing at all for the identity: the file's only conformance is the rejected one.
+	const StringName identity = fixture.trait_identity(StringName("NccSelfRejectedKeeper"));
+	CHECK(FSConformanceRegistry::get_singleton()->get_script_conformance_records(identity).is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] An implied supertrait identity is checked after Self reification") {
+	NativeChainFixture fixture(R"(
+trait NccSelfSuperKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+trait NccSelfSuperStoring[T] uses NccSelfSuperKeeper[T]:
+	func store_label() -> String:
+		return "storing"
+
+
+class NccSelfSuperPair[A, B]:
+	pass
+
+
+class NccSelfSuperBase:
+	uses NccSelfSuperKeeper[NccSelfSuperPair[int, String]]
+
+
+final class NccSelfSuperSub extends NccSelfSuperBase:
+	uses NccSelfSuperStoring[NccSelfSuperPair[int, Self]]
+
+
+func test() -> void:
+	pass
+)");
+
+	// The conflict is on the implied identity, whose projected argument carries the same reified `Self`.
+	CHECK(fixture.has_error_containing("NccSelfSuperKeeper"));
+	CHECK(fixture.has_error_containing(R"(cannot re-apply it with ("NccSelfSuperPair[int, NccSelfSuperSub]"))"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] An ancestor that names the descendant matches its reified Self") {
+	NativeChainFixture fixture(R"(
+trait NccSelfMatchKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+class NccSelfMatchPair[A, B]:
+	pass
+
+
+class NccSelfMatchBase:
+	uses NccSelfMatchKeeper[NccSelfMatchPair[int, NccSelfMatchSub]]
+
+
+final class NccSelfMatchSub extends NccSelfMatchBase:
+	uses NccSelfMatchKeeper[NccSelfMatchPair[int, Self]]
+
+
+class NccSelfMatchRetroBase:
+	uses NccSelfMatchKeeper[NccSelfMatchPair[int, NccSelfMatchRetroSub]]
+
+
+final class NccSelfMatchRetroSub extends NccSelfMatchRetroBase:
+	pass
+
+
+extend NccSelfMatchRetroSub uses NccSelfMatchKeeper[NccSelfMatchPair[int, Self]]:
+	pass
+
+
+func test() -> void:
+	pass
+)");
+
+	// Reification cuts both ways: an ancestor that spells the descendant out states exactly what the
+	// descendant's `Self` states, so neither form is a conflict.
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A non-final implementer's Self stays open against a chain binding") {
+	NativeChainFixture fixture(R"(
+trait NccSelfOpenKeeper[T]:
+	func label() -> String:
+		return "keeper"
+
+
+class NccSelfOpenPair[A, B]:
+	pass
+
+
+class NccSelfOpenBase:
+	uses NccSelfOpenKeeper[NccSelfOpenPair[int, String]]
+
+
+class NccSelfOpenSub extends NccSelfOpenBase:
+	uses NccSelfOpenKeeper[NccSelfOpenPair[int, Self]]
+
+
+func test() -> void:
+	pass
+)");
+
+	// `NccSelfOpenSub` is not final, so `Self` denotes no single class and the position states nothing
+	// that could contradict the ancestor. The concrete `int` sibling still agrees.
+	CHECK(fixture.error_messages.is_empty());
+}
+
 } // namespace FSNativeChainCoherenceTests

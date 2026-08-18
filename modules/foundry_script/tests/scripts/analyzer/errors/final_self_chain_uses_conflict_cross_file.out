@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Trait "FscxKeeper" is already applied with type arguments ("Array[String]") by "FscxBase"; "FscxSub" cannot re-apply it with ("Array[FscxSub]").

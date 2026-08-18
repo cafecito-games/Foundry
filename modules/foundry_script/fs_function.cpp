@@ -166,15 +166,56 @@ static bool _projected_arguments_satisfy(const Vector<ContainerType> &p_expected
 // was recorded as an unconstrained descriptor, which is an absence of evidence rather than a claim
 // that the position is `Variant`. Reading it as exact would let an open position reject every
 // destination argument, so it becomes `UNKNOWN` evidence while its concrete siblings stay exact.
+//
+// The same reading applies at every nesting depth, because an open `Self` can sit inside a composite
+// the declaration otherwise stated completely: `Pair[int, Self]` records a known `Pair` shell, a known
+// `int`, and one unconstrained child. Collapsing the whole composite there would throw away the `int`
+// that a `Pair[float, ...]` destination genuinely contradicts. This interpretation is local to
+// recorded conformance evidence: an unconstrained node in an ordinary specialization is a written
+// `Variant`, not an absence of evidence.
+static ProjectedContainerType _recorded_projected_node(const ContainerType &p_argument, int p_depth) {
+	ProjectedContainerType projected;
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return projected;
+	}
+	if (p_argument.builtin_type == Variant::NIL && p_argument.script.is_null() &&
+			p_argument.class_name == StringName()) {
+		return projected;
+	}
+
+	projected.state = ProjectedContainerType::EXACT;
+	projected.outer = p_argument;
+	projected.outer.element_types.clear();
+	projected.outer.type_arguments.clear();
+	for (const ContainerType &element_type : p_argument.element_types) {
+		projected.element_types.push_back(_recorded_projected_node(element_type, p_depth + 1));
+	}
+	for (const ContainerType &type_argument : p_argument.type_arguments) {
+		projected.type_arguments.push_back(_recorded_projected_node(type_argument, p_depth + 1));
+	}
+
+	for (const ProjectedContainerType &child : projected.element_types) {
+		if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+			projected.state = ProjectedContainerType::PARTIAL;
+			break;
+		}
+	}
+	if (projected.state == ProjectedContainerType::EXACT) {
+		for (const ProjectedContainerType &child : projected.type_arguments) {
+			if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+				projected.state = ProjectedContainerType::PARTIAL;
+				break;
+			}
+		}
+	}
+	return projected;
+}
+
 static Vector<ProjectedContainerType> _recorded_projection(const Vector<ContainerType> &p_arguments) {
 	Vector<ProjectedContainerType> projected;
 	projected.resize(p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
-		if (p_arguments[i].builtin_type == Variant::NIL && p_arguments[i].script.is_null() &&
-				p_arguments[i].class_name == StringName()) {
-			continue;
-		}
-		projected.write[i] = ProjectedContainerType::exact(p_arguments[i]);
+		projected.write[i] = _recorded_projected_node(p_arguments[i], 0);
 	}
 	return projected;
 }

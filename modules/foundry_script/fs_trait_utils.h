@@ -106,6 +106,17 @@ bool fs_trait_implementer_reifies_self(const FSParser::ClassNode *p_implementer)
 FSParser::DataType fs_reify_self_in_trait_argument(
 		const FSParser::ClassNode *p_implementer, const FSParser::DataType &p_argument);
 
+// `p_argument` with every surviving `Self` replaced by a class type parameter no receiver can ever
+// resolve, leaving the structure written around it intact.
+//
+// A runtime record cannot state "this position is the receiver", but it can state everything the
+// position is *not* open about: `Pair[int, Self]` on a non-final implementer is runtime evidence
+// equivalent to `Pair[int, ?]`. Dropping the whole argument instead would let a Variant-routed store
+// accept a `Pair[float, ...]` the analyzer rejects. The replacement node is a class-scoped parameter
+// with no ordinal, which is exactly what the runtime projection already reads as an unknown subtree,
+// so only the `Self` subtree goes gradual and every known sibling keeps rejecting.
+FSParser::DataType fs_open_self_as_unresolved_parameter(const FSParser::DataType &p_argument);
+
 // `p_implementer` is the class the projected arguments are read for -- the class applying the trait,
 // or a conformance's target -- and every projected position is passed through
 // `fs_reify_self_in_trait_argument()` before it is returned.

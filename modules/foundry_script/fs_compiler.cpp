@@ -5892,11 +5892,12 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 			// receiver identity `Self` can denote, and the shared rule is what decides that. Left open,
 			// the position must stay open here too: `_gdtype_from_datatype()` would otherwise reify a
 			// nested `Self` against the owner script and record a specialization every subclass receiver
-			// contradicts, which the declaration-side record does not claim.
-			const FSParser::DataType argument = fs_reify_self_in_trait_argument(p_class, *bound);
-			if (fs_trait_argument_references_self(argument)) {
-				continue;
-			}
+			// contradicts, which the declaration-side record does not claim. Replacing it with an
+			// unresolvable parameter keeps the structure written around it, so the record states exactly
+			// what the analyzer states: the `Pair` shell and its `int` child are known, the `Self` child
+			// is not.
+			const FSParser::DataType argument =
+					fs_open_self_as_unresolved_parameter(fs_reify_self_in_trait_argument(p_class, *bound));
 
 			FoundryScript::TypeArgumentBinding &binding = trait_bindings.write[i];
 			if (argument.kind == FSParser::DataType::TYPE_PARAMETER &&
@@ -6694,17 +6695,22 @@ Vector<FSWeakContainerType> FSCompiler::_conformance_trait_type_arguments(Foundr
 	Vector<FSWeakContainerType> arguments;
 	arguments.resize(resolved.size());
 	for (int i = 0; i < resolved.size(); i++) {
-		// A position that stays open -- unset, or still writing `Self` on a target that does not reify
-		// it -- travels as an unconstrained descriptor, which the runtime comparison reads as an absence
-		// of evidence at that position alone. The concrete sibling positions keep rejecting, exactly as
-		// the declaration-side record does. A `Self` nested in a composite is refused here rather than
-		// resolved by the conversion below, which would otherwise bind it to the *declaring* script.
-		if (!resolved[i].is_set() || resolved[i].is_type_parameter() ||
-				fs_trait_argument_references_self(resolved[i])) {
+		// A position that stays open -- unset, or a bare parameter, including a `Self` on a target that
+		// does not reify it -- travels as an unconstrained descriptor, which the runtime comparison reads
+		// as an absence of evidence at that position alone. The concrete sibling positions keep
+		// rejecting, exactly as the declaration-side record does.
+		if (!resolved[i].is_set() || resolved[i].is_type_parameter()) {
 			continue;
 		}
+		// A `Self` nested in a composite must not reach the conversion below, which would bind it to the
+		// *declaring* script. Replacing it with an unresolvable parameter lowers it to an unconstrained
+		// node in place, and the type parameters are preserved for exactly that argument so the standard
+		// erasure -- which drops a whole composite containing any parameter -- does not take the known
+		// shell and siblings down with the open subtree.
+		const bool has_open_self = fs_trait_argument_references_self(resolved[i]);
+		const FSParser::DataType argument = fs_open_self_as_unresolved_parameter(resolved[i]);
 		arguments.write[i] = FSWeakContainerType::from_container_type(
-				_gdtype_from_datatype(resolved[i], p_script).to_container_type());
+				_gdtype_from_datatype(argument, p_script, true, has_open_self).to_container_type());
 	}
 	return arguments;
 }

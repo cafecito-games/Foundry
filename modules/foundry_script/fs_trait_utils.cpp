@@ -218,6 +218,25 @@ FSParser::DataType fs_reify_self_in_trait_argument(
 	return FSParser::DataType::substitute(p_argument, bindings);
 }
 
+FSParser::DataType fs_open_self_as_unresolved_parameter(const FSParser::DataType &p_argument) {
+	if (!fs_trait_argument_references_self(p_argument)) {
+		return p_argument;
+	}
+
+	FSParser::DataType unresolved;
+	unresolved.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	unresolved.kind = FSParser::DataType::TYPE_PARAMETER;
+	unresolved.type_parameter_name = SNAME("@OpenSelf");
+	unresolved.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_CLASS;
+	// No ordinal: the runtime projection resolves a class parameter against the receiver's reified
+	// arguments, and a parameter with no ordinal can never name one of them.
+	unresolved.type_parameter_index = -1;
+
+	HashMap<StringName, FSParser::DataType> bindings;
+	bindings.insert(SNAME("@Self"), unresolved);
+	return FSParser::DataType::substitute(p_argument, bindings);
+}
+
 bool fs_project_conformance_trait_arguments(
 		const FSParser::ClassNode *p_direct_trait,
 		const Vector<FSParser::DataType> &p_conformance_arguments,

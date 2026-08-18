@@ -1163,7 +1163,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				String inherited_arguments;
 				String recorded_arguments;
 				const FSParser::ClassNode *binding_ancestor = nullptr;
-				if (trait_binding_conflicts_with_chain(target->base_type, trait, trait_use.resolved_type_arguments,
+				if (trait_binding_conflicts_with_chain(target, trait, trait_use.resolved_type_arguments,
 							conformance, inherited_arguments, recorded_arguments, binding_ancestor)) {
 					push_error(vformat(R"(Trait "%s" is already applied with type arguments ("%s") by "%s"; the conformance for "%s" cannot record ("%s").)",
 									   _class_or_trait_name(trait), inherited_arguments,
