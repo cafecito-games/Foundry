@@ -31,9 +31,27 @@ jobs:
           submodules: recursive
 
       - name: Setup dependencies
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwayland-bin
+          set -uo pipefail
+          # wayland-scanner is the only thing this step exists to provide. The GitHub
+          # runner image often ships it already, so probe before touching apt at all.
+          if command -v wayland-scanner >/dev/null 2>&1; then
+            echo "wayland-scanner already present; skipping apt"
+            exit 0
+          fi
+          # apt can block indefinitely on the dpkg lock while the image's unattended
+          # upgrades run, or stall mid-fetch on a slow mirror. Bound both, and retry.
+          for attempt in 1 2 3; do
+            if sudo apt-get -o DPkg::Lock::Timeout=120 update \
+              && sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends libwayland-bin; then
+              exit 0
+            fi
+            echo "::warning::apt attempt ${attempt} failed; retrying"
+            sleep 15
+          done
+          echo "::error::failed to install libwayland-bin after 3 attempts"
+          exit 1
 
       - name: Free disk space on runner
         run: |
@@ -126,9 +144,27 @@ jobs:
           submodules: recursive
 
       - name: Setup dependencies
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwayland-bin
+          set -uo pipefail
+          # wayland-scanner is the only thing this step exists to provide. The GitHub
+          # runner image often ships it already, so probe before touching apt at all.
+          if command -v wayland-scanner >/dev/null 2>&1; then
+            echo "wayland-scanner already present; skipping apt"
+            exit 0
+          fi
+          # apt can block indefinitely on the dpkg lock while the image's unattended
+          # upgrades run, or stall mid-fetch on a slow mirror. Bound both, and retry.
+          for attempt in 1 2 3; do
+            if sudo apt-get -o DPkg::Lock::Timeout=120 update \
+              && sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends libwayland-bin; then
+              exit 0
+            fi
+            echo "::warning::apt attempt ${attempt} failed; retrying"
+            sleep 15
+          done
+          echo "::error::failed to install libwayland-bin after 3 attempts"
+          exit 1
 
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
@@ -171,9 +207,27 @@ jobs:
           submodules: recursive
 
       - name: Setup dependencies
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwayland-bin
+          set -uo pipefail
+          # wayland-scanner is the only thing this step exists to provide. The GitHub
+          # runner image often ships it already, so probe before touching apt at all.
+          if command -v wayland-scanner >/dev/null 2>&1; then
+            echo "wayland-scanner already present; skipping apt"
+            exit 0
+          fi
+          # apt can block indefinitely on the dpkg lock while the image's unattended
+          # upgrades run, or stall mid-fetch on a slow mirror. Bound both, and retry.
+          for attempt in 1 2 3; do
+            if sudo apt-get -o DPkg::Lock::Timeout=120 update \
+              && sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends libwayland-bin; then
+              exit 0
+            fi
+            echo "::warning::apt attempt ${attempt} failed; retrying"
+            sleep 15
+          done
+          echo "::error::failed to install libwayland-bin after 3 attempts"
+          exit 1
 
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
