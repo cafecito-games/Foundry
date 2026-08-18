@@ -2130,6 +2130,12 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 #endif // DEBUG_ENABLED
 		}
 
+		// The chain a `uses` clause binds against does not stop at the last script base: it continues
+		// into the engine class that base ends on, whose own bindings are declared by retroactive
+		// conformances. Those conformances reach this file through its imports, so this waits until the
+		// members are resolved and the files this one preloads have registered what they declare.
+		check_trait_uses_against_native_ancestry(p_class);
+
 #ifdef DEBUG_ENABLED
 		if (!has_static_data && p_class->annotated_static_unload) {
 			FSParser::Node *static_unload = nullptr;
@@ -2317,8 +2323,8 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 	// ones makes a statically valid call through the base type land in a body typed for the other
 	// arguments.
 	auto check_inherited_trait_binding = [&](FSParser::ClassNode *p_seen_trait,
-											  const HashMap<StringName, FSParser::DataType> &p_binding,
-											  const FSParser::Node *p_binding_source) -> bool {
+												 const HashMap<StringName, FSParser::DataType> &p_binding,
+												 const FSParser::Node *p_binding_source) -> bool {
 		if (p_binding.is_empty() || p_seen_trait == nullptr) {
 			return true;
 		}

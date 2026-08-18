@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Trait "SccKeeper" is already applied with different type arguments by the conformance for "Object" in "res://analyzer/errors/scc_chain_native_source.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.
