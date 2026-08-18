@@ -1,7 +1,9 @@
 # The gradual rule is unchanged at a trait destination: only evidence that contradicts the
-# declaration rejects. A raw destination, a raw conformer, a `Self` argument at either finality, and a
-# conformance forwarded through a type parameter all carry no evidence, so every store below stays
-# legal and the file analyzes without a diagnostic.
+# declaration rejects. A raw destination, a raw conformer, a `Self` argument on a non-final
+# implementer, and a conformance forwarded through a type parameter all carry no evidence, so those
+# stores stay legal for want of anything to reject on. The `final` implementer's `Self` is different:
+# it reifies to that one class, so its store is accepted because the evidence *matches*, not because
+# there is none. The file still analyzes without a diagnostic.
 trait Keeper[T]:
 	func label() -> String:
 		return "keeper"

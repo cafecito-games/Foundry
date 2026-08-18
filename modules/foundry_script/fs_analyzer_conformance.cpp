@@ -67,10 +67,11 @@ static Vector<FSConformanceRegistry::RecordedTypeArgument> _recorded_conformance
 		const FSParser::ClassNode *p_direct_trait,
 		const Vector<FSParser::DataType> &p_conformance_arguments,
 		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
-		const FSParser::ClassNode *p_identity_trait) {
+		const FSParser::ClassNode *p_identity_trait,
+		const FSParser::ClassNode *p_target) {
 	Vector<FSParser::DataType> resolved;
 	if (!fs_project_conformance_trait_arguments(p_direct_trait, p_conformance_arguments, p_direct_bindings,
-				p_identity_trait, resolved)) {
+				p_identity_trait, p_target, resolved)) {
 		return Vector<FSConformanceRegistry::RecordedTypeArgument>();
 	}
 
@@ -227,7 +228,8 @@ static Vector<FSConformanceRegistry::RecordedTypeArgument> _recorded_class_trait
 				argument = *bound;
 			}
 		}
-		arguments.push_back(FSConformanceRegistry::reduce_type_argument(argument));
+		arguments.push_back(FSConformanceRegistry::reduce_type_argument(
+				fs_reify_self_in_trait_argument(p_class, argument)));
 	}
 	return arguments;
 }
@@ -1070,7 +1072,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			Vector<Vector<FSConformanceRegistry::RecordedTypeArgument>> identity_arguments;
 			for (const FSParser::ClassNode *identity_node : trait_identity_nodes) {
 				identity_arguments.push_back(_recorded_conformance_trait_arguments(trait,
-						trait_use.resolved_type_arguments, substitution, identity_node));
+						trait_use.resolved_type_arguments, substitution, identity_node, target));
 			}
 
 			// The ClassDB counterpart of the chain rule above: an engine-class target inherits nothing

@@ -83,9 +83,36 @@ HashMap<StringName, FSParser::DataType> fs_trait_type_argument_bindings(
 // parameter the direct trait never binds. A position that projects to an unset type or to a type
 // parameter still yields an entry: it is an open position, and it never erases what a concrete
 // sibling position proved.
+// A projected position that still writes `Self` at any nesting depth: a specialized type argument, a
+// typed container element, a tuple element, a nullable layer, or a `Type[Self]` handle. Such a
+// position names the receiver rather than a type, so it is open evidence wherever it survives.
+bool fs_trait_argument_references_self(const FSParser::DataType &p_argument);
+
+// Whether `Self`, written by `p_implementer` in a trait argument, denotes exactly one class.
+//
+// This is the final-implementer rule the flattened trait constants already answer with: a `final`
+// non-generic class admits exactly one receiver identity, so `Self` denotes that class for every value
+// of the type. A non-final class is contradicted by each subclass receiver, and a generic class has
+// one receiver identity per specialization while one compiled declaration stands for all of them, so
+// both leave `Self` open.
+bool fs_trait_implementer_reifies_self(const FSParser::ClassNode *p_implementer);
+
+// `p_argument` with every `Self` resolved to `p_implementer`, recursively, when the implementer
+// reifies `Self`; otherwise `p_argument` unchanged.
+//
+// This is the one place the decision is made. The analyzer's declaration-side record, the compiler's
+// runtime record, and the static store/`is`/`as` relation all reify through it, so a program cannot
+// type-check against one reading of `Self` and execute against another.
+FSParser::DataType fs_reify_self_in_trait_argument(
+		const FSParser::ClassNode *p_implementer, const FSParser::DataType &p_argument);
+
+// `p_implementer` is the class the projected arguments are read for -- the class applying the trait,
+// or a conformance's target -- and every projected position is passed through
+// `fs_reify_self_in_trait_argument()` before it is returned.
 bool fs_project_conformance_trait_arguments(
 		const FSParser::ClassNode *p_direct_trait,
 		const Vector<FSParser::DataType> &p_conformance_arguments,
 		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
 		const FSParser::ClassNode *p_identity_trait,
+		const FSParser::ClassNode *p_implementer,
 		Vector<FSParser::DataType> &r_arguments);

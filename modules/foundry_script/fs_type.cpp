@@ -534,7 +534,10 @@ static bool _project_class_trait_arguments(const FSParser::DataType &p_source,
 								: FSParser::DataType::substitute(*bound, class_bindings);
 					}
 				}
-				r_arguments.push_back(argument);
+				// `Self` denotes the level that applied the trait, so its finality -- not the source
+				// handle's -- decides whether the position is concrete. The shared rule is the same one
+				// the declaration-side and runtime records reify with.
+				r_arguments.push_back(fs_reify_self_in_trait_argument(current.class_type, argument));
 			}
 			return true;
 		}
