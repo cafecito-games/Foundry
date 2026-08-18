@@ -77,6 +77,10 @@ INTERRUPTED_EXIT_CODE = 130
 # table. Missing one here makes the wrapper predict the wrong binary name for a build that disabled
 # the setting, and then resolve a stale binary from an earlier configuration.
 SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "none", "off"})
+# What a build writes beside the executable it belongs to, named after that executable: separate
+# debug symbols. `.dSYM` is a directory on macOS and would be filtered anyway; naming both keeps the
+# rule explicit.
+DEBUG_SYMBOL_SUFFIXES = (".debugsymbols", ".dSYM")
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
 DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
 DEFAULT_PROC_CGROUP = Path("/proc/self/cgroup")
@@ -453,15 +457,11 @@ def built_binary_identities(target: BuildTarget) -> dict[str, dict[str, object]]
 
     Build settings the wrapper cannot reconstruct rename the binary, so the file a run ends up
     reporting is not always the one whose name the wrapper predicted. Recording the whole directory
-    keeps `binary_changed` an honest comparison of one path against its own earlier state.
+    keeps `binary_changed` an honest comparison of one path against its own earlier state, and gives
+    `resolve_linked_binary` the evidence it needs to name the artifact this invocation linked.
     """
     identities: dict[str, dict[str, object]] = {}
-    candidates = [target.binary_path]
-    try:
-        candidates += sorted(target.binary_path.parent.glob(f"foundry.{target.scons_platform}.{target.scons_target}*"))
-    except OSError:
-        pass
-    for candidate in candidates:
+    for candidate in editor_binary_candidates(target):
         identity = binary_identity(candidate)
         if identity is not None:
             identities[str(candidate)] = identity
@@ -882,6 +882,7 @@ class ResultContext:
         self.progress_path: Path | None = None
         self.progress_stdout_jsonl = False
         self.binaries_before: dict[str, dict[str, object]] = {}
+        self.binary_resolution = "unresolved"
         self.started = time.monotonic()
         self.child_disposition = "none"
         self.child_exit_code: int | None = None
@@ -930,6 +931,7 @@ def emit_result(status: str, *, step: str, exit_code: int, context: ResultContex
             binary_after=binary_after,
             binary_before=binary_before,
             binary_changed=binary_after != binary_before,
+            binary_resolution=context.binary_resolution,
             child_disposition=context.child_disposition,
             child_exit_code=context.child_exit_code,
         )
@@ -1021,24 +1023,81 @@ def binary_suffix(args: argparse.Namespace, scons_platform: str) -> str:
     return suffix
 
 
-def resolve_linked_binary(target: BuildTarget) -> Path | None:
-    """The binary this build produced, or None when the build left none.
+class BinaryResolution(NamedTuple):
+    """Which editor binary a finished build resolved to, and on what evidence."""
 
-    Platform configuration appends suffixes the wrapper cannot reconstruct from its own arguments
-    (sanitizers, fuzzer instrumentation, alternate toolchains), so an absent expected path falls back
-    to the sole editor binary in the same directory rather than declaring a successful build broken.
+    path: Path | None
+    # How the path was chosen: `relinked` when this invocation rewrote it, `unchanged` when the
+    # build was a no-op on the expected name, `sole-candidate` when an invisible rename left exactly
+    # one binary, `ambiguous` when several binaries could be meant, `missing` when there are none.
+    reason: str
+    candidates: tuple[Path, ...]
+
+
+def editor_binary_candidates(target: BuildTarget) -> list[Path]:
+    """Every runnable file in the build directory that this platform and target could have produced.
+
+    A build with separate debug symbols writes a sidecar next to the executable that shares its whole
+    name, so counting it as a candidate would make a renamed build look like two competing binaries.
     """
-    if target.binary_path.exists():
-        return target.binary_path
+    candidates = {target.binary_path} if target.binary_path.is_file() else set()
     try:
-        candidates = sorted(
+        candidates.update(
             path
             for path in target.binary_path.parent.glob(f"foundry.{target.scons_platform}.{target.scons_target}*")
             if path.is_file()
         )
     except OSError:
-        return None
-    return candidates[0] if len(candidates) == 1 else None
+        pass
+    # The predicted name is what this configuration builds, so it is never another binary's sidecar
+    # even when `extra_suffix` ends it in the same characters.
+    sidecars = {
+        path for path in candidates if path != target.binary_path and debug_symbols_of(path, candidates) is not None
+    }
+    return sorted(candidates - sidecars)
+
+
+def debug_symbols_of(path: Path, candidates: set[Path]) -> Path | None:
+    """The candidate `path` holds the debug symbols of, or None when `path` is an executable itself.
+
+    A separate-debug-symbols build names the sidecar after the executable it was extracted from, so a
+    sidecar is recognized by the executable standing next to it rather than by its suffix alone:
+    `extra_suffix` is unrestricted, and a binary may legitimately end in the same characters.
+    """
+    for suffix in DEBUG_SYMBOL_SUFFIXES:
+        if path.name.endswith(suffix):
+            executable = path.with_name(path.name[: -len(suffix)])
+            if executable in candidates:
+                return executable
+    return None
+
+
+def resolve_linked_binary(target: BuildTarget, binaries_before: dict[str, dict[str, object]]) -> BinaryResolution:
+    """The binary this build produced, resolved from what the invocation actually linked.
+
+    Platform configuration appends suffixes the wrapper cannot reconstruct from its own arguments
+    (sanitizers, fuzzer instrumentation, alternate toolchains), so the expected name is a prediction,
+    not evidence. A build directory can therefore hold a stale binary under the predicted name next
+    to the freshly linked one, and preferring the prediction would report success against a binary
+    this run did not build. Comparing each candidate against its own pre-build identity names the
+    artifact this invocation linked; when no candidate was relinked the build was a no-op, which is
+    not a failure, and when several binaries could equally be meant the run fails rather than guesses.
+    """
+    candidates = editor_binary_candidates(target)
+    relinked = [path for path in candidates if binary_identity(path) != binaries_before.get(str(path))]
+    if relinked:
+        if len(relinked) == 1:
+            return BinaryResolution(relinked[0], "relinked", tuple(candidates))
+        if target.binary_path in relinked:
+            return BinaryResolution(target.binary_path, "relinked", tuple(candidates))
+        return BinaryResolution(None, "ambiguous", tuple(relinked))
+    if target.binary_path in candidates:
+        return BinaryResolution(target.binary_path, "unchanged", tuple(candidates))
+    if len(candidates) == 1:
+        return BinaryResolution(candidates[0], "sole-candidate", tuple(candidates))
+    if not candidates:
+        return BinaryResolution(None, "missing", ())
+    return BinaryResolution(None, "ambiguous", tuple(candidates))
 
 
 def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
@@ -1545,6 +1604,7 @@ def main(argv: list[str]) -> int:
     RESULT_CONTEXT.progress_path = progress_path
     RESULT_CONTEXT.progress_stdout_jsonl = progress_stdout_jsonl
     RESULT_CONTEXT.binaries_before = {}
+    RESULT_CONTEXT.binary_resolution = "unresolved"
     RESULT_CONTEXT.started = time.monotonic()
     RESULT_CONTEXT.child_disposition = "none"
     RESULT_CONTEXT.child_exit_code = None
@@ -1809,10 +1869,21 @@ def main(argv: list[str]) -> int:
             return report("generation-failure", "generate", build_exit)
         return report("build-failure", "build", build_exit)
 
-    linked_binary = resolve_linked_binary(target)
-    if linked_binary is None:
-        print(f"[agent-build] expected binary is missing after build: {target.binary_path}", file=sys.stderr)
+    resolution = resolve_linked_binary(target, RESULT_CONTEXT.binaries_before)
+    RESULT_CONTEXT.binary_resolution = resolution.reason
+    if resolution.path is None:
+        if resolution.reason == "ambiguous":
+            listed = ", ".join(str(candidate) for candidate in resolution.candidates)
+            print(
+                "[agent-build] cannot tell which editor binary this build produced; "
+                f"candidates: {listed}. Remove the binaries this configuration does not build "
+                f"from {target.binary_path.parent} and build again.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"[agent-build] expected binary is missing after build: {target.binary_path}", file=sys.stderr)
         return report("binary-missing", "build", MISSING_BINARY_EXIT_CODE)
+    linked_binary = resolution.path
     target = target._replace(binary_path=linked_binary)
     RESULT_CONTEXT.binary_path = linked_binary
 
