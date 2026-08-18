@@ -855,6 +855,12 @@ public:
 		// `Self` container returns are compiled against the declaring class while the static call type is
 		// receiver-specialized.
 		bool returns_erased_container = false;
+		// Set by the analyzer once it has resolved which receiver this call dispatches on: true when
+		// that receiver is the calling frame's own (an unqualified call, a `self`-qualified one, or
+		// `super`), including the explicit-type-argument forms `name[T](...)` and `self.name[T](...)`
+		// whose callee syntax is a subscript rather than a plain identifier or attribute access. A
+		// `Self` parameter position then denotes the same value as the caller's `Self`.
+		bool receiver_is_current_self = false;
 		// Set by the analyzer when this coroutine call's result is captured into a statically
 		// `Coroutine[T]`-typed slot (a `Coroutine[T]` variable/parameter/return, or a
 		// `Coroutine[T]` container element). Holding the live `FSFunctionState` handle to
