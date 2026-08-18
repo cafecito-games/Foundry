@@ -137,9 +137,7 @@ def format_table(reports: list[ShardReport]) -> str:
     return "\n".join(lines)
 
 
-def aggregate(
-    directory: Path, expected_shards: int | None = None
-) -> tuple[int, str]:
+def aggregate(directory: Path, expected_shards: int | None = None) -> tuple[int, str]:
     """Returns the process exit code and the report to print."""
     try:
         reports = collect_shard_reports(directory, expected_shards)

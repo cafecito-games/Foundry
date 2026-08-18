@@ -67,3 +67,25 @@ HashMap<StringName, FSParser::DataType> fs_trait_use_type_argument_bindings(
 // so a consumer running before or without analysis sees every entry as argument-less.
 HashMap<StringName, FSParser::DataType> fs_trait_type_argument_bindings(
 		const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_trait);
+
+// The arguments one conformance supplies for one trait identity in its implied closure, in the
+// identity's own parameter order. The direct trait takes the declaration's own arguments; an implied
+// supertrait takes its binding by the direct trait, re-expressed in the conformance's terms through
+// `p_direct_bindings`.
+//
+// This is the one projection both conformance records are built from: the analyzer reduces each
+// entry to the registry's flattened form and the compiler lowers each entry to a runtime descriptor.
+// Two separate walks would let the declaration-side record and the runtime record describe the same
+// conformance differently, which is an analyzer/runtime split about what a conformance proved.
+//
+// Returns false -- and leaves `r_arguments` empty -- only when the projection itself fails: a missing
+// trait, an identity with no parameters, an application whose arity does not match, or an identity
+// parameter the direct trait never binds. A position that projects to an unset type or to a type
+// parameter still yields an entry: it is an open position, and it never erases what a concrete
+// sibling position proved.
+bool fs_project_conformance_trait_arguments(
+		const FSParser::ClassNode *p_direct_trait,
+		const Vector<FSParser::DataType> &p_conformance_arguments,
+		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
+		const FSParser::ClassNode *p_identity_trait,
+		Vector<FSParser::DataType> &r_arguments);

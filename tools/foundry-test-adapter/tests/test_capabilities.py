@@ -72,9 +72,7 @@ class CapabilitiesTests(ScratchTestCase):
         self.assertFalse(result.complete)
 
     def test_byte_order_mark_is_an_encoding_violation(self) -> None:
-        result = validate_capabilities(
-            self.write("capabilities.json", b"\xef\xbb\xbf" + document().encode("utf-8"))
-        )
+        result = validate_capabilities(self.write("capabilities.json", b"\xef\xbb\xbf" + document().encode("utf-8")))
         self.assertEqual(("artifact.encoding",), result.codes)
         self.assertFalse(result.valid)
         self.assertFalse(result.complete)

@@ -27,6 +27,13 @@ func assign_dictionary() -> void:
 	print("dictionary: ", kept)
 
 
+func assign_variant_argument() -> void:
+	# An explicit `Variant` argument is carried as the default/NIL carrier, and the assign path has to
+	# spell that carrier `Variant` rather than leaking the internal `Nil` name into the diagnostic.
+	var kept: Array[Box[Variant]] = supply(7)
+	print("variant argument: ", kept)
+
+
 func store_member() -> void:
 	var holder := Holder[Box[int]].new()
 	holder.keep(7)
@@ -36,4 +43,5 @@ func store_member() -> void:
 func test() -> void:
 	assign_array()
 	assign_dictionary()
+	assign_variant_argument()
 	store_member()

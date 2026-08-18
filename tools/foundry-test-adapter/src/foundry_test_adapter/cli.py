@@ -29,7 +29,9 @@ EXIT_CONFORMING = 0
 EXIT_VIOLATIONS = 1
 EXIT_UNUSABLE = 2
 
-_CONFORMING_CLASSIFICATIONS = frozenset({CONFORMING, "discovery_failures", "test_failures", "infrastructure_failure", "cancelled"})
+_CONFORMING_CLASSIFICATIONS = frozenset(
+    {CONFORMING, "discovery_failures", "test_failures", "infrastructure_failure", "cancelled"}
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -101,7 +103,13 @@ def _load_discovery_context(
 
     text, failure = read_artifact(path)
     if failure == "missing":
-        return (None, [Violation(ARTIFACT_MISSING, "The discovery context does not exist", path)], True, False, EXIT_VIOLATIONS)
+        return (
+            None,
+            [Violation(ARTIFACT_MISSING, "The discovery context does not exist", path)],
+            True,
+            False,
+            EXIT_VIOLATIONS,
+        )
     if failure == "encoding":
         return (
             None,
@@ -111,7 +119,13 @@ def _load_discovery_context(
             EXIT_VIOLATIONS,
         )
     if failure == "read":
-        return (None, [Violation(ARTIFACT_READ, "The discovery context could not be read", path)], True, False, EXIT_UNUSABLE)
+        return (
+            None,
+            [Violation(ARTIFACT_READ, "The discovery context could not be read", path)],
+            True,
+            False,
+            EXIT_UNUSABLE,
+        )
     assert text is not None
     result, model = validate_discovery(path)
     if model is None or not result.valid or not result.complete:

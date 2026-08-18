@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 19: (UNUSED_PARAMETER) The parameter "item" is never used in the function "accept()". If this is intended, prefix it with an underscore: "_item".
+open position accepts String: 3
+open position accepts float: 3
+>> SCRIPT ERROR at runtime/errors/retroactive_conformance_open_position_store_evidence.fs:28 on reject_conflicting_known_position(): Trying to assign value of type 'RcosTarget' to a variable of type 'RcosDuo[String, RcosTarget]'.
+done

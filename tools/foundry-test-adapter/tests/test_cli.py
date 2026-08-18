@@ -49,10 +49,13 @@ class CommandSurfaceTests(ScratchTestCase):
         )
 
     def test_violation_entries_carry_the_documented_keys(self) -> None:
-        artifact = self.write("discovery.jsonl", '{"protocol":"foundry-test-adapter","version":1,'
-                                                 '"event":"discovery_start","root":"res://tests"}\n'
-                                                 '{"protocol":"foundry-test-adapter","version":1,'
-                                                 '"event":"discovery_start","root":"res://tests"}\n')
+        artifact = self.write(
+            "discovery.jsonl",
+            '{"protocol":"foundry-test-adapter","version":1,'
+            '"event":"discovery_start","root":"res://tests"}\n'
+            '{"protocol":"foundry-test-adapter","version":1,'
+            '"event":"discovery_start","root":"res://tests"}\n',
+        )
         completed = run("discovery", artifact, "--format", "json")
         self.assertEqual(1, completed.returncode, completed.stderr)
         document = json.loads(completed.stdout)
@@ -68,8 +71,9 @@ class CommandSurfaceTests(ScratchTestCase):
 
     def test_report_operation_with_discovery_and_selections(self) -> None:
         artifact = self.write("report.tap", report(1, point(1, test_id="test-c")))
-        completed = run("report", artifact, "--discovery", NESTED, "--select", "suite-b",
-                        "--exit-code", "0", "--format", "json")
+        completed = run(
+            "report", artifact, "--discovery", NESTED, "--select", "suite-b", "--exit-code", "0", "--format", "json"
+        )
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertEqual("conforming", json.loads(completed.stdout)["classification"])
 
@@ -153,9 +157,10 @@ class CommandSurfaceTests(ScratchTestCase):
         self.assertEqual(["artifact.encoding"], [entry["code"] for entry in document["violations"]])
 
     def test_a_nonconforming_discovery_context_reports_only_selection(self) -> None:
-        context = self.write("discovery.jsonl",
-                             '{"protocol":"foundry-test-adapter","version":1,"event":"discovery_start",'
-                             '"root":"res://tests"}\n')
+        context = self.write(
+            "discovery.jsonl",
+            '{"protocol":"foundry-test-adapter","version":1,"event":"discovery_start","root":"res://tests"}\n',
+        )
         artifact = self.write("report.tap", report(1, point(1)))
         completed = run("report", artifact, "--discovery", context, "--format", "json")
         self.assertEqual(1, completed.returncode)

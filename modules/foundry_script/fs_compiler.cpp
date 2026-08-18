@@ -5524,7 +5524,7 @@ bool FSCompiler::_reify_flattened_trait_type_argument(const FSParser::DataType &
 		// A `Self` the trait wrote governs the whole handle whatever else the argument names, so the
 		// finality gate is decided here rather than through the trait-parameter gate below. That gate
 		// deliberately reports a `@Self` node as unsound -- projecting `Self` through a trait's applied
-		// argument list would validate against an unrelated type -- which is exactly the judgement this
+		// argument list would validate against an unrelated type -- which is exactly the judgment this
 		// rule replaces: `Self` resolves against the owner during conversion, never through the applied
 		// arguments, and any trait parameter written alongside it is still substituted below and re-checked
 		// before the fold is accepted.
@@ -6676,38 +6676,21 @@ Vector<FSWeakContainerType> FSCompiler::_conformance_trait_type_arguments(Foundr
 		const Vector<FSParser::DataType> &p_conformance_arguments,
 		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
 		FSParser::ClassNode *p_identity_trait) {
-	Vector<FSWeakContainerType> arguments;
-	if (p_direct_trait == nullptr || p_identity_trait == nullptr || p_identity_trait->type_parameters.is_empty()) {
-		return arguments;
-	}
-
 	Vector<FSParser::DataType> resolved;
-	if (p_identity_trait == p_direct_trait) {
-		if (p_conformance_arguments.size() != p_identity_trait->type_parameters.size()) {
-			return arguments;
-		}
-		resolved = p_conformance_arguments;
-	} else {
-		const HashMap<StringName, FSParser::DataType> substitution =
-				fs_trait_type_argument_bindings(p_direct_trait, p_identity_trait);
-		for (const FSParser::TypeParameterNode *type_parameter : p_identity_trait->type_parameters) {
-			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
-				return Vector<FSWeakContainerType>();
-			}
-			const FSParser::DataType *bound = substitution.getptr(type_parameter->identifier->name);
-			if (bound == nullptr) {
-				return Vector<FSWeakContainerType>();
-			}
-			resolved.push_back(FSParser::DataType::substitute(*bound, p_direct_bindings));
-		}
+	if (!fs_project_conformance_trait_arguments(p_direct_trait, p_conformance_arguments, p_direct_bindings,
+				p_identity_trait, resolved)) {
+		return Vector<FSWeakContainerType>();
 	}
 
+	Vector<FSWeakContainerType> arguments;
 	arguments.resize(resolved.size());
 	for (int i = 0; i < resolved.size(); i++) {
-		// A position that stays a type parameter proves nothing concrete, and a vector that is only
-		// partly known would let an unproven position pass as exact evidence.
+		// A position that stays open -- unset, or still a bare type parameter such as `Self` on a
+		// non-final target -- travels as an unconstrained descriptor, which the runtime comparison
+		// reads as an absence of evidence at that position alone. The concrete sibling positions keep
+		// rejecting, exactly as the declaration-side record does.
 		if (!resolved[i].is_set() || resolved[i].is_type_parameter()) {
-			return Vector<FSWeakContainerType>();
+			continue;
 		}
 		arguments.write[i] = FSWeakContainerType::from_container_type(
 				_gdtype_from_datatype(resolved[i], p_script).to_container_type());

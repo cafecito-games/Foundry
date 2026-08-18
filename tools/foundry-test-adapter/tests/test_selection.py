@@ -95,13 +95,29 @@ class ReportCorrelationTests(ScratchTestCase):
         self.assertEqual(("report.selection",), self.validate(content, NESTED).codes)
 
     def test_standalone_discovery_error_identifiers_are_rejected(self) -> None:
-        content = report(1, point(1, ok=False, test_id="error-a", status_detail="discovery_error",
-                                  message="the suite could not be indexed"))
+        content = report(
+            1,
+            point(
+                1,
+                ok=False,
+                test_id="error-a",
+                status_detail="discovery_error",
+                message="the suite could not be indexed",
+            ),
+        )
         self.assertEqual(("report.selection",), self.validate(content, WITH_ERRORS).codes)
 
     def test_discovery_error_status_may_carry_a_planned_leaf(self) -> None:
-        content = report(1, point(1, ok=False, test_id="test-a", status_detail="discovery_error",
-                                  message="the planned leaf could not be reloaded"))
+        content = report(
+            1,
+            point(
+                1,
+                ok=False,
+                test_id="test-a",
+                status_detail="discovery_error",
+                message="the planned leaf could not be reloaded",
+            ),
+        )
         result = self.validate(content, NESTED, selections=["test-a"], process_exit=1)
         self.assertTrue(result.valid, result.codes)
 

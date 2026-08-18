@@ -497,6 +497,25 @@ TEST_CASE("[ContainerType] A nameless script still renders its engine base") {
 	CHECK(nameless.get_type_name() == "RefCounted");
 }
 
+TEST_CASE("[ContainerType] A default carrier renders as Variant") {
+	// `Variant::NIL` is the internal spelling of "any value", so the renderer has to name it after the
+	// public type rather than after the carrier, at the top level and in every nested position.
+	const ContainerType default_carrier;
+	CHECK(default_carrier.get_type_name() == "Variant");
+	CHECK(make_builtin(Variant::NIL).get_type_name() == "Variant");
+
+	CHECK(make_array_of(default_carrier).get_type_name() == "Array[Variant]");
+	CHECK(make_dictionary_of(default_carrier, make_builtin(Variant::STRING)).get_type_name() == "Dictionary[Variant, String]");
+	CHECK(make_dictionary_of(make_builtin(Variant::STRING), default_carrier).get_type_name() == "Dictionary[String, Variant]");
+
+	// A `Variant` type argument is evidence of an erased specialization, so it is rendered as an
+	// argument like any other rather than being dropped.
+	const ContainerType erased = make_specialized_class(SNAME("RefCounted"), { default_carrier });
+	CHECK(erased.get_type_name() == "RefCounted[Variant]");
+	CHECK(make_array_of(erased).get_type_name() == "Array[RefCounted[Variant]]");
+	CHECK(make_array_of(make_array_of(default_carrier)).get_type_name() == "Array[Array[Variant]]");
+}
+
 TEST_CASE("[ContainerType] A nested element keeps its type arguments") {
 	const ContainerType specialized = make_specialized_class(SNAME("RefCounted"), { make_builtin(Variant::INT) });
 	CHECK(specialized.get_type_name() == "RefCounted[int]");
