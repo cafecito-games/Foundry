@@ -120,12 +120,11 @@ static bool _native_classes_are_on_one_chain(const StringName &p_class, const St
 // own previously-registered entries were cleared before this pass, so the registry only contributes
 // other files and the two sources never double-report.
 //
-// Precision is bounded by what the registry can record. `RecordedTypeArgument` flattens an argument
-// to a scalar identity and reduces a composite one -- a specialized generic or a typed container --
-// to `UNKNOWN`, which is an absence of evidence and never a wildcard. Two declarations that differ
-// only inside a composite argument therefore still register, exactly as the store check in
-// `FSTypeCompatibility` still accepts them: both read the same recorded form, so widening what that
-// form can carry lifts both at once rather than letting them diverge.
+// Precision is bounded by what the registry can record: whatever `RecordedTypeArgument` cannot
+// identify with certainty is an absence of evidence and never a wildcard. That bound is shared with
+// the store check in `FSTypeCompatibility`, which reads the same recorded form through the same
+// comparator, so widening what the form can carry lifts both at once rather than letting the
+// declaration side and the use side diverge.
 static bool _native_chain_binding_conflicts(const StringName &p_native_class, const StringName &p_identity,
 		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
 		const Vector<FSConformanceRegistry::Conformance> &p_pending,

@@ -39,7 +39,7 @@
 
 // A retroactive conformance on an engine class also answers for every subclass of that class, so two
 // `extend` declarations along one ClassDB chain describe the same trait for overlapping receivers.
-// Binding the trait to different type arguments on the two levels is the ClassDB analogue of
+// Binding the trait to different type arguments on the two levels is the ClassDB analog of
 // re-applying a trait with different arguments on a subclass, and is rejected for the same reason:
 // widening a receiver to the ancestor's type would otherwise switch which arguments apply, letting a
 // call typed against one argument list dispatch a witness written for the other.
