@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_cli_user_root.cpp                                                */
+/*  cli_user_root.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,14 +28,13 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "fs_cli_user_root.h"
+#include "cli_user_root.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 
-namespace FSTests {
-
-bool artifact_is_inside_user_root(const String &p_artifact_path, const String &p_user_root) {
+bool FoundryCLIUserRoot::root_holds_artifact(const String &p_artifact_path, const String &p_user_root) {
 	if (p_artifact_path.is_empty() || p_user_root.is_empty()) {
 		return false;
 	}
@@ -44,15 +43,18 @@ bool artifact_is_inside_user_root(const String &p_artifact_path, const String &p
 	// Compared with the separator attached so a sibling directory whose name merely starts with
 	// the root's name (`/scratch/user-benchmark-9` next to `/scratch/user-benchmark-91`) does
 	// not look contained.
-	return artifact == root || artifact.begins_with(root + "/");
+	if (artifact != root && !artifact.begins_with(root + "/")) {
+		return false;
+	}
+	return FileAccess::exists(artifact);
 }
 
-void remove_per_process_user_root(const String &p_user_root, const Vector<String> &p_artifact_paths) {
+void FoundryCLIUserRoot::remove_owned_root(const String &p_user_root, const Vector<String> &p_artifact_paths) {
 	if (p_user_root.is_empty() || !DirAccess::exists(p_user_root)) {
 		return;
 	}
 	for (const String &artifact_path : p_artifact_paths) {
-		if (artifact_is_inside_user_root(artifact_path, p_user_root)) {
+		if (root_holds_artifact(artifact_path, p_user_root)) {
 			return;
 		}
 	}
@@ -61,5 +63,3 @@ void remove_per_process_user_root(const String &p_user_root, const Vector<String
 		DirAccess::remove_absolute(p_user_root);
 	}
 }
-
-} // namespace FSTests

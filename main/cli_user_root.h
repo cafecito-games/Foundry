@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_cli_user_root.h                                                  */
+/*  cli_user_root.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -33,20 +33,19 @@
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
 
-namespace FSTests {
+// `user://` root policy for the test CLI verbs that own their root. Those verbs recreate the
+// root clean at startup, so each invocation is given a per-process root: a shared one would
+// erase the `user://` tree of a run started next to it.
+class FoundryCLIUserRoot {
+public:
+	// Whether a requested artifact path resolves to an existing file inside a per-process
+	// `user://` root. A `user://` output path lands in the root the run owns, so the caller
+	// has to keep the root when it holds the artifact the run was asked to produce. A path
+	// that was never written keeps nothing: the run produced no artifact worth preserving.
+	static bool root_holds_artifact(const String &p_artifact_path, const String &p_user_root);
 
-// `user://` root policy shared by the test CLI verbs that own their root. Those verbs
-// recreate the root clean at startup, so each invocation is given a per-process root: a
-// shared one would erase the `user://` tree of a run started next to it.
-
-// Whether a requested artifact path resolves inside a per-process `user://` root. A
-// `user://` output path lands in the root the run owns, so the caller has to keep the root
-// when it holds the artifact the run was asked to produce.
-bool artifact_is_inside_user_root(const String &p_artifact_path, const String &p_user_root);
-
-// Removes a finished run's per-process `user://` root. The root is nobody else's to reuse,
-// so leaving it behind would accumulate one directory per invocation; it is kept when it
-// holds one of `p_artifact_paths`.
-void remove_per_process_user_root(const String &p_user_root, const Vector<String> &p_artifact_paths);
-
-} // namespace FSTests
+	// Removes a finished run's per-process `user://` root. The root is nobody else's to reuse,
+	// so leaving it behind would accumulate one directory per invocation; it is kept when it
+	// holds one of `p_artifact_paths`.
+	static void remove_owned_root(const String &p_user_root, const Vector<String> &p_artifact_paths);
+};

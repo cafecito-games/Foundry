@@ -1395,6 +1395,136 @@ TEST_CASE("[FoundryCLI][TestBenchmark] A post-compile provider still resolves th
 	TemporaryNoMainSceneProject::remove_recursive(scratch);
 }
 
+// Lists the directories a benchmark run's shared scratch root holds, so a leftover
+// per-process `user://` root is visible without assuming what that root is named.
+static Vector<String> scratch_directories(const String &p_scratch, const Vector<String> &p_expected) {
+	Vector<String> unexpected;
+	Ref<DirAccess> dir = DirAccess::open(p_scratch);
+	if (dir.is_null()) {
+		return unexpected;
+	}
+	dir->list_dir_begin();
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+		if (dir->current_is_dir() && !p_expected.has(entry)) {
+			unexpected.push_back(entry);
+		}
+	}
+	dir->list_dir_end();
+	return unexpected;
+}
+
+// A benchmark run's `user://` root is per-process, so a run that fails before it reaches the
+// corpus would otherwise leave one directory behind per failed invocation.
+TEST_CASE("[FoundryCLI][TestBenchmark] A run that fails on its project leaves no user data root behind") {
+	const String scratch = benchmark_scratch_root("failed-project");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back("--project");
+	arguments.push_back(scratch.path_join("no_such_project"));
+	arguments.push_back(benchmark_corpus_path("_baseline"));
+	arguments.push_back("--output");
+	arguments.push_back(scratch.path_join("bench.json"));
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 1);
+	CHECK(scratch_directories(scratch, Vector<String>()).is_empty());
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
+// The run's `user://` root is removed once the run is done with it, and the project's
+// post-compile stage runs inside the run: a provider writing to `user://` must still find
+// its directory there.
+TEST_CASE("[FoundryCLI][TestBenchmark] A post-compile provider can still write to user://") {
+	const String scratch = benchmark_scratch_root("post-compile-user");
+	const String corpus = scratch.path_join("corpus");
+	write_trivial_benchmark_corpus(corpus);
+
+	const String project = scratch.path_join("project");
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(project.path_join("build")), OK);
+	{
+		Ref<FileAccess> provider = FileAccess::open(project.path_join("build/user_writer_provider.fs"),
+				FileAccess::WRITE);
+		REQUIRE(provider.is_valid());
+		provider->store_string(
+				"class_name BenchmarkUserWriterProvider extends FoundryBuildTask\n"
+				"\n"
+				"func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"
+				"\tvar result := FoundryBuildResult.new()\n"
+				"\tresult.fingerprint = \"post-compile-user\"\n"
+				"\tvar user_file := FileAccess.open(\"user://post_compile_probe.txt\", FileAccess.WRITE)\n"
+				"\tif user_file == null:\n"
+				"\t\tresult.success = false\n"
+				"\t\tresult.message = \"could not write the post-compile user:// probe\"\n"
+				"\t\treturn result\n"
+				"\tuser_file.store_string(context.task_name)\n"
+				"\tuser_file.close()\n"
+				"\tvar file := FileAccess.open(\"res://post_compile_artifact.txt\", FileAccess.WRITE)\n"
+				"\tif file == null:\n"
+				"\t\tresult.success = false\n"
+				"\t\tresult.message = \"could not write the post-compile artifact\"\n"
+				"\t\treturn result\n"
+				"\tfile.store_string(context.task_name)\n"
+				"\tfile.close()\n"
+				"\tresult.success = true\n"
+				"\tresult.message = \"post-compile-user\"\n"
+				"\treturn result\n");
+	}
+	{
+		Ref<FileAccess> config = FileAccess::open(project.path_join("project.foundry"), FileAccess::WRITE);
+		REQUIRE(config.is_valid());
+		config->store_string(
+				"config_version=5\n\n"
+				"[application]\n\n"
+				"config/name=\"Benchmark Post Compile User Project\"\n\n"
+				"[build]\n\n"
+				"enabled=true\n"
+				"post_compile=PackedStringArray(\"user_writer_task\")\n\n"
+				"[build/providers/pipeline.user_writer]\n\n"
+				"script=\"res://build/user_writer_provider.fs\"\n"
+				"class_name=\"BenchmarkUserWriterProvider\"\n\n"
+				"[build/tasks/user_writer_task]\n\n"
+				"provider=\"pipeline.user_writer\"\n"
+				"outputs=PackedStringArray(\"res://post_compile_artifact.txt\")\n");
+	}
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("--trusted");
+	arguments.push_back("test");
+	arguments.push_back("benchmark");
+	arguments.push_back("--project");
+	arguments.push_back(project);
+	arguments.push_back(corpus);
+	arguments.push_back("--output");
+	arguments.push_back(scratch.path_join("bench.json"));
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code, scratch);
+	INFO("Subprocess output:\n", output);
+	// The provider fails the build when it cannot open its `user://` probe, so a zero exit is
+	// what proves the run's user-data directory was still standing when post-compile ran.
+	CHECK_EQ(exit_code, 0);
+	CHECK(FileAccess::exists(scratch.path_join("bench.json")));
+
+	// The artifact the run was asked to produce lives outside its `user://` root, so the root
+	// is gone once the run is over.
+	Vector<String> expected_directories;
+	expected_directories.push_back("corpus");
+	expected_directories.push_back("project");
+	CHECK(scratch_directories(scratch, expected_directories).is_empty());
+
+	TemporaryNoMainSceneProject::remove_recursive(scratch);
+}
+
 TEST_CASE("[FoundryCLI][TestBenchmark] A missing corpus directory fails the run") {
 	const String scratch = benchmark_scratch_root("missing");
 

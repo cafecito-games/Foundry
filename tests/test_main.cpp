@@ -206,6 +206,7 @@
 #include "tests/core/os/test_foundry_cli_help.h"
 #include "tests/core/os/test_foundry_cli_parser.h"
 #include "tests/core/os/test_foundry_cli_project_test.h"
+#include "tests/core/os/test_foundry_cli_user_root.h"
 #include "tests/core/os/test_foundry_test_progress.h"
 #include "tests/core/os/test_foundry_version_info.h"
 #include "tests/core/os/test_os.h"

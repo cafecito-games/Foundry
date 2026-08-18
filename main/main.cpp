@@ -62,6 +62,7 @@
 #include "main/app_icon.gen.h"
 #include "main/cli_help.h"
 #include "main/cli_parser.h"
+#include "main/cli_user_root.h"
 #include "main/global_class_scan_policy.h"
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
@@ -162,7 +163,6 @@
 #endif // TOOLS_ENABLED
 #ifdef TESTS_ENABLED
 #include "modules/foundry_script/tests/fs_benchmark_runner.h"
-#include "modules/foundry_script/tests/fs_cli_user_root.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/tests/fs_fixture_cli.h"
 #endif // TOOLS_ENABLED
@@ -981,6 +981,23 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		OS::get_singleton()->ensure_user_data_dir();
 	}
 
+	// A per-process root belongs to one run alone, so it is removed once that run is done with
+	// it; leaving it behind would accumulate one directory per invocation, including per failed
+	// invocation. Every exit below goes through this.
+	Vector<String> owned_user_root_artifacts;
+	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES;
+	if (kind == Kind::TEST_BENCHMARK) {
+		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_output);
+		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
+	} else if (kind == Kind::TEST_FIXTURES) {
+		owned_user_root_artifacts.push_back(cli_parse.invocation.fixtures_output);
+	}
+	const auto remove_owned_user_root = [&]() {
+		if (owns_user_root) {
+			FoundryCLIUserRoot::remove_owned_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
+		}
+	};
+
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	bool project_loaded_for_build_pipeline = false;
 	const bool old_foundry_build_trusted = ProjectBuildTrustStore::is_cli_trusted_execution();
@@ -989,6 +1006,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		const Error project_err = ProjectSettings::get_singleton()->setup(test_project_path, String(), false, false);
 		if (project_err != OK) {
 			ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
+			remove_owned_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
@@ -1012,6 +1030,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 				"Foundry pre_compile test stage", &pre_compile_ran_any_task);
 		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
 		if (!pre_compile_ok) {
+			remove_owned_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
@@ -1024,13 +1043,6 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	int status = EXIT_SUCCESS;
-
-#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-	// Artifacts a verb that owns a per-process `user://` root was asked to produce. A
-	// `user://` path resolves inside that root, which is why the root is only removed once
-	// the run, including the project's post-compile stage, is done with it.
-	Vector<String> owned_user_root_artifacts;
-#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	if (kind == Kind::TEST_RUN) {
 		Vector<CharString> test_arg_storage;
@@ -1100,8 +1112,6 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			options.passes = FSTests::FSFixtureCLI::PASS_BYTECODE;
 		}
 		status = FSTests::FSFixtureCLI::run_cli(options);
-
-		owned_user_root_artifacts.push_back(options.output_path);
 #else
 		ERR_PRINT("foundry test fixtures requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
@@ -1113,9 +1123,6 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 				: cli_parse.invocation.command_args[0];
 		status = FSTests::FSBenchmarkRunner::run_cli(corpus, cli_parse.invocation.benchmark_output,
 				cli_parse.invocation.benchmark_profile, cli_parse.invocation.benchmark_profile_output);
-
-		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_output);
-		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
 #else
 		// Reporting success here would let automation accept a missing benchmark
 		// artifact as a completed measurement.
@@ -1134,13 +1141,10 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			status = EXIT_FAILURE;
 		}
 	}
-
-	// A per-process root belongs to this run alone, so leaving it behind would accumulate one
-	// directory per invocation. Nothing writes `user://` past this point.
-	if (kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES) {
-		FSTests::remove_per_process_user_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
-	}
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+	// Nothing writes `user://` past this point, including the project's post-compile stage.
+	remove_owned_user_root();
 	test_cleanup();
 	return status;
 #else
