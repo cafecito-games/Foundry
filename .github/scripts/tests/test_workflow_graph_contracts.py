@@ -820,6 +820,52 @@ class MacosBuildsWorkflowTests(WorkflowContractTestCase):
                 self.assertIn(f"FoundryJavaExporterContractTests.{regression}", command)
 
 
+class StaticChecksWorkflowTests(WorkflowContractTestCase):
+    """The style gate has to reach files no pull request touches."""
+
+    workflow: workflow_graph.Workflow
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.workflow = load_workflow("static_checks.yml")
+
+    def test_the_whole_tree_is_swept_on_develop_and_on_a_schedule(self) -> None:
+        self.assertEqual(["develop"], self.workflow.trigger("push")["branches"])
+        schedule = self.workflow.trigger("schedule")
+        self.assertEqual(1, len(schedule))
+        self.assertRegex(schedule[0]["cron"], r"^(\S+ ){4}\S+$")
+
+    def test_the_workflow_stays_callable_and_dispatchable(self) -> None:
+        triggers = self.workflow.triggers()
+        self.assertIn("workflow_call", triggers)
+        self.assertIn("workflow_dispatch", triggers)
+
+    def test_a_fork_does_not_run_the_nightly_sweep(self) -> None:
+        self.assertEqual(
+            "github.event_name != 'schedule' || github.repository == 'cafecito-games/Foundry'",
+            workflow_graph.normalize_expression(self.workflow.job_if("static-checks")),
+        )
+
+    def test_the_hook_scope_comes_from_the_tested_resolver(self) -> None:
+        resolve = "Resolve hook scope"
+        self.assertIn(
+            ".github/scripts/resolve_hook_scope.py --event-name",
+            self.workflow.step_run("static-checks", resolve),
+        )
+        self.assertEqual(
+            "${{ github.event_name }}",
+            self.workflow.step_key("static-checks", resolve, "env")["EVENT_NAME"],
+        )
+
+    def test_the_resolved_scope_is_what_the_hooks_run_over(self) -> None:
+        checks = self.workflow.step_with("static-checks", "Style checks via prek")
+        self.assertEqual("${{ env.PREK_ARGS }}", workflow_graph.normalize_expression(checks["extra-args"]))
+        self.assertLess(
+            self.workflow.step_index("static-checks", "Resolve hook scope"),
+            self.workflow.step_index("static-checks", "Style checks via prek"),
+        )
+
+
 class PreCommitRegistrationTests(WorkflowContractTestCase):
     def test_one_hook_runs_every_workflow_graph_contract(self) -> None:
         hook = local_hook(WORKFLOW_GRAPH_HOOK)
@@ -881,6 +927,7 @@ class PreCommitRegistrationTests(WorkflowContractTestCase):
             (
                 ".github/scripts/resolve_container_alias.py",
                 ".github/scripts/resolve_channel_tag_freshness.sh",
+                ".github/scripts/resolve_hook_scope.py",
                 ".github/scripts/verify_container_version_metadata.py",
                 ".github/scripts/verify_headless_image.sh",
                 ".github/scripts/tests/test_resolve_container_alias.py",

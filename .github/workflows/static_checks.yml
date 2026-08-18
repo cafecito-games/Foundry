@@ -2,12 +2,28 @@ name: 📊 Static Checks
 on:
   workflow_call:
   workflow_dispatch:
+  # A pull request is only ever checked over the files it touches, so a finding in
+  # an untouched file is invisible to that gate. These two triggers are the slower
+  # net that sweeps the whole tree independently of what any pull request edits.
+  push:
+    branches:
+      - develop
+  schedule:
+    # 09:00 UTC, outside the working day, so a nightly sweep never competes with
+    # pull request builds for runners.
+    - cron: "0 9 * * *"
+
+permissions: {}
 
 jobs:
   static-checks:
     name: Code style, file formatting, and docs
+    # Forks inherit the schedule but not the tree this sweep exists to protect.
+    if: github.event_name != 'schedule' || github.repository == 'cafecito-games/Foundry'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -19,19 +35,19 @@ jobs:
         run: |
           bash ./misc/scripts/gitignore_check.sh
 
-      - name: Get changed files
+      # Pull requests stay on the fast changed-files path; every other trigger
+      # (push to develop, the nightly schedule, a manual dispatch) sweeps the whole
+      # tree so pre-existing findings cannot hide behind file scoping.
+      - name: Resolve hook scope
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            files=$(git diff-tree --no-commit-id --name-only -r HEAD^1..HEAD 2> /dev/null || true)
-          elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.event.forced }}" == "false" ] && [ "${{ github.event.created }}" == "false" ]; then
-            files=$(git diff-tree --no-commit-id --name-only -r ${{ github.event.before }}..${{ github.event.after }} 2> /dev/null || true)
-          fi
-          files=$(echo "$files" | xargs -I {} sh -c 'echo "\"./{}\""' | tr '\n' ' ')
-          echo "CHANGED_FILES=$files" >> "$GITHUB_ENV"
+          changed=$(git diff-tree --no-commit-id --name-only -r HEAD^1..HEAD 2> /dev/null || true)
+          scope=$(printf '%s\n' "$changed" | python3 ./.github/scripts/resolve_hook_scope.py --event-name "$EVENT_NAME")
+          echo "Hook scope: $scope"
+          echo "PREK_ARGS=$scope" >> "$GITHUB_ENV"
 
       - name: Style checks via prek
         uses: j178/prek-action@v2
         with:
-          extra-args: --files ${{ env.CHANGED_FILES }}
+          extra-args: ${{ env.PREK_ARGS }}
