@@ -124,6 +124,15 @@ public:
 		// which is an absence of evidence, never a wildcard. Flattened rather than held as parse types
 		// because the registry outlives the parse tree the declaration came from.
 		Vector<RecordedTypeArgument> trait_type_arguments;
+		// The engine class the target's inheritance chain bottoms out at, for a script-class target. A
+		// conformance declared anywhere on that engine chain answers for this target's receivers too, so
+		// the coherence rule needs the chain's terminus without re-loading the target's parse tree.
+		// Empty for an engine or builtin target, and for a producer that could not resolve the chain,
+		// which states nothing rather than placing the target on `Object`'s chain.
+		StringName target_native_base;
+		// The target's declared name, as a diagnostic should spell it. The FQCN identifies the target but
+		// reads as a path for a file-scoped class, so it is kept separately rather than reconstructed.
+		String target_label;
 		String source_file;
 		// Position of the declaring `ConformanceNode` in the source file's root-class conformance list.
 		// Lets a consumer re-find this conformance in a *live* parse tree instead of dereferencing the
@@ -332,10 +341,31 @@ public:
 		Vector<RecordedTypeArgument> trait_type_arguments;
 	};
 
-	// Every ClassDB-registered engine class with a declared conformance to `p_trait_name`. Deliberately
-	// unfiltered by `Visibility`, like the other cross-file collision diagnostics: a contradiction
-	// between two declarations is a property of the program, not of what one file happens to load.
-	Vector<NativeConformanceRecord> get_native_conformance_records(const StringName &p_trait_name) const;
+	// Every ClassDB-registered engine class with a declared conformance to `p_trait_name`. Unfiltered by
+	// default, like the other cross-file collision diagnostics: a contradiction between two engine
+	// declarations is a property of the program, not of what one file happens to load.
+	//
+	// `p_visible_only` restricts the answer to declarations the installed `Visibility` allows, which is
+	// what a *script* class must ask: an engine conformance reaches it the way an import does, so one it
+	// never loads must not decide how it may bind a trait. `p_excluded_source_file` drops one declaring
+	// file, for a caller that is re-analyzing that file and holds its current declarations itself.
+	Vector<NativeConformanceRecord> get_native_conformance_records(const StringName &p_trait_name,
+			bool p_visible_only = false, const String &p_excluded_source_file = String()) const;
+
+	// One declaration-side conformance of a Foundry Script class to a trait, plus the engine class its
+	// inheritance chain bottoms out at, which is what places it on an engine chain at all.
+	struct ScriptConformanceRecord {
+		String target_fqcn;
+		String target_label;
+		StringName target_native_base;
+		String source_file;
+		Vector<RecordedTypeArgument> trait_type_arguments;
+	};
+
+	// Every script-class conformance to `p_trait_name` whose target resolved a terminal engine class.
+	// Filtered the same way `get_native_conformance_records` is.
+	Vector<ScriptConformanceRecord> get_script_conformance_records(const StringName &p_trait_name,
+			bool p_visible_only = false, const String &p_excluded_source_file = String()) const;
 
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.
 	// Useful for diagnosing cross-file duplicate conformances.

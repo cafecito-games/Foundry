@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Trait "SccxKeeper" is already applied with different type arguments by the conformance for "SccxHolder" in "res://analyzer/errors/sccx_chain_script_source.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.

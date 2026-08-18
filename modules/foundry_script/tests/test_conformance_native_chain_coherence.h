@@ -231,9 +231,9 @@ extend String uses NccRecordKeeper[String]:
 		return self
 
 
-extend NccHolder uses NccRecordKeeper[bool]:
-	func make() -> bool:
-		return true
+extend NccHolder uses NccRecordKeeper[int]:
+	func make() -> int:
+		return 11
 
 
 func test() -> void:
@@ -244,12 +244,302 @@ func test() -> void:
 	const Vector<FSConformanceRegistry::NativeConformanceRecord> records =
 			FSConformanceRegistry::get_singleton()->get_native_conformance_records(
 					fixture.trait_identity(StringName("NccRecordKeeper")));
-	// A builtin value type and a Foundry Script class have no ClassDB chain to share, so neither may
-	// be mistaken for an engine class the chain rule would compare against.
+	// Neither a builtin value type nor a Foundry Script class is an engine class, so neither may be
+	// mistaken for one in the engine-to-engine half of the rule. A script class still reaches the
+	// engine chain through its terminal base, which the script-target half compares separately, so all
+	// three declarations here agree on the arguments.
 	REQUIRE_EQ(records.size(), 1);
 	CHECK_EQ(records[0].native_class, StringName("RefCounted"));
 	CHECK_EQ(records[0].source_file, String(NativeChainFixture::SOURCE_PATH));
 	CHECK_EQ(records[0].trait_type_arguments.size(), 1);
+}
+
+// A script class's chain does not stop at its last script base: it continues through the engine class
+// that base ends on. A retroactive conformance on that engine ancestry answers for the script class's
+// receivers too, so the two declarations bind one trait for overlapping values and must agree.
+TEST_CASE("[Modules][FoundryScript][Conformance] A script class conflicts with its native ancestor's conformance") {
+	NativeChainFixture fixture(R"(
+trait NccScriptKeeper[T]:
+	abstract func make() -> T
+
+
+class NccScriptHolder extends RefCounted:
+	pass
+
+
+extend RefCounted uses NccScriptKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccScriptHolder uses NccScriptKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccScriptKeeper"));
+	CHECK(fixture.has_error_containing("RefCounted"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] The script chain rule does not depend on declaration order") {
+	NativeChainFixture fixture(R"(
+trait NccScriptOrderKeeper[T]:
+	abstract func make() -> T
+
+
+class NccScriptOrderHolder extends RefCounted:
+	pass
+
+
+extend NccScriptOrderHolder uses NccScriptOrderKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+extend RefCounted uses NccScriptOrderKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccScriptOrderKeeper"));
+	CHECK(fixture.has_error_containing("NccScriptOrderHolder"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A rejected script-chain conformance registers nothing") {
+	NativeChainFixture fixture(R"(
+trait NccRejectedKeeper[T]:
+	abstract func make() -> T
+
+
+class NccRejectedHolder extends RefCounted:
+	pass
+
+
+extend RefCounted uses NccRejectedKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccRejectedHolder uses NccRejectedKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+	REQUIRE(fixture.has_error_containing("is already applied with different type arguments"));
+
+	// The engine declaration is coherent on its own and stays; only the contradicting one is dropped,
+	// so no witness or membership is published for a conformance the program was rejected over.
+	const StringName identity = fixture.trait_identity(StringName("NccRejectedKeeper"));
+	const Vector<FSConformanceRegistry::ScriptConformanceRecord> script_records =
+			FSConformanceRegistry::get_singleton()->get_script_conformance_records(identity);
+	CHECK(script_records.is_empty());
+	const Vector<FSConformanceRegistry::NativeConformanceRecord> native_records =
+			FSConformanceRegistry::get_singleton()->get_native_conformance_records(identity);
+	CHECK_EQ(native_records.size(), 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A script class may repeat its native ancestor's arguments") {
+	NativeChainFixture fixture(R"(
+trait NccScriptAgreeKeeper[T]:
+	abstract func make() -> T
+
+
+class NccScriptAgreeHolder extends RefCounted:
+	pass
+
+
+extend RefCounted uses NccScriptAgreeKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccScriptAgreeHolder uses NccScriptAgreeKeeper[int]:
+	func make() -> int:
+		return 11
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A script class on another native branch may bind a trait differently") {
+	NativeChainFixture fixture(R"(
+trait NccBranchScriptKeeper[T]:
+	abstract func make() -> T
+
+
+class NccBranchScriptHolder extends Node:
+	pass
+
+
+extend RefCounted uses NccBranchScriptKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccBranchScriptHolder uses NccBranchScriptKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+
+	// A `Node` is never a `RefCounted`, so no value reaches both conformances.
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A script class with no conforming native ancestor is unaffected") {
+	NativeChainFixture fixture(R"(
+trait NccLoneKeeper[T]:
+	abstract func make() -> T
+
+
+class NccLoneHolder extends RefCounted:
+	pass
+
+
+extend NccLoneHolder uses NccLoneKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A native conformance without arguments is not evidence for a script class") {
+	NativeChainFixture fixture(R"(
+trait NccOpenScriptKeeper[T]:
+	abstract func size() -> int
+
+
+class NccOpenScriptHolder extends RefCounted:
+	pass
+
+
+extend RefCounted uses NccOpenScriptKeeper:
+	func size() -> int:
+		return 0
+
+
+extend NccOpenScriptHolder uses NccOpenScriptKeeper[String]:
+	func size() -> int:
+		return 1
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.error_messages.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A concrete composite position still conflicts across a script chain") {
+	NativeChainFixture fixture(R"(
+trait NccCompositeKeeper[T]:
+	abstract func make() -> T
+
+
+class NccCompositeHolder extends RefCounted:
+	pass
+
+
+extend RefCounted uses NccCompositeKeeper[Array[int]]:
+	func make() -> Array[int]:
+		return [7]
+
+
+extend NccCompositeHolder uses NccCompositeKeeper[Array[String]]:
+	func make() -> Array[String]:
+		return ["seven"]
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A class using a trait cannot contradict its native ancestor's conformance") {
+	NativeChainFixture fixture(R"(
+trait NccUsesKeeper[T]:
+	abstract func make() -> T
+
+
+extend RefCounted uses NccUsesKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+class NccUsesHolder extends RefCounted uses NccUsesKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+
+func test() -> void:
+	pass
+)");
+
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccUsesKeeper"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] An implied supertrait identity is checked across a script chain") {
+	NativeChainFixture fixture(R"(
+trait NccBaseKeeper[T]:
+	abstract func make() -> T
+
+
+trait NccDerivedKeeper[T] uses NccBaseKeeper[T]:
+	abstract func label() -> String
+
+
+class NccImpliedHolder extends RefCounted:
+	pass
+
+
+extend RefCounted uses NccBaseKeeper[int]:
+	func make() -> int:
+		return 7
+
+
+extend NccImpliedHolder uses NccDerivedKeeper[String]:
+	func make() -> String:
+		return "seven"
+
+	func label() -> String:
+		return "holder"
+
+
+func test() -> void:
+	pass
+)");
+
+	// The conflict is on the implied `NccBaseKeeper` identity, not on the trait the declaration names.
+	CHECK(fixture.has_error_containing("is already applied with different type arguments"));
+	CHECK(fixture.has_error_containing("NccBaseKeeper"));
 }
 
 } // namespace FSNativeChainCoherenceTests

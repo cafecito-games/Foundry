@@ -664,13 +664,16 @@ bool FSConformanceRegistry::get_builtin_conformance_type_arguments(Variant::Type
 }
 
 Vector<FSConformanceRegistry::NativeConformanceRecord> FSConformanceRegistry::get_native_conformance_records(
-		const StringName &p_trait_name) const {
+		const StringName &p_trait_name, bool p_visible_only, const String &p_excluded_source_file) const {
 	Vector<NativeConformanceRecord> records;
 	if (p_trait_name == StringName()) {
 		return records;
 	}
 	MutexLock lock(mutex);
 	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		if (file_entry.key == p_excluded_source_file || (p_visible_only && !_is_visible(file_entry.key))) {
+			continue;
+		}
 		for (const Conformance &conformance : file_entry.value) {
 			// A native target is keyed by the bare engine-class name and belongs to no script file, so
 			// a script class that happens to share a name with an engine class is never mistaken for one.
@@ -680,6 +683,36 @@ Vector<FSConformanceRegistry::NativeConformanceRecord> FSConformanceRegistry::ge
 			}
 			NativeConformanceRecord record;
 			record.native_class = StringName(conformance.target_fqcn);
+			record.source_file = conformance.source_file;
+			record.trait_type_arguments = conformance.trait_type_arguments;
+			records.push_back(record);
+		}
+	}
+	return records;
+}
+
+Vector<FSConformanceRegistry::ScriptConformanceRecord> FSConformanceRegistry::get_script_conformance_records(
+		const StringName &p_trait_name, bool p_visible_only, const String &p_excluded_source_file) const {
+	Vector<ScriptConformanceRecord> records;
+	if (p_trait_name == StringName()) {
+		return records;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		if (file_entry.key == p_excluded_source_file || (p_visible_only && !_is_visible(file_entry.key))) {
+			continue;
+		}
+		for (const Conformance &conformance : file_entry.value) {
+			// Only a script-class target records a terminal engine class; an engine or builtin target, and
+			// a producer that could not resolve the chain, leave it empty, which states nothing about a
+			// chain rather than placing the target on `Object`'s.
+			if (conformance.trait_name != p_trait_name || conformance.target_native_base == StringName()) {
+				continue;
+			}
+			ScriptConformanceRecord record;
+			record.target_fqcn = conformance.target_fqcn;
+			record.target_label = conformance.target_label.is_empty() ? conformance.target_fqcn : conformance.target_label;
+			record.target_native_base = conformance.target_native_base;
 			record.source_file = conformance.source_file;
 			record.trait_type_arguments = conformance.trait_type_arguments;
 			records.push_back(record);

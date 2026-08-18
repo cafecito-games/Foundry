@@ -745,6 +745,37 @@ private:
 			String &r_inherited_arguments, String &r_applied_arguments,
 			const FSParser::ClassNode *&r_binding_ancestor);
 
+	// The engine half of the same rule, for the direction a script class faces. One semantic chain runs
+	// from a script class through its script bases to the engine ancestry it ends on, and a retroactive
+	// conformance declared anywhere on that ancestry answers for the script class's receivers too.
+	// Binding the trait to different arguments on the two levels would let a value widened to the engine
+	// type dispatch a witness written for the other arguments.
+	//
+	// `p_applied` is what this declaration proves for `p_identity_trait`, flattened the way the registry
+	// records it, so both sides of the comparison go through one recorded/open comparator. `p_pending`
+	// carries the conformances the file being analyzed has validated so far; the registry contributes
+	// only other files, and only ones this file is allowed to see. On a conflict, `r_message` carries
+	// the diagnostic naming the conflicting target and its declaring file.
+	bool trait_binding_conflicts_with_native_ancestry(const FSParser::ClassNode *p_class,
+			const FSParser::ClassNode *p_identity_trait,
+			const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
+			const Vector<FSConformanceRegistry::Conformance> &p_pending, String &r_message) const;
+
+	// The same contradiction seen from the engine-class declaration: every script class whose chain
+	// bottoms out on `p_native_class` or one of its subclasses is answered for by this declaration, so
+	// each of their bindings for `p_identity_trait` has to agree with `p_applied`. Checking both
+	// directions is what makes the answer independent of which of the two declarations is analyzed
+	// first, within a file and across files.
+	bool native_conformance_conflicts_with_script_chain(const StringName &p_native_class,
+			const FSParser::ClassNode *p_identity_trait,
+			const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
+			const Vector<FSConformanceRegistry::Conformance> &p_pending, String &r_message) const;
+
+	// Applies the rule above to every trait `p_class` uses, including the supertraits those uses imply.
+	// Runs once the class's members are resolved rather than while its `uses` clauses are, because a
+	// conformance declared in another file only becomes visible after this file's imports are loaded.
+	void check_trait_uses_against_native_ancestry(FSParser::ClassNode *p_class);
+
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
