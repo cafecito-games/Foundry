@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Trait "SaxKeeper" is already applied with different type arguments by the conformance for "SaxMiddle" in "res://analyzer/errors/sax_ancestor_conformance.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.

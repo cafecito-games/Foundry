@@ -130,6 +130,13 @@ public:
 		// Empty for an engine or builtin target, and for a producer that could not resolve the chain,
 		// which states nothing rather than placing the target on `Object`'s chain.
 		StringName target_native_base;
+		// The fully-qualified class names of the script classes above a script-class target on its own
+		// inheritance chain, nearest first. One semantic chain runs from a script class through its script
+		// bases into the engine ancestry they end on, so the coherence rule needs the script half the way
+		// `target_native_base` gives it the engine half — without re-loading the target's parse tree.
+		// Empty for an engine or builtin target, for a target with no script base, and for a producer that
+		// could not follow the chain, all of which state nothing rather than claiming an ancestor.
+		Vector<String> target_script_ancestor_fqcns;
 		// The target's declared name, as a diagnostic should spell it. The FQCN identifies the target but
 		// reads as a path for a file-scoped class, so it is kept separately rather than reconstructed.
 		String target_label;
@@ -459,6 +466,10 @@ public:
 		String target_fqcn;
 		String target_label;
 		StringName target_native_base;
+		// See `Conformance::target_script_ancestor_fqcns`. Carried so a caller can decide the script half
+		// of the chain relation in both directions: the target may be an ancestor of the class asking, or
+		// a descendant of it.
+		Vector<String> target_script_ancestor_fqcns;
 		String source_file;
 		Vector<RecordedTypeArgument> trait_type_arguments;
 	};

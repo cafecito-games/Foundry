@@ -776,6 +776,19 @@ private:
 			const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
 			const Vector<FSConformanceRegistry::Conformance> &p_pending, String &r_message) const;
 
+	// The script half of the same rule. One semantic chain runs from a script class through its script
+	// bases, so a retroactive conformance on a script ancestor answers for `p_class`'s receivers too, and
+	// one on a script *descendant* answers for values this declaration also covers. Both directions are
+	// asked, which is what makes the answer independent of which of the two declarations is analyzed
+	// first, within a file and across files.
+	//
+	// `p_applied`, `p_pending`, and `r_message` mean exactly what they do for the engine half above, and
+	// the comparison goes through the same recorded/open comparator.
+	bool trait_binding_conflicts_with_script_ancestry(const FSParser::ClassNode *p_class,
+			const FSParser::ClassNode *p_identity_trait,
+			const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
+			const Vector<FSConformanceRegistry::Conformance> &p_pending, String &r_message) const;
+
 	// The same contradiction seen from the engine-class declaration: every script class whose chain
 	// bottoms out on `p_native_class` or one of its subclasses is answered for by this declaration, so
 	// each of their bindings for `p_identity_trait` has to agree with `p_applied`. Checking both
@@ -786,10 +799,11 @@ private:
 			const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
 			const Vector<FSConformanceRegistry::Conformance> &p_pending, String &r_message) const;
 
-	// Applies the rule above to every trait `p_class` uses, including the supertraits those uses imply.
+	// Applies the rules above to every trait `p_class` uses, including the supertraits those uses imply,
+	// against both halves of its chain: the engine ancestry it ends on and the script bases above it.
 	// Runs once the class's members are resolved rather than while its `uses` clauses are, because a
 	// conformance declared in another file only becomes visible after this file's imports are loaded.
-	void check_trait_uses_against_native_ancestry(FSParser::ClassNode *p_class);
+	void check_trait_uses_against_conformance_chain(FSParser::ClassNode *p_class);
 
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);

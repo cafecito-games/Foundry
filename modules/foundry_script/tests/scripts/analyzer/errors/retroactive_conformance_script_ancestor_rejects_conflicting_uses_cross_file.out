@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Trait "SauKeeper" is already applied with different type arguments by the conformance for "SauMiddle" in "res://analyzer/errors/sau_ancestor_conformance.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.
