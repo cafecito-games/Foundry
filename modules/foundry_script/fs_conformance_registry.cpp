@@ -35,7 +35,7 @@
 #include "fs_type.h"
 
 #include "core/object/class_db.h"
-#include "core/templates/hash_set.h"
+#include "core/templates/local_vector.h"
 
 FSConformanceRegistry *FSConformanceRegistry::singleton = nullptr;
 thread_local const FSConformanceRegistry::Visibility *FSConformanceRegistry::active_visibility = nullptr;
@@ -429,35 +429,44 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 	}
 	const int foreign_entry_count = view.size();
 
-	Vector<Conformance> accepted;
-	// One `ConformanceNode` is the unit of rejection, so the candidates are walked declaration by
-	// declaration: a conflict on any identity or witness one of them emits drops every entry it emitted,
-	// including the ones its implied supertraits produced.
-	int declaration_start = 0;
-	while (declaration_start < normalized.size()) {
-		int declaration_end = declaration_start + 1;
-		while (declaration_end < normalized.size() &&
-				normalized[declaration_end].conformance_index == normalized[declaration_start].conformance_index) {
-			declaration_end++;
+	// One `ConformanceNode` is the unit of rejection, so the candidates are grouped by the declaration
+	// that emitted them: a conflict on any identity or witness one of them emits drops every entry it
+	// emitted, including the ones its implied supertraits produced. Entries sharing a
+	// `conformance_index` are collected explicitly rather than assumed to arrive contiguously, so a
+	// caller that interleaves two declarations cannot get half of one registered. Groups keep the order
+	// their first entry appeared in, and entries keep their order within a group.
+	LocalVector<LocalVector<int>> declarations;
+	HashMap<int, int> declaration_by_conformance_index;
+	for (int entry_index = 0; entry_index < normalized.size(); entry_index++) {
+		const int conformance_index = normalized[entry_index].conformance_index;
+		const int *declaration = declaration_by_conformance_index.getptr(conformance_index);
+		if (declaration == nullptr) {
+			declaration_by_conformance_index.insert(conformance_index, (int)declarations.size());
+			declarations.push_back(LocalVector<int>());
+			declaration = declaration_by_conformance_index.getptr(conformance_index);
 		}
+		declarations[*declaration].push_back(entry_index);
+	}
 
+	Vector<Conformance> accepted;
+	for (const LocalVector<int> &declaration : declarations) {
 		RegistrationConflict conflict;
 		bool conflicts = false;
 		// Membership and chain coherence are per identity; the witness map is shared by every entry the
 		// declaration emitted, so it is checked once, and last, so a contradiction is reported as the
 		// membership or chain contradiction it is rather than as the witness collision it also implies.
-		for (int entry_index = declaration_start; entry_index < declaration_end && !conflicts; entry_index++) {
-			conflicts = _candidate_conflicts(normalized[entry_index], p_source_file, view, conflict);
+		for (uint32_t position = 0; position < declaration.size() && !conflicts; position++) {
+			conflicts = _candidate_conflicts(normalized[declaration[position]], p_source_file, view, conflict);
 		}
 		if (!conflicts) {
-			conflicts = _declaration_witnesses_collide(normalized[declaration_start], view, conflict);
+			conflicts = _declaration_witnesses_collide(normalized[declaration[0]], view, conflict);
 		}
 
 		if (conflicts) {
 			result.conflicts.push_back(conflict);
 		} else {
-			for (int entry_index = declaration_start; entry_index < declaration_end; entry_index++) {
-				accepted.push_back(normalized[entry_index]);
+			for (uint32_t position = 0; position < declaration.size(); position++) {
+				accepted.push_back(normalized[declaration[position]]);
 			}
 			// `Vector` is copy-on-write and may reallocate, so the borrowed view is rebuilt rather than
 			// appended to.
@@ -466,8 +475,6 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 				view.push_back(&entry);
 			}
 		}
-
-		declaration_start = declaration_end;
 	}
 
 	if (accepted.is_empty()) {
