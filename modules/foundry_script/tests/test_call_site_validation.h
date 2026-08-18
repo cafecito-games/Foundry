@@ -349,6 +349,23 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] An implicitly converted 
 	CHECK(checks[0].substituted_type.builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A value-preserving integer-carrier widening records no check") {
+	FSParser parser;
+	const Error error = parser.parse(
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test(value: uint) -> void:\n"
+			"\tidentity[long](value)\n",
+			"user://generic_argument_carrier_widening.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	CHECK(call_site_generic_argument_checks(parser.get_tree(), SNAME("test")).is_empty());
+}
+
 TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A convertible hard-typed argument stays an inference conflict") {
 	FSParser parser;
 	const Error error = parser.parse(

@@ -289,7 +289,15 @@ void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSPars
 		}
 		const FSTypeCompatibility::Result relation = FSTypeCompatibility::check(p_substituted_type, argument_type, conversion_options);
 		if (relation.compatible) {
-			if (!relation.uses_implicit_conversion || argument->is_constant) {
+			// A widening between two integer carriers (`uint` into `long`) is accepted because every
+			// value of the source is representable in the target, not because anything converts it:
+			// there is no registered `Variant` conversion across the signed/unsigned carriers, so a
+			// recorded check could only reject a value the analyzer proved valid. The value passes
+			// through unconverted, exactly as it did before this boundary learned to convert.
+			const bool integer_carrier_widening = FSNumericConversion::is_numeric_builtin(p_substituted_type) &&
+					FSNumericConversion::is_numeric_builtin(argument_type) &&
+					p_substituted_type.builtin_type != Variant::FLOAT && argument_type.builtin_type != Variant::FLOAT;
+			if (!relation.uses_implicit_conversion || argument->is_constant || integer_carrier_widening) {
 				return;
 			}
 		} else if (!analyzer->allows_runtime_narrowing(p_substituted_type, argument_type)) {

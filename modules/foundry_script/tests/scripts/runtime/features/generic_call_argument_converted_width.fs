@@ -41,6 +41,11 @@ func test() -> void:
 	var label: String = "label"
 	Utils.check(identity[StringName](label) == &"label")
 
+	# A widening between two integer carriers is accepted because every source value is representable,
+	# not because anything converts it; the value passes through unconverted.
+	var unsigned_value: uint = 5
+	Utils.check(identity[long](unsigned_value) == 5)
+
 	# The explicit application converts every argument slot the substitution closes. The inferred
 	# spelling of this call is not equivalent: type parameters are invariant, so a hard `int` head
 	# and a hard `float` tail conflict and require the explicit application used here.
