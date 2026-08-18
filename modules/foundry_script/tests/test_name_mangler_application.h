@@ -35,6 +35,7 @@
 #include "modules/foundry_script/fs_conformance_registry.h"
 #include "modules/foundry_script/fs_name_mangler_analysis.h"
 #include "modules/foundry_script/fs_name_mangler_application.h"
+#include "modules/foundry_script/tests/fs_test_language_lifecycle.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
 #include "tests/test_macros.h"
@@ -3549,10 +3550,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects non-Foundry global t
 }
 
 TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup name table") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(
-				SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 	const StringName autoload_name =
 			SNAME("PrivateMarkerFixupAutoload");
 	const StringName named_global_name = SNAME("_fsb_0");

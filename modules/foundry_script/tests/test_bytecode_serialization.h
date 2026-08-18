@@ -44,6 +44,7 @@
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_reflection.h"
 #include "modules/foundry_script/fs_utility_callable.h"
+#include "modules/foundry_script/tests/fs_test_language_lifecycle.h"
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
@@ -456,9 +457,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Resource constants become external ref
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Native class and engine singleton constants round-trip") {
 	FSLanguage *language = FSLanguage::get_singleton();
-	if (!language->has_any_global_constant(SNAME("RefCounted"))) {
-		language->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 
 	const Ref<FSNativeClass> native_class = Ref<FSNativeClass>(memnew(FSNativeClass(StringName("Node"))));
 	const Variant decoded_native = bytecode_round_trip_variant(native_class);
@@ -1671,9 +1670,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Codegen records store-global operands 
 	autoload.path = scene_path;
 	autoload.is_singleton = true;
 	ProjectSettings::get_singleton()->add_autoload(autoload);
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 	FSLanguage::get_singleton()->add_global_constant(autoload_name, Variant());
 
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
@@ -2094,9 +2091,7 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Await-containing functions deserial
 }
 
 TEST_CASE("[FoundryScript][BytecodeFunction] Store-global operands are rebaked by name at link time") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 	const StringName global_name = "BytecodeFunctionGlobal";
 	FSLanguage::get_singleton()->add_global_constant(global_name, Variant());
 	const Ref<FoundryScript> script = compile_bytecode_test_source("var placeholder = 0\n");
@@ -2335,9 +2330,7 @@ struct BytecodeEditorOnlyGlobalGuard {
 };
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collected for export validation") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 
 	// Mirrors an editor session, where an autoload singleton is registered only as a named global
 	// (not in the global array): the compiler reaches it through the TOOLS-only
@@ -2422,9 +2415,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Per-file export compile scope restores editor bytecode") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 
 	const String scene_path = TestUtils::get_temp_path("bytecode_per_file_export_autoload.tscn");
 	{
@@ -2491,9 +2482,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Per-file export compile scope restores
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Call-stack tracking gates OPCODE_LINE emission") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-		FSLanguage::get_singleton()->init();
-	}
+	FSTests::ensure_fs_language_initialized();
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"func run() -> int:\n"
 			"\treturn 1\n");

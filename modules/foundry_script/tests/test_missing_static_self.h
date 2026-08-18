@@ -36,6 +36,7 @@
 #include "../fs_compiler.h"
 #include "../fs_function.h"
 #include "../fs_parser.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/error/error_macros.h"
 #include "core/io/file_access.h"
@@ -115,9 +116,7 @@ static void missing_static_self_callee_probe() {
 
 struct MissingStaticSelfLanguageScope {
 	MissingStaticSelfLanguageScope() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 		missing_static_self_callee_ran() = false;
 	}
 	~MissingStaticSelfLanguageScope() {

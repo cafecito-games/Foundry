@@ -35,6 +35,7 @@
 #include "../fs_compiler.h"
 #include "../fs_conformance_registry.h"
 #include "../fs_parser.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/variant/container_type_validate.h"
 
@@ -55,9 +56,7 @@ namespace FSTests {
 
 struct ScopedGenericRuntimeLanguage {
 	ScopedGenericRuntimeLanguage() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 };
 

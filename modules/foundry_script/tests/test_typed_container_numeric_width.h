@@ -34,6 +34,7 @@
 #include "../fs_analyzer.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
+#include "fs_test_language_lifecycle.h"
 
 #include "core/error/error_macros.h"
 #include "core/variant/array.h"
@@ -56,9 +57,7 @@ namespace FSTests {
 
 struct ScopedTypedContainerWidthLanguage {
 	ScopedTypedContainerWidthLanguage() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-		}
+		FSTests::ensure_fs_language_initialized();
 	}
 };
 

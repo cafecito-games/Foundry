@@ -37,7 +37,11 @@
 // `compile_bytecode_test_source()`, `bytecode_round_trip_member_function()` and the engine-error
 // recorder. Every module test header is compiled into one translation unit, so reusing these
 // helpers costs nothing and keeps a single in-process compile path.
+#include "fs_test_language_lifecycle.h"
 #include "test_bytecode_serialization.h"
+// `ScopedProxyLanguage` is one of the fixtures whose initialization gate reads the reflection
+// namespace, so it doubles as the migrated-gate subject exercised after a finish cycle.
+#include "test_proxy.h"
 
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_function.h"
@@ -200,6 +204,67 @@ TEST_CASE("[Modules][FoundryScript][Shutdown] A reported stale cache entry does 
 	CHECK_EQ(TestFSLanguageFunctionListAccessor::registered_function_count(language), 0);
 
 	language->init();
+}
+
+TEST_CASE("[Modules][FoundryScript][Shutdown] The initialization gate brings a finished language back up") {
+	FSLanguage *language = FSLanguage::get_singleton();
+	language->finish();
+
+	// The state that makes an ordinary global a useless initialization signal: `finish()` drops the
+	// reflection namespace but leaves the plain globals behind.
+	REQUIRE(language->has_any_global_constant(SNAME("RefCounted")));
+	REQUIRE(language->get_namespace_singleton().is_null());
+
+	CHECK(ensure_fs_language_initialized());
+	CHECK(language->get_namespace_singleton().is_valid());
+
+	// A language brought back up by the gate compiles again.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func only() -> int:\n"
+			"\treturn 5\n");
+	CHECK(script.is_valid());
+}
+
+TEST_CASE("[Modules][FoundryScript][Shutdown] The initialization gate leaves a live language untouched") {
+	FSLanguage *language = FSLanguage::get_singleton();
+	language->finish();
+	language->init();
+
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func only() -> int:\n"
+			"\treturn 7\n");
+	REQUIRE(script.is_valid());
+
+	const FSNamespace *namespace_before = language->get_namespace_singleton().ptr();
+	const int function_count_before = TestFSLanguageFunctionListAccessor::registered_function_count(language);
+	REQUIRE(namespace_before != nullptr);
+	REQUIRE(function_count_before > 0);
+
+	// A second gate on an already-initialized language must not re-run `init()`: that would rebuild
+	// the reflection namespace and drop the state the live scripts were compiled against.
+	CHECK_FALSE(ensure_fs_language_initialized());
+	CHECK(language->get_namespace_singleton().ptr() == namespace_before);
+	CHECK_EQ(TestFSLanguageFunctionListAccessor::registered_function_count(language), function_count_before);
+	CHECK(script->is_valid());
+}
+
+TEST_CASE("[Modules][FoundryScript][Shutdown] A migrated fixture gate runs after a finish cycle") {
+	FSLanguage *language = FSLanguage::get_singleton();
+	language->finish();
+	REQUIRE(language->get_namespace_singleton().is_null());
+
+	{
+		ScopedProxyLanguage scoped_language;
+		CHECK(language->get_namespace_singleton().is_valid());
+
+		const Ref<FoundryScript> script = compile_bytecode_test_source(
+				"func only() -> int:\n"
+				"\treturn 11\n");
+		CHECK(script.is_valid());
+	}
+
+	// The fixture guard owns no teardown, so the language it revived stays usable for the next test.
+	CHECK(language->get_namespace_singleton().is_valid());
 }
 
 } // namespace FSTests

@@ -43,6 +43,7 @@
 #include "core/os/os.h"
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_autoload_index.h"
+#include "modules/foundry_script/tests/fs_test_language_lifecycle.h"
 #include "tests/test_macros.h"
 
 namespace TestEditorAutoloadSettings {
@@ -162,10 +163,7 @@ struct ScopedFSLanguage {
 	bool initialized = false;
 
 	ScopedFSLanguage() {
-		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			FSLanguage::get_singleton()->init();
-			initialized = true;
-		}
+		initialized = FSTests::ensure_fs_language_initialized();
 	}
 
 	~ScopedFSLanguage() {
