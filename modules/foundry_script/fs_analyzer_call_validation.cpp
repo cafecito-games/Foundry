@@ -1037,7 +1037,13 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 		return;
 	}
 
-	if (arg_type.is_variant() || !arg_type.is_hard_type()) {
+	// A value projected out of a raw generic receiver, and a parameter slot of one, are both erased:
+	// neither side names anything the run time can decide the other against. Routing them into the
+	// dynamic branch reports the crossing with the warning that already covers an argument the callee
+	// cannot trust, rather than through a diagnostic family of their own.
+	const bool crosses_raw_generic_boundary = FSAnalyzer::raw_generic_projection_crosses_boundary(par_type, arg_type);
+
+	if (arg_type.is_variant() || !arg_type.is_hard_type() || crosses_raw_generic_boundary) {
 		if (arg_type.is_variant() && analyzer->strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
 			analyzer->push_error(make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, true, false, p_argument), p_argument);
 		} else {

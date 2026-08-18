@@ -2136,4 +2136,61 @@ func test() -> void:
 	CHECK(generic_has_error_containing(parser, R"(Type argument 1 for generic class "Box" is not a valid type:)"));
 }
 
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Raw generic members mark assignments and returns unsafe") {
+	// Assignment and return have no unsafe-boundary warning of their own for any gradual source, so
+	// the observable effect of the crossing is the unsafe line the analyzer records for it.
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "raw_generic_projection_unsafe_lines.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+
+	const HashSet<int> &unsafe_lines = parser.get_unsafe_lines();
+	CHECK(unsafe_lines.has(12)); // var local: int = box.get_value() with a raw receiver.
+	CHECK_FALSE(unsafe_lines.has(17)); // The same assignment with a Box[int] receiver.
+	CHECK(unsafe_lines.has(22)); // return box.get_value() with a raw receiver.
+	CHECK_FALSE(unsafe_lines.has(26)); // The same return with a Box[int] receiver.
+	CHECK_FALSE(unsafe_lines.has(30)); // return box.size(), which names no type parameter.
+	CHECK(unsafe_lines.has(37)); // return box.get_value() into an identically named parameter of another class.
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] A raw generic crossing escalates with its warning") {
+	// The crossing is reported through `UNSAFE_CALL_ARGUMENT` itself, so raising that code to `ERROR`
+	// through the ordinary warning settings turns it into an analyzer error like any other use of it.
+	const String source = R"(
+class Box[T]:
+	var stored: T
+
+	func get_value() -> T:
+		return stored
+
+func want_int(value: int) -> void:
+	print(value)
+
+func consume(box: Box) -> void:
+	want_int(box.get_value())
+)";
+
+	SUBCASE("warn level reports the crossing as a warning") {
+		const WarningSettingsScope warning_settings({ { FSWarning::UNSAFE_CALL_ARGUMENT, FSWarning::WARN } });
+		FSParser parser;
+		REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+		CHECK_EQ(generic_count_warnings(parser, FSWarning::UNSAFE_CALL_ARGUMENT), 1);
+	}
+
+	SUBCASE("error level rejects the crossing") {
+		const WarningSettingsScope warning_settings({ { FSWarning::UNSAFE_CALL_ARGUMENT, FSWarning::ERROR } });
+		FSParser parser;
+		REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK(analyzer.analyze() != OK);
+		CHECK(generic_has_error_containing(parser, R"(requires the subtype "int" but the supertype "T" was provided)"));
+		CHECK(generic_has_error_containing(parser, "(Warning treated as error.)"));
+	}
+}
+#endif // DEBUG_ENABLED
+
 } // namespace FSTests

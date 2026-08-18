@@ -651,11 +651,26 @@ private:
 			const FSParser::Node *p_source, FSParser::ClassNode *&r_declaring_trait,
 			FSParser::ClassNode::Member &r_member, bool *r_found_unflattenable = nullptr);
 	FSParser::FunctionNode *find_generic_method(FSParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member);
+	// True when p_class is the class being analyzed or one of its outer classes, so its type parameters
+	// are lexically in scope here. A generic declaration's own body already names its parameters, so a
+	// receiver of that declaration spelled without arguments there is the open handle the body talks
+	// about rather than a raw use that bound nothing.
+	bool class_encloses_analysis_scope(const FSParser::ClassNode *p_class) const;
 	FSParser::DataType substitute_member_type(
 			const FSParser::DataType &p_member_type,
 			const FSParser::DataType &p_base,
 			const FSParser::FunctionNode *p_shadowing_method = nullptr,
 			const FSParser::DataType *p_self_type = nullptr);
+	// True when p_type is a value projected out of a raw generic receiver and still denotes one of the
+	// parameters that receiver never bound. Nothing decides such a value: the parameter is erased at
+	// run time and no argument states what it holds, so every typed boundary it crosses is exactly as
+	// unchecked as one a Variant crosses. The boundary checks ask this instead of inspecting member
+	// lookups, so the same answer drives call arguments, assignments, and returns.
+	static bool is_raw_generic_projection(const FSParser::DataType &p_type);
+	// True when a raw generic projection flowing into p_destination is unsafe: a destination that is
+	// the very same unbound parameter states no more than the value already carries, so only a
+	// destination that says something else is a boundary the value has to cross.
+	static bool raw_generic_projection_crosses_boundary(const FSParser::DataType &p_destination, const FSParser::DataType &p_source);
 	// Identifies the declaration whose type parameters an application is binding. A generic class and a
 	// generic tagged union differ only in where their parameters live, how they are named in a
 	// diagnostic, and which scope a declared bound must be resolved in, so argument binding is written

@@ -1,0 +1,3 @@
+FS_TEST_OK
+~~ WARNING at line 31: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "want_int()" requires the subtype "int" but the supertype "U" was provided.
+~~ WARNING at line 33: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "store()" requires the subtype "U" but the supertype "int" was provided.
