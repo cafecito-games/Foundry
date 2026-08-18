@@ -2179,6 +2179,13 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
 
 	FSParser::DataType base_type = p_base.type;
+	// A receiver typed as a type parameter -- `self`, typed as `Self`, above all -- offers the members
+	// of its bound, so the walk starts from the bound exactly as symbol lookup does.
+	if (base_type.kind == FSParser::DataType::TYPE_PARAMETER && !base_type.type_parameter_bound.is_empty()) {
+		const bool was_meta_type = base_type.is_meta_type;
+		base_type = base_type.type_parameter_bound[0];
+		base_type.is_meta_type = was_meta_type;
+	}
 
 	if (!p_types_only && base_type.is_meta_type && base_type.kind != FSParser::DataType::BUILTIN && base_type.kind != FSParser::DataType::ENUM) {
 		ScriptLanguage::CodeCompletionOption option("new", ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, ScriptLanguage::LOCATION_LOCAL);

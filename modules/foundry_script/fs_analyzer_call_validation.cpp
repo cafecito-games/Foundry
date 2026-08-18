@@ -281,7 +281,7 @@ void FSAnalyzer::CallSiteValidationContext::record_generic_argument_check(FSPars
 	const FSParser::DataType argument_type = argument->get_datatype();
 	if (argument_type.is_set() && !argument_type.is_variant()) {
 		if (FSTypeCompatibility::is_compatible(p_substituted_type, argument_type) ||
-				!FSTypeCompatibility::allows_runtime_narrowing(p_substituted_type, argument_type)) {
+				!analyzer->allows_runtime_narrowing(p_substituted_type, argument_type)) {
 			return;
 		}
 	}
@@ -1043,7 +1043,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 		}
 		if (!type_handle_error.is_empty()) {
 			analyzer->push_error(type_handle_error, p_argument);
-		} else if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(par_type, arg_type)) {
+		} else if (nullable_mismatch || !analyzer->allows_runtime_narrowing(par_type, arg_type)) {
 			analyzer->push_error(make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, nullable_mismatch, p_argument), p_argument);
 #ifdef DEBUG_ENABLED
 		} else {

@@ -1689,6 +1689,14 @@ handle of the receiver the running call was made through — the same value `Typ
 `Self.new()` is therefore the ordinary class-handle construction form, and its result type is
 `Self`.
 
+`self` is the receiver itself, so it is typed `Self` in every body of a class, unconditionally. The
+type of the expression is a property of the expression: it never depends on whether the enclosing
+function happens to name `Self` somewhere else, so two functions differing only by an unrelated
+declaration agree about every use of `self`. The two receivers that are not an open instance of the
+enclosing class are typed as what they are instead: an enum host types `self` as the enum value, and a
+builtin conformance target (`extend int uses ...`) types it as the builtin it extends, which has no
+subclass and is therefore already its own `Self` -- `self + 10` in such a body is `int` arithmetic.
+
 **Receiver rule.** For a static call made through a class handle whose exact runtime type is `R`,
 every occurrence of `Self` in the invoked implementation denotes `R`, at every nesting depth. This
 holds when method lookup selects an implementation declared on an ancestor `B`, and equally when
@@ -1729,9 +1737,11 @@ the call site knows the receiver, and the answer is the same at every nesting de
   admits a literal whose nested second element is, and non-`Self` positions are checked by the
   ordinary rules. Nullability is unwrapped first, so a `(int, Self)?` parameter also admits `null`.
 - Typed containers and generic type arguments of `Self` — `Array[Self]`, `Dictionary[String, Self]`,
-  `Type[Self]`, `Callable[[Self], Self]`, `Crate[Self]` — require an exact receiver. They are checked
-  as a carrier's declared element type, invariantly, so holding the receiver inside a carrier built
-  against the static class does not make the carrier the leaf's.
+  `Type[Self]`, `Callable[[Self], Self]`, `Crate[Self]` — are checked as a carrier's declared element
+  type, invariantly, so holding the receiver inside a carrier that arrives already typed as the static
+  class does not make the carrier the leaf's. A carrier written at the call site out of `self`, such as
+  `take_items([self])`, is admitted: its elements are typed `Self`, so the carrier the frame builds is
+  the leaf's.
 
 Whether a parameter is satisfied never depends on the calling function's own signature or body: the
 same call written in two functions of one class is accepted or rejected alike.

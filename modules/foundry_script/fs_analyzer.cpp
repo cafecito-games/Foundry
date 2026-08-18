@@ -2458,12 +2458,8 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		// where the receiver is the as-yet-unbound instance. Lowering it to the `@Self` type parameter
 		// (bound to the declaring class) carries the marker the runtime needs to re-bind each position
 		// to the running instance's leaf script; collapsing it to the class directly would drop that
-		// marker. The `uses_receiver_relative_self` flag is only meaningful inside a function body.
-		FSParser::DataType self_type = _self_type_parameter_for_class(parser->current_class);
-		if (parser->current_function != nullptr) {
-			parser->current_function->uses_receiver_relative_self = true;
-		}
-		return finalize_datatype(self_type);
+		// marker.
+		return finalize_datatype(_self_type_parameter_for_class(parser->current_class));
 	}
 
 	if (first_id->suite && first_id->suite->has_local(first)) {
@@ -5079,7 +5075,7 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 				if (!type_handle_error.is_empty()) {
 					push_error(type_handle_error, p_assignable->initializer);
 				} else if (!nullable_mismatch && !is_constant && !receiver_validation_is_unavailable(specified_type) &&
-						FSTypeCompatibility::allows_runtime_narrowing(specified_type, initializer_type)) {
+						allows_runtime_narrowing(specified_type, initializer_type)) {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
@@ -6183,7 +6179,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 					!compatibility_expected_type.is_nullable && !compatibility_expected_type.is_variant();
 			mark_node_unsafe(p_return);
 			if (nullable_mismatch || receiver_validation_is_unavailable(compatibility_expected_type) ||
-					!FSTypeCompatibility::allows_runtime_narrowing(compatibility_expected_type, result)) {
+					!allows_runtime_narrowing(compatibility_expected_type, result)) {
 				if (nullable_mismatch) {
 					push_error(vformat(R"(Cannot return nullable value of type "%s"; expected non-nullable "%s".)",
 									   result.to_string(),
@@ -6627,7 +6623,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 				return;
 			}
 			if (!receiver_validation_is_unavailable(expected_type) &&
-					FSTypeCompatibility::allows_runtime_narrowing(expected_type, actual_type)) {
+					allows_runtime_narrowing(expected_type, actual_type)) {
 				mark_node_unsafe(element_node);
 				continue;
 			}
@@ -6707,7 +6703,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 			if (!receiver_validation_is_unavailable(expected_key_type) &&
-					FSTypeCompatibility::allows_runtime_narrowing(expected_key_type, actual_key_type)) {
+					allows_runtime_narrowing(expected_key_type, actual_key_type)) {
 				mark_node_unsafe(key_element_node);
 			} else {
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
@@ -6767,7 +6763,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 			if (!receiver_validation_is_unavailable(expected_value_type) &&
-					FSTypeCompatibility::allows_runtime_narrowing(expected_value_type, actual_value_type)) {
+					allows_runtime_narrowing(expected_value_type, actual_value_type)) {
 				mark_node_unsafe(value_element_node);
 			} else {
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
@@ -7104,7 +7100,7 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					if (!type_handle_error.is_empty()) {
 						push_error(type_handle_error, p_assignment->assigned_value);
 					} else if (!nullable_mismatch && !receiver_validation_is_unavailable(assignee_type) &&
-							FSTypeCompatibility::allows_runtime_narrowing(assignee_type, op_type)) {
+							allows_runtime_narrowing(assignee_type, op_type)) {
 						// hard non-variant assignee and maybe compatible result
 						p_assignment->use_conversion_assign = true;
 					} else {
@@ -7827,7 +7823,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				FSParser::SubscriptNode *receiver_access = static_cast<FSParser::SubscriptNode *>(subscript->base);
 				if (receiver_access->is_attribute && receiver_access->attribute != nullptr && receiver_access->base != nullptr) {
 					reduce_expression(receiver_access->base);
-					FSParser::DataType receiver_type = receiver_access->base->get_datatype();
+					// A receiver typed as a type parameter -- `self`, typed as `Self`, above all -- declares
+					// its methods on the bound, so the lookup follows the bound chain exactly as ordinary
+					// member resolution does.
+					FSParser::DataType receiver_type = _resolve_type_parameter_bound_chain(receiver_access->base->get_datatype());
 					const StringName &method_name = receiver_access->attribute->name;
 					bool receiver_found_member = false;
 					generic_method = find_generic_method(receiver_type.class_type, method_name, receiver_found_member);
@@ -11621,7 +11620,6 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			p_identifier->set_datatype(FSParser::DataType());
 			return;
 		}
-		parser->current_function->uses_receiver_relative_self = true;
 		// A lambda in an instance method must keep the enclosing receiver, exactly like one that reads a
 		// member: without it the lambda frame runs with nothing to resolve `Self` against. A static
 		// function has no instance to capture, and a self-capturing lambda cannot be created without
@@ -12113,17 +12111,26 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 	finalize_preload();
 }
 
+// `self` evaluates to the frame's receiver, so it is typed as `Self` -- the receiver-relative type
+// parameter -- in every body of a class, unconditionally. The type of an expression cannot depend on
+// what the rest of the enclosing function happens to mention: `Self` named in an unrelated declaration
+// used to retype `self` for the whole body, so deleting an unused local changed what an unrelated
+// statement was allowed to do with `self`, and two functions differing only by that local disagreed
+// about what `self` is.
+//
+// The two exceptions are the two receivers that are not an open instance of the enclosing class. An
+// enum host binds `self` to the enum value, and a builtin conformance target (`extend int uses ...`)
+// has no class handle and no subclass, so its receiver is exactly the builtin it extends and is typed
+// as one -- `self + 10` in such a body is arithmetic on an `int`, not on a type parameter.
 void FSAnalyzer::reduce_self(FSParser::SelfNode *p_self) {
 	p_self->is_constant = false;
 	FSParser::DataType enum_type = enum_self_type(parser->current_function);
 	if (enum_type.is_set()) {
 		p_self->set_datatype(enum_type);
-	} else if (parser->current_function != nullptr &&
-			(parser->current_function->uses_receiver_relative_self ||
-					_datatype_contains_self_type_parameter(parser->current_function->get_datatype()))) {
-		p_self->set_datatype(_self_type_parameter_for_class(parser->current_class));
-	} else {
+	} else if (parser->current_class != nullptr && parser->current_class->is_builtin_conformance_shim) {
 		p_self->set_datatype(type_from_metatype(parser->current_class->get_datatype()));
+	} else {
+		p_self->set_datatype(_self_type_parameter_for_class(parser->current_class));
 	}
 	mark_lambda_use_self();
 }
@@ -14651,7 +14658,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				}
 
 				return !is_type_compatible(p_expected_type, argument_type, true) &&
-						!FSTypeCompatibility::allows_runtime_narrowing(p_expected_type, argument_type);
+						!allows_runtime_narrowing(p_expected_type, argument_type);
 			};
 			auto bound_argument_conflicts_with_rest_tail = [&](const FSParser::ExpressionNode *p_argument) -> bool {
 				if (!p_base_type.has_method_rest_parameter_type()) {
@@ -15840,9 +15847,6 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 
 			const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
 			if (receiver_relative_self) {
-				if (parser->current_function != nullptr) {
-					parser->current_function->uses_receiver_relative_self = true;
-				}
 				r_type_argument = _self_type_parameter_for_class(parser->current_class);
 			} else {
 				FSParser::DataType self_type = _self_type_for_class(parser->current_class);
@@ -16830,6 +16834,63 @@ static String _make_set_operation_error(const FSParser::DataType &p_a, const FSP
 			Variant::get_operator_name(p_operation), p_pair_error);
 }
 
+// Whether a type can be shown to be disjoint from another one at all. Single inheritance makes two
+// class chains, or a class and a builtin, provably unable to hold one value, but a class implements any
+// number of traits, so a trait on either side always leaves room for a class that satisfies both.
+// Everything else -- a meta type, a class handle, a union, an enum, a script whose declaration is not
+// in hand -- is left undecided rather than answered wrongly.
+static bool _datatype_disjointness_is_decidable(const FSParser::DataType &p_type) {
+	if (!p_type.is_set() || p_type.is_variant() || p_type.is_meta_type || p_type.is_type_handle_annotation) {
+		return false;
+	}
+	switch (p_type.kind) {
+		case FSParser::DataType::BUILTIN:
+			return p_type.builtin_type != Variant::NIL && p_type.builtin_type != Variant::OBJECT;
+		case FSParser::DataType::NATIVE:
+			return true;
+		case FSParser::DataType::CLASS:
+			return p_type.class_type != nullptr && !p_type.class_type->is_trait;
+		default:
+			return false;
+	}
+}
+
+// A type parameter stands for a value the frame cannot name, so an assignment across one is settled by
+// a runtime type test rather than statically. That licence reaches exactly as far as the parameter's
+// bound does, in both directions: an erased `T: Node` can still turn out to be a `Node2D`, and a
+// `Node2D` can still be the `T` a caller picked, but neither is ever an `int`. `Self` puts that
+// question in front of ordinary code -- `self` is typed `Self` in every body of a class -- so a
+// counterpart provably disjoint from the bound is refused where it is written instead of compiling and
+// failing a runtime check that can only ever fail.
+bool FSAnalyzer::type_parameter_bound_reaches(const FSParser::DataType &p_parameter, const FSParser::DataType &p_other, bool p_allow_implicit_conversion) {
+	if (!_datatype_disjointness_is_decidable(p_other)) {
+		return true;
+	}
+	const FSParser::DataType bound = _resolve_type_parameter_bound_chain(p_parameter);
+	if (bound.kind == FSParser::DataType::TYPE_PARAMETER || !_datatype_disjointness_is_decidable(bound)) {
+		return true;
+	}
+	return is_type_compatible(p_other, bound, p_allow_implicit_conversion) ||
+			is_type_compatible(bound, p_other, p_allow_implicit_conversion);
+}
+
+bool FSAnalyzer::type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion) {
+	if (p_source.kind == FSParser::DataType::TYPE_PARAMETER && p_target.kind != FSParser::DataType::TYPE_PARAMETER) {
+		return type_parameter_bound_reaches(p_source, p_target, p_allow_implicit_conversion);
+	}
+	if (p_target.kind == FSParser::DataType::TYPE_PARAMETER && p_source.kind != FSParser::DataType::TYPE_PARAMETER) {
+		return type_parameter_bound_reaches(p_target, p_source, p_allow_implicit_conversion);
+	}
+	return true;
+}
+
+// The promise a runtime-checked narrowing rests on -- that the check can still be performed and can
+// still succeed -- also requires the source to be able to reach the destination at all.
+bool FSAnalyzer::allows_runtime_narrowing(const FSParser::DataType &p_target, const FSParser::DataType &p_source) {
+	return FSTypeCompatibility::allows_runtime_narrowing(p_target, p_source) &&
+			type_parameter_source_reaches_target(p_target, p_source, true);
+}
+
 bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node, const FSParser::ExpressionNode *p_constant_source) {
 #ifdef DEBUG_ENABLED
 	if (p_source_node) {
@@ -16877,6 +16938,10 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 			return true;
 		}
 	}
+	if (!type_parameter_source_reaches_target(p_target, p_source, p_allow_implicit_conversion)) {
+		return false;
+	}
+
 	FSTypeCompatibility::Options options;
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	options.strict_dynamic = strict_dynamic_checks;
