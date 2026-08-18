@@ -2539,6 +2539,22 @@ class LinkedBinaryResolutionTests(unittest.TestCase):
         self.assertEqual(resolution.path, renamed)
         self.assertEqual(resolution.reason, "sole-candidate")
 
+    def test_a_binary_named_like_a_sidecar_is_still_a_candidate_on_its_own(self) -> None:
+        with scratch_directory() as root:
+            named = self.write(root / "foundry.macos.editor.dev.arm64.llvm.debugsymbols", b"editor binary")
+            resolution = self.resolve(root, {})
+        self.assertEqual(resolution.path, named)
+        self.assertEqual(resolution.reason, "relinked")
+
+    def test_debug_symbols_beside_their_executable_are_not_a_second_candidate(self) -> None:
+        with scratch_directory() as root:
+            executable = self.write(root / "foundry.macos.editor.dev.arm64.llvm", b"editor binary")
+            self.write(root / "foundry.macos.editor.dev.arm64.llvm.debugsymbols", b"debug symbols")
+            resolution = self.resolve(root, {})
+        self.assertEqual(resolution.path, executable)
+        self.assertEqual(resolution.reason, "relinked")
+        self.assertEqual(resolution.candidates, (executable,))
+
     def test_an_empty_build_directory_is_missing_rather_than_ambiguous(self) -> None:
         with scratch_directory() as root:
             resolution = self.resolve(root, {})

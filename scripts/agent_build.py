@@ -77,8 +77,9 @@ INTERRUPTED_EXIT_CODE = 130
 # table. Missing one here makes the wrapper predict the wrong binary name for a build that disabled
 # the setting, and then resolve a stale binary from an earlier configuration.
 SCONS_FALSE_VALUES = frozenset({"0", "f", "false", "n", "no", "none", "off"})
-# What a build writes beside the executable and never as the executable: separate debug symbols.
-# `.dSYM` is a directory on macOS and would be filtered anyway; naming both keeps the rule explicit.
+# What a build writes beside the executable it belongs to, named after that executable: separate
+# debug symbols. `.dSYM` is a directory on macOS and would be filtered anyway; naming both keeps the
+# rule explicit.
 DEBUG_SYMBOL_SUFFIXES = (".debugsymbols", ".dSYM")
 JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
 DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
@@ -1044,11 +1045,26 @@ def editor_binary_candidates(target: BuildTarget) -> list[Path]:
         candidates.update(
             path
             for path in target.binary_path.parent.glob(f"foundry.{target.scons_platform}.{target.scons_target}*")
-            if path.is_file() and not path.name.endswith(DEBUG_SYMBOL_SUFFIXES)
+            if path.is_file()
         )
     except OSError:
         pass
-    return sorted(candidates)
+    return sorted(candidates - {path for path in candidates if debug_symbols_of(path, candidates) is not None})
+
+
+def debug_symbols_of(path: Path, candidates: set[Path]) -> Path | None:
+    """The candidate `path` holds the debug symbols of, or None when `path` is an executable itself.
+
+    A separate-debug-symbols build names the sidecar after the executable it was extracted from, so a
+    sidecar is recognized by the executable standing next to it rather than by its suffix alone:
+    `extra_suffix` is unrestricted, and a binary may legitimately end in the same characters.
+    """
+    for suffix in DEBUG_SYMBOL_SUFFIXES:
+        if path.name.endswith(suffix):
+            executable = path.with_name(path.name[: -len(suffix)])
+            if executable in candidates:
+                return executable
+    return None
 
 
 def resolve_linked_binary(target: BuildTarget, binaries_before: dict[str, dict[str, object]]) -> BinaryResolution:
