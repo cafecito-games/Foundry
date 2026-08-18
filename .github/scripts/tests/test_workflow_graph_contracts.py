@@ -862,7 +862,7 @@ class StaticChecksWorkflowTests(WorkflowContractTestCase):
 
         self.assertRegex(
             self.workflow.step_key("static-checks", "Install uv", "uses"),
-            r"^astral-sh/setup-uv@v\d+$",
+            r"^astral-sh/setup-uv@v\d+(\.\d+)*$",
         )
         self.assertLess(
             self.workflow.step_index("static-checks", "Install uv"),
