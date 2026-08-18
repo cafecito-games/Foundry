@@ -1,3 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 17: The function "make()" signature does not match required trait method "FscKeeper.make()".
->> ERROR at line 22: Trait "FscKeeper" is already applied with type arguments ("FscPair[int, String]") by "FscBase"; "FscSub" cannot re-apply it with ("FscPair[int, FscSub]").
+>> ERROR at line 20: Trait "FscKeeper" is already applied with type arguments ("FscPair[int, String]") by "FscBase"; "FscSub" cannot re-apply it with ("FscPair[int, FscSub]").

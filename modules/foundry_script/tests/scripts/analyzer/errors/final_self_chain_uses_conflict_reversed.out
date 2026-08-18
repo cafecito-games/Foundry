@@ -1,3 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 8: Trait "FsrKeeper" is already applied with type arguments ("FsrPair[int, String]") by "FsrBase"; "FsrSub" cannot re-apply it with ("FsrPair[int, FsrSub]").
->> ERROR at line 14: The function "make()" signature does not match required trait method "FsrKeeper.make()".
+>> ERROR at line 9: Trait "FsrKeeper" is already applied with type arguments ("FsrPair[int, String]") by "FsrBase"; "FsrSub" cannot re-apply it with ("FsrPair[int, FsrSub]").
