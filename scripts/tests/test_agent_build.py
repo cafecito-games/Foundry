@@ -2546,6 +2546,15 @@ class LinkedBinaryResolutionTests(unittest.TestCase):
         self.assertEqual(resolution.path, named)
         self.assertEqual(resolution.reason, "relinked")
 
+    def test_the_predicted_name_is_never_read_as_another_binary_s_sidecar(self) -> None:
+        with scratch_directory() as root:
+            self.write(root / "foundry.macos.editor.dev.arm64", b"stale editor binary")
+            suffixed = self.write(root / "foundry.macos.editor.dev.arm64.debugsymbols", b"editor binary")
+            target = agent_build.BuildTarget("macos", suffixed, None)
+            resolution = agent_build.resolve_linked_binary(target, {})
+        self.assertEqual(resolution.path, suffixed)
+        self.assertEqual(resolution.reason, "relinked")
+
     def test_debug_symbols_beside_their_executable_are_not_a_second_candidate(self) -> None:
         with scratch_directory() as root:
             executable = self.write(root / "foundry.macos.editor.dev.arm64.llvm", b"editor binary")

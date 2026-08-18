@@ -1049,7 +1049,12 @@ def editor_binary_candidates(target: BuildTarget) -> list[Path]:
         )
     except OSError:
         pass
-    return sorted(candidates - {path for path in candidates if debug_symbols_of(path, candidates) is not None})
+    # The predicted name is what this configuration builds, so it is never another binary's sidecar
+    # even when `extra_suffix` ends it in the same characters.
+    sidecars = {
+        path for path in candidates if path != target.binary_path and debug_symbols_of(path, candidates) is not None
+    }
+    return sorted(candidates - sidecars)
 
 
 def debug_symbols_of(path: Path, candidates: set[Path]) -> Path | None:
