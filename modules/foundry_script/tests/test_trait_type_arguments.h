@@ -370,4 +370,191 @@ class C:
 	CHECK(fs_trait_use_type_argument_bindings(pair, marker_use).is_empty());
 }
 
+// How `p_implementer` binds a one-parameter trait after the shared `Self` rule has been applied to it,
+// as a printable string. This is the exact composition the analyzer's record, the compiler's runtime
+// record, and the static store relation each perform, so a divergence here is a divergence there.
+static String trait_arguments_reified_binding(const FSParser::ClassNode *p_implementer,
+		const FSParser::ClassNode *p_trait, const StringName &p_parameter) {
+	const HashMap<StringName, FSParser::DataType> bindings = fs_trait_type_argument_bindings(p_implementer, p_trait);
+	const FSParser::DataType *bound = bindings.getptr(p_parameter);
+	if (bound == nullptr) {
+		return "<unbound>";
+	}
+	return fs_reify_self_in_trait_argument(p_implementer, *bound).to_string();
+}
+
+TEST_CASE("[Modules][FoundryScript][Traits] Self in a direct trait argument reifies for a final non-generic implementer") {
+	FSParser parser;
+	const String source = R"(
+trait Keeper[T]:
+	var value: T
+
+final class Closed:
+	uses Keeper[Self]
+
+class OpenSelf:
+	uses Keeper[Self]
+
+final class FinalBox[V]:
+	uses Keeper[Self]
+)";
+	REQUIRE(parser.parse(source, "res://trait_arguments_self_direct.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::ClassNode *keeper = trait_arguments_find_class(parser.get_tree(), "Keeper");
+	const FSParser::ClassNode *closed = trait_arguments_find_class(parser.get_tree(), "Closed");
+	const FSParser::ClassNode *open_self = trait_arguments_find_class(parser.get_tree(), "OpenSelf");
+	const FSParser::ClassNode *final_box = trait_arguments_find_class(parser.get_tree(), "FinalBox");
+	REQUIRE(keeper != nullptr);
+	REQUIRE(closed != nullptr);
+	REQUIRE(open_self != nullptr);
+	REQUIRE(final_box != nullptr);
+
+	CHECK(fs_trait_implementer_reifies_self(closed));
+	CHECK_FALSE(fs_trait_implementer_reifies_self(open_self));
+	CHECK_FALSE(fs_trait_implementer_reifies_self(final_box));
+	CHECK_FALSE(fs_trait_implementer_reifies_self(keeper));
+	CHECK_FALSE(fs_trait_implementer_reifies_self(nullptr));
+
+	CHECK(trait_arguments_reified_binding(closed, keeper, "T") == "Closed");
+	// A subclass receiver contradicts any concrete reading, so a non-final implementer stays open, and
+	// a `final` generic one has one receiver identity per specialization.
+	CHECK(trait_arguments_reified_binding(open_self, keeper, "T") == "Self");
+	CHECK(trait_arguments_reified_binding(final_box, keeper, "T") == "Self");
+}
+
+TEST_CASE("[Modules][FoundryScript][Traits] Self reifies at every nesting depth of a trait argument") {
+	FSParser parser;
+	const String source = R"(
+trait Keeper[T]:
+	var value: T
+
+class Pair[A, B]:
+	pass
+
+final class NestedClosed:
+	uses Keeper[Pair[int, Self]]
+
+final class ArrayClosed:
+	uses Keeper[Array[Self]]
+
+final class DictionaryClosed:
+	uses Keeper[Dictionary[String, Self]]
+
+final class TupleClosed:
+	uses Keeper[(int, Self)]
+
+final class NullableClosed:
+	uses Keeper[Self?]
+
+final class HandleClosed:
+	uses Keeper[Type[Self]]
+
+class NestedOpen:
+	uses Keeper[Pair[int, Self]]
+)";
+	REQUIRE(parser.parse(source, "res://trait_arguments_self_nested.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::ClassNode *keeper = trait_arguments_find_class(parser.get_tree(), "Keeper");
+	REQUIRE(keeper != nullptr);
+
+	struct Expectation {
+		const char *class_name;
+		const char *binding;
+	};
+	const Expectation expectations[] = {
+		{ "NestedClosed", "Pair[int, NestedClosed]" },
+		{ "ArrayClosed", "Array[ArrayClosed]" },
+		{ "DictionaryClosed", "Dictionary[String, DictionaryClosed]" },
+		{ "TupleClosed", "(int, TupleClosed)" },
+		{ "NullableClosed", "NullableClosed?" },
+		{ "HandleClosed", "Type[HandleClosed]" },
+	};
+	for (const Expectation &expectation : expectations) {
+		const FSParser::ClassNode *implementer = trait_arguments_find_class(parser.get_tree(), expectation.class_name);
+		REQUIRE(implementer != nullptr);
+		CHECK(trait_arguments_reified_binding(implementer, keeper, "T") == String(expectation.binding));
+	}
+
+	const FSParser::ClassNode *nested_open = trait_arguments_find_class(parser.get_tree(), "NestedOpen");
+	REQUIRE(nested_open != nullptr);
+	// The whole composite survives with its `Self` component intact: the concrete `int` sibling is not
+	// erased, and the open component is not filled in.
+	CHECK(trait_arguments_reified_binding(nested_open, keeper, "T") == "Pair[int, Self]");
+	const HashMap<StringName, FSParser::DataType> open_bindings = fs_trait_type_argument_bindings(nested_open, keeper);
+	const FSParser::DataType *open_bound = open_bindings.getptr("T");
+	REQUIRE(open_bound != nullptr);
+	CHECK(fs_trait_argument_references_self(*open_bound));
+}
+
+TEST_CASE("[Modules][FoundryScript][Traits] An implied supertrait projects the same final implementer") {
+	FSParser parser;
+	const String source = R"(
+trait Keeper[T]:
+	var value: T
+
+trait Storing[T]:
+	uses Keeper[T]
+
+class Pair[A, B]:
+	pass
+
+final class SupertraitClosed:
+	uses Storing[Pair[int, Self]]
+
+class SupertraitOpen:
+	uses Storing[Pair[int, Self]]
+)";
+	REQUIRE(parser.parse(source, "res://trait_arguments_self_supertrait.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::ClassNode *keeper = trait_arguments_find_class(parser.get_tree(), "Keeper");
+	const FSParser::ClassNode *storing = trait_arguments_find_class(parser.get_tree(), "Storing");
+	const FSParser::ClassNode *closed = trait_arguments_find_class(parser.get_tree(), "SupertraitClosed");
+	const FSParser::ClassNode *open = trait_arguments_find_class(parser.get_tree(), "SupertraitOpen");
+	REQUIRE(keeper != nullptr);
+	REQUIRE(storing != nullptr);
+	REQUIRE(closed != nullptr);
+	REQUIRE(open != nullptr);
+
+	// The direct trait and the identity reached through it answer with the same reified implementer.
+	CHECK(trait_arguments_reified_binding(closed, storing, "T") == "Pair[int, SupertraitClosed]");
+	CHECK(trait_arguments_reified_binding(closed, keeper, "T") == "Pair[int, SupertraitClosed]");
+	CHECK(trait_arguments_reified_binding(open, storing, "T") == "Pair[int, Self]");
+	CHECK(trait_arguments_reified_binding(open, keeper, "T") == "Pair[int, Self]");
+}
+
+TEST_CASE("[Modules][FoundryScript][Traits] A subclass of a non-final implementer leaves the base declaration open") {
+	FSParser parser;
+	const String source = R"(
+trait Keeper[T]:
+	var value: T
+
+class OpenSelf:
+	uses Keeper[Self]
+
+final class ClosedChild extends OpenSelf:
+	pass
+)";
+	REQUIRE(parser.parse(source, "res://trait_arguments_self_subclass.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::ClassNode *keeper = trait_arguments_find_class(parser.get_tree(), "Keeper");
+	const FSParser::ClassNode *open_self = trait_arguments_find_class(parser.get_tree(), "OpenSelf");
+	const FSParser::ClassNode *child = trait_arguments_find_class(parser.get_tree(), "ClosedChild");
+	REQUIRE(keeper != nullptr);
+	REQUIRE(open_self != nullptr);
+	REQUIRE(child != nullptr);
+
+	// The declaring level is what is judged. A `final` subclass does not make the base's recorded
+	// `Self` concrete, and the base's own record is unchanged by the subclass existing.
+	CHECK(trait_arguments_reified_binding(open_self, keeper, "T") == "Self");
+	CHECK(fs_trait_type_argument_bindings(child, keeper).is_empty());
+}
+
 } // namespace FSTests

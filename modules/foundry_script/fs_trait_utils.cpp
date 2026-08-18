@@ -154,11 +154,76 @@ HashMap<StringName, FSParser::DataType> fs_trait_type_argument_bindings(
 	return _trait_type_argument_bindings(p_class, p_trait, 0);
 }
 
+static bool _references_self(const FSParser::DataType &p_argument, int p_depth) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return true;
+	}
+	if (p_argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+			p_argument.type_parameter_name == SNAME("@Self")) {
+		return true;
+	}
+	// Tuple elements share the container-element slot, so one walk covers `Array[Self]`,
+	// `Dictionary[String, Self]`, and `(int, Self)` alike.
+	for (const FSParser::DataType &element : p_argument.container_element_types) {
+		if (_references_self(element, p_depth + 1)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &type_argument : p_argument.type_arguments) {
+		if (_references_self(type_argument, p_depth + 1)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &member : p_argument.union_members) {
+		if (_references_self(member, p_depth + 1)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool fs_trait_argument_references_self(const FSParser::DataType &p_argument) {
+	return _references_self(p_argument, 0);
+}
+
+bool fs_trait_implementer_reifies_self(const FSParser::ClassNode *p_implementer) {
+	// A trait is never the implementer of its own `Self`: the class that applies it is, and that class
+	// is judged on its own finality where the application is read.
+	return p_implementer != nullptr && !p_implementer->is_trait && p_implementer->is_final &&
+			p_implementer->type_parameters.is_empty();
+}
+
+FSParser::DataType fs_reify_self_in_trait_argument(
+		const FSParser::ClassNode *p_implementer, const FSParser::DataType &p_argument) {
+	if (!fs_trait_implementer_reifies_self(p_implementer) || !fs_trait_argument_references_self(p_argument)) {
+		return p_argument;
+	}
+
+	FSParser::DataType self_type = p_implementer->get_datatype();
+	if (!self_type.is_set()) {
+		return p_argument;
+	}
+	// The class's own datatype is its *handle*; `Self` in an argument names the class as a type, and a
+	// non-generic class has no arguments of its own to carry.
+	self_type.is_meta_type = false;
+	self_type.is_pseudo_type = false;
+	self_type.is_constant = false;
+	self_type.type_arguments.clear();
+
+	HashMap<StringName, FSParser::DataType> bindings;
+	bindings.insert(SNAME("@Self"), self_type);
+	// `DataType::substitute()` already recurses through type arguments, container and tuple elements,
+	// union members, and method signatures, and carries a nullable or `Type[...]` layer written on the
+	// `Self` node onto the class it resolves to.
+	return FSParser::DataType::substitute(p_argument, bindings);
+}
+
 bool fs_project_conformance_trait_arguments(
 		const FSParser::ClassNode *p_direct_trait,
 		const Vector<FSParser::DataType> &p_conformance_arguments,
 		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
 		const FSParser::ClassNode *p_identity_trait,
+		const FSParser::ClassNode *p_implementer,
 		Vector<FSParser::DataType> &r_arguments) {
 	r_arguments.clear();
 	if (p_direct_trait == nullptr || p_identity_trait == nullptr || p_identity_trait->type_parameters.is_empty()) {
@@ -171,7 +236,9 @@ bool fs_project_conformance_trait_arguments(
 		if (p_conformance_arguments.size() != p_identity_trait->type_parameters.size()) {
 			return false;
 		}
-		r_arguments = p_conformance_arguments;
+		for (const FSParser::DataType &argument : p_conformance_arguments) {
+			r_arguments.push_back(fs_reify_self_in_trait_argument(p_implementer, argument));
+		}
 		return true;
 	}
 
@@ -186,7 +253,8 @@ bool fs_project_conformance_trait_arguments(
 		if (bound == nullptr) {
 			return false;
 		}
-		projected.push_back(FSParser::DataType::substitute(*bound, p_direct_bindings));
+		projected.push_back(fs_reify_self_in_trait_argument(
+				p_implementer, FSParser::DataType::substitute(*bound, p_direct_bindings)));
 	}
 	r_arguments = projected;
 	return true;

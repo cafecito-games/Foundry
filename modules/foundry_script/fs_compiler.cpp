@@ -5884,19 +5884,28 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
 				continue;
 			}
-			const FSParser::DataType *argument = substitutions.getptr(type_parameter->identifier->name);
-			if (argument == nullptr) {
+			const FSParser::DataType *bound = substitutions.getptr(type_parameter->identifier->name);
+			if (bound == nullptr) {
+				continue;
+			}
+			// A `Self` this class wrote resolves to the class itself only when the class is the single
+			// receiver identity `Self` can denote, and the shared rule is what decides that. Left open,
+			// the position must stay open here too: `_gdtype_from_datatype()` would otherwise reify a
+			// nested `Self` against the owner script and record a specialization every subclass receiver
+			// contradicts, which the declaration-side record does not claim.
+			const FSParser::DataType argument = fs_reify_self_in_trait_argument(p_class, *bound);
+			if (fs_trait_argument_references_self(argument)) {
 				continue;
 			}
 
 			FoundryScript::TypeArgumentBinding &binding = trait_bindings.write[i];
-			if (argument->kind == FSParser::DataType::TYPE_PARAMETER &&
-					argument->type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+			if (argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+					argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
 				binding.kind = FoundryScript::TypeArgumentBinding::OPEN;
-				binding.leaf_ordinal = argument->type_parameter_index;
+				binding.leaf_ordinal = argument.type_parameter_index;
 			} else {
 				binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
-				binding.fixed = _gdtype_from_datatype(*argument, p_script, argument->is_type_handle_annotation, true);
+				binding.fixed = _gdtype_from_datatype(argument, p_script, argument.is_type_handle_annotation, true);
 				binding.leaf_ordinal = -1;
 			}
 		}
@@ -6675,21 +6684,23 @@ Vector<FSWeakContainerType> FSCompiler::_conformance_trait_type_arguments(Foundr
 		const FSParser::ClassNode *p_direct_trait,
 		const Vector<FSParser::DataType> &p_conformance_arguments,
 		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
-		FSParser::ClassNode *p_identity_trait) {
+		FSParser::ClassNode *p_identity_trait, const FSParser::ClassNode *p_target) {
 	Vector<FSParser::DataType> resolved;
 	if (!fs_project_conformance_trait_arguments(p_direct_trait, p_conformance_arguments, p_direct_bindings,
-				p_identity_trait, resolved)) {
+				p_identity_trait, p_target, resolved)) {
 		return Vector<FSWeakContainerType>();
 	}
 
 	Vector<FSWeakContainerType> arguments;
 	arguments.resize(resolved.size());
 	for (int i = 0; i < resolved.size(); i++) {
-		// A position that stays open -- unset, or still a bare type parameter such as `Self` on a
-		// non-final target -- travels as an unconstrained descriptor, which the runtime comparison
-		// reads as an absence of evidence at that position alone. The concrete sibling positions keep
-		// rejecting, exactly as the declaration-side record does.
-		if (!resolved[i].is_set() || resolved[i].is_type_parameter()) {
+		// A position that stays open -- unset, or still writing `Self` on a target that does not reify
+		// it -- travels as an unconstrained descriptor, which the runtime comparison reads as an absence
+		// of evidence at that position alone. The concrete sibling positions keep rejecting, exactly as
+		// the declaration-side record does. A `Self` nested in a composite is refused here rather than
+		// resolved by the conversion below, which would otherwise bind it to the *declaring* script.
+		if (!resolved[i].is_set() || resolved[i].is_type_parameter() ||
+				fs_trait_argument_references_self(resolved[i])) {
 			continue;
 		}
 		arguments.write[i] = FSWeakContainerType::from_container_type(
@@ -6890,7 +6901,7 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 				trait_entry.trait_name = trait_name;
 				trait_entry.trait_type_arguments = _conformance_trait_type_arguments(
 						p_script, direct_trait, trait_use.resolved_type_arguments,
-						direct_bindings, identity_trait);
+						direct_bindings, identity_trait, target_class);
 				runtime_entries.push_back(trait_entry);
 			}
 		}

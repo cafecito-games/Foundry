@@ -282,14 +282,15 @@ class FSCompiler {
 	// The type arguments a retroactive conformance supplies for one trait identity, indexed by that
 	// identity's own type-parameter ordinals. For the directly declared trait these are the
 	// conformance's own arguments; for a supertrait they are that supertrait's bindings into the direct
-	// trait's frame, re-specialized through the conformance's arguments. Returns an empty vector — an
-	// absence of evidence, never a partially filled one — whenever any position stays a type parameter
-	// or the declaration supplied fewer arguments than the identity has parameters.
+	// trait's frame, re-specialized through the conformance's arguments. `p_target` is the conformance's
+	// target, whose finality decides whether a `Self` written in an argument reifies to it. Returns an
+	// empty vector — an absence of evidence — when the projection itself fails; an individual position
+	// that stays open travels as an unconstrained descriptor without erasing its concrete siblings.
 	Vector<FSWeakContainerType> _conformance_trait_type_arguments(FoundryScript *p_script,
 			const FSParser::ClassNode *p_direct_trait,
 			const Vector<FSParser::DataType> &p_conformance_arguments,
 			const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
-			FSParser::ClassNode *p_identity_trait);
+			FSParser::ClassNode *p_identity_trait, const FSParser::ClassNode *p_target);
 	Error _compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	Error _load_namespace_conformance_scripts(FoundryScript *p_script);
 	void _invalidate_compiled_classes(FoundryScript *p_script);
