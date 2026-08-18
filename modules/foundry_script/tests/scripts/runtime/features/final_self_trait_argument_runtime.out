@@ -1,0 +1,10 @@
+FS_TEST_OK
+closed store: true
+closed test: true
+closed mismatch test: false
+supertrait test: true
+supertrait mismatch test: false
+open store: true
+open test: false
+child test: false
+final generic test: false

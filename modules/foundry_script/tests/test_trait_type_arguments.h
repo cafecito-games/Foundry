@@ -471,7 +471,7 @@ class NestedOpen:
 		{ "DictionaryClosed", "Dictionary[String, DictionaryClosed]" },
 		{ "TupleClosed", "(int, TupleClosed)" },
 		{ "NullableClosed", "NullableClosed?" },
-		{ "HandleClosed", "HandleClosed" },
+		{ "HandleClosed", "Type[HandleClosed]" },
 	};
 	for (const Expectation &expectation : expectations) {
 		const FSParser::ClassNode *implementer = trait_arguments_find_class(parser.get_tree(), expectation.class_name);
