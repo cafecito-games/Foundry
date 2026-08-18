@@ -75,9 +75,7 @@ class SchemaTests(unittest.TestCase):
 
     def test_schema_identifiers_are_the_normative_urns(self) -> None:
         self.assertEqual("urn:foundry:test-adapter:v1:capabilities", load("capabilities.schema.json")["$id"])
-        self.assertEqual(
-            "urn:foundry:test-adapter:v1:discovery-record", load("discovery-record.schema.json")["$id"]
-        )
+        self.assertEqual("urn:foundry:test-adapter:v1:discovery-record", load("discovery-record.schema.json")["$id"])
 
     def test_minimal_capabilities_validate(self) -> None:
         validator = Draft202012Validator(load("capabilities.schema.json"))

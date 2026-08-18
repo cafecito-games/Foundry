@@ -57,8 +57,12 @@ class ManifestTests(unittest.TestCase):
 
     def test_every_lifecycle_row_is_covered(self) -> None:
         observed = {
-            (entry["operation"], entry["expected"]["valid"], entry["expected"]["complete"],
-             entry["expected"]["classification"])
+            (
+                entry["operation"],
+                entry["expected"]["valid"],
+                entry["expected"]["complete"],
+                entry["expected"]["classification"],
+            )
             for entry in MANIFEST["fixtures"]
         }
         required = {

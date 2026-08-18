@@ -95,8 +95,12 @@ class AggregateTestShardsTests(unittest.TestCase):
         # short by one is exactly a case silently dropped onto zero shards.
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=3)])
-            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=3)])
+            write_shard(
+                directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=3)]
+            )
+            write_shard(
+                directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=3)]
+            )
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
 
@@ -106,8 +110,12 @@ class AggregateTestShardsTests(unittest.TestCase):
     def test_cross_shard_disagreement_on_case_count_fails(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
-            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=3)])
+            write_shard(
+                directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)]
+            )
+            write_shard(
+                directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=3)]
+            )
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
 
@@ -119,9 +127,18 @@ class AggregateTestShardsTests(unittest.TestCase):
         # compatibility with it: the missing field is an error, not a silent skip.
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            legacy_run_end = {"version": 1, "event": "run_end", "status": "passed", "passed": 1, "failed": 0, "skipped": 0}
+            legacy_run_end = {
+                "version": 1,
+                "event": "run_end",
+                "status": "passed",
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+            }
             write_shard(directory, 1, [test_end_event("case a", line=10), legacy_run_end])
-            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=2)])
+            write_shard(
+                directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=2)]
+            )
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
 
@@ -141,11 +158,16 @@ class AggregateTestShardsTests(unittest.TestCase):
     def test_failing_shard_fails_the_run(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
+            write_shard(
+                directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)]
+            )
             write_shard(
                 directory,
                 2,
-                [test_end_event("case b", line=20), run_end_event(passed=0, failed=1, status="failed", full_suite_case_count=2)],
+                [
+                    test_end_event("case b", line=20),
+                    run_end_event(passed=0, failed=1, status="failed", full_suite_case_count=2),
+                ],
             )
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
@@ -157,7 +179,9 @@ class AggregateTestShardsTests(unittest.TestCase):
     def test_truncated_shard_stream_fails_the_run(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
+            write_shard(
+                directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)]
+            )
             # A shard killed mid-run never writes `run_end`, which the exit code alone would
             # not distinguish from a clean finish.
             write_shard(directory, 2, [test_end_event("case b", line=20)])
@@ -171,9 +195,19 @@ class AggregateTestShardsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
             shared = test_end_event("shared", line=42)
-            write_shard(directory, 1, [shared, test_end_event("case a", line=10), run_end_event(passed=2, full_suite_case_count=4)])
-            write_shard(directory, 2, [shared, test_end_event("case b", line=20), run_end_event(passed=2, full_suite_case_count=4)])
-            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1, full_suite_case_count=4)])
+            write_shard(
+                directory,
+                1,
+                [shared, test_end_event("case a", line=10), run_end_event(passed=2, full_suite_case_count=4)],
+            )
+            write_shard(
+                directory,
+                2,
+                [shared, test_end_event("case b", line=20), run_end_event(passed=2, full_suite_case_count=4)],
+            )
+            write_shard(
+                directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1, full_suite_case_count=4)]
+            )
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
 
@@ -187,8 +221,12 @@ class AggregateTestShardsTests(unittest.TestCase):
             # Shard 2 died before it opened its progress file. The workflow ignores the shard
             # processes' exit codes, so discovery by glob alone would report a green run over
             # the two survivors and lose a third of the suite.
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
-            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1, full_suite_case_count=2)])
+            write_shard(
+                directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)]
+            )
+            write_shard(
+                directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1, full_suite_case_count=2)]
+            )
 
             without_expectation, _ = aggregate_test_shards.aggregate(directory)
             with_expectation, report = aggregate_test_shards.aggregate(directory, expected_shards=3)
@@ -204,7 +242,10 @@ class AggregateTestShardsTests(unittest.TestCase):
                 write_shard(
                     directory,
                     index,
-                    [test_end_event(f"case {index}", line=index * 10), run_end_event(passed=1, full_suite_case_count=3)],
+                    [
+                        test_end_event(f"case {index}", line=index * 10),
+                        run_end_event(passed=1, full_suite_case_count=3),
+                    ],
                 )
 
             exit_code, report = aggregate_test_shards.aggregate(directory, expected_shards=3)
@@ -221,7 +262,9 @@ class AggregateTestShardsTests(unittest.TestCase):
     def test_shard_that_executed_nothing_fails(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=1)])
+            write_shard(
+                directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=1)]
+            )
             write_shard(directory, 2, [run_end_event(passed=0, full_suite_case_count=1)])
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
