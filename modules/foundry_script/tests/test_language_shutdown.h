@@ -151,6 +151,57 @@ TEST_CASE("[Modules][FoundryScript][Shutdown] The function list is empty after a
 	language->init();
 }
 
+TEST_CASE("[Modules][FoundryScript][Shutdown] A reported stale cache entry does not disable later finish() calls") {
+	FSLanguage *language = FSLanguage::get_singleton();
+
+	// Start from a completed cycle so the entry forced below is the only one the sweep can find.
+	language->finish();
+	language->init();
+
+	Ref<FoundryScript> stale = compile_bytecode_test_source(
+			"func stale() -> int:\n"
+			"\treturn 1\n");
+	REQUIRE(stale.is_valid());
+	const String stale_path = stale->get_path();
+	REQUIRE_FALSE(stale_path.is_empty());
+
+	// A finish() cycle unlinks every script from the language's list, so a script that outlives the
+	// cycle is invisible to the next sweep. Re-registering it in ResourceCache reproduces exactly the
+	// state the development-build post-condition check reports on, without any test-only seam.
+	language->finish();
+	language->init();
+	stale->set_path(stale_path);
+	REQUIRE(ResourceCache::has(stale_path));
+
+	{
+		BytecodeErrorRecorder recorder;
+		ERR_PRINT_OFF;
+		language->finish();
+		ERR_PRINT_ON;
+#ifdef DEV_ENABLED
+		// The sweep still reports the offender; it just does not abandon finalization to do so.
+		CHECK(recorder.messages.contains("still registered in ResourceCache"));
+#endif // DEV_ENABLED
+	}
+	language->init();
+
+	// Release the forced entry so the next cycle is clean, then prove finalization still runs.
+	stale->set_path(String());
+	stale = Ref<FoundryScript>();
+	CHECK_FALSE(ResourceCache::has(stale_path));
+
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func only() -> int:\n"
+			"\treturn 3\n");
+	REQUIRE(script.is_valid());
+	CHECK_GT(TestFSLanguageFunctionListAccessor::registered_function_count(language), 0);
+
+	language->finish();
+	CHECK_EQ(TestFSLanguageFunctionListAccessor::registered_function_count(language), 0);
+
+	language->init();
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED && DEBUG_ENABLED
