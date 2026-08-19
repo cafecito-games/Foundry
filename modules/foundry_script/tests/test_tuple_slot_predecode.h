@@ -161,6 +161,29 @@ TEST_CASE("[FoundryScript][TupleStore] A shape that names the receiver keeps the
 	CHECK(predecode_test_function(crate->value, SNAME("concrete"))->get_predecoded_tuple_shape_count() == 1);
 }
 
+TEST_CASE("[FoundryScript][TupleStore] The dependent-store benchmark stays on the per-execution path") {
+	// `tuple_store_dependent/feature.fs` exists to measure a receiver-dependent store. If that script
+	// ever stopped emitting a typed-tuple assign, or started predecoding the `(int, T)` slot, the
+	// numbers would no longer answer the question the case was added for.
+	if (!FSLanguage::get_singleton()->get_reflection_singleton().is_valid()) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	const String path = "modules/foundry_script/tests/benchmarks/tuple_store_dependent/feature.fs";
+	REQUIRE(script->load_source_code(path) == OK);
+	script->set_path(path);
+	REQUIRE(script->reload() == OK);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	CHECK_FALSE(filter_disassembly_lines(
+			disassemble_test_function(crate->value, SNAME("store_loop")), "assign typed tuple")
+					.is_empty());
+	CHECK(predecode_test_function(crate->value, SNAME("store_loop"))->get_predecoded_tuple_shape_count() == 0);
+}
+
 TEST_CASE("[FoundryScript][TupleStore] A key-typed Dictionary constant is never read as a descriptor") {
 	// Descriptors share the constant table with ordinary script data. A Dictionary keyed by anything but
 	// String reports a failure for every String-key lookup made on it, so such a constant has to be
