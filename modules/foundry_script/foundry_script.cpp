@@ -2599,7 +2599,7 @@ void FoundryScript::_intern_tuple_slot_specializations_from_constants() {
 		if (entry.value.get_type() != Variant::OBJECT) {
 			continue;
 		}
-		Object *object = entry.value.get_validated_object();
+		Object *object = entry.value;
 		FSSpecializedClassHandle *handle = Object::cast_to<FSSpecializedClassHandle>(object);
 		if (handle == nullptr) {
 			continue;

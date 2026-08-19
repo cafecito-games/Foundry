@@ -100,6 +100,20 @@ static const FSDataType *only_specialized_tuple_shape(const FSFunction *p_functi
 	return found;
 }
 
+static Vector<ContainerType> specialized_handle_type_arguments(const Variant &p_value) {
+	FSSpecializedClassHandle *handle = Object::cast_to<FSSpecializedClassHandle>(p_value.get_validated_object());
+	REQUIRE(handle != nullptr);
+	return handle->get_type_arguments();
+}
+
+static Variant class_constant(const Ref<FoundryScript> &p_script, const StringName &p_class_name, const StringName &p_constant) {
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator found = p_script->get_subclasses().find(p_class_name);
+	REQUIRE(found != p_script->get_subclasses().end());
+	const Variant *value = found->value->get_constants().getptr(p_constant);
+	REQUIRE(value != nullptr);
+	return *value;
+}
+
 static Variant construct_specialized_crate(const Ref<FoundryScript> &p_crate, const Vector<ContainerType> &p_type_arguments) {
 	Callable::CallError call_error;
 	const Variant constructed = p_crate->_new_specialized(nullptr, -1, p_type_arguments, call_error);
@@ -711,7 +725,7 @@ TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle still publish
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
 	REQUIRE(crate != script->get_subclasses().end());
 	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
-	const Vector<ContainerType> int_arguments = tuple_slot_one_argument(Variant::INT);
+	const Vector<ContainerType> int_arguments = specialized_handle_type_arguments(class_constant(script, SNAME("Holder"), SNAME("CRATE")));
 	const FSDataType *shape = only_specialized_tuple_shape(
 			keep, crate->value->find_tuple_slot_specialization(int_arguments).ptr());
 	REQUIRE(shape != nullptr);
@@ -747,7 +761,7 @@ TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle loaded from c
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = restored->get_subclasses().find(SNAME("Crate"));
 	REQUIRE(crate != restored->get_subclasses().end());
 	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
-	const Vector<ContainerType> int_arguments = tuple_slot_one_argument(Variant::INT);
+	const Vector<ContainerType> int_arguments = specialized_handle_type_arguments(class_constant(restored, SNAME("Holder"), SNAME("CRATE")));
 	const FSDataType *shape = only_specialized_tuple_shape(
 			keep, crate->value->find_tuple_slot_specialization(int_arguments).ptr());
 	REQUIRE(shape != nullptr);
