@@ -66,7 +66,7 @@ struct DisassemblyCapture {
 	}
 };
 
-static Vector<String> disassemble_tuple_test_function(const Ref<FoundryScript> &p_script, const StringName &p_function_name) {
+static Vector<String> disassemble_test_function(const Ref<FoundryScript> &p_script, const StringName &p_function_name) {
 	const HashMap<StringName, FSFunction *> &functions = p_script->get_member_functions();
 	const HashMap<StringName, FSFunction *>::ConstIterator function = functions.find(p_function_name);
 	REQUIRE(function != functions.end());
@@ -102,7 +102,7 @@ TEST_CASE("[FoundryScript][TupleLowering] A tuple slot store disassembles with i
 			"\treturn kept\n");
 
 	SUBCASE("Declared tuple slots carry the shape") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("keep"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("keep"));
 		const Vector<String> store_lines = filter_disassembly_lines(lines, "assign typed tuple");
 		// One for the local's initializer, one for the return.
 		REQUIRE(store_lines.size() == 2);
@@ -114,7 +114,7 @@ TEST_CASE("[FoundryScript][TupleLowering] A tuple slot store disassembles with i
 	}
 
 	SUBCASE("A plain Array slot keeps the ordinary store") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("passthrough"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("passthrough"));
 		CHECK(filter_disassembly_lines(lines, "assign typed tuple").is_empty());
 	}
 }
@@ -133,7 +133,7 @@ TEST_CASE("[FoundryScript][TupleLowering] Tuple construction disassembles as a d
 			"\treturn [first, second]\n");
 
 	SUBCASE("Unnamed tuple literal") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("build_unnamed"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("build_unnamed"));
 		const Vector<String> tuple_lines = filter_disassembly_lines(lines, "make_tuple");
 		REQUIRE(tuple_lines.size() == 1);
 		CAPTURE(tuple_lines[0]);
@@ -142,7 +142,7 @@ TEST_CASE("[FoundryScript][TupleLowering] Tuple construction disassembles as a d
 	}
 
 	SUBCASE("Named tuple construction") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("build_named"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("build_named"));
 		const Vector<String> tuple_lines = filter_disassembly_lines(lines, "make_tuple");
 		REQUIRE(tuple_lines.size() == 1);
 		CAPTURE(tuple_lines[0]);
@@ -152,7 +152,7 @@ TEST_CASE("[FoundryScript][TupleLowering] Tuple construction disassembles as a d
 	}
 
 	SUBCASE("Array literals keep the array instruction") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("build_array"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("build_array"));
 		CHECK(filter_disassembly_lines(lines, "make_tuple").is_empty());
 		CHECK(filter_disassembly_lines(lines, "make_array").size() == 1);
 	}
@@ -172,7 +172,7 @@ TEST_CASE("[FoundryScript][TupleLowering] A container element of a tuple literal
 			"\tprint(slot)\n");
 
 	SUBCASE("The declared element type selects the typed construction") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("declared"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("declared"));
 		const Vector<String> typed_array_lines = filter_disassembly_lines(lines, "make_typed_array");
 		REQUIRE(typed_array_lines.size() == 1);
 		CAPTURE(typed_array_lines[0]);
@@ -187,7 +187,7 @@ TEST_CASE("[FoundryScript][TupleLowering] A container element of a tuple literal
 	}
 
 	SUBCASE("An inferred declaration supplies no element type, so the literal is unchanged") {
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("undeclared"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("undeclared"));
 		CHECK(filter_disassembly_lines(lines, "make_typed_array").is_empty());
 		CHECK(filter_disassembly_lines(lines, "make_array").size() == 1);
 	}
@@ -235,7 +235,7 @@ TEST_CASE("[FoundryScript][TupleLowering] A tuple parameter compiles its shape i
 	SUBCASE("Binding a parameter emits no store, so the slot type stays erased") {
 		// The shape is enforced by the boundary, not by an instruction: a `TUPLE`-kind address type
 		// would change how the body is lowered, and this is what proves it was not handed one.
-		const Vector<String> lines = disassemble_tuple_test_function(script, SNAME("take"));
+		const Vector<String> lines = disassemble_test_function(script, SNAME("take"));
 		CHECK(filter_disassembly_lines(lines, "assign typed tuple").is_empty());
 	}
 

@@ -1205,6 +1205,74 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier validates checked numeric
 		unconstrained_descriptor.write[4] = int(NumericType::NONE);
 		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == OK);
 	}
+
+	SUBCASE("Width-constrained built-in store") {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), SNAME("typed_store"), true, Variant(), FSDataType());
+		const FSCodeGenerator::Address source(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(6), FSDataType());
+		const FSCodeGenerator::Address target(FSCodeGenerator::Address::TEMPORARY, generator.add_temporary(unsigned_type), unsigned_type);
+		generator.write_assign_with_conversion(target, source);
+		generator.pop_temporary();
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 6);
+		CHECK(valid[0] == FSFunction::OPCODE_ASSIGN_TYPED_BUILTIN);
+		CHECK(valid[3] == int(Variant::UINT));
+		CHECK(valid[4] == int(NumericType::UINT32));
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(4);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		Vector<int> unknown_descriptor = valid;
+		unknown_descriptor.write[4] = int(NumericType::MAX);
+		CHECK(bytecode_verify_with_code(script, function, unknown_descriptor) == ERR_INVALID_DATA);
+
+		// A signed width cannot constrain a value stored in the unsigned carrier.
+		Vector<int> inconsistent_carrier = valid;
+		inconsistent_carrier.write[4] = int(NumericType::INT64);
+		CHECK(bytecode_verify_with_code(script, function, inconsistent_carrier) == ERR_INVALID_DATA);
+
+		// An unconstrained store is the plain carrier store every non-integer built-in emits.
+		Vector<int> unconstrained_descriptor = valid;
+		unconstrained_descriptor.write[4] = int(NumericType::NONE);
+		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == OK);
+	}
+
+	SUBCASE("Width-constrained built-in return") {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), SNAME("typed_return"), true, Variant(), unsigned_type);
+		const FSCodeGenerator::Address source(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(7), FSDataType());
+		generator.write_return(source);
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 5);
+		CHECK(valid[0] == FSFunction::OPCODE_RETURN_TYPED_BUILTIN);
+		CHECK(valid[2] == int(Variant::UINT));
+		CHECK(valid[3] == int(NumericType::UINT32));
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(3);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		Vector<int> unknown_descriptor = valid;
+		unknown_descriptor.write[3] = int(NumericType::MAX);
+		CHECK(bytecode_verify_with_code(script, function, unknown_descriptor) == ERR_INVALID_DATA);
+
+		Vector<int> inconsistent_carrier = valid;
+		inconsistent_carrier.write[3] = int(NumericType::INT64);
+		CHECK(bytecode_verify_with_code(script, function, inconsistent_carrier) == ERR_INVALID_DATA);
+
+		Vector<int> unconstrained_descriptor = valid;
+		unconstrained_descriptor.write[3] = int(NumericType::NONE);
+		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == OK);
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] An out-of-range construction type-parameter ordinal degrades to unspecialized") {

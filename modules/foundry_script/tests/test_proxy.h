@@ -1161,6 +1161,22 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Handler return coercion and validatio
 		CHECK(coerced == Variant(0));
 	}
 
+	// A value on the declared carrier whose magnitude the declared width cannot hold is a mismatch,
+	// not something to coerce: reconstructing it on the same carrier would reproduce the very
+	// magnitude the type check just rejected.
+	recorder->set("stub_return", int64_t(5000000000));
+	{
+		ERR_PRINT_OFF;
+		Variant coerced = call("get_count");
+		ERR_PRINT_ON;
+		CHECK(coerced.get_type() == Variant::INT);
+		CHECK(coerced == Variant(0));
+	}
+
+	// A value the declared width does hold is still passed through untouched.
+	recorder->set("stub_return", 2147483647);
+	CHECK(call("get_count") == Variant(2147483647));
+
 	// A correctly-typed container passes through.
 	{
 		Array typed_tags;

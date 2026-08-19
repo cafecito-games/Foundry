@@ -1928,6 +1928,30 @@ static String fs_uint_widen_range_error(const Variant &p_value) {
 			p_value.stringify(), FSNumericOps::describe_range(NumericType::UINT32));
 }
 
+// The width check a gradual store or return applies to the value it is about to commit. A `NONE`
+// descriptor -- every non-integer destination, and every integer slot with no declared width --
+// admits everything, which is what keeps the check inert outside the checked-integer model.
+static _FORCE_INLINE_ bool fs_declared_width_admits(NumericType p_numeric_type, const Variant &p_value) {
+	return p_numeric_type == NumericType::NONE || numeric_type_contains(p_numeric_type, p_value);
+}
+
+// A gradual store or return erases everything but the value, so the destination's declared width is
+// asked about the value the opcode is on the point of committing -- after any widening or
+// conversion -- rather than about the source. Refusing here is what keeps a declared slot from
+// holding a magnitude its own type excludes, which every other consumer (`is`, typed containers,
+// argument binding) already assumes cannot happen.
+static String fs_assign_width_range_error(const Variant &p_value, NumericType p_numeric_type) {
+	const String type_name = _numeric_type_diagnostic_name(p_numeric_type);
+	return vformat(R"(Cannot assign %s to a variable of type "%s": the value is outside the "%s" range %s. Use an explicit cast.)",
+			p_value.stringify(), type_name, type_name, FSNumericOps::describe_range(p_numeric_type));
+}
+
+static String fs_return_width_range_error(const Variant &p_value, NumericType p_numeric_type) {
+	const String type_name = _numeric_type_diagnostic_name(p_numeric_type);
+	return vformat(R"(Cannot return %s from a function whose return type is "%s": the value is outside the "%s" range %s. Use an explicit cast.)",
+			p_value.stringify(), type_name, type_name, FSNumericOps::describe_range(p_numeric_type));
+}
+
 bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType &p_type, Variant &r_value,
 		Callable::CallError &r_err, int p_argument_index) const {
 	if (!p_type.has_type()) {
@@ -3499,7 +3523,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			DISPATCH_OPCODE;
 
 			OPCODE(OPCODE_ASSIGN_TYPED_BUILTIN) {
-				CHECK_SPACE(4);
+				CHECK_SPACE(5);
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 
@@ -3507,6 +3531,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				const bool is_nullable = var_type_operand & FSFunction::NULLABLE_TYPE_OPERAND_FLAG;
 				Variant::Type var_type = (Variant::Type)(var_type_operand & ~FSFunction::NULLABLE_TYPE_OPERAND_FLAG);
 				GD_ERR_BREAK(var_type < 0 || var_type >= Variant::VARIANT_MAX);
+				// The destination's declared integer width. A gradual source erases it everywhere else, so
+				// it travels with the store and is asked about the value each path below produces. The
+				// destination may be a member, which outlives an aborted frame, so every path stages the
+				// value and commits only once the width has admitted it.
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 4];
 
 				if (is_nullable && src->get_type() == Variant::NIL) {
 					// A nullable target stores null as-is instead of converting it to the underlying type.
@@ -3515,20 +3544,31 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// `Variant::construct()` cannot perform this crossing -- `can_convert_strict()` has no
 					// `UINT` -> `INT` entry -- so the design-6.1 `uint` -> `long` widening runs value-checked
 					// here, in every build configuration: a gradual source can carry any `ulong` value, and
-					// an unchecked construct would silently store null into a non-nullable slot. This opcode
-					// carries only the destination's carrier, so a declared `int` width is not enforceable
-					// here; that is the same gradual-store width erasure the `INT`-carrier source path has,
-					// and both are the numeric-descriptor gap tracked by #2397.
-					if (unlikely(!fs_try_widen_uint_to_long(*src, *dst))) {
+					// an unchecked construct would silently store null into a non-nullable slot. Whether the
+					// value may cross carriers at all is decided first and independently of the declared
+					// width: `long` contains the whole `uint` range, a narrower declared width does not.
+					Variant widened;
+					if (unlikely(!fs_try_widen_uint_to_long(*src, widened))) {
 						err_text = fs_uint_widen_range_error(*src);
 						OPCODE_BREAK;
 					}
+					if (unlikely(!fs_declared_width_admits(numeric_type, widened))) {
+						err_text = fs_assign_width_range_error(widened, numeric_type);
+						OPCODE_BREAK;
+					}
+					*dst = widened;
 				} else if (src->get_type() != var_type) {
 #ifdef DEBUG_ENABLED
 					if (Variant::can_convert_strict(src->get_type(), var_type)) {
 #endif // DEBUG_ENABLED
 						Callable::CallError ce;
-						Variant::construct(var_type, *dst, const_cast<const Variant **>(&src), 1, ce);
+						Variant converted;
+						Variant::construct(var_type, converted, const_cast<const Variant **>(&src), 1, ce);
+						if (unlikely(!fs_declared_width_admits(numeric_type, converted))) {
+							err_text = fs_assign_width_range_error(converted, numeric_type);
+							OPCODE_BREAK;
+						}
+						*dst = converted;
 					} else {
 #ifdef DEBUG_ENABLED
 						err_text = "Trying to assign value of type '" + Variant::get_type_name(src->get_type()) +
@@ -3537,10 +3577,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 				} else {
 #endif // DEBUG_ENABLED
+					if (unlikely(!fs_declared_width_admits(numeric_type, *src))) {
+						err_text = fs_assign_width_range_error(*src, numeric_type);
+						OPCODE_BREAK;
+					}
 					*dst = *src;
 				}
 
-				ip += 4;
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 
@@ -5719,20 +5763,26 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			}
 
 			OPCODE(OPCODE_RETURN_TYPED_BUILTIN) {
-				CHECK_SPACE(3);
+				CHECK_SPACE(4);
 				GET_VARIANT_PTR(r, 0);
 
 				int ret_type_operand = _code_ptr[ip + 2];
 				const bool is_nullable = ret_type_operand & FSFunction::NULLABLE_TYPE_OPERAND_FLAG;
 				Variant::Type ret_type = (Variant::Type)(ret_type_operand & ~FSFunction::NULLABLE_TYPE_OPERAND_FLAG);
 				GD_ERR_BREAK(ret_type < 0 || ret_type >= Variant::VARIANT_MAX);
+				// See `OPCODE_ASSIGN_TYPED_BUILTIN`: the declared integer width travels with the return so
+				// a gradual value cannot leave the frame violating the type it was returned as.
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 3];
+				bool check_width = true;
 
 				if (is_nullable && r->get_type() == Variant::NIL) {
 					// A nullable return type returns null as-is instead of converting it to the underlying type.
 					retvalue = *r;
+					check_width = false;
 				} else if (r->get_type() == Variant::UINT && ret_type == Variant::INT) {
 					// See `OPCODE_ASSIGN_TYPED_BUILTIN`: `Variant::construct()` cannot perform this
-					// crossing, so the design-6.1 `uint` -> `long` widening runs value-checked here.
+					// crossing, so the design-6.1 `uint` -> `long` widening runs value-checked here, and
+					// the declared width is a separate question asked afterwards.
 					if (unlikely(!fs_try_widen_uint_to_long(*r, retvalue))) {
 						err_text = fs_uint_widen_range_error(*r);
 						OPCODE_BREAK;
@@ -5748,6 +5798,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 				} else {
 					retvalue = *r;
+				}
+
+				if (unlikely(check_width && !fs_declared_width_admits(numeric_type, retvalue))) {
+					err_text = fs_return_width_range_error(retvalue, numeric_type);
+					OPCODE_BREAK;
 				}
 #ifdef DEBUG_ENABLED
 				exit_ok = true;

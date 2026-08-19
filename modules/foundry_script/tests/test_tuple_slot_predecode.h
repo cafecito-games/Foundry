@@ -81,7 +81,7 @@ TEST_CASE("[FoundryScript][TupleStore] A receiver-independent slot shape is deco
 	CHECK(keep->get_predecoded_tuple_shape_count() == 1);
 
 	const Vector<String> store_lines = filter_disassembly_lines(
-			disassemble_tuple_test_function(script, SNAME("keep")), "assign typed tuple");
+			disassemble_test_function(script, SNAME("keep")), "assign typed tuple");
 	CHECK(store_lines.size() == 2);
 
 	const FSDataType *shape = only_predecoded_tuple_shape(keep);
@@ -147,7 +147,7 @@ TEST_CASE("[FoundryScript][TupleStore] A shape that names the receiver keeps the
 	auto check_dependent = [](const Ref<FoundryScript> &p_owner, const StringName &p_function_name) {
 		CAPTURE(String(p_function_name));
 		CHECK_FALSE(filter_disassembly_lines(
-				disassemble_tuple_test_function(p_owner, p_function_name), "assign typed tuple")
+				disassemble_test_function(p_owner, p_function_name), "assign typed tuple")
 						.is_empty());
 		CHECK(predecode_test_function(p_owner, p_function_name)->get_predecoded_tuple_shape_count() == 0);
 	};

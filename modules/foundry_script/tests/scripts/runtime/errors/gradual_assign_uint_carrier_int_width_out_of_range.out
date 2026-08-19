@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+before store
+>> SCRIPT ERROR at runtime/errors/gradual_assign_uint_carrier_int_width_out_of_range.fs:7 on test(): Cannot assign 4294967295 to a variable of type "int": the value is outside the "int" range -2147483648 to 2147483647. Use an explicit cast.

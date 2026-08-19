@@ -178,7 +178,12 @@ Variant FSProxyInstance::_coerce_handler_return(const FSDataType &p_return_type,
 	const bool is_typed_container =
 			(p_return_type.builtin_type == Variant::ARRAY && p_return_type.has_container_element_type(0)) ||
 			(p_return_type.builtin_type == Variant::DICTIONARY && p_return_type.has_container_element_types());
+	//
+	// A value already on the declared carrier is excluded as well: `is_type()` has just rejected it,
+	// and reconstructing a value on the carrier it already travels in cannot change the magnitude
+	// that rejection was about, so it would re-admit exactly what the declared width excludes.
 	if (p_return_type.kind == FSDataType::BUILTIN && !is_typed_container && p_value.get_type() != Variant::NIL &&
+			p_value.get_type() != p_return_type.builtin_type &&
 			Variant::can_convert_strict(p_value.get_type(), p_return_type.builtin_type)) {
 		Variant coerced;
 		Callable::CallError convert_error;

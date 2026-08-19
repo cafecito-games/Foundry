@@ -1492,6 +1492,9 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 				append(p_target);
 				append(p_source);
 				append(p_target.type.builtin_type | (p_target.type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
+				// A gradual source carries only a value, so the declared width travels with the store: a
+				// magnitude the destination's own type cannot hold must not reach the destination.
+				append(int(p_target.type.numeric_type));
 			}
 		} break;
 		case FSDataType::NATIVE: {
@@ -1608,6 +1611,7 @@ void FSByteCodeGenerator::write_assign(const Address &p_target, const Address &p
 		append(p_target);
 		append(p_source);
 		append(p_target.type.builtin_type | (p_target.type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
+		append(int(p_target.type.numeric_type));
 	} else {
 		append_opcode(FSFunction::OPCODE_ASSIGN);
 		append(p_target);
@@ -2821,6 +2825,7 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_BUILTIN);
 				append(p_return_value);
 				append(function->return_type.builtin_type | (function->return_type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
+				append(int(function->return_type.numeric_type));
 			} else {
 				// Just assign.
 				append_opcode(FSFunction::OPCODE_RETURN);
@@ -2855,6 +2860,9 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 					append_opcode(FSFunction::OPCODE_RETURN_TYPED_BUILTIN);
 					append(p_return_value);
 					append(function->return_type.builtin_type | (function->return_type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
+					// The gradual return: only the value survives the erasure, so the declared width is
+					// checked here for the same reason the typed store checks it.
+					append(int(function->return_type.numeric_type));
 				}
 			} break;
 			case FSDataType::NATIVE: {
