@@ -779,6 +779,18 @@ static bool _tuple_descriptor_is_stable_for_receiver(const Variant &p_descriptor
 	return true;
 }
 
+bool FSFunction::has_dependent_tuple_descriptors_recursive() const {
+	if (has_dependent_tuple_descriptors()) {
+		return true;
+	}
+	for (const FSFunction *lambda : lambdas) {
+		if (lambda != nullptr && lambda->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void FSFunction::_collect_dependent_tuple_functions(Vector<FSFunction *> &r_functions) {
 	if (has_dependent_tuple_descriptors()) {
 		r_functions.push_back(this);
@@ -795,14 +807,8 @@ Ref<FSTupleSlotSpecialization> FSTupleSlotSpecialization::create(FoundryScript *
 		return Ref<FSTupleSlotSpecialization>();
 	}
 
-	const FSStaticSelfContext self_context = FSStaticSelfContext::for_specialized_script(Ref<Script>(p_leaf), p_type_arguments);
-	const FrameSelfBinding frame_self{ self_context.is_valid() ? &self_context : nullptr, false };
-
-	Ref<FSTupleSlotSpecialization> specialization = Ref<FSTupleSlotSpecialization>(memnew(FSTupleSlotSpecialization));
-	specialization->type_arguments = p_type_arguments;
-
-	for (FoundryScript *owner = p_leaf; owner != nullptr; owner = owner->get_base().ptr()) {
-		Vector<FSFunction *> functions;
+	Vector<FSFunction *> functions;
+	for (FoundryScript *owner = p_leaf; owner != nullptr; owner = owner->base.ptr()) {
 		for (const KeyValue<StringName, FSFunction *> &entry : owner->get_member_functions()) {
 			if (entry.value != nullptr) {
 				entry.value->_collect_dependent_tuple_functions(functions);
@@ -832,53 +838,60 @@ Ref<FSTupleSlotSpecialization> FSTupleSlotSpecialization::create(FoundryScript *
 		if (owner->initializer != nullptr) {
 			owner->initializer->_collect_dependent_tuple_functions(functions);
 		}
-
-		for (FSFunction *function : functions) {
-			if (function == nullptr || specialization->function_shapes.has(function)) {
-				continue;
-			}
-
-			Vector<ProjectedContainerType> receiver_arguments;
-			if (function->_script != nullptr) {
-				p_leaf->project_type_arguments_onto_base(Ref<Script>(function->_script), p_type_arguments, receiver_arguments);
-			}
-
-			FunctionShapes shapes;
-			bool stable = true;
-			for (int constant_index : function->_dependent_tuple_descriptor_indices) {
-				if (constant_index < 0 || constant_index >= function->_constant_count) {
-					stable = false;
-					break;
-				}
-				const Variant &constant = function->_constants_ptr[constant_index];
-				if (!_tuple_descriptor_is_stable_for_receiver(constant, frame_self, receiver_arguments, 0)) {
-					stable = false;
-					break;
-				}
-				FSDataType shape;
-				if (!_data_type_from_tuple_descriptor(constant, frame_self, receiver_arguments, shape)) {
-					stable = false;
-					break;
-				}
-				if (shapes.constant_index_to_shape.is_empty()) {
-					shapes.constant_index_to_shape.resize(function->_constant_count);
-					int *indices = shapes.constant_index_to_shape.ptrw();
-					for (int i = 0; i < function->_constant_count; i++) {
-						indices[i] = -1;
-					}
-				}
-				shapes.constant_index_to_shape.write[constant_index] = shapes.shapes.size();
-				shapes.shapes.push_back(shape);
-			}
-			if (!stable || shapes.shapes.is_empty()) {
-				continue;
-			}
-			specialization->function_shapes.insert(function, shapes);
-		}
+	}
+	if (functions.is_empty()) {
+		return Ref<FSTupleSlotSpecialization>();
 	}
 
-	if (specialization->function_shapes.is_empty()) {
-		return Ref<FSTupleSlotSpecialization>();
+	const FSStaticSelfContext self_context = FSStaticSelfContext::for_specialized_script(Ref<Script>(p_leaf), p_type_arguments);
+	const FrameSelfBinding frame_self{ self_context.is_valid() ? &self_context : nullptr, false };
+
+	Ref<FSTupleSlotSpecialization> specialization;
+	for (FSFunction *function : functions) {
+		if (function == nullptr || (specialization.is_valid() && specialization->function_shapes.has(function))) {
+			continue;
+		}
+
+		// A static frame never projects class type parameters: the per-execution path leaves
+		// `receiver_arguments` empty and degrades those elements. Mirror that so a cached shape
+		// cannot be stricter than the running frame, including for a `.fsb` that smuggles a
+		// `type_parameter_index` into a static body.
+		Vector<ProjectedContainerType> receiver_arguments;
+		if (!function->is_static() && function->_script != nullptr) {
+			p_leaf->project_type_arguments_onto_base(Ref<Script>(function->_script), p_type_arguments, receiver_arguments);
+		}
+
+		FunctionShapes shapes;
+		for (int constant_index : function->_dependent_tuple_descriptor_indices) {
+			if (constant_index < 0 || constant_index >= function->_constant_count) {
+				continue;
+			}
+			const Variant &constant = function->_constants_ptr[constant_index];
+			if (!_tuple_descriptor_is_stable_for_receiver(constant, frame_self, receiver_arguments, 0)) {
+				continue;
+			}
+			FSDataType shape;
+			if (!_data_type_from_tuple_descriptor(constant, frame_self, receiver_arguments, shape)) {
+				continue;
+			}
+			if (shapes.constant_index_to_shape.is_empty()) {
+				shapes.constant_index_to_shape.resize(function->_constant_count);
+				int *indices = shapes.constant_index_to_shape.ptrw();
+				for (int i = 0; i < function->_constant_count; i++) {
+					indices[i] = -1;
+				}
+			}
+			shapes.constant_index_to_shape.write[constant_index] = shapes.shapes.size();
+			shapes.shapes.push_back(shape);
+		}
+		if (shapes.shapes.is_empty()) {
+			continue;
+		}
+		if (specialization.is_null()) {
+			specialization.instantiate();
+			specialization->type_arguments = p_type_arguments;
+		}
+		specialization->function_shapes.insert(function, shapes);
 	}
 	return specialization;
 }
@@ -2478,6 +2491,20 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	}
 	const FrameSelfBinding frame_self{ frame_self_receiver, _static };
 
+	// Resolved once per frame, and only for a function that actually has a dependent descriptor.
+	// Instance stores read the published Ref; static stores look the table up from the receiver
+	// script. An independent predecode hit never consults this pointer.
+	const FSTupleSlotSpecialization *frame_tuple_slot_specialization = nullptr;
+	if (has_dependent_tuple_descriptors()) {
+		if (p_instance != nullptr) {
+			frame_tuple_slot_specialization = p_instance->tuple_slot_specialization.ptr();
+		} else if (p_static_self != nullptr) {
+			if (FoundryScript *receiver_script = Object::cast_to<FoundryScript>(p_static_self->get_script().ptr())) {
+				frame_tuple_slot_specialization = receiver_script->find_tuple_slot_specialization(p_static_self->get_type_arguments()).ptr();
+			}
+		}
+	}
+
 	// The receiver descriptor belongs to this frame alone. The guard restores the caller's descriptor
 	// on every exit path, including the one that suspends this frame into an `FSFunctionState`.
 	StaticSelfContextGuard static_self_guard(p_static_self);
@@ -4074,15 +4101,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// A receiver-dependent descriptor is decoded once per specialization and published on the
 				// leaf (handle or instance). Two specializations of the same shared generic function keep
 				// distinct shapes; an unspecialized or forwarded receiver is not interned and falls through.
-				const FSTupleSlotSpecialization *tuple_slot_specialization = nullptr;
-				if (p_instance != nullptr) {
-					tuple_slot_specialization = p_instance->tuple_slot_specialization.ptr();
-				} else if (frame_self.receiver != nullptr) {
-					tuple_slot_specialization = frame_self.receiver->get_tuple_slot_specialization();
-				}
 				const FSDataType *specialized_tuple_type = predecoded_tuple_type != nullptr
 						? nullptr
-						: _specialized_tuple_shape(tuple_slot_specialization, _code_ptr[ip + 3]);
+						: _specialized_tuple_shape(frame_tuple_slot_specialization, _code_ptr[ip + 3]);
 
 				// A class type parameter is reified onto the instance, but a function body compiled once in
 				// the declaring class sees only the parameter. An element naming one therefore reaches here

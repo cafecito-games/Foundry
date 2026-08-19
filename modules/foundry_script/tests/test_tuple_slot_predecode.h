@@ -508,10 +508,9 @@ TEST_CASE("[FoundryScript][TupleStore] A static Self-dependent slot is answered 
 	CHECK(keep->get_predecoded_tuple_shape_count() == 0);
 	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
 
-	const FSStaticSelfContext context = FSStaticSelfContext::for_script(anchor->value);
-	const FSTupleSlotSpecialization *specialization = context.get_tuple_slot_specialization();
+	const FSTupleSlotSpecialization *specialization =
+			anchor->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr();
 	REQUIRE(specialization != nullptr);
-	CHECK(specialization == anchor->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
 
 	const FSDataType *shape = only_specialized_tuple_shape(keep, specialization);
 	REQUIRE(shape != nullptr);
@@ -545,11 +544,10 @@ TEST_CASE("[FoundryScript][TupleStore] A freed specialization table is not used 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator anchor = script->get_subclasses().find(SNAME("Anchor"));
 	REQUIRE(anchor != script->get_subclasses().end());
 
-	const FSStaticSelfContext context = FSStaticSelfContext::for_script(anchor->value);
-	REQUIRE(context.get_tuple_slot_specialization() != nullptr);
+	REQUIRE(anchor->value->find_tuple_slot_specialization(Vector<ContainerType>()).is_valid());
 
 	anchor->value->clear();
-	CHECK(context.get_tuple_slot_specialization() == nullptr);
+	CHECK(anchor->value->find_tuple_slot_specialization(Vector<ContainerType>()).is_null());
 }
 
 TEST_CASE("[FoundryScript][TupleStore] A specialized dependent slot loaded from compiled bytecode is cached too") {
@@ -604,6 +602,94 @@ TEST_CASE("[FoundryScript][TupleStore] A specialized dependent slot loaded from 
 	CHECK(int(stored[0]) == 1);
 	CHECK(String(stored[1]) == "one");
 	CHECK(stored.is_read_only());
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A specialized store rejects a value an unspecialized receiver accepts") {
+	// The per-execution path and the cache agree on a conforming value. They disagree on a
+	// mismatch once `T` is reified: `Crate[String]` rejects a second `int`, while an
+	// unspecialized `Crate` degrades that element and accepts it.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> Variant:\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+
+	Array mismatched;
+	mismatched.push_back(7);
+	mismatched.push_back(7);
+	const Variant argument = mismatched;
+	const Variant *arguments[1] = { &argument };
+	Callable::CallError call_error;
+
+	const Variant specialized = construct_specialized_crate(crate->value, tuple_slot_one_argument(Variant::STRING));
+	Object *specialized_instance = specialized;
+	ERR_PRINT_OFF;
+	const Variant rejected = specialized_instance->callp(SNAME("keep"), arguments, 1, call_error);
+	ERR_PRINT_ON;
+	CHECK(rejected.get_type() == Variant::NIL);
+
+	const Variant raw = crate->value->_new(nullptr, -1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	Object *unspecialized_instance = raw;
+	const Array accepted = unspecialized_instance->callp(SNAME("keep"), arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(accepted.size() == 2);
+	CHECK(int(accepted[0]) == 7);
+	CHECK(int(accepted[1]) == 7);
+}
+
+TEST_CASE("[FoundryScript][TupleStore] Reloading a script republishes shapes against the new functions") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> void:\n"
+			"\t\tvar kept: (int, T) = value\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *keep_before = predecode_test_function(crate->value, SNAME("keep"));
+	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
+	crate->value->intern_tuple_slot_specialization(string_arguments);
+	REQUIRE(only_specialized_tuple_shape(keep_before, crate->value->find_tuple_slot_specialization(string_arguments).ptr()) != nullptr);
+
+	script->set_source_code(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> void:\n"
+			"\t\tvar kept: (int, T) = value\n");
+	REQUIRE(script->reload() == OK);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(reloaded != script->get_subclasses().end());
+	const FSFunction *keep_after = predecode_test_function(reloaded->value, SNAME("keep"));
+	CHECK(keep_after != keep_before);
+	reloaded->value->intern_tuple_slot_specialization(string_arguments);
+	const FSDataType *shape = only_specialized_tuple_shape(
+			keep_after, reloaded->value->find_tuple_slot_specialization(string_arguments).ptr());
+	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A derived class declared before its generic base still caches the base slot") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Derived extends Crate[int]:\n"
+			"\tpass\n"
+			"\n"
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> void:\n"
+			"\t\tvar kept: (int, T) = value\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator derived = script->get_subclasses().find(SNAME("Derived"));
+	REQUIRE(crate != script->get_subclasses().end());
+	REQUIRE(derived != script->get_subclasses().end());
+
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	const FSDataType *shape = only_specialized_tuple_shape(
+			keep, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
+	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::INT);
 }
 
 } // namespace FSTests

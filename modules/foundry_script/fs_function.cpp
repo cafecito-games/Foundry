@@ -594,12 +594,6 @@ FSStaticSelfContext FSStaticSelfContext::for_script(const Ref<Script> &p_script)
 	}
 	context.kind = SCRIPT;
 	context.script_id = p_script->get_instance_id();
-	if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr())) {
-		const Ref<FSTupleSlotSpecialization> specialization = foundry_script->find_tuple_slot_specialization(Vector<ContainerType>());
-		if (specialization.is_valid()) {
-			context.tuple_slot_specialization_id = specialization->get_instance_id();
-		}
-	}
 	return context;
 }
 
@@ -610,10 +604,6 @@ FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script
 		for (int i = 0; i < p_type_arguments.size(); i++) {
 			context.type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
 		}
-		if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr())) {
-			const Ref<FSTupleSlotSpecialization> specialization = foundry_script->find_tuple_slot_specialization(p_type_arguments);
-			context.tuple_slot_specialization_id = specialization.is_valid() ? specialization->get_instance_id() : ObjectID();
-		}
 	}
 	return context;
 }
@@ -622,10 +612,6 @@ FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script
 	FSStaticSelfContext context = for_script(p_script);
 	if (context.kind == SCRIPT) {
 		context.type_arguments = p_type_arguments;
-		if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr())) {
-			const Ref<FSTupleSlotSpecialization> specialization = foundry_script->find_tuple_slot_specialization(context.get_type_arguments());
-			context.tuple_slot_specialization_id = specialization.is_valid() ? specialization->get_instance_id() : ObjectID();
-		}
 	}
 	return context;
 }
@@ -680,7 +666,6 @@ void FSStaticSelfContext::clear() {
 	script_id = ObjectID();
 	type_arguments.clear();
 	builtin_type = Variant::NIL;
-	tuple_slot_specialization_id = ObjectID();
 }
 
 bool FSStaticSelfContext::operator==(const FSStaticSelfContext &p_other) const {

@@ -634,13 +634,6 @@ private:
 	// Empty for an unspecialized script receiver.
 	Vector<FSWeakContainerType> type_arguments;
 	Variant::Type builtin_type = Variant::NIL;
-	// Identity of the leaf specialization's decoded dependent tuple shapes, when that table has
-	// already been published. Stored as an `ObjectID` rather than a borrowed pointer for the same
-	// reason `script_id` is: a suspended `CallState` can outlive a script reload that drops the
-	// interned table, and a dangling pointer would then be read on resume. Concurrent stores only
-	// ever resolve it. Empty when this receiver is unspecialized, forwarded, or otherwise still on
-	// the per-execution decode path.
-	ObjectID tuple_slot_specialization_id;
 
 public:
 	static FSStaticSelfContext for_native_class(const StringName &p_class_name);
@@ -658,11 +651,6 @@ public:
 	// descriptor stores them weakly; a still-live argument script becomes a strong `Ref<Script>` here.
 	Vector<ContainerType> get_type_arguments() const;
 	_FORCE_INLINE_ Variant::Type get_builtin_type() const { return builtin_type; }
-	// Null when this receiver published no specialization table, or that table was freed while a
-	// call was suspended.
-	_FORCE_INLINE_ const FSTupleSlotSpecialization *get_tuple_slot_specialization() const {
-		return Object::cast_to<FSTupleSlotSpecialization>(ObjectDB::get_instance(tuple_slot_specialization_id));
-	}
 	// True when the receiver and every type-argument script (at any nesting depth) is still reachable.
 	// A descriptor that references a freed script resolves to a missing receiver rather than a silent
 	// substitution.
@@ -1220,6 +1208,7 @@ private:
 	}
 
 	_FORCE_INLINE_ bool has_dependent_tuple_descriptors() const { return !_dependent_tuple_descriptor_indices.is_empty(); }
+	bool has_dependent_tuple_descriptors_recursive() const;
 
 	static thread_local const FSStaticSelfContext *_current_static_self_context;
 

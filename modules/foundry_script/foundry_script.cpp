@@ -1915,6 +1915,8 @@ void FoundryScript::_erase_function_lambda_info(FoundryScript *p_script, FSFunct
 }
 
 void FoundryScript::_clear_partial_bytecode_link_state() {
+	_clear_tuple_slot_specializations();
+
 	for (KeyValue<StringName, Ref<FoundryScript>> &subclass : subclasses) {
 		subclass.value->_clear_partial_bytecode_link_state();
 	}
@@ -2466,6 +2468,83 @@ bool FoundryScript::project_type_arguments_onto_base(const Ref<Script> &p_base, 
 	return true;
 }
 
+void FoundryScript::_drop_instance_tuple_slot_specializations() {
+	for (RBSet<Object *>::Element *E = instances.front(); E; E = E->next()) {
+		ScriptInstance *si = E->get()->get_script_instance();
+		if (si == nullptr || si->is_placeholder()) {
+			continue;
+		}
+		static_cast<FSInstance *>(si)->tuple_slot_specialization.unref();
+	}
+}
+
+void FoundryScript::_refresh_instance_tuple_slot_specializations() {
+	for (RBSet<Object *>::Element *E = instances.front(); E; E = E->next()) {
+		ScriptInstance *si = E->get()->get_script_instance();
+		if (si == nullptr || si->is_placeholder()) {
+			continue;
+		}
+		FSInstance *instance = static_cast<FSInstance *>(si);
+		instance->tuple_slot_specialization = get_or_create_tuple_slot_specialization(instance->type_arguments);
+	}
+	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
+		if (entry.value.is_valid()) {
+			entry.value->_refresh_instance_tuple_slot_specializations();
+		}
+	}
+}
+
+void FoundryScript::_clear_tuple_slot_specializations() {
+	_drop_instance_tuple_slot_specializations();
+	MutexLock lock(tuple_slot_specialization_mutex);
+	tuple_slot_specializations.clear();
+	dependent_tuple_descriptor_hierarchy_known = false;
+	has_dependent_tuple_descriptor_hierarchy = false;
+}
+
+bool FoundryScript::_hierarchy_has_dependent_tuple_descriptors() const {
+	for (const FoundryScript *owner = this; owner != nullptr; owner = owner->base.ptr()) {
+		for (const KeyValue<StringName, FSFunction *> &entry : owner->member_functions) {
+			if (entry.value != nullptr && entry.value->has_dependent_tuple_descriptors_recursive()) {
+				return true;
+			}
+		}
+		for (const KeyValue<StringName, EnumFunctionSet> &enum_entry : owner->enum_functions) {
+			for (const KeyValue<StringName, FSFunction *> &entry : enum_entry.value.instance_functions) {
+				if (entry.value != nullptr && entry.value->has_dependent_tuple_descriptors_recursive()) {
+					return true;
+				}
+			}
+			for (const KeyValue<StringName, FSFunction *> &entry : enum_entry.value.static_functions) {
+				if (entry.value != nullptr && entry.value->has_dependent_tuple_descriptors_recursive()) {
+					return true;
+				}
+			}
+		}
+		if (owner->implicit_initializer != nullptr && owner->implicit_initializer->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+		if (owner->implicit_ready != nullptr && owner->implicit_ready->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+		if (owner->static_initializer != nullptr && owner->static_initializer->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+		if (owner->initializer != nullptr && owner->initializer->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FoundryScript::_script_has_dependent_tuple_descriptors() {
+	if (!dependent_tuple_descriptor_hierarchy_known) {
+		has_dependent_tuple_descriptor_hierarchy = _hierarchy_has_dependent_tuple_descriptors();
+		dependent_tuple_descriptor_hierarchy_known = true;
+	}
+	return has_dependent_tuple_descriptor_hierarchy;
+}
+
 Ref<FSTupleSlotSpecialization> FoundryScript::find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const {
 	MutexLock lock(tuple_slot_specialization_mutex);
 	for (const Ref<FSTupleSlotSpecialization> &existing : tuple_slot_specializations) {
@@ -2477,6 +2556,10 @@ Ref<FSTupleSlotSpecialization> FoundryScript::find_tuple_slot_specialization(con
 }
 
 Ref<FSTupleSlotSpecialization> FoundryScript::get_or_create_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) {
+	if (!_script_has_dependent_tuple_descriptors()) {
+		return Ref<FSTupleSlotSpecialization>();
+	}
+
 	{
 		Ref<FSTupleSlotSpecialization> existing = find_tuple_slot_specialization(p_type_arguments);
 		if (existing.is_valid()) {
@@ -2501,6 +2584,15 @@ Ref<FSTupleSlotSpecialization> FoundryScript::get_or_create_tuple_slot_specializ
 
 void FoundryScript::intern_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) {
 	get_or_create_tuple_slot_specialization(p_type_arguments);
+}
+
+void FoundryScript::intern_tuple_slot_specializations_recursive() {
+	intern_tuple_slot_specialization();
+	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
+		if (entry.value.is_valid()) {
+			entry.value->intern_tuple_slot_specializations_recursive();
+		}
+	}
 }
 
 FoundryScript *FoundryScript::find_class(const String &p_qualified_name) {
@@ -2864,7 +2956,7 @@ void FoundryScript::clear() {
 	// a stale Ref or ResourceCache entry and get handed out again by a later cache-hit load.
 	valid = false;
 
-	tuple_slot_specializations.clear();
+	_clear_tuple_slot_specializations();
 
 	RBSet<FSFunction *> functions_to_clear;
 

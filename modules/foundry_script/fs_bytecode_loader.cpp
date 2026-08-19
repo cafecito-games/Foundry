@@ -2681,6 +2681,10 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 	for (FoundryScript *loaded_class : local_classes) {
 		loaded_class->_static_default_init();
 		loaded_class->valid = true;
+	}
+	// After every class in the unit is valid, so a derived intern can see its generic base's
+	// compiled functions regardless of declaration order.
+	for (FoundryScript *loaded_class : local_classes) {
 		loaded_class->intern_tuple_slot_specialization();
 	}
 

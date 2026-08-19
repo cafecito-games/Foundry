@@ -5623,6 +5623,11 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 
 	p_script->clearing = true;
 
+	// The compiled functions that key the specialization table are deleted below. Drop the table
+	// first so a later intern cannot return a pre-reload entry keyed by freed `FSFunction *`s, and
+	// so surviving instances do not keep that stale table alive.
+	p_script->_clear_tuple_slot_specializations();
+
 	p_script->cancel_pending_functions(true);
 
 	p_script->native = Ref<FSNativeClass>();
@@ -6495,7 +6500,6 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 	p_script->_static_default_init();
 
 	p_script->valid = true;
-	p_script->intern_tuple_slot_specialization();
 	return OK;
 }
 
@@ -7067,6 +7071,12 @@ Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, boo
 	HashMap<FSFunction *, FSFunction *> func_ptr_replacements;
 	_get_function_ptr_replacements(func_ptr_replacements, old_lambda_info, &new_lambda_info);
 	main_script->_recurse_replace_function_ptrs(func_ptr_replacements);
+
+	// Intern after every class in the unit has been compiled and lambda pointers have been
+	// rewritten, so a derived class declared before its generic base still sees that base's
+	// functions, and so the table is keyed by the functions that will actually run.
+	main_script->intern_tuple_slot_specializations_recursive();
+	main_script->_refresh_instance_tuple_slot_specializations();
 
 	if (has_static_data && !root->annotated_static_unload) {
 		FSCache::add_static_script(p_script);
