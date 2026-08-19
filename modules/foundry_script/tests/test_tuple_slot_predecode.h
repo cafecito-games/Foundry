@@ -837,7 +837,7 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 	// Reloading a preloaded base while a dependent file is already compiled emits a
 	// pre-existing analyzer phase-order diagnostic; the reload itself still succeeds.
 	ERR_PRINT_OFF;
-	REQUIRE(base->reload() == OK);
+	REQUIRE(base->reload(true) == OK);
 	ERR_PRINT_ON;
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded_crate = base->get_subclasses().find(SNAME("Crate"));
