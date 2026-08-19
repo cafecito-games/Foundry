@@ -158,6 +158,18 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silen
 	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(first, "parameter", second, "argument"), String());
 }
 
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent across same-shaped tuples from different declarations") {
+	// Two classes can declare same-named, same-shaped tuples; their nominal identities
+	// (class-qualified native_type) differ, and that difference — not a Self binding — is the
+	// actual incompatibility.
+	FSParser::DataType expected = named_tuple_data_type(StringName("Pair"), self_type_parameter());
+	expected.native_type = StringName("Left.Pair");
+	FSParser::DataType actual = named_tuple_data_type(StringName("Pair"), native_data_type(StringName("Node")));
+	actual.native_type = StringName("Right.Pair");
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"), String());
+}
+
 TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent across same-named tuples with different layouts") {
 	// Two distinct named tuples can share a displayed name while declaring different fields; pairing
 	// their slots positionally would describe one declaration's field with the other's type.

@@ -499,10 +499,12 @@ static bool _find_divergent_self_binding(const FSParser::DataType &p_first, cons
 		return false;
 	}
 	if (p_first.kind == FSParser::DataType::TUPLE &&
-			(p_first.tuple_name != p_second.tuple_name || p_first.tuple_field_names != p_second.tuple_field_names)) {
-		// Two distinct named tuples can share a displayed name; pairing their slots positionally
-		// would describe one declaration's field with the other's type. Only the same declaration's
-		// layout is comparable slot by slot.
+			(p_first.tuple_name != p_second.tuple_name || p_first.tuple_field_names != p_second.tuple_field_names ||
+					p_first.native_type != p_second.native_type || p_first.script_path != p_second.script_path)) {
+		// Two distinct named tuples can share a displayed name — and even a field layout — so pairing
+		// their slots positionally would describe one declaration's field with the other's type. A
+		// named tuple's nominal identity is its class-qualified `native_type` plus declaring
+		// `script_path` (see `operator==`); only the same declaration is comparable slot by slot.
 		return false;
 	}
 	if (p_first.container_element_types.size() == p_second.container_element_types.size()) {
