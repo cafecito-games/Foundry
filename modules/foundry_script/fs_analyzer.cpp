@@ -13109,6 +13109,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		BASE_RECEIVER,
 		EXACT_HANDLE,
 		EXACT_DECLARING,
+		LITERAL_SELF,
 	};
 	SelfFieldLeg self_field_leg = SelfFieldLeg::EXACT_DECLARING;
 	FSParser::DataType union_base_type;
@@ -13116,7 +13117,15 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		self_field_leg = SelfFieldLeg::FRAME_RECEIVER;
 	} else if (union_base_expression != nullptr) {
 		union_base_type = union_base_expression->get_datatype();
-		if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation)) {
+		if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation) &&
+				_is_self_type_parameter(union_base_type)) {
+			// The `Self.Message` spelling names the running receiver's class. An instance frame answers
+			// it as the frame's own receiver; a static frame has no instance to prove identity against,
+			// so the field keeps literal `Self` and admits only values already typed as `Self`.
+			self_field_leg = !static_context && parser->current_class != nullptr
+					? SelfFieldLeg::FRAME_RECEIVER
+					: SelfFieldLeg::LITERAL_SELF;
+		} else if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation)) {
 			self_field_leg = union_base_type.class_type != nullptr ? SelfFieldLeg::EXACT_HANDLE : SelfFieldLeg::EXACT_DECLARING;
 		} else if (union_base_type.is_set() &&
 				(union_base_type.kind == FSParser::DataType::CLASS ||
@@ -13151,6 +13160,8 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				// The class-handle spelling is exact: `Self` substitutes to the named class and the
 				// diagnostic keeps naming it.
 				return substitute_member_type(p_field_type, union_base_type, nullptr, nullptr);
+			case SelfFieldLeg::LITERAL_SELF:
+				return p_field_type;
 			case SelfFieldLeg::EXACT_DECLARING:
 				break;
 		}
