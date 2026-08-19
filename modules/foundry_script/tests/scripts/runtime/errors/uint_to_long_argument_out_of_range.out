@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 12: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take()" requires the subtype "long" but the supertype "Variant" was provided.
+before call
+>> SCRIPT ERROR at runtime/errors/uint_to_long_argument_out_of_range.fs:12 on test(): Invalid type in function 'take' in base 'RefCounted (uint_to_long_argument_out_of_range.fs)'. Argument 1 has type "uint", but the parameter requires "long".
