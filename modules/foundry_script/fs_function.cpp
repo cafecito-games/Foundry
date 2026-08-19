@@ -886,6 +886,21 @@ void FSFunction::setup_runtime_pointers() {
 	_tuple_slot_generation = _script != nullptr ? _script->get_tuple_slot_function_generation() : 0;
 }
 
+const FSDataType *FSTupleSlotSpecialization::get_shape(const FSFunction *p_function, int p_constant_index) const {
+	if (p_function == nullptr) {
+		return nullptr;
+	}
+	const FunctionShapes *entry = function_shapes.getptr(p_function);
+	if (entry == nullptr) {
+		return nullptr;
+	}
+	const FoundryScript *owner_script = Object::cast_to<FoundryScript>(ObjectDB::get_instance(entry->script_id));
+	if (owner_script == nullptr || entry->generation != owner_script->get_tuple_slot_function_generation()) {
+		return nullptr;
+	}
+	return entry->get(p_constant_index);
+}
+
 #ifdef TOOLS_ENABLED
 const FSDataType *FSFunction::get_predecoded_tuple_shape_for_constant(int p_constant_index) const {
 	if (p_constant_index < 0 || p_constant_index >= _predecoded_tuple_shape_index_count) {

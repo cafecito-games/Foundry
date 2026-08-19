@@ -861,8 +861,13 @@ Ref<FSTupleSlotSpecialization> FSTupleSlotSpecialization::create(FoundryScript *
 			p_leaf->project_type_arguments_onto_base(Ref<Script>(function->_script), p_type_arguments, receiver_arguments);
 		}
 
+		FoundryScript *owner_script = function->_script;
+		if (owner_script == nullptr) {
+			continue;
+		}
 		FunctionShapes shapes;
-		shapes.generation = function->get_tuple_slot_generation();
+		shapes.script_id = owner_script->get_instance_id();
+		shapes.generation = owner_script->get_tuple_slot_function_generation();
 		for (int constant_index : function->_dependent_tuple_descriptor_indices) {
 			if (constant_index < 0 || constant_index >= function->_constant_count) {
 				continue;

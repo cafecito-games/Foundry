@@ -824,14 +824,18 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded_crate = base->get_subclasses().find(SNAME("Crate"));
 	REQUIRE(reloaded_crate != base->get_subclasses().end());
-	const FSFunction *keep_after = predecode_test_function(reloaded_crate->value, SNAME("keep"));
+	FSFunction *keep_after = const_cast<FSFunction *>(predecode_test_function(reloaded_crate->value, SNAME("keep")));
 	// The derived table is still the one interned against the old functions. Address reuse must
 	// not make it answer for the new `keep`; a generation miss falls through to per-execution decode.
 	CHECK(only_specialized_tuple_shape(
 			keep_after, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr()) == nullptr);
 
+	// Call the replacement function directly. A `Script.reload()` of the base alone does not
+	// rewrite the derived class's member-function table, so `instance->callp("keep")` would
+	// still invoke the freed pre-reload body.
+	FSInstance *derived_instance = tuple_slot_test_instance(derived_owner);
 	ERR_PRINT_OFF;
-	const Variant rejected = instance->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	const Variant rejected = keep_after->call(derived_instance, accepted_arguments, 1, call_error);
 	ERR_PRINT_ON;
 	CHECK(rejected.get_type() == Variant::NIL);
 
@@ -840,8 +844,9 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 	accepted_after.push_back(2);
 	const Variant after_argument = accepted_after;
 	const Variant *after_arguments[1] = { &after_argument };
-	const Array stored_after = instance->callp(SNAME("keep"), after_arguments, 1, call_error);
+	const Variant stored_after_value = keep_after->call(derived_instance, after_arguments, 1, call_error);
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	const Array stored_after = stored_after_value;
 	REQUIRE(stored_after.size() == 2);
 	CHECK(String(stored_after[0]) == "seven");
 	CHECK(int(stored_after[1]) == 2);

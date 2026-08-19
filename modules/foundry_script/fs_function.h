@@ -587,8 +587,10 @@ class FSTupleSlotSpecialization : public RefCounted {
 		// constant is not a dependent tuple descriptor of this function.
 		Vector<int> constant_index_to_shape;
 		Vector<FSDataType> shapes;
-		// Copied from the function at intern time. A reloaded function that reused this pointer
-		// carries a newer generation, so `get_shape()` misses instead of serving the old decode.
+		// Identity of the script that owned the function at intern time, plus that script's
+		// generation. `get_shape()` consults the live script so a reloaded base cannot serve a
+		// shape through a freed or address-reused `FSFunction *`.
+		ObjectID script_id;
 		uint64_t generation = 0;
 
 		const FSDataType *get(int p_constant_index) const {
@@ -604,7 +606,7 @@ class FSTupleSlotSpecialization : public RefCounted {
 	HashMap<const FSFunction *, FunctionShapes> function_shapes;
 
 public:
-	_FORCE_INLINE_ const FSDataType *get_shape(const FSFunction *p_function, int p_constant_index) const;
+	const FSDataType *get_shape(const FSFunction *p_function, int p_constant_index) const;
 
 	static Ref<FSTupleSlotSpecialization> create(FoundryScript *p_leaf, const Vector<ContainerType> &p_type_arguments);
 };
@@ -1373,17 +1375,6 @@ public:
 	FSFunction();
 	~FSFunction();
 };
-
-_FORCE_INLINE_ const FSDataType *FSTupleSlotSpecialization::get_shape(const FSFunction *p_function, int p_constant_index) const {
-	if (p_function == nullptr) {
-		return nullptr;
-	}
-	const FunctionShapes *entry = function_shapes.getptr(p_function);
-	if (entry == nullptr || entry->generation != p_function->get_tuple_slot_generation()) {
-		return nullptr;
-	}
-	return entry->get(p_constant_index);
-}
 
 class FSFunctionState : public ScriptFunctionState {
 	FOUNDRY_CLASS(FSFunctionState, ScriptFunctionState);
