@@ -95,6 +95,7 @@ public:
 	FSParser::ClassNode *open_keeper = nullptr;
 	FSParser::ClassNode *retro_target = nullptr;
 	FSParser::ClassNode *open_target = nullptr;
+	Vector<String> error_messages;
 
 	RecordedTraitArgumentFixture() {
 		const char *source = R"(
@@ -139,7 +140,13 @@ func test() -> void:
 )";
 		REQUIRE_EQ(parser.parse(source, SOURCE_PATH, false), OK);
 		FSAnalyzer analyzer(&parser);
-		REQUIRE_EQ(analyzer.analyze(), OK);
+		// The bare `extend OpenTarget uses OpenKeeper` is an arity error and registers nothing; the
+		// specialized `Keeper[int]` conformances still register, so every case below states only the
+		// pair of types it is about.
+		analyzer.analyze();
+		for (const FSParser::ParserError &error : parser.get_errors()) {
+			error_messages.push_back(error.message);
+		}
 
 		FSParser::ClassNode *tree = parser.get_tree();
 		REQUIRE(tree != nullptr);
@@ -198,16 +205,24 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A native trait target acc
 	CHECK(FSTypeCompatibility::check(fixture.bare_keeper(), source).compatible);
 }
 
-TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A trait target accepts a conformance that recorded no arguments") {
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A bare generic conformance is rejected and records nothing") {
 	RecordedTraitArgumentFixture fixture;
-	// `extend OpenTarget uses OpenKeeper` supplies nothing, which is an absence of evidence rather
-	// than a wildcard, so every specialization of the destination stays accepted.
+	// `extend OpenTarget uses OpenKeeper` supplies no type arguments, which is an arity error; the
+	// entry is dropped, so the registry holds no conformance for the target and no destination —
+	// specialized or raw — accepts it.
+	bool missing_arguments_reported = false;
+	for (const String &message : fixture.error_messages) {
+		if (message == R"(Generic trait "OpenKeeper" expects 1 type argument(s), but 0 were given.)") {
+			missing_arguments_reported = true;
+		}
+	}
+	CHECK(missing_arguments_reported);
 	Vector<RecordedTypeArgument> recorded;
 	CHECK_FALSE(FSTypeCompatibility::project_registry_trait_arguments(
 			fixture.open_source(), StringName("OpenKeeper"), recorded));
-	CHECK(FSTypeCompatibility::check(fixture.open_keeper_of(make_builtin(Variant::STRING)), fixture.open_source())
+	CHECK_FALSE(FSTypeCompatibility::check(fixture.open_keeper_of(make_builtin(Variant::STRING)), fixture.open_source())
 					.compatible);
-	CHECK(FSTypeCompatibility::check(fixture.open_keeper_of(make_builtin(Variant::INT)), fixture.open_source())
+	CHECK_FALSE(FSTypeCompatibility::check(make_class(fixture.open_keeper, Vector<FSParser::DataType>()), fixture.open_source())
 					.compatible);
 }
 

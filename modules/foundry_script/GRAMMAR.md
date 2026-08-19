@@ -420,7 +420,15 @@ type_arguments = "[", type, { ",", type }, "]" ;
   and is known to declare type parameters, so native and non-generic bases are unaffected. A raw
   generic *annotation* or *value* (`var b: Box`) stays legal, as do forwarded child parameters
   (`class Child[T] extends Box[T]`) and F-bounded declarations (`class Recursive[T: Recursive]`).
-- `uses` mixes in one or more traits, each optionally specialized with type arguments.
+- `uses` mixes in one or more traits. Type arguments are optional only for a non-generic trait: a
+  `uses` entry naming a generic trait must spell that trait's type arguments at matching arity
+  (`uses Storage[int]`, or `uses Storage[T]` forwarding an enclosing parameter). A bare entry
+  (`uses Storage` for `trait Storage[T]`) is an error reported at the trait name — including when
+  the same trait is bound with arguments through another entry or a supertrait on the same class.
+  Applying a non-generic trait that binds a generic supertrait at its own declaration site
+  (`uses Wrapper` for `trait Wrapper: uses Storage[int]`) stays legal: the transitive binding is
+  spelled at its own site. The rule covers every position that accepts a `uses` clause, the
+  `extend` conformance clause included.
 - A trait's type arguments are fixed by the first class in an inheritance chain that applies
   it. A subclass may re-apply the same trait only with the same arguments; re-applying it with
   different ones is an error, because a reference typed as the base would otherwise reach a
@@ -815,7 +823,8 @@ conforms to one or more traits, supplying the required methods externally as wit
 
 The target must be **unspecialized**: writing type arguments (e.g. `extend Box[int] uses
 T`) is a parse error, because a conformance applies to **all** specializations of a generic
-base. The `uses` clause reuses `trait_use` from §3.3. The body contains **only** function /
+base. The `uses` clause reuses `trait_use` from §3.3, including the rule that an entry naming
+a generic trait must spell its type arguments (§3.3). The body contains **only** function /
 accessor members; `var`, `const`, `signal`, inner `class`/`trait`, and `enum` members are
 rejected. Witness methods may carry the `static`/`async` modifiers. Inside the witnesses,
 `self` is typed as the target. For builtin value-type targets (`extend int uses ...`), witness

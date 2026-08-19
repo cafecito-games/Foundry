@@ -1103,13 +1103,21 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				bool applied = false;
 				{
 					ScopedCurrentClass current_class_scope(this, parser->head);
-					applied = apply_class_type_arguments(trait_handle, trait_use.type_arguments, trait_use.type_arguments[0]);
+					applied = apply_type_arguments(trait_handle, trait_generic_declaration(trait), trait_use.type_arguments, trait_use.type_arguments[0]);
 				}
 				if (applied) {
 					trait_use.resolved_type_arguments = trait_handle.type_arguments;
 				}
 			} else if (!trait_use.type_arguments.is_empty() && trait->type_parameters.is_empty()) {
 				push_error(vformat(R"(Trait "%s" is not generic and cannot take type arguments.)", fs_class_or_trait_diagnostic_name(trait)), trait_use.type_arguments[0]);
+				continue;
+			} else if (trait_use.type_arguments.is_empty() && !trait->type_parameters.is_empty()) {
+				// A generic trait must be applied with type arguments, at a conformance site as much as
+				// at an ordinary `uses`. Conformances only ever resolve in the declaring file's analyzer,
+				// so this error needs no deferral to stay order-stable.
+				push_error(vformat(R"(Generic trait "%s" expects %d type argument(s), but 0 were given.)",
+								   fs_class_or_trait_diagnostic_name(trait), trait->type_parameters.size()),
+						trait_use.name.is_empty() ? static_cast<const FSParser::Node *>(conformance) : static_cast<const FSParser::Node *>(trait_use.name[0]));
 				continue;
 			}
 

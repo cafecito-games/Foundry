@@ -441,6 +441,9 @@ func measured() -> void:
   the arguments have to be proven.
 - Traits are nominal contracts. A class satisfies a trait by declaring `uses TraitName`; matching method names alone is
   not enough.
+- A generic trait must be applied with its type arguments: `uses Storage[int]`, or `uses Storage[T]` forwarding an
+  enclosing type parameter, never a bare `uses Storage`. Applying a non-generic trait that binds a generic supertrait
+  at its own declaration site (`uses Wrapper` for `trait Wrapper: uses Storage[int]`) needs no restating.
 - A generic trait's type arguments are fixed by the first class in an inheritance chain that applies it. A subclass may
   re-apply the same trait only with the same arguments, and a retroactive `extend ... uses` conformance may not record
   arguments that differ from a binding already on the target's chain.
