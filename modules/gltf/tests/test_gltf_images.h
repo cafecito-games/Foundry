@@ -58,7 +58,7 @@ Ref<Texture2D> _check_texture(Node *p_node) {
 }
 
 TEST_CASE("[SceneTree][Node] Export GLTF with external texture and import") {
-	ResourcePathGuard resource_path_guard;
+	TestProjectSettingsRestoreScope restore_project_settings;
 	init("gltf_images_external_export_import");
 	// Setup scene.
 	Ref<ImageTexture> original_texture;
@@ -104,7 +104,7 @@ TEST_CASE("[SceneTree][Node] Export GLTF with external texture and import") {
 }
 
 TEST_CASE("[SceneTree][Node][Editor] Import GLTF from .foundry/imported folder with external texture") {
-	ResourcePathGuard resource_path_guard;
+	TestProjectSettingsRestoreScope restore_project_settings;
 	init("gltf_placed_in_dot_foundry_imported", "res://.foundry/imported");
 
 	EditorFileSystem *efs = memnew(EditorFileSystem);
@@ -124,7 +124,7 @@ TEST_CASE("[SceneTree][Node][Editor] Import GLTF from .foundry/imported folder w
 }
 
 TEST_CASE("[SceneTree][Node][Editor] Import GLTF with texture outside of res:// directory") {
-	ResourcePathGuard resource_path_guard;
+	TestProjectSettingsRestoreScope restore_project_settings;
 	init("gltf_pointing_to_texture_outside_of_res_folder", "res://");
 
 	EditorFileSystem *efs = memnew(EditorFileSystem);
@@ -152,7 +152,7 @@ TEST_CASE("[SceneTree][Node][Editor] Import GLTF with texture outside of res:// 
 }
 
 TEST_CASE("[SceneTree][Node][Editor] Import GLTF with embedded texture, check how it got extracted") {
-	ResourcePathGuard resource_path_guard;
+	TestProjectSettingsRestoreScope restore_project_settings;
 	init("gltf_embedded_texture", "res://");
 
 	EditorFileSystem *efs = memnew(EditorFileSystem);

@@ -67,6 +67,7 @@
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
 #include "main/splash.gen.h"
+#include "main/test_user_data_root_policy.h"
 #include "main/version_info.h"
 #include "modules/register_module_types.h"
 #include "platform/register_platform_apis.h"
@@ -920,12 +921,13 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 #ifdef TESTS_ENABLED
 	test_setup();
 
-	// Per-shard `user://` isolation. `test run` redirects the user-data root to a
-	// deterministic directory under the test scratch space so concurrent shard processes can
-	// never read or delete each other's `user://` files — on every platform, not just where
-	// the CI workflow's per-shard XDG homes apply. The directory is recreated clean each run
-	// so prior-run artifacts never bleed in, and so test runs stop polluting the developer's
-	// real `app_userdata` tree.
+	// Per-run `user://` isolation. `test run` redirects the user-data root to a
+	// deterministic directory under the test scratch space so test runs stop polluting the
+	// developer's real `app_userdata` tree — on every platform, not just where the CI
+	// workflow's per-shard XDG homes apply. The directory is recreated clean each run, so
+	// prior-run artifacts never bleed in; because that erase is unconditional, the leaf name
+	// is process-unique: two concurrent runs must never resolve to the same root, or the
+	// second one to boot would delete the first one's `user://` tree mid-run.
 	{
 		String user_data_root;
 		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
@@ -934,19 +936,17 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (user_data_root.is_empty()) {
 			user_data_root = OS::get_singleton()->get_temp_path();
 		}
-		// A benchmark run and a scoped fixture run are both meant to be started while a suite,
-		// or a sibling of the same verb, is already running, and this root is recreated clean.
-		// Their leaves are therefore per-process: a shared one would erase a concurrent run's
-		// `user://` tree.
+		// Every leaf below is per-process: this root is recreated clean at boot, so a shared
+		// leaf would erase a concurrent run's `user://` tree — a benchmark run, a scoped
+		// fixture run, or a plain second `test run` are all meant to be startable side by side.
 		String leaf;
 		if (kind == Kind::TEST_BENCHMARK) {
 			leaf = vformat("user-benchmark-%d", OS::get_singleton()->get_process_id());
 		} else if (kind == Kind::TEST_FIXTURES) {
 			leaf = vformat("user-fixtures-%d", OS::get_singleton()->get_process_id());
-		} else if (cli_parse.invocation.test_shard_total > 1) {
-			leaf = vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
 		} else {
-			leaf = "user-unsharded";
+			leaf = TestUserDataRootPolicy::leaf_name(cli_parse.invocation.test_shard_index,
+					cli_parse.invocation.test_shard_total, OS::get_singleton()->get_process_id());
 		}
 		user_data_root = user_data_root.simplify_path().path_join(leaf);
 
@@ -983,9 +983,12 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 
 	// A per-process root belongs to one run alone, so it is removed once that run is done with
 	// it; leaving it behind would accumulate one directory per invocation, including per failed
-	// invocation. Every exit below goes through this.
+	// invocation. Every exit below goes through this. The generator verbs own their root too:
+	// they never run `test_main`'s cleanup, and their outputs are repo fixture files, not
+	// `user://` artifacts, so there is nothing inside the root worth preserving.
 	Vector<String> owned_user_root_artifacts;
-	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES;
+	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES ||
+			kind == Kind::TEST_GENERATE_FIXTURES || kind == Kind::TEST_GENERATE_FORMAT_FIXTURES;
 	if (kind == Kind::TEST_BENCHMARK) {
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_output);
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
@@ -995,6 +998,16 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 	const auto remove_owned_user_root = [&]() {
 		if (owns_user_root) {
 			FoundryCLIUserRoot::remove_owned_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
+		}
+	};
+	// A `test run` failure keeps its root for post-mortem inspection; `test_main` prints the
+	// kept path for every exit that reaches it, but the early failures below return before
+	// `test_main` runs, so the path is printed here instead. Root-owning kinds have already
+	// had their root removed by then.
+	const auto report_kept_user_root = [&]() {
+		const String user_data_root = OS::get_singleton()->get_user_data_root_override();
+		if (!owns_user_root && !user_data_root.is_empty()) {
+			print_line(vformat("[foundry-test] failed run; kept user:// isolation root for inspection: %s", user_data_root));
 		}
 	};
 
@@ -1007,6 +1020,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (project_err != OK) {
 			ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
 			remove_owned_user_root();
+			report_kept_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
@@ -1031,6 +1045,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
 		if (!pre_compile_ok) {
 			remove_owned_user_root();
+			report_kept_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}

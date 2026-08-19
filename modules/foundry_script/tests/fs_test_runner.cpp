@@ -181,6 +181,20 @@ static String language_project_path;
 // assert this stays at one per suite; it is purely test instrumentation.
 static uint64_t init_language_count = 0;
 
+// Activates the project at `p_path`. Switching the active project remaps `user://` to the
+// new project's app-userdata directory (keyed on `application/config/name`); `Main::setup()`
+// normally creates that leaf, but nothing does for a mid-run switch, so mirror it here.
+// Without this, whether a `user://` write succeeds depends on an unrelated suite having
+// incidentally created the leaf earlier in the run.
+static Error activate_project(const String &p_path) {
+	const Error err = ProjectSettings::get_singleton()->setup(p_path, String(), true);
+	if (err == OK) {
+		// Switching projects remaps `user://` to the new project's app-userdata leaf.
+		OS::get_singleton()->ensure_user_data_dir();
+	}
+	return err;
+}
+
 void init_language(const String &p_base_path) {
 	// Idempotent so repeated `initialize()` calls within a suite reuse the
 	// already-initialized language instead of paying the setup cost each case.
@@ -188,7 +202,7 @@ void init_language(const String &p_base_path) {
 		ProjectSettings *settings = ProjectSettings::get_singleton();
 		if (!language_project_path.is_empty() &&
 				(!settings->is_project_loaded() || settings->get_resource_path() != language_project_path)) {
-			const Error err = settings->setup(language_project_path, String(), true);
+			const Error err = activate_project(language_project_path);
 			if (err) {
 				print_line("Could not reload project settings.");
 			}
@@ -203,20 +217,12 @@ void init_language(const String &p_base_path) {
 
 	// Setup project settings since it's needed by the languages to get the global scripts.
 	// This also sets up the base resource path.
-	Error err = ProjectSettings::get_singleton()->setup(p_base_path, String(), true);
+	Error err = activate_project(p_base_path);
 	if (err) {
 		print_line("Could not load project settings.");
 		// Keep going since some scripts still work without this.
 	} else {
 		language_project_path = ProjectSettings::get_singleton()->get_resource_path();
-		// Switching the active project also remaps `user://` to that project's
-		// app-userdata directory (keyed on `application/config/name`). The engine
-		// creates that directory during `Main::setup()`; mirror it here so tests
-		// that write to `user://` after a project switch do not fail because the
-		// directory was never created. Without this, whether a `user://` write
-		// succeeds depends on an unrelated suite having incidentally created the
-		// directory earlier in the run.
-		OS::get_singleton()->ensure_user_data_dir();
 	}
 
 	// Initialize the language for the test routine.
@@ -240,6 +246,9 @@ void finish_language() {
 			TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
 			ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
 			saved_project_settings = false;
+			// Restoring the pre-language mapping retargets `user://` at a leaf that may not
+			// exist; re-create it so later cases keep a writable `user://`.
+			OS::get_singleton()->ensure_user_data_dir();
 		}
 		return;
 	}
@@ -253,6 +262,9 @@ void finish_language() {
 		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
 		ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
 		saved_project_settings = false;
+		// Restoring the pre-language mapping retargets `user://` at a leaf that may not
+		// exist; re-create it so later cases keep a writable `user://`.
+		OS::get_singleton()->ensure_user_data_dir();
 	}
 }
 

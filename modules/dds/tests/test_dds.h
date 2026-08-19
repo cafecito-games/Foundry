@@ -40,8 +40,11 @@
 #include "tests/test_utils.h"
 
 namespace TestDDS {
-String init(const String &p_test, const String &p_copy_target = String()) {
-	String old_resource_path = TestProjectSettingsInternalsAccessor::resource_path();
+// Repoints `res://` at a temporary project. The caller must hold a
+// `TestProjectSettingsRestoreScope` for the duration of the case: `init()` moves
+// `resource_path`, and a `setup()` that finds a project would also dirty the settings
+// behind `user://`. The scope restores both so nothing leaks into later cases.
+void init(const String &p_test, const String &p_copy_target = String()) {
 	Error err;
 	// Setup project settings with `res://` set to a temporary path.
 	String project_folder = TestUtils::get_temp_path(p_test.get_file().get_basename());
@@ -54,7 +57,7 @@ String init(const String &p_test, const String &p_copy_target = String()) {
 	da->make_dir_recursive(ps->globalize_path(ps->get_imported_files_path()));
 
 	if (p_copy_target.is_empty()) {
-		return old_resource_path;
+		return;
 	}
 
 	// Copy all the necessary test data files to the res:// directory.
@@ -65,7 +68,7 @@ String init(const String &p_test, const String &p_copy_target = String()) {
 	da = DirAccess::open(test_data);
 	CHECK_MESSAGE(da.is_valid(), "Unable to open folder.");
 	if (da.is_null()) {
-		return old_resource_path;
+		return;
 	}
 	da->list_dir_begin();
 	for (String item = da->get_next(); !item.is_empty(); item = da->get_next()) {
@@ -78,11 +81,11 @@ String init(const String &p_test, const String &p_copy_target = String()) {
 		output->close();
 	}
 	da->list_dir_end();
-	return old_resource_path;
 }
 
 TEST_CASE("[SceneTree][DDSSaver] Save DDS - Save valid image with mipmap" * doctest::skip(true)) {
-	String old_resource_path = init("save_dds_valid_image_with_mipmap");
+	TestProjectSettingsRestoreScope restore_project_settings;
+	init("save_dds_valid_image_with_mipmap");
 	Ref<Image> image = Image::create_empty(4, 4, false, Image::FORMAT_RGBA8);
 	image->fill(Color(1, 0, 0)); // Fill with red color
 	image->generate_mipmaps();
@@ -101,11 +104,11 @@ TEST_CASE("[SceneTree][DDSSaver] Save DDS - Save valid image with mipmap" * doct
 	CHECK_MESSAGE(metrics.has("root_mean_squared"), "Metrics dictionary contains 'root_mean_squared'.");
 	float rms = metrics["root_mean_squared"];
 	CHECK(rms == 0.0f);
-	TestProjectSettingsInternalsAccessor::resource_path() = old_resource_path;
 }
 
 TEST_CASE("[SceneTree][DDSSaver] Save DDS - Save valid image with BPTC and S3TC compression" * doctest::skip(true)) {
-	String old_resource_path = init("save_dds_valid_image_bptc_s3tc");
+	TestProjectSettingsRestoreScope restore_project_settings;
+	init("save_dds_valid_image_bptc_s3tc");
 	Ref<Image> image_bptc = Image::create_empty(4, 4, false, Image::FORMAT_RGBA8);
 	image_bptc->fill(Color(0, 0, 1)); // Fill with blue color
 	image_bptc->compress_from_channels(Image::COMPRESS_BPTC, Image::USED_CHANNELS_RGBA);
@@ -143,11 +146,11 @@ TEST_CASE("[SceneTree][DDSSaver] Save DDS - Save valid image with BPTC and S3TC 
 	CHECK_MESSAGE(metrics_s3tc.has("root_mean_squared"), "Metrics dictionary contains 'root_mean_squared' for S3TC.");
 	float rms_s3tc = metrics_s3tc["root_mean_squared"];
 	CHECK(rms_s3tc == 0.0f);
-	TestProjectSettingsInternalsAccessor::resource_path() = old_resource_path;
 }
 
 TEST_CASE("[SceneTree][DDSSaver] Save DDS - Save valid uncompressed image") {
-	String old_resource_path = init("save_dds_valid_uncompressed");
+	TestProjectSettingsRestoreScope restore_project_settings;
+	init("save_dds_valid_uncompressed");
 	Ref<Image> image = Image::create_empty(4, 4, false, Image::FORMAT_RGBA8);
 	image->fill(Color(0, 0, 1)); // Fill with blue color
 	Error err = image->save_dds("res://valid_image_uncompressed.dds");
@@ -163,6 +166,5 @@ TEST_CASE("[SceneTree][DDSSaver] Save DDS - Save valid uncompressed image") {
 	CHECK_MESSAGE(metrics.has("root_mean_squared"), "Metrics dictionary contains 'root_mean_squared' for uncompressed.");
 	float rms = metrics["root_mean_squared"];
 	CHECK(rms == 0.0f);
-	TestProjectSettingsInternalsAccessor::resource_path() = old_resource_path;
 }
 } //namespace TestDDS

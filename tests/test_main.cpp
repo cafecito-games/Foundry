@@ -35,6 +35,9 @@
 
 #include "core/error/error_macros.h"
 #include "core/io/dir_access.h"
+#include "core/os/os.h"
+#include "core/string/print_string.h"
+#include "main/cli_user_root.h"
 #include "modules/modules_enabled.gen.h"
 
 #include "servers/display/accessibility_server.h"
@@ -212,6 +215,7 @@
 #include "tests/core/os/test_os.h"
 #include "tests/core/os/test_os_process.h"
 #include "tests/core/os/test_os_user_data_override.h"
+#include "tests/core/os/test_user_data_case_isolation.h"
 #include "tests/core/string/test_fuzzy_search.h"
 #include "tests/core/string/test_node_path.h"
 #include "tests/core/string/test_string.h"
@@ -415,6 +419,22 @@ static int run_doctest_context(const LocalVector<String> &p_args) {
 	return test_context.run();
 }
 
+// The `user://` isolation root installed by the test entrypoint belongs to this run alone
+// (its leaf is process-unique), but leaving it behind would still accumulate one directory
+// per invocation. A successful run removes it; a failing run keeps it so post-mortem
+// artifacts survive, and prints the path once so it can be found next to the failure.
+static void cleanup_test_user_data_root(int p_result) {
+	const String user_data_root = OS::get_singleton()->get_user_data_root_override();
+	if (user_data_root.is_empty()) {
+		return;
+	}
+	if (p_result == EXIT_SUCCESS) {
+		FoundryCLIUserRoot::remove_owned_root(user_data_root, Vector<String>());
+		return;
+	}
+	print_line(vformat("[foundry-test] failed run; kept user:// isolation root for inspection: %s", user_data_root));
+}
+
 void test_configure_case_shard(int p_shard_index, int p_shard_total) {
 	FoundryTestCaseShard::configure(p_shard_index, p_shard_total);
 }
@@ -437,7 +457,10 @@ int test_main(int argc, char *argv[]) {
 
 	WorkerThreadPool::get_singleton()->init();
 
-	ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, 1, "Failed to clean test temp path");
+	if (cleanup_test_temp_path() != OK) {
+		cleanup_test_user_data_root(1);
+		ERR_FAIL_V_MSG(1, "Failed to clean test temp path");
+	}
 
 	// Run custom test tools.
 	if (test_commands) {
@@ -451,6 +474,7 @@ int test_main(int argc, char *argv[]) {
 		}
 		if (!run_tests) {
 			Error err = cleanup_test_temp_path();
+			cleanup_test_user_data_root(OS::get_singleton()->get_exit_code());
 			delete test_commands;
 			ERR_FAIL_COND_V_MSG(err != OK, 1, "Failed to clean test temp path");
 			// Honor an exit code set by the command (e.g. a generator failure),
@@ -483,6 +507,7 @@ int test_main(int argc, char *argv[]) {
 		for (const String &argument : test_args) {
 			if (FoundryTestCaseFilter::is_no_skip_argument(argument)) {
 				ERR_PRINT("--no-skip cannot be combined with --case, --suite, or --shard; it would run every registered test.");
+				cleanup_test_user_data_root(EXIT_FAILURE);
 				ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, EXIT_FAILURE, "Failed to clean test temp path");
 				return EXIT_FAILURE;
 			}
@@ -496,6 +521,7 @@ int test_main(int argc, char *argv[]) {
 	const int cases_matching_filter = FoundryTestCaseFilter::apply_to_registry();
 	if (FoundryTestCaseFilter::is_active() && cases_matching_filter == 0) {
 		ERR_PRINT("The --case/--suite filter matched no tests; nothing was run.");
+		cleanup_test_user_data_root(EXIT_FAILURE);
 		ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, EXIT_FAILURE, "Failed to clean test temp path");
 		return EXIT_FAILURE;
 	}
@@ -520,6 +546,7 @@ int test_main(int argc, char *argv[]) {
 		result = run_doctest_context(count_args);
 		FoundryTestProgress::end_counting_pass();
 		if (result != EXIT_SUCCESS) {
+			cleanup_test_user_data_root(result);
 			ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, result != 0 ? result : 1, "Failed to clean test temp path");
 			return result;
 		}
@@ -532,6 +559,9 @@ int test_main(int argc, char *argv[]) {
 	// shutdown so exit-time leak reports reflect real leaks, not un-finalized language state.
 	FSTests::finish_language();
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+	// Runs after `finish_language()` so nothing is still writing into the root.
+	cleanup_test_user_data_root(result);
 
 	ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, result != 0 ? result : 1, "Failed to clean test temp path");
 	return result;
@@ -796,6 +826,11 @@ private:
 	void reinitialize() {
 		Math::seed(0x60d07);
 		SignalWatcher::get_singleton()->_clear_signals();
+		// `user://` resolves through `application/config/name` and the custom-user-dir settings,
+		// so any case that activates another project retargets it for every later case. The
+		// entrypoint only created the leaf for the boot mapping, and `FileAccess::open(…, WRITE)`
+		// does not create parents, so re-create the leaf for whatever mapping is active now.
+		OS::get_singleton()->ensure_user_data_dir();
 	}
 };
 

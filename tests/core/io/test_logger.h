@@ -33,6 +33,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/logger.h"
 #include "modules/regex/regex.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 #include "tests/test_macros.h"
 
 namespace TestLogger {
@@ -92,6 +93,7 @@ void cleanup_logs() {
 }
 
 TEST_CASE("[Logger][RotatedFileLogger] Cleanup leaves unrelated log files intact") {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	initialize_logs();
 
 	const String unrelated_file_path = get_peer_log_file_path();
@@ -108,6 +110,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Cleanup leaves unrelated log files intact
 }
 
 TEST_CASE("[Logger][RotatedFileLogger] Creates the first log file and logs on it") {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	initialize_logs();
 
 	String waiting_for_foundry = "Waiting for Foundry";
@@ -123,6 +126,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Creates the first log file and logs on it
 }
 
 TEST_CASE("[Logger][RotatedFileLogger] Falls back when the log destination cannot be opened") {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	initialize_logs();
 
 	Ref<DirAccess> logs_dir = DirAccess::open(get_logs_dir());
@@ -165,6 +169,7 @@ void get_log_files(Vector<String> &log_files) {
 }
 
 TEST_CASE("[Logger][RotatedFileLogger] Creates unique backups without waiting") {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	initialize_logs();
 
 	const int logger_count = 3;
@@ -182,6 +187,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Creates unique backups without waiting") 
 
 // All things related to log file rotation are in the same test because testing it require some sleeps.
 TEST_CASE("[Logger][RotatedFileLogger] Rotates logs files") {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	initialize_logs();
 
 	Vector<String> all_waiting_for_foundry;
@@ -233,6 +239,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Rotates logs files") {
 }
 
 TEST_CASE("[Logger][CompositeLogger] Logs the same into multiple loggers") {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	initialize_logs();
 
 	Vector<Logger *> all_loggers;

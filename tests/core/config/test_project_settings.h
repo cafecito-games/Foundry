@@ -34,7 +34,9 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/resource_uid.h"
+#include "core/os/os.h"
 #include "core/variant/variant.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
@@ -352,6 +354,62 @@ TEST_CASE("[ProjectSettings][UInt] Text project settings round-trip unsigned val
 
 TEST_CASE("[ProjectSettings][UInt] Binary project settings round-trip unsigned values") {
 	check_project_settings_round_trip("uint_project_settings.binary", true);
+}
+
+TEST_CASE("[ProjectSettings] Restore scope leaves user:// writable after a project rename") {
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+	const String real_app_name = GLOBAL_GET("application/config/name");
+	const Variant real_use_custom_user_dir = GLOBAL_GET("application/config/use_custom_user_dir");
+
+	// Retarget to a mapping whose app-userdata leaf does not exist yet, then take the scope:
+	// its restore target is that never-created leaf, so the destructor's leaf re-creation is
+	// the only thing that can make the mapping writable again (`FileAccess::open(..., WRITE)`
+	// does not create parents). `use_custom_user_dir` is pinned so the leaf is deterministic.
+	settings->set_setting("application/config/use_custom_user_dir", false);
+	settings->set_setting("application/config/name", "restore_scope_missing_leaf_probe");
+	CHECK_MESSAGE(!DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
+			"The restore target's app-userdata leaf should not exist yet: ",
+			OS::get_singleton()->get_user_data_dir());
+	{
+		TestProjectSettingsRestoreScope restore_scope;
+		// A rename whose leaf is never created either.
+		settings->set_setting("application/config/name", "restore_scope_rename_probe");
+		CHECK_MESSAGE(!DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
+				"The renamed mapping's app-userdata leaf should not exist while the scope is live: ",
+				OS::get_singleton()->get_user_data_dir());
+	}
+
+	// The scope restored the never-created mapping *and* re-created its leaf.
+	CHECK_MESSAGE(DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
+			"The restored mapping's leaf should exist again after the scope dies: ",
+			OS::get_singleton()->get_user_data_dir());
+	{
+		Ref<FileAccess> probe = FileAccess::open("user://restore_scope_writable_probe.txt", FileAccess::WRITE);
+		CHECK_MESSAGE(probe.is_valid(), "user:// should be writable again after the scope dies");
+	}
+	Ref<DirAccess> user_dir = DirAccess::open("user://");
+	REQUIRE(user_dir.is_valid());
+	CHECK_EQ(user_dir->remove("restore_scope_writable_probe.txt"), OK);
+
+	// Leave the case-entry mapping (and its leaf) as this case found them.
+	settings->set_setting("application/config/name", real_app_name);
+	settings->set_setting("application/config/use_custom_user_dir", real_use_custom_user_dir);
+	OS::get_singleton()->ensure_user_data_dir();
+}
+
+TEST_CASE("[ProjectSettings] Restore scope restores custom user dir settings") {
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+	const bool saved_use_custom = settings->get_setting("application/config/use_custom_user_dir");
+	const String saved_custom_dir = settings->get_setting("application/config/custom_user_dir_name");
+	const String saved_user_data_dir = OS::get_singleton()->get_user_data_dir();
+	{
+		TestProjectSettingsRestoreScope restore_scope;
+		settings->set_setting("application/config/use_custom_user_dir", true);
+		settings->set_setting("application/config/custom_user_dir_name", "restore_scope_custom_probe");
+	}
+	CHECK_EQ(bool(settings->get_setting("application/config/use_custom_user_dir")), saved_use_custom);
+	CHECK_EQ(String(settings->get_setting("application/config/custom_user_dir_name")), saved_custom_dir);
+	CHECK_EQ(OS::get_singleton()->get_user_data_dir(), saved_user_data_dir);
 }
 
 } // namespace TestProjectSettings

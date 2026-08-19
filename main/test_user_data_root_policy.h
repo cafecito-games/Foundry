@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_gltf_emissive.h                                                  */
+/*  test_user_data_root_policy.h                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,40 +30,12 @@
 
 #pragma once
 
-#include "test_gltf.h"
+#include "core/string/ustring.h"
 
-#ifdef TOOLS_ENABLED
-
-namespace TestGltf {
-
-TEST_CASE("[SceneTree][Node] GLTF emissiveTexture without emissiveFactor uses white emission") {
-	TestProjectSettingsRestoreScope restore_project_settings;
-	init("gltf_emissive_no_factor", "res://");
-
-	Node *loaded = gltf_import("res://emissive_no_factor.gltf");
-	CHECK_MESSAGE(loaded != nullptr, "Failed to load GLB.");
-
-	MeshInstance3D *mesh = Object::cast_to<MeshInstance3D>(loaded->find_child("Cube", true, true));
-	CHECK_MESSAGE(mesh != nullptr, "Mesh not found.");
-
-	Ref<StandardMaterial3D> mat = mesh->get_active_material(0);
-	CHECK_MESSAGE(mat.is_valid(), "Material not found.");
-
-	// Emission should be enabled.
-	CHECK(mat->get_feature(BaseMaterial3D::FEATURE_EMISSION));
-
-	// Emission operator should be MULTIPLY per glTF spec.
-	CHECK(mat->get_emission_operator() == BaseMaterial3D::EMISSION_OP_MULTIPLY);
-
-	// Without emissiveFactor, emission color should be WHITE, not BLACK.
-	Color c = mat->get_emission();
-	CHECK_MESSAGE(c.r > 0.9f, "Emission red should be ~1.0 when emissiveFactor is absent.");
-	CHECK_MESSAGE(c.g > 0.9f, "Emission green should be ~1.0 when emissiveFactor is absent.");
-	CHECK_MESSAGE(c.b > 0.9f, "Emission blue should be ~1.0 when emissiveFactor is absent.");
-
-	memdelete(loaded);
-}
-
-} // namespace TestGltf
-
-#endif // TOOLS_ENABLED
+// Names the per-run `user://` isolation directory. The entrypoint erases this directory
+// clean at boot, so two `test run` processes must never resolve to the same name: the
+// second one would delete the app-userdata leaves and `user://` files of a run in flight.
+class TestUserDataRootPolicy {
+public:
+	static String leaf_name(int p_shard_index, int p_shard_total, int p_process_id);
+};
