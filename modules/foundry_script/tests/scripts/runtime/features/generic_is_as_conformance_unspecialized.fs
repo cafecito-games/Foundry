@@ -1,14 +1,13 @@
-# A conformance to a generic trait that supplies no arguments records none. That is an absence of
-# evidence rather than a wildcard, so the raw trait target succeeds and every specialized one fails.
+# A conformance that forwards the declaring generic's own parameter records nothing concrete, and
+# an argument-erased instance adds no evidence of its own. That is an absence of evidence rather
+# than a wildcard, so the raw trait target succeeds and every specialized one fails.
 trait Boxed[T]:
 	abstract func size() -> int
 
 
-class Crate:
-	pass
+class Crate[U]:
+	uses Boxed[U]
 
-
-extend Crate uses Boxed:
 	func size() -> int:
 		return 0
 

@@ -1050,6 +1050,11 @@ public:
 			// The resolved (and validated) type arguments, bound to the trait's type parameters.
 			Vector<DataType> resolved_type_arguments;
 			ClassNode *resolved_trait = nullptr;
+			// True when the named trait is generic but this entry supplied no type arguments. The
+			// condition is recorded during trait-use resolution and reported by the declaring file's
+			// own analyzer, so the diagnostic lands in the file that wrote the entry no matter which
+			// file's analysis resolved it first.
+			bool missing_type_arguments = false;
 
 			String to_string() const {
 				String result;

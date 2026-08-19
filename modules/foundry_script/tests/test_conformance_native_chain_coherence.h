@@ -203,7 +203,7 @@ func test() -> void:
 	CHECK(fixture.error_messages.is_empty());
 }
 
-TEST_CASE("[Modules][FoundryScript][Conformance] A conformance that supplies no trait arguments is not evidence") {
+TEST_CASE("[Modules][FoundryScript][Conformance] A conformance that supplies no trait arguments is rejected") {
 	NativeChainFixture fixture(R"(
 trait NccOpenKeeper[T]:
 	abstract func size() -> int
@@ -223,7 +223,10 @@ func test() -> void:
 	pass
 )");
 
-	CHECK(fixture.error_messages.is_empty());
+	// The bare conformance is an arity error and is dropped, so it contributes no evidence: the
+	// specialized conformance on the subclass registers without a chain-coherence conflict.
+	CHECK_EQ(fixture.error_messages.size(), 1);
+	CHECK(fixture.has_error_containing(R"(Generic trait "NccOpenKeeper" expects 1 type argument(s), but 0 were given.)"));
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Only engine-class targets are reported as native conformances") {
@@ -443,7 +446,7 @@ func test() -> void:
 	CHECK(fixture.error_messages.is_empty());
 }
 
-TEST_CASE("[Modules][FoundryScript][Conformance] A native conformance without arguments is not evidence for a script class") {
+TEST_CASE("[Modules][FoundryScript][Conformance] A native conformance without arguments is rejected") {
 	NativeChainFixture fixture(R"(
 trait NccOpenScriptKeeper[T]:
 	abstract func size() -> int
@@ -467,7 +470,10 @@ func test() -> void:
 	pass
 )");
 
-	CHECK(fixture.error_messages.is_empty());
+	// The bare native conformance is an arity error and is dropped, so the script class's
+	// specialized conformance registers without a chain-coherence conflict against it.
+	CHECK_EQ(fixture.error_messages.size(), 1);
+	CHECK(fixture.has_error_containing(R"(Generic trait "NccOpenScriptKeeper" expects 1 type argument(s), but 0 were given.)"));
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] A concrete composite position still conflicts across a script chain") {

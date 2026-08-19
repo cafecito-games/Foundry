@@ -677,9 +677,10 @@ private:
 	// once against this description instead of once per declaration kind.
 	struct GenericDeclaration {
 		Vector<FSParser::TypeParameterNode *> parameters;
-		// "Class" or "Enum": how the declaration is named when it takes no parameters at all.
+		// "Class", "Trait", or "Enum": how the declaration is named when it takes no parameters at all.
 		String kind;
-		// "Generic class" or "Generic tagged union": how it is named in the arity diagnostic.
+		// "Generic class", "Generic trait", or "Generic tagged union": how it is named in the arity
+		// diagnostic.
 		String generic_kind;
 		String name;
 		// The scope a declared bound resolves in, so a bound name binds at the declaration site rather
@@ -689,6 +690,7 @@ private:
 	};
 	static GenericDeclaration class_generic_declaration(const FSParser::DataType &p_type);
 	static GenericDeclaration enum_generic_declaration(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
+	static GenericDeclaration trait_generic_declaration(FSParser::ClassNode *p_trait);
 	bool apply_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::TypeNode *> &p_argument_nodes, const FSParser::Node *p_source, bool p_check_bounds = true, Vector<bool> *r_argument_failed = nullptr);
 	bool bind_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds = true);
 	bool check_type_argument_bounds(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources);
@@ -813,6 +815,10 @@ private:
 
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
+	// Reports every `uses` entry recorded as naming a generic trait without type arguments, walking
+	// this parser's own class tree. Emission is separate from resolution so the diagnostic lands
+	// exactly once, in the declaring file, regardless of which file resolved the class first.
+	void report_missing_trait_use_type_arguments(FSParser::ClassNode *p_class);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	void resolve_class_interface(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_body(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);

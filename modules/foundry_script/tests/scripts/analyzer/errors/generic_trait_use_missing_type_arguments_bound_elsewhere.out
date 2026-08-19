@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Generic trait "Storage" expects 1 type argument(s), but 0 were given.
+>> ERROR at line 17: Generic trait "Storage" expects 1 type argument(s), but 0 were given.

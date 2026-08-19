@@ -1416,6 +1416,18 @@ FSAnalyzer::GenericDeclaration FSAnalyzer::enum_generic_declaration(FSParser::En
 	return declaration;
 }
 
+FSAnalyzer::GenericDeclaration FSAnalyzer::trait_generic_declaration(FSParser::ClassNode *p_trait) {
+	GenericDeclaration declaration;
+	declaration.kind = "Trait";
+	declaration.generic_kind = "Generic trait";
+	declaration.declaring_class = p_trait;
+	if (p_trait != nullptr) {
+		declaration.parameters = p_trait->type_parameters;
+		declaration.name = fs_class_or_trait_diagnostic_name(p_trait);
+	}
+	return declaration;
+}
+
 bool FSAnalyzer::apply_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::TypeNode *> &p_argument_nodes, const FSParser::Node *p_source, bool p_check_bounds, Vector<bool> *r_argument_failed) {
 	return apply_type_arguments(r_type, class_generic_declaration(r_type), p_argument_nodes, p_source, p_check_bounds, r_argument_failed);
 }
@@ -2413,12 +2425,19 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 			// type parameter into a generic supertrait (`trait Wrapper[T] uses Storage[T]`).
 			FSParser::ClassNode *previous_class = parser->current_class;
 			parser->current_class = p_class;
-			const bool applied = apply_class_type_arguments(trait_handle, trait_use.type_arguments, trait_use.type_arguments[0]);
+			const bool applied = apply_type_arguments(trait_handle, trait_generic_declaration(trait), trait_use.type_arguments, trait_use.type_arguments[0]);
 			parser->current_class = previous_class;
 			if (!applied) {
 				return fail();
 			}
 			trait_use.resolved_type_arguments = trait_handle.type_arguments;
+		} else if (!trait->type_parameters.is_empty()) {
+			// A generic trait must be applied with type arguments. The condition is only recorded here:
+			// this resolution may be running on behalf of a consuming file, which would absorb a direct
+			// error as its own trait-use failure, so the declaring parser's phase 3 walk reports it
+			// (`report_missing_trait_use_type_arguments`). The entry still applies — the author's intent
+			// is unambiguous, and wiping the trait surface would cascade errors past the one that counts.
+			trait_use.missing_type_arguments = true;
 		}
 
 		_append_trait_unique(p_class->resolved_traits, trait);
@@ -2462,6 +2481,29 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 	p_class->resolved_trait_uses = true;
 	p_class->failed_trait_uses = false;
 	return OK;
+}
+
+void FSAnalyzer::report_missing_trait_use_type_arguments(FSParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return;
+	}
+	for (FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		if (!trait_use.missing_type_arguments || trait_use.resolved_trait == nullptr) {
+			continue;
+		}
+		// Consumed on emission: phase 3 runs through both `analyze()` and `resolve_interface()`, and a
+		// parser raised one phase at a time must not report the same entry twice.
+		trait_use.missing_type_arguments = false;
+		push_error(vformat(R"(Generic trait "%s" expects %d type argument(s), but 0 were given.)",
+						   fs_class_or_trait_diagnostic_name(trait_use.resolved_trait),
+						   trait_use.resolved_trait->type_parameters.size()),
+				_trait_use_source(trait_use, p_class));
+	}
+	for (int i = 0; i < p_class->members.size(); i++) {
+		if (p_class->members[i].type == FSParser::ClassNode::Member::CLASS) {
+			report_missing_trait_use_type_arguments(p_class->members[i].m_class);
+		}
+	}
 }
 
 Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive) {

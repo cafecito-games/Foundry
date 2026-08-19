@@ -155,7 +155,16 @@ class C:
 )";
 	REQUIRE(parser.parse(source, "res://trait_arguments_bare_first.fs", false) == OK);
 	FSAnalyzer analyzer(&parser);
-	REQUIRE(analyzer.analyze() == OK);
+	// The argument-less entry is diagnosed but still applied, so the walker's answer below stays
+	// meaningful on the recovered surface.
+	analyzer.analyze();
+	bool missing_arguments_reported = false;
+	for (const FSParser::ParserError &error : parser.get_errors()) {
+		if (error.message == R"(Generic trait "Storage" expects 1 type argument(s), but 0 were given.)") {
+			missing_arguments_reported = true;
+		}
+	}
+	CHECK(missing_arguments_reported);
 
 	const FSParser::ClassNode *storage = trait_arguments_find_class(parser.get_tree(), "Storage");
 	const FSParser::ClassNode *implementer = trait_arguments_find_class(parser.get_tree(), "C");
@@ -195,12 +204,16 @@ class C:
 	FSParser first_parser;
 	REQUIRE(first_parser.parse(bare_first, "res://trait_arguments_order_a.fs", false) == OK);
 	FSAnalyzer first_analyzer(&first_parser);
-	REQUIRE(first_analyzer.analyze() == OK);
+	// Both sources carry the argument-less-use diagnostic; the entry is still applied, so the
+	// walker's answer must stay identical in either order.
+	first_analyzer.analyze();
+	CHECK(!first_parser.get_errors().is_empty());
 
 	FSParser second_parser;
 	REQUIRE(second_parser.parse(bare_last, "res://trait_arguments_order_b.fs", false) == OK);
 	FSAnalyzer second_analyzer(&second_parser);
-	REQUIRE(second_analyzer.analyze() == OK);
+	second_analyzer.analyze();
+	CHECK(!second_parser.get_errors().is_empty());
 
 	const FSParser::ClassNode *first_storage = trait_arguments_find_class(first_parser.get_tree(), "Storage");
 	const FSParser::ClassNode *first_class = trait_arguments_find_class(first_parser.get_tree(), "C");

@@ -1,6 +1,7 @@
 # The static rule now answers the way the run-time relation always did. Each row prints the store
-# answer and the `is` answer side by side, for absent, exact, and contradicted evidence. The
-# contradicted store itself aborts, so it lives in
+# answer and the `is` answer side by side, for absent, exact, and contradicted evidence. Absent
+# evidence comes from a conformance that forwards the declaring generic's own parameter on an
+# argument-erased instance. The contradicted store itself aborts, so it lives in
 # runtime/errors/retroactive_conformance_native_store_rejects_conflicting_evidence.fs.
 trait RcrKeeper[T]:
 	abstract func keep(item: T) -> T
@@ -14,18 +15,16 @@ class RcrTarget:
 	pass
 
 
-class RcrOpenTarget:
-	pass
+class RcrOpenTarget[U]:
+	uses RcrOpen[U]
+
+	func size() -> int:
+		return 0
 
 
 extend RcrTarget uses RcrKeeper[int]:
 	func keep(item: int) -> int:
 		return item
-
-
-extend RcrOpenTarget uses RcrOpen:
-	func size() -> int:
-		return 0
 
 
 func test() -> void:

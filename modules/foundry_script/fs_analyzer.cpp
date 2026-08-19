@@ -479,6 +479,10 @@ Error FSAnalyzer::run_phase_interface_and_member_surface() {
 	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE);
 	ensure_autoload_index_current();
 	Error err = resolve_trait_uses(parser->head, true);
+	// Resolution only records a `uses` entry that names a generic trait without type arguments; the
+	// declaring file reports it here so the diagnostic is emitted exactly once, in declaration order,
+	// no matter which file's analysis resolved the class first.
+	report_missing_trait_use_type_arguments(parser->head);
 	if (err) {
 		return err;
 	}
