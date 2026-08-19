@@ -12388,6 +12388,48 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 		return false;
 	}
 
+	// Which spelling reached the declaration decides what a `Self` field denotes. The unqualified,
+	// `self.`-qualified, and instance-base spellings construct against a live receiver, so `Self`
+	// stays the receiver contract the shared call-parameter gate answers by contract or identity. A
+	// class handle, a static function, and a frame whose `self` is not an instance of the declaring
+	// class have no receiver a `Self` leaf could denote, so `Self` substitutes to the declaring class
+	// and admission stays ordinary compatibility -- otherwise the tuple would be legal and
+	// unconstructible from exactly those frames.
+	const auto tuple_meta_type_for_spelling = [&](const FSParser::DataType &p_tuple_type,
+													  FSParser::ClassNode *p_declaring_class) -> FSParser::DataType {
+		if (!_datatype_contains_self_type_parameter(p_tuple_type)) {
+			return p_is_self ? p_tuple_type : substitute_member_type(p_tuple_type, p_base_type, nullptr, nullptr);
+		}
+		if (!p_is_self) {
+			if (p_base_type.is_meta_type) {
+				// The class-handle spelling is exact: `Self` substitutes to the named class and the
+				// diagnostic keeps naming it.
+				return substitute_member_type(p_tuple_type, p_base_type, nullptr, nullptr);
+			}
+			// An instance base keeps literal `Self`, answered by identity against the base expression.
+			FSParser::DataType receiver_self = _self_type_parameter_from_bound(p_base_type);
+			receiver_self.is_receiver_self_contract = true;
+			return substitute_member_type(p_tuple_type, p_base_type, nullptr, &receiver_self);
+		}
+		bool frame_self_is_declaring_instance = false;
+		if (!static_context) {
+			for (const FSParser::ClassNode *scope = parser->current_class; scope != nullptr;
+					scope = scope->base_type.class_type) {
+				if (scope == p_declaring_class) {
+					frame_self_is_declaring_instance = true;
+					break;
+				}
+			}
+		}
+		if (frame_self_is_declaring_instance) {
+			FSParser::DataType receiver_self = _self_type_parameter_from_bound(_self_type_for_class(parser->current_class));
+			receiver_self.is_receiver_self_contract = true;
+			return substitute_member_type(p_tuple_type, FSParser::DataType(), nullptr, &receiver_self);
+		}
+		FSParser::DataType declaring_self = _self_type_for_class(p_declaring_class);
+		return substitute_member_type(p_tuple_type, FSParser::DataType(), nullptr, &declaring_self);
+	};
+
 	// Walks one lexical chain. `r_name_taken` reports that some class in the chain declares the name,
 	// whether or not it was usable as a tuple, so an outer chain that shadows the name stops the search
 	// instead of falling through to another scope.
@@ -12406,7 +12448,7 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 				if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
 					return false;
 				}
-				r_tuple_meta_type = p_is_self ? tuple_type : substitute_member_type(tuple_type, p_base_type, nullptr, nullptr);
+				r_tuple_meta_type = tuple_meta_type_for_spelling(tuple_type, candidate);
 				return true;
 			}
 			candidate = p_walk_outer ? candidate->outer : nullptr;
@@ -12583,12 +12625,21 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 	p_call->is_tuple_construction = true;
 
 	const FSParser::DataType tuple_type = type_from_metatype(p_tuple_meta_type);
+	// The construction checks below read `tuple_type`, whose `Self` fields are the receiver contract.
+	// The value the construction produces is typed with those fields substituted to their bounds when
+	// the receiver is not the constructing frame's own: lowering erases a literal `Self` field against
+	// the frame's owner script, which is not the base expression's class, exactly as
+	// `resolved_parameter_types` substitutes at an ordinary call boundary.
+	FSParser::DataType value_type = tuple_type;
+	if (!p_call->receiver_is_current_self && _datatype_contains_self_type_parameter(tuple_type)) {
+		value_type = _substitute_self_type_parameter_with_bounds(tuple_type);
+	}
 	const int expected_count = tuple_type.container_element_types.size();
 	if (p_call->arguments.size() != expected_count) {
 		push_error(vformat(R"*(Tuple "%s" expects %d argument(s), but %d were given.)*",
 						   tuple_type.to_string(), expected_count, p_call->arguments.size()),
 				p_call);
-		p_call->set_datatype(tuple_type);
+		p_call->set_datatype(value_type);
 		return;
 	}
 
@@ -12599,6 +12650,25 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 		// here, so it is qualified before the field's own check reads the argument's type. This is what
 		// makes a nested shorthand such as `Slot(.Ok(1), 2)` resolve.
 		resolve_contextual_enum_case(argument, field_type);
+		if (datatype_contains_self_type_parameter(field_type)) {
+			// A `Self`-bearing field is the same receiver contract as a `Self` call parameter, so it is
+			// answered by the shared predicates instead of bound compatibility: the contract admits
+			// `null` for a nullable field and a `final` class's single binding, and identity admits the
+			// receiver expression itself, recursively through unnamed tuple element positions.
+			update_container_literal_element_types(argument, field_type, true);
+			const FSParser::DataType argument_type = argument->get_datatype();
+			if (!argument_type.is_set()) {
+				continue;
+			}
+			if (!self_parameter_contract_admits_argument_type(field_type, argument_type, p_call) &&
+					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
+				push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
+								   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument"),
+						argument);
+			}
+			continue;
+		}
 		const FSParser::DataType argument_type = argument->get_datatype();
 		if (!argument_type.is_set()) {
 			continue;
@@ -12623,7 +12693,7 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 		update_container_literal_element_types(argument, field_type);
 	}
 
-	p_call->set_datatype(tuple_type);
+	p_call->set_datatype(value_type);
 }
 
 // The leading-`.` contextual case shorthand as the parser leaves it: `.None` is the bare case
