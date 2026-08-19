@@ -1,0 +1,5 @@
+FS_TEST_OK
+static 3 true
+handle 4 true
+sub 5 true
+final true
