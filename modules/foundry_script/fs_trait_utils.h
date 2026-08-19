@@ -30,7 +30,21 @@
 
 #pragma once
 
+#include "fs_diagnostic_names.h"
 #include "fs_parser.h"
+
+// How every diagnostic names a class or a trait: its declared name when it has one, otherwise the
+// name of the file that declares it. A head class with no `class_name` is the only case that falls
+// back, and its `fqcn` is a path, so rendering it raw would put a build-machine path in the message.
+static _FORCE_INLINE_ String fs_class_or_trait_diagnostic_name(const FSParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return "<unknown>";
+	}
+	if (p_class->identifier != nullptr) {
+		return p_class->identifier->name;
+	}
+	return fs_diagnostic_type_name_for_path(p_class->fqcn);
+}
 
 static _FORCE_INLINE_ StringName fs_trait_identity_name(const FSParser::ClassNode *p_trait) {
 	ERR_FAIL_NULL_V(p_trait, StringName());

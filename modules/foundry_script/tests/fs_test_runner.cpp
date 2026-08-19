@@ -1023,11 +1023,9 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		result.status = FS_TEST_ANALYZER_ERROR;
 		result.output = get_text_for_status(result.status) + "\n";
 
-		// A diagnostic may name another corpus file by absolute path. The corpus sits somewhere
-		// different on every machine, so expected output records those paths relative to its root.
 		StringBuilder error_string;
 		for (const FSParser::ParserError *error : parser.get_errors_in_source_order()) {
-			error_string.append(vformat(">> ERROR at line %d: %s\n", error->line, error->message.replace(base_dir, String())));
+			error_string.append(vformat(">> ERROR at line %d: %s\n", error->line, error->message));
 		}
 		result.output += error_string.as_string();
 		if (!p_is_generating) {

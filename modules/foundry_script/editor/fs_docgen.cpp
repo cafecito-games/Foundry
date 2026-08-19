@@ -44,6 +44,10 @@ String FSDocGen::_get_script_name(const String &p_path) {
 	if (E) {
 		return E->value;
 	}
+	if (!p_path.begins_with("res://")) {
+		// A script outside the project root would otherwise be documented under a build-machine path.
+		return p_path.get_file().quote();
+	}
 	return p_path.trim_prefix("res://").quote();
 }
 

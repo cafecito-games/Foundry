@@ -853,3 +853,16 @@ paths = [
 ]
 required = ["foundry test benchmark"]
 forbidden = ["--foundry_script-benchmark"]
+
+# ---------------------------------------------------------------------------
+# Foundry Script fixtures: expected output must be machine-independent.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "script-fixtures-carry-no-absolute-paths"
+reason = "Expected output records what a diagnostic said. A build-machine path in a diagnostic is meaningless to a user and makes the fixture match on one machine and fail on another, so it surfaces as a CI-only failure rather than as a bug."
+paths = [
+  "modules/foundry_script/tests/scripts/**/*.out",
+  "modules/foundry_script/tests/scripts/**/*.cfg",
+]
+forbidden = ["/Users/", "/home/", "/root/", "/tmp/", "/private/", "/var/folders/", "C:\\", "$HOME"]
