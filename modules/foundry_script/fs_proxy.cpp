@@ -178,13 +178,22 @@ Variant FSProxyInstance::_coerce_handler_return(const FSDataType &p_return_type,
 	const bool is_typed_container =
 			(p_return_type.builtin_type == Variant::ARRAY && p_return_type.has_container_element_type(0)) ||
 			(p_return_type.builtin_type == Variant::DICTIONARY && p_return_type.has_container_element_types());
+	//
+	// A value already on the declared carrier is excluded as well: `is_type()` has just rejected it,
+	// and reconstructing a value on the carrier it already travels in cannot change the magnitude
+	// that rejection was about, so it would re-admit exactly what the declared width excludes.
 	if (p_return_type.kind == FSDataType::BUILTIN && !is_typed_container && p_value.get_type() != Variant::NIL &&
+			p_value.get_type() != p_return_type.builtin_type &&
 			Variant::can_convert_strict(p_value.get_type(), p_return_type.builtin_type)) {
 		Variant coerced;
 		Callable::CallError convert_error;
 		const Variant *convert_args[1] = { &p_value };
 		Variant::construct(p_return_type.builtin_type, coerced, convert_args, 1, convert_error);
-		if (convert_error.error == Callable::CallError::CALL_OK) {
+		// A conversion answers the carrier question only, so the declared width is asked about its
+		// result, exactly as the typed-return opcode asks about the value it is about to commit.
+		const bool width_admits = p_return_type.numeric_type == NumericType::NONE ||
+				numeric_type_contains(p_return_type.numeric_type, coerced);
+		if (convert_error.error == Callable::CallError::CALL_OK && width_admits) {
 			return coerced;
 		}
 	}

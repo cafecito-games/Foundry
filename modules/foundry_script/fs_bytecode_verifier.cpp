@@ -394,13 +394,30 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_ADDR(ip + 1);
 				ip += 2;
 			} break;
-			case FSFunction::OPCODE_ASSIGN_TYPED_BUILTIN:
 			case FSFunction::OPCODE_ASSIGN_TYPED_PARAMETER:
 			case FSFunction::OPCODE_CAST_TO_BUILTIN: {
 				VERIFY_FAIL_COND(ip + 4 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
 				CHECK_ADDR(ip + 2);
 				ip += 4;
+			} break;
+			case FSFunction::OPCODE_ASSIGN_TYPED_BUILTIN: {
+				// The trailing operand is the destination's declared integer width, validated exactly like
+				// the type test's: a descriptor the carrier cannot hold would make the store's range check
+				// answer a question about a different type.
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				{
+					const int builtin_type_operand = code_ptr[ip + 3] & ~FSFunction::NULLABLE_TYPE_OPERAND_FLAG;
+					VERIFY_FAIL_COND(builtin_type_operand < 0 || builtin_type_operand >= Variant::VARIANT_MAX,
+							"typed store names an unknown built-in type");
+					CHECK_NUMERIC_TYPE(ip + 4, true);
+					const NumericType numeric_type = (NumericType)code_ptr[ip + 4];
+					VERIFY_FAIL_COND(!numeric_type_is_carrier_consistent(numeric_type, (Variant::Type)builtin_type_operand),
+							"numeric descriptor disagrees with the stored carrier");
+				}
+				ip += 5;
 			} break;
 			case FSFunction::OPCODE_ASSIGN_TYPED_CLASS_PARAMETER: {
 				// Unlike the member store above, the third operand is an address: the constant holding the
@@ -444,9 +461,18 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				ip += 2;
 			} break;
 			case FSFunction::OPCODE_RETURN_TYPED_BUILTIN: {
-				VERIFY_FAIL_COND(ip + 3 > code_size, "instruction overruns code");
+				VERIFY_FAIL_COND(ip + 4 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
-				ip += 3;
+				{
+					const int builtin_type_operand = code_ptr[ip + 2] & ~FSFunction::NULLABLE_TYPE_OPERAND_FLAG;
+					VERIFY_FAIL_COND(builtin_type_operand < 0 || builtin_type_operand >= Variant::VARIANT_MAX,
+							"typed return names an unknown built-in type");
+					CHECK_NUMERIC_TYPE(ip + 3, true);
+					const NumericType numeric_type = (NumericType)code_ptr[ip + 3];
+					VERIFY_FAIL_COND(!numeric_type_is_carrier_consistent(numeric_type, (Variant::Type)builtin_type_operand),
+							"numeric descriptor disagrees with the returned carrier");
+				}
+				ip += 4;
 			} break;
 			case FSFunction::OPCODE_RETURN_TYPED_ARRAY: {
 				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");

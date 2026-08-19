@@ -643,12 +643,16 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				if (_code_ptr[ip + 3] & FSFunction::NULLABLE_TYPE_OPERAND_FLAG) {
 					text += "?";
 				}
+				if (NumericType(_code_ptr[ip + 4]) != NumericType::NONE) {
+					text += " ";
+					text += numeric_type_name(NumericType(_code_ptr[ip + 4]));
+				}
 				text += ") ";
 				text += DADDR(1);
 				text += " = ";
 				text += DADDR(2);
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_ASSIGN_TYPED_ARRAY: {
 				text += "assign typed array ";
@@ -1463,10 +1467,14 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				if (_code_ptr[ip + 2] & FSFunction::NULLABLE_TYPE_OPERAND_FLAG) {
 					text += "?";
 				}
+				if (NumericType(_code_ptr[ip + 3]) != NumericType::NONE) {
+					text += " ";
+					text += numeric_type_name(NumericType(_code_ptr[ip + 3]));
+				}
 				text += ") ";
 				text += DADDR(1);
 
-				incr += 3;
+				incr += 4;
 			} break;
 			case OPCODE_RETURN_TYPED_ARRAY: {
 				text += "return typed array ";
