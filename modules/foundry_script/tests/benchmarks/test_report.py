@@ -121,6 +121,7 @@ class ThresholdTest(unittest.TestCase):
         self.assertEqual(thresholds["proxy_dispatch"], 40)
         self.assertEqual(thresholds["generic_container"], 25)
         self.assertEqual(thresholds["validated_write"], 30)
+        self.assertEqual(thresholds["tuple_store_dependent"], -1)
         self.assertEqual(thresholds["_baseline"], -1)
 
     def test_load_thresholds_missing_dir_is_empty(self):
