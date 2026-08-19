@@ -189,7 +189,11 @@ Variant FSProxyInstance::_coerce_handler_return(const FSDataType &p_return_type,
 		Callable::CallError convert_error;
 		const Variant *convert_args[1] = { &p_value };
 		Variant::construct(p_return_type.builtin_type, coerced, convert_args, 1, convert_error);
-		if (convert_error.error == Callable::CallError::CALL_OK) {
+		// A conversion answers the carrier question only, so the declared width is asked about its
+		// result, exactly as the typed-return opcode asks about the value it is about to commit.
+		const bool width_admits = p_return_type.numeric_type == NumericType::NONE ||
+				numeric_type_contains(p_return_type.numeric_type, coerced);
+		if (convert_error.error == Callable::CallError::CALL_OK && width_admits) {
 			return coerced;
 		}
 	}
