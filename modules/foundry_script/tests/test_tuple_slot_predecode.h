@@ -68,6 +68,45 @@ static const FSDataType *only_predecoded_tuple_shape(const FSFunction *p_functio
 	return found;
 }
 
+static FSInstance *tuple_slot_test_instance(const Variant &p_value) {
+	Object *object = p_value;
+	REQUIRE(object != nullptr);
+	ScriptInstance *instance = object->get_script_instance();
+	REQUIRE(instance != nullptr);
+	return static_cast<FSInstance *>(instance);
+}
+
+static ContainerType tuple_slot_builtin_type(Variant::Type p_builtin_type) {
+	ContainerType type;
+	type.builtin_type = p_builtin_type;
+	return type;
+}
+
+static Vector<ContainerType> tuple_slot_one_argument(Variant::Type p_builtin_type) {
+	Vector<ContainerType> arguments;
+	arguments.push_back(tuple_slot_builtin_type(p_builtin_type));
+	return arguments;
+}
+
+static const FSDataType *only_specialized_tuple_shape(const FSFunction *p_function, const FSTupleSlotSpecialization *p_specialization) {
+	const FSDataType *found = nullptr;
+	for (int constant_index = 0; constant_index < p_function->get_constants_count(); constant_index++) {
+		const FSDataType *shape = p_function->get_specialized_tuple_shape_for_constant(p_specialization, constant_index);
+		if (shape != nullptr) {
+			CHECK(found == nullptr);
+			found = shape;
+		}
+	}
+	return found;
+}
+
+static Variant construct_specialized_crate(const Ref<FoundryScript> &p_crate, const Vector<ContainerType> &p_type_arguments) {
+	Callable::CallError call_error;
+	const Variant constructed = p_crate->_new_specialized(nullptr, -1, p_type_arguments, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	return constructed;
+}
+
 TEST_CASE("[FoundryScript][TupleStore] A receiver-independent slot shape is decoded once for the function") {
 	// Both stores in `keep` -- the local's initializer and the return -- are compiled against the same
 	// `(int, String)` descriptor constant, so the function decodes exactly one shape and both
@@ -164,10 +203,12 @@ TEST_CASE("[FoundryScript][TupleStore] A shape that names the receiver keeps the
 	CHECK(predecode_test_function(crate->value, SNAME("concrete"))->get_predecoded_tuple_shape_count() == 1);
 }
 
-TEST_CASE("[FoundryScript][TupleStore] The dependent-store benchmark stays on the per-execution path") {
-	// `tuple_store_dependent/feature.fs` exists to measure a receiver-dependent store. If that script
-	// ever stopped emitting a typed-tuple assign, or started predecoding the `(int, T)` slot, the
-	// numbers would no longer answer the question the case was added for.
+TEST_CASE("[FoundryScript][TupleStore] The dependent-store benchmark uses the specialization cache") {
+	// `tuple_store_dependent/feature.fs` measures a receiver-dependent store. The independent table
+	// must stay empty (the slot names `T`), and constructing `Crate[String]` must intern the
+	// specialized shape the loop then reads. If that script ever stopped emitting a typed-tuple
+	// assign, or started predecoding `(int, T)` as frame-independent, the numbers would no longer
+	// answer the question the case was added for.
 	if (!FSLanguage::get_singleton()->get_reflection_singleton().is_valid()) {
 		FSLanguage::get_singleton()->init();
 	}
@@ -181,10 +222,19 @@ TEST_CASE("[FoundryScript][TupleStore] The dependent-store benchmark stays on th
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
 	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *store_loop = predecode_test_function(crate->value, SNAME("store_loop"));
 	CHECK_FALSE(filter_disassembly_lines(
 			disassemble_test_function(crate->value, SNAME("store_loop")), "assign typed tuple")
 					.is_empty());
-	CHECK(predecode_test_function(crate->value, SNAME("store_loop"))->get_predecoded_tuple_shape_count() == 0);
+	CHECK(store_loop->get_predecoded_tuple_shape_count() == 0);
+	CHECK(store_loop->get_dependent_tuple_descriptor_count() == 1);
+
+	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
+	construct_specialized_crate(crate->value, string_arguments);
+	const FSDataType *shape = only_specialized_tuple_shape(
+			store_loop, crate->value->find_tuple_slot_specialization(string_arguments).ptr());
+	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
 }
 
 TEST_CASE("[FoundryScript][TupleStore] A key-typed Dictionary constant is never read as a descriptor") {
@@ -279,45 +329,6 @@ TEST_CASE("[FoundryScript][TupleStore] A slot shape loaded from compiled bytecod
 	CHECK(int(stored[0]) == 1);
 	CHECK(String(stored[1]) == "one");
 	CHECK(stored.is_read_only());
-}
-
-static FSInstance *tuple_slot_test_instance(const Variant &p_value) {
-	Object *object = p_value;
-	REQUIRE(object != nullptr);
-	ScriptInstance *instance = object->get_script_instance();
-	REQUIRE(instance != nullptr);
-	return static_cast<FSInstance *>(instance);
-}
-
-static ContainerType tuple_slot_builtin_type(Variant::Type p_builtin_type) {
-	ContainerType type;
-	type.builtin_type = p_builtin_type;
-	return type;
-}
-
-static Vector<ContainerType> tuple_slot_one_argument(Variant::Type p_builtin_type) {
-	Vector<ContainerType> arguments;
-	arguments.push_back(tuple_slot_builtin_type(p_builtin_type));
-	return arguments;
-}
-
-static const FSDataType *only_specialized_tuple_shape(const FSFunction *p_function, const FSTupleSlotSpecialization *p_specialization) {
-	const FSDataType *found = nullptr;
-	for (int constant_index = 0; constant_index < p_function->get_constants_count(); constant_index++) {
-		const FSDataType *shape = p_function->get_specialized_tuple_shape_for_constant(p_specialization, constant_index);
-		if (shape != nullptr) {
-			CHECK(found == nullptr);
-			found = shape;
-		}
-	}
-	return found;
-}
-
-static Variant construct_specialized_crate(const Ref<FoundryScript> &p_crate, const Vector<ContainerType> &p_type_arguments) {
-	Callable::CallError call_error;
-	const Variant constructed = p_crate->_new_specialized(nullptr, -1, p_type_arguments, call_error);
-	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
-	return constructed;
 }
 
 TEST_CASE("[FoundryScript][TupleStore] A specialized dependent slot is answered from the specialization cache") {
