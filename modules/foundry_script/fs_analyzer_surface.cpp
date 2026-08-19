@@ -31,6 +31,7 @@
 #include "fs_analyzer.h"
 
 #include "foundry_script.h"
+#include "fs_diagnostic_names.h"
 #include "fs_trait_utils.h"
 #include "fs_type.h"
 
@@ -55,16 +56,6 @@ static String _type_only_head_declaration_keyword(const FSParser::ClassNode *p_h
 		return "tuple_name";
 	}
 	return String();
-}
-
-static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
-	if (p_class == nullptr) {
-		return "<unknown>";
-	}
-	if (p_class->identifier != nullptr) {
-		return p_class->identifier->name;
-	}
-	return p_class->fqcn.get_file();
 }
 
 static FSParser::DataType make_signal_type(const MethodInfo &p_info) {
@@ -306,7 +297,7 @@ Error FSAnalyzer::check_outer_class_member_name_conflict(const FSParser::ClassNo
 		}
 
 		if (outer_class_node->identifier != nullptr && outer_class_node->identifier->name == p_member_name) {
-			push_error(vformat(R"(The member "%s" already exists in outer class %s.)", p_member_name, _class_or_trait_name(outer_class_node)), p_member_node);
+			push_error(vformat(R"(The member "%s" already exists in outer class %s.)", p_member_name, fs_class_or_trait_diagnostic_name(outer_class_node)), p_member_node);
 			return ERR_PARSE_ERROR;
 		}
 
@@ -321,7 +312,7 @@ Error FSAnalyzer::check_outer_class_member_name_conflict(const FSParser::ClassNo
 		}
 
 		if (has_member_name_conflict_in_script_class(p_member_name, outer_class_node, p_member_node)) {
-			push_error(vformat(R"(The member "%s" already exists in outer class %s.)", p_member_name, _class_or_trait_name(outer_class_node)), p_member_node);
+			push_error(vformat(R"(The member "%s" already exists in outer class %s.)", p_member_name, fs_class_or_trait_diagnostic_name(outer_class_node)), p_member_node);
 			return ERR_PARSE_ERROR;
 		}
 	}
@@ -481,7 +472,7 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 
 		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err) {
-			push_error(vformat(R"(Could not parse script "%s": %s.)", p_class->get_datatype().script_path, error_names[err]), p_source);
+			push_error(vformat(R"(Could not parse script "%s": %s.)", fs_diagnostic_file_reference(p_class->get_datatype().script_path), error_names[err]), p_source);
 			return ERR_PARSE_ERROR;
 		}
 
@@ -492,7 +483,7 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		other_analyzer->resolve_class_inheritance(p_class);
 		if (other_parser->errors.size() > error_count) {
-			push_error(vformat(R"(Could not resolve inheritance for class "%s".)", p_class->fqcn), p_source);
+			push_error(vformat(R"(Could not resolve inheritance for class "%s".)", fs_class_or_trait_diagnostic_name(p_class)), p_source);
 			return ERR_PARSE_ERROR;
 		}
 
@@ -524,7 +515,9 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		} else if (class_exists(class_name)) {
 			push_error(vformat(R"(Class "%s" hides a native class.)", class_name), p_class->identifier);
 		} else if (ScriptServer::is_global_class(global_class_name) && (!FoundryScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(global_class_name), parser->script_path) || p_class != parser->head)) {
-			push_error(vformat(R"(Class "%s" from "%s" collides with global script class from "%s".)", global_class_name, parser->script_path, ScriptServer::get_global_class_path(global_class_name)), p_class->identifier);
+			push_error(vformat(R"(Class "%s" from "%s" collides with global script class from "%s".)", global_class_name, fs_diagnostic_file_reference(parser->script_path),
+							   fs_diagnostic_file_reference(ScriptServer::get_global_class_path(global_class_name))),
+					p_class->identifier);
 		} else if (const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(class_name); autoload != nullptr && autoload->is_singleton &&
 				!declares_script_owned_autoload &&
 				(p_class != parser->head || !FoundryScript::is_canonically_equal_paths(autoload->path, parser->script_path))) {
@@ -815,8 +808,8 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 	}
 
 	if (result.kind == FSParser::DataType::CLASS && result.class_type != nullptr && result.class_type->is_trait) {
-		const String class_name = _class_or_trait_name(p_class);
-		const String trait_name = _class_or_trait_name(result.class_type);
+		const String class_name = fs_class_or_trait_diagnostic_name(p_class);
+		const String trait_name = fs_class_or_trait_diagnostic_name(result.class_type);
 		const FSParser::Node *source = p_class->extends.is_empty() ? static_cast<const FSParser::Node *>(p_class) : p_class->extends[0];
 		push_error(vformat(R"(Class "%s" cannot extend trait "%s"; use "uses %s" instead.)", class_name, trait_name, trait_name), source);
 		return ERR_PARSE_ERROR;
@@ -1710,7 +1703,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 
 		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err) {
-			push_error(vformat(R"(Could not parse script "%s": %s (While resolving external class member "%s").)", p_class->get_datatype().script_path, error_names[err], member.get_name()), p_source);
+			push_error(vformat(R"(Could not parse script "%s": %s (While resolving external class member "%s").)", fs_diagnostic_file_reference(p_class->get_datatype().script_path), error_names[err], member.get_name()), p_source);
 			return;
 		}
 
@@ -2038,7 +2031,7 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 	auto push_external_interface_failure = [&]() {
 		if (dependent_resolution_failure_replays.record_class(
 					p_class, OwnerResolutionFailures::INTERFACE)) {
-			push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
+			push_error(vformat(R"(Could not resolve class "%s".)", fs_class_or_trait_diagnostic_name(p_class)), p_source);
 		}
 	};
 
@@ -2061,7 +2054,7 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 
 			Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 			if (err) {
-				push_error(vformat(R"(Could not parse script "%s": %s.)", p_class->get_datatype().script_path, error_names[err]), p_source);
+				push_error(vformat(R"(Could not parse script "%s": %s.)", fs_diagnostic_file_reference(p_class->get_datatype().script_path), error_names[err]), p_source);
 				return;
 			}
 
@@ -2281,7 +2274,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		// resolved, keeps the dependency down to what the caller actually asked for.
 		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err != OK) {
-			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", p_class->fqcn), p_source);
+			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", fs_class_or_trait_diagnostic_name(p_class)), p_source);
 			return err;
 		}
 
@@ -2291,7 +2284,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		err = other_analyzer->resolve_trait_uses(p_class);
 		if (err != OK || other_parser->errors.size() > error_count) {
-			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", p_class->fqcn), p_source);
+			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", fs_class_or_trait_diagnostic_name(p_class)), p_source);
 			return err != OK ? err : ERR_PARSE_ERROR;
 		}
 		return OK;
@@ -2310,7 +2303,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 	};
 	if (p_class->resolving_trait_uses) {
 		push_error(vformat(R"(Could not resolve trait uses for "%s": Cyclic trait use.)",
-						   _class_or_trait_name(p_class)),
+						   fs_class_or_trait_diagnostic_name(p_class)),
 				p_source);
 		return fail();
 	}
@@ -2340,7 +2333,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 			const FSParser::DataType *previous_argument = previous->getptr(entry.key);
 			if (previous_argument != nullptr && !_datatype_alpha_equal(entry.value, *previous_argument)) {
 				push_error(vformat(R"(Trait "%s" is applied with conflicting type arguments ("%s" and "%s") through different traits used by "%s".)",
-								   _class_or_trait_name(p_seen_trait), previous_argument->to_string(), entry.value.to_string(), _class_or_trait_name(p_class)),
+								   fs_class_or_trait_diagnostic_name(p_seen_trait), previous_argument->to_string(), entry.value.to_string(), fs_class_or_trait_diagnostic_name(p_class)),
 						p_binding_source);
 				return false;
 			}
@@ -2379,8 +2372,8 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		}
 
 		push_error(vformat(R"(Trait "%s" is already applied with type arguments ("%s") by "%s"; "%s" cannot re-apply it with ("%s").)",
-						   _class_or_trait_name(p_seen_trait), inherited_arguments,
-						   _class_or_trait_name(binding_ancestor), _class_or_trait_name(p_class),
+						   fs_class_or_trait_diagnostic_name(p_seen_trait), inherited_arguments,
+						   fs_class_or_trait_diagnostic_name(binding_ancestor), fs_class_or_trait_diagnostic_name(p_class),
 						   rendered_applied_arguments),
 				p_binding_source);
 		return false;
@@ -2400,7 +2393,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		}
 		if (!class_satisfies_trait_base(p_class, trait)) {
 			push_error(vformat(R"(Class "%s" cannot use trait "%s" because it does not inherit from "%s".)",
-							   _class_or_trait_name(p_class), _class_or_trait_name(trait),
+							   fs_class_or_trait_diagnostic_name(p_class), fs_class_or_trait_diagnostic_name(trait),
 							   trait->base_type.to_string()),
 					source);
 			return fail();
@@ -2411,7 +2404,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		// trait-requirement conformance can substitute them into the trait's `T`-typed members.
 		if (!trait_use.type_arguments.is_empty()) {
 			if (trait->type_parameters.is_empty()) {
-				push_error(vformat(R"(Trait "%s" is not generic and cannot take type arguments.)", _class_or_trait_name(trait)), trait_use.type_arguments[0]);
+				push_error(vformat(R"(Trait "%s" is not generic and cannot take type arguments.)", fs_class_or_trait_diagnostic_name(trait)), trait_use.type_arguments[0]);
 				return fail();
 			}
 			FSParser::DataType trait_handle = type_from_metatype(trait->get_datatype());
@@ -2444,7 +2437,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		for (FSParser::ClassNode *transitive_trait : trait->resolved_traits) {
 			if (!class_satisfies_trait_base(p_class, transitive_trait)) {
 				push_error(vformat(R"(Class "%s" cannot use trait "%s" because it does not inherit from "%s".)",
-								   _class_or_trait_name(p_class), _class_or_trait_name(transitive_trait),
+								   fs_class_or_trait_diagnostic_name(p_class), fs_class_or_trait_diagnostic_name(transitive_trait),
 								   transitive_trait->base_type.to_string()),
 						source);
 				return fail();

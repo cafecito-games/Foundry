@@ -272,6 +272,9 @@ extend FsnWidget uses FsnGadgetlike:
 		return messages;
 	}
 
+	// A diagnostic names a file the way `fs_diagnostic_file_reference()` spells it. This fixture
+	// writes outside every resource root, so that spelling is the file name: a build-machine path
+	// would be meaningless to the reader and would differ per machine.
 	static bool any_error_contains(const Vector<String> &p_messages, const String &p_needle) {
 		for (const String &message : p_messages) {
 			if (message.contains(p_needle)) {
@@ -365,7 +368,7 @@ func probe() -> String:
 		const Vector<String> errors = fixture.analysis_errors(consumer_path);
 		CHECK(NamespacedConformanceFixture::any_error_contains(errors, "fsn_gadget()"));
 		// The diagnostic has to name the file to load, or it is no better than the run-time failure.
-		CHECK(NamespacedConformanceFixture::any_error_contains(errors, fixture.conformance_path));
+		CHECK(NamespacedConformanceFixture::any_error_contains(errors, fixture.conformance_path.get_file()));
 	}
 
 	SUBCASE("a visible witness on the receiver shadows a hidden one on its base") {
@@ -568,7 +571,7 @@ func probe() -> String:
 	return widget.fsn_gadget()
 )");
 		const Vector<String> errors = fixture.analysis_errors(consumer_path);
-		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path.get_file()));
 	}
 
 	SUBCASE("a cold registry still rejects a bounded-type-parameter call on an unreachable conformance") {
@@ -585,7 +588,7 @@ class FsnColdBox[T: FsnWidget]:
 		return value.fsn_gadget()
 )");
 		const Vector<String> errors = fixture.analysis_errors(consumer_path);
-		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path.get_file()));
 	}
 
 	SUBCASE("a cold registry still rejects a call on an unreachable global-namespace conformance") {
@@ -620,7 +623,7 @@ func probe() -> String:
 		ScriptServer::remove_global_class("FsgGadgetlike");
 		FSLanguage::get_singleton()->remove_conformance_file(conformance_path);
 
-		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsg_gadget()", conformance_path));
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsg_gadget()", conformance_path.get_file()));
 	}
 
 	SUBCASE("the probe does not make the hidden witness reachable") {
@@ -647,7 +650,7 @@ func probe() -> String:
 		}
 		// The trait-typed assignment stays rejected, and the call is still named as hidden.
 		CHECK(NamespacedConformanceFixture::any_error_contains(errors, "with specified type FsnGadgetlike"));
-		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path.get_file()));
 		CHECK(parser.get_dependencies().find(fixture.conformance_path) == nullptr);
 		CHECK_FALSE(parser.get_depended_parsers().has(fixture.conformance_path));
 	}
@@ -681,7 +684,7 @@ func probe() -> String:
 		// The index is the only source of truth the probe has, so a file it does not list can neither
 		// be named by a diagnostic nor make the call reachable. What is left is the plain closed-class
 		// rejection: `FsuWidget` is `final` and nothing this file reaches supplies the name.
-		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, conformance_path));
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, conformance_path.get_file()));
 		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsu_gadget()", "so no subtype can supply it"));
 	}
 
@@ -732,7 +735,7 @@ extend FscWidget uses FsnGadgetlike:
 		ScriptServer::remove_global_class("FscWidget");
 		FSLanguage::get_singleton()->remove_conformance_file(conformance_path);
 
-		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", conformance_path));
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", conformance_path.get_file()));
 		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, "Cyclic reference"));
 	}
 }

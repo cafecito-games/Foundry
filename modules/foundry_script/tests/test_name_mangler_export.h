@@ -606,7 +606,10 @@ TEST_CASE("[FoundryScript][NameManglerExport][Graph] Missing dependencies identi
 	}
 	CHECK_EQ(result.diagnostics[0].stage, "graph");
 	CHECK_EQ(result.diagnostics[0].source, source_path);
-	CHECK(result.diagnostics[0].message.contains(missing_path));
+	// The dependent is identified by `source`; the message identifies the dependency. This fixture
+	// writes outside every resource root, so the message names the missing file the way every
+	// diagnostic names such a file: by its file name, not by a path that differs per machine.
+	CHECK(result.diagnostics[0].message.contains(missing_path.get_file()));
 }
 
 TEST_CASE("[FoundryScript][NameManglerExport][Graph] Canonical path aliases and bytecode remaps fail closed") {

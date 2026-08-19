@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_cache.h"
+#include "fs_diagnostic_names.h"
 
 #include "core/core_constants.h"
 #include "core/object/class_db.h"
@@ -341,7 +342,9 @@ String FSParser::DataType::to_string() const {
 				result = class_type->identifier->name.operator String();
 				break;
 			}
-			result = class_type->fqcn;
+			// A head class with no `class_name` has only its declaring file to be named by, and its
+			// `fqcn` is that file's whole path.
+			result = fs_diagnostic_type_name_for_path(class_type->fqcn);
 			break;
 		case SCRIPT: {
 			if (is_meta_type) {
@@ -353,9 +356,8 @@ String FSParser::DataType::to_string() const {
 				result = name;
 				break;
 			}
-			name = script_path;
-			if (!name.is_empty()) {
-				result = name;
+			if (!script_path.is_empty()) {
+				result = fs_diagnostic_type_name_for_path(script_path);
 				break;
 			}
 			result = native_type.operator String();

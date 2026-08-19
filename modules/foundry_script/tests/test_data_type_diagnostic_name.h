@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "modules/foundry_script/fs_diagnostic_names.h"
 #include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
 
@@ -132,6 +133,129 @@ TEST_CASE("[Modules][FoundryScript][DataType] A script trait is named by its dec
 	tuple_type.container_element_types.push_back(int_element);
 	tuple_type.container_element_types.push_back(trait_type);
 	CHECK_EQ(tuple_type.get_source_type_name(), "(int, Marker)");
+}
+
+TEST_CASE("[Modules][FoundryScript][DiagnosticName] A path-derived type name keeps only the file name") {
+	// A declaring path is machine-dependent and is not something a reader can write in source, so a
+	// type position keeps the file name and nothing else.
+	CHECK_EQ(fs_diagnostic_type_name_for_path("res://a/b/c.fs"), "c.fs");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("/abs/a/b/c.fs"), "c.fs");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("C:\\a\\b\\c.fs"), "c.fs");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("c.fs"), "c.fs");
+
+	// A declared name has no path to reduce and survives untouched.
+	CHECK_EQ(fs_diagnostic_type_name_for_path("Marker"), "Marker");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("game.ui.Marker"), "game.ui.Marker");
+
+	CHECK_EQ(fs_diagnostic_type_name_for_path(String()), String());
+}
+
+TEST_CASE("[Modules][FoundryScript][DiagnosticName] An inner segment survives the file-name reduction") {
+	// Everything from the first `::` onward is declared name, so inner classes and namespace
+	// qualification are preserved while the directory prefix is dropped.
+	CHECK_EQ(fs_diagnostic_type_name_for_path("/abs/a/b/c.fs::Inner"), "c.fs::Inner");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("/abs/a/b/c.fs::game.ui.Marker"), "c.fs::game.ui.Marker");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("res://a/b/c.fs::Outer::Inner"), "c.fs::Outer::Inner");
+	CHECK_EQ(fs_diagnostic_type_name_for_path("c.fs::Inner"), "c.fs::Inner");
+}
+
+TEST_CASE("[Modules][FoundryScript][DiagnosticName] A file reference localizes and falls back to the file name") {
+	// A location is useful and clickable, so it keeps its directories when the project can localize it.
+	CHECK_EQ(fs_diagnostic_file_reference("res://a/b/c.fs"), "res://a/b/c.fs");
+	CHECK_EQ(fs_diagnostic_file_reference(String()), String());
+
+	// A file no resource root can express has no actionable location, and its absolute spelling
+	// depends on the machine that produced the diagnostic.
+	const String outside_reference = fs_diagnostic_file_reference("/definitely/not/in/this/project/c.fs");
+	CHECK_EQ(outside_reference, "c.fs");
+}
+
+// A head class that declares no `class_name` has a null `identifier`, and its `fqcn` is the whole
+// declaring path. These build that shape directly so the renderer is pinned without needing a
+// project on disk.
+static FSParser::DataType data_type_unnamed_class(FSParser::ClassNode *p_class, const String &p_fully_qualified_name) {
+	p_class->fqcn = p_fully_qualified_name;
+	p_class->identifier = nullptr;
+
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::CLASS;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.builtin_type = Variant::OBJECT;
+	type.class_type = p_class;
+	return type;
+}
+
+static FSParser::DataType data_type_unnamed_script(const String &p_script_path) {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::SCRIPT;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.builtin_type = Variant::OBJECT;
+	type.script_path = p_script_path;
+	return type;
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] to_string names an unnamed head class by its file name") {
+	FSParser::ClassNode class_node;
+	CHECK_EQ(data_type_unnamed_class(&class_node, "/abs/corpus/analyzer/errors/selftype.fs").to_string(), "selftype.fs");
+	CHECK_EQ(data_type_unnamed_class(&class_node, "res://analyzer/errors/selftype.fs").to_string(), "selftype.fs");
+
+	// An inner class of an unnamed head class keeps the segment that names it.
+	CHECK_EQ(data_type_unnamed_class(&class_node, "/abs/corpus/holder.fs::Inner").to_string(), "holder.fs::Inner");
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] to_string names a script with no global name by its file name") {
+	CHECK_EQ(data_type_unnamed_script("res://analyzer/errors/helper.fs").to_string(), "helper.fs");
+	CHECK_EQ(data_type_unnamed_script("/abs/corpus/analyzer/errors/helper.fs").to_string(), "helper.fs");
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] A container element and a nullable slot inherit the file-name rule") {
+	FSParser::DataType element = data_type_unnamed_script("/abs/corpus/helper.fs");
+
+	FSParser::DataType array_type;
+	array_type.kind = FSParser::DataType::BUILTIN;
+	array_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	array_type.builtin_type = Variant::ARRAY;
+	array_type.set_container_element_type(0, element);
+	CHECK_EQ(array_type.to_string(), "Array[helper.fs]");
+
+	FSParser::DataType key_type;
+	key_type.kind = FSParser::DataType::BUILTIN;
+	key_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	key_type.builtin_type = Variant::STRING;
+
+	FSParser::DataType dictionary_type;
+	dictionary_type.kind = FSParser::DataType::BUILTIN;
+	dictionary_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	dictionary_type.builtin_type = Variant::DICTIONARY;
+	dictionary_type.set_container_element_type(0, key_type);
+	dictionary_type.set_container_element_type(1, element);
+	CHECK_EQ(dictionary_type.to_string(), "Dictionary[String, helper.fs]");
+
+	FSParser::DataType nullable_element = element;
+	nullable_element.is_nullable = true;
+	CHECK_EQ(nullable_element.to_string(), "helper.fs?");
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] No rendered type name carries a directory separator") {
+	// The single property that makes a rendered name machine-independent, asserted across every shape
+	// that recurses through `to_string()`.
+	FSParser::ClassNode class_node;
+	Vector<String> rendered;
+	rendered.push_back(data_type_unnamed_class(&class_node, "/abs/corpus/holder.fs").to_string());
+	rendered.push_back(data_type_unnamed_class(&class_node, "/abs/corpus/holder.fs::Inner").to_string());
+	rendered.push_back(data_type_unnamed_script("res://deep/nested/helper.fs").to_string());
+
+	FSParser::DataType array_type;
+	array_type.kind = FSParser::DataType::BUILTIN;
+	array_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	array_type.builtin_type = Variant::ARRAY;
+	array_type.set_container_element_type(0, data_type_unnamed_script("/abs/corpus/helper.fs"));
+	rendered.push_back(array_type.to_string());
+
+	for (const String &name : rendered) {
+		CHECK_FALSE_MESSAGE(name.contains_char('/'), name.utf8().get_data());
+		CHECK_FALSE_MESSAGE(name.contains_char('\\'), name.utf8().get_data());
+	}
 }
 
 } // namespace FSTests

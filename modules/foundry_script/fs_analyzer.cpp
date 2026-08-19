@@ -33,6 +33,7 @@
 #include "foundry_script.h"
 #include "fs_builtin_sources.h"
 #include "fs_builtin_types.h"
+#include "fs_diagnostic_names.h"
 #include "fs_numeric_ops.h"
 #include "fs_script_extensible_native_hooks.h"
 #include "fs_tagged_union.h"
@@ -1238,23 +1239,6 @@ static bool _self_parameter_contract_match_needs_receiver_identity(
 	return false;
 }
 
-static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
-	if (p_class == nullptr) {
-		return "<unknown>";
-	}
-	if (p_class->identifier != nullptr) {
-		return p_class->identifier->name;
-	}
-	return p_class->fqcn.get_file();
-}
-
-static String _localize_script_path(const String &p_path) {
-	if (ProjectSettings::get_singleton() == nullptr || p_path.is_empty()) {
-		return p_path;
-	}
-	return ProjectSettings::get_singleton()->localize_path(p_path);
-}
-
 // A cascading dependency failure is reported in the file that *uses* a symbol, not in the file
 // that actually failed to compile, so on its own it reads like a resolution limitation rather
 // than an error one file over. Naming the declaring file and quoting the first error recorded
@@ -1273,7 +1257,7 @@ static String _dependency_error_suffix(const char *p_noun, const String &p_path,
 		}
 	}
 
-	const String script_path = _localize_script_path(p_path);
+	const String script_path = fs_diagnostic_file_reference(p_path);
 	if (script_path.is_empty()) {
 		if (first_error.is_empty()) {
 			return String();
@@ -1301,7 +1285,7 @@ static String _resolving_context_name(const FSParser *p_parser) {
 	if (global_name != StringName()) {
 		return global_name;
 	}
-	return _class_or_trait_name(head);
+	return fs_class_or_trait_diagnostic_name(head);
 }
 
 // Shared wording for failed cross-file class/enum raises. `FSParserRef::result` is sticky and can
@@ -1335,7 +1319,7 @@ static String _trait_method_info_source(const FSParser::ClassNode *p_class,
 	if (script_path.is_empty()) {
 		return String();
 	}
-	script_path = _localize_script_path(script_path);
+	script_path = fs_diagnostic_file_reference(script_path);
 
 	if (p_function != nullptr) {
 		return vformat(R"(Implementation comes from "%s" line %d.)", script_path, p_function->start_line);
@@ -2557,7 +2541,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				if (foundry_script.is_valid()) {
 					Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(foundry_script->get_script_path(), FSParserRef::INHERITANCE_SOLVED);
 					if (ref.is_null() || ref->get_status() < FSParserRef::INHERITANCE_SOLVED) {
-						push_error(vformat(R"(Could not parse script from "%s".)", foundry_script->get_script_path()), first_id);
+						push_error(vformat(R"(Could not parse script from "%s".)", fs_diagnostic_file_reference(foundry_script->get_script_path())), first_id);
 						return bad_type;
 					}
 					result = ref->get_parser()->head->get_datatype();
@@ -2900,7 +2884,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 								if (foundry_script.is_valid()) {
 									Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(foundry_script->get_script_path(), FSParserRef::INHERITANCE_SOLVED);
 									if (ref.is_null() || ref->get_status() < FSParserRef::INHERITANCE_SOLVED) {
-										push_error(vformat(R"(Could not parse script from "%s".)", foundry_script->get_script_path()), p_type);
+										push_error(vformat(R"(Could not parse script from "%s".)", fs_diagnostic_file_reference(foundry_script->get_script_path())), p_type);
 										return bad_type;
 									}
 									result = ref->get_parser()->head->get_datatype();
@@ -3311,12 +3295,13 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 					p_class, OwnerResolutionFailures::BODY)) {
 			return;
 		}
-		String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
+		String message = vformat(R"(Could not resolve class "%s".)", fs_class_or_trait_diagnostic_name(p_class));
 		String class_path = parser_ref->get_path();
 		if (class_path.is_empty()) {
 			class_path = p_class->get_datatype().script_path;
 		}
-		if (_localize_script_path(class_path) == p_class->fqcn) {
+		// The path adds nothing when it is the same file the class name already came from.
+		if (fs_diagnostic_file_reference(class_path) == fs_diagnostic_file_reference(p_class->fqcn)) {
 			class_path = String();
 		}
 		const String suffix = _dependency_error_suffix(
@@ -3347,7 +3332,7 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 
 		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err) {
-			push_error(vformat(R"(Could not parse script "%s": %s.)", p_class->get_datatype().script_path, error_names[err]), p_source);
+			push_error(vformat(R"(Could not parse script "%s": %s.)", fs_diagnostic_file_reference(p_class->get_datatype().script_path), error_names[err]), p_source);
 			return;
 		}
 
@@ -3409,7 +3394,7 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 				if (trait_path.is_empty()) {
 					trait_path = trait->get_datatype().script_path;
 				}
-				String message = vformat(R"(Could not resolve body of trait "%s" applied by "%s".)", _class_or_trait_name(trait), _class_or_trait_name(p_class));
+				String message = vformat(R"(Could not resolve body of trait "%s" applied by "%s".)", fs_class_or_trait_diagnostic_name(trait), fs_class_or_trait_diagnostic_name(p_class));
 				const String suffix = _dependency_error_suffix("trait", trait_path, trait_parser_ref->get_parser(), 0);
 				if (!suffix.is_empty()) {
 					message += " " + suffix;
@@ -4585,7 +4570,7 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 		// than an editor diagnostic, and reported independently of signature compatibility so the
 		// more fundamental violation surfaces first.
 		if (has_parent_signature && parent_function != nullptr && parent_function->is_final) {
-			push_error(vformat(R"*(Cannot override final function "%s()" declared in "%s".)*", function_name, _class_or_trait_name(parent_function_class)), p_function);
+			push_error(vformat(R"*(Cannot override final function "%s()" declared in "%s".)*", function_name, fs_class_or_trait_diagnostic_name(parent_function_class)), p_function);
 		}
 
 #ifdef TOOLS_ENABLED
@@ -8113,7 +8098,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 	if (is_constructor) {
 		if (base_type.kind == FSParser::DataType::CLASS && base_type.class_type != nullptr && base_type.class_type->is_trait) {
-			push_error(vformat(R"(Cannot construct trait "%s".)", _class_or_trait_name(base_type.class_type)), p_call);
+			push_error(vformat(R"(Cannot construct trait "%s".)", fs_class_or_trait_diagnostic_name(base_type.class_type)), p_call);
 			call_type.kind = FSParser::DataType::VARIANT;
 			call_type.type_source = FSParser::DataType::INFERRED;
 			p_call->set_datatype(call_type);
@@ -8392,7 +8377,8 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			StringName hidden_conformance_trait;
 			if (find_hidden_conformance_witness(base_type, p_call->function_name, hidden_conformance_source, hidden_conformance_trait)) {
 				push_error(vformat(R"*(Cannot call "%s()" on "%s": it is supplied by the retroactive conformance to trait "%s" declared in "%s", which this file does not load. Import that file's namespace, or preload it.)*",
-								   p_call->function_name, base_type.to_string(), hidden_conformance_trait, hidden_conformance_source),
+								   p_call->function_name, base_type.to_string(), hidden_conformance_trait,
+								   fs_diagnostic_file_reference(hidden_conformance_source)),
 						p_call->callee != nullptr ? p_call->callee : p_call);
 				found = true;
 			}
@@ -9417,7 +9403,7 @@ FSParser::ClassNode *FSAnalyzer::resolve_local_trait_reference(FSParser::ClassNo
 			return nullptr;
 		}
 		if (!candidate->is_trait) {
-			push_error(vformat(R"(Class "%s" cannot be used as a trait.)", _class_or_trait_name(candidate)),
+			push_error(vformat(R"(Class "%s" cannot be used as a trait.)", fs_class_or_trait_diagnostic_name(candidate)),
 					p_trait_use.name[0]);
 			return nullptr;
 		}
@@ -9502,7 +9488,7 @@ FSParser::ClassNode *FSAnalyzer::resolve_trait_reference(FSParser::ClassNode *p_
 			trait = resolve_nested_trait_reference(trait, r_trait_use, namespace_type_chain_size, p_source);
 		}
 		if (trait != nullptr && !trait->is_trait) {
-			push_error(vformat(R"(Class "%s" cannot be used as a trait.)", _class_or_trait_name(trait)), p_source);
+			push_error(vformat(R"(Class "%s" cannot be used as a trait.)", fs_class_or_trait_diagnostic_name(trait)), p_source);
 			return nullptr;
 		}
 		r_trait_use.resolved_trait = trait;
@@ -9796,7 +9782,7 @@ bool FSAnalyzer::find_trait_implementation(FSParser::ClassNode *p_class, const S
 					r_implementation.method_info = info;
 					if (!script->get_path().is_empty()) {
 						r_implementation.method_info_source = vformat(R"(Implementation comes from "%s".)",
-								_localize_script_path(script->get_path()));
+								fs_diagnostic_file_reference(script->get_path()));
 					}
 					r_implementation.has_method_info = true;
 					return true;
@@ -10018,7 +10004,7 @@ bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 	resolve_function_signature_in_class(implementation_function, p_implementation.owner_class, implementation_function);
 
 	const StringName function_name = p_required_function->identifier->name;
-	const String trait_method_name = _class_or_trait_name(p_trait) + "." + String(function_name) + "()";
+	const String trait_method_name = fs_class_or_trait_diagnostic_name(p_trait) + "." + String(function_name) + "()";
 	const FSParser::DataType implementation_self_type = _self_type_for_class(p_implementing_class);
 	const bool required_is_coroutine = p_required_function->is_coroutine;
 	const bool implementation_is_coroutine = implementation_function->is_coroutine;
@@ -10239,7 +10225,7 @@ bool FSAnalyzer::validate_trait_method_info_signature(FSParser::ClassNode *p_tra
 		FSParser::ClassNode *p_implementing_class, FSParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
 		const HashMap<StringName, FSParser::DataType> &p_trait_substitution) {
 	const StringName function_name = p_required_function->identifier->name;
-	const String trait_method_name = _class_or_trait_name(p_trait) + "." + String(function_name) + "()";
+	const String trait_method_name = fs_class_or_trait_diagnostic_name(p_trait) + "." + String(function_name) + "()";
 	const FSParser::DataType implementation_self_type = _self_type_for_class(p_implementing_class);
 
 	// A MethodInfo carries no generic type-parameter information, so a generic trait requirement
@@ -10440,7 +10426,7 @@ void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p
 		const StringName parameter = _remaining_class_type_parameter(member.variable->get_datatype());
 		if (parameter != StringName()) {
 			push_error(vformat(R"(Static variable "%s" cannot be typed by class type parameter "%s": every specialization of "%s" shares one static storage slot.)",
-							   member.variable->identifier->name, parameter, _class_or_trait_name(p_class)),
+							   member.variable->identifier->name, parameter, fs_class_or_trait_diagnostic_name(p_class)),
 					member.variable);
 		}
 	}
@@ -10466,8 +10452,8 @@ void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p
 			const StringName parameter = _remaining_class_type_parameter(flattened);
 			if (parameter != StringName()) {
 				push_error(vformat(R"(Static variable "%s" flattened from trait "%s" cannot be typed by class type parameter "%s": every specialization of "%s" shares one static storage slot.)",
-								   member.variable->identifier->name, _class_or_trait_name(trait), parameter,
-								   _class_or_trait_name(p_class)),
+								   member.variable->identifier->name, fs_class_or_trait_diagnostic_name(trait), parameter,
+								   fs_class_or_trait_diagnostic_name(p_class)),
 						_trait_requirement_source(p_class, trait));
 			}
 		}
@@ -10510,7 +10496,7 @@ void FSAnalyzer::validate_local_constant_type_parameters(const FSParser::Constan
 	const StringName parameter = _remaining_class_type_parameter(_specialized_constant_handle_type(p_constant));
 	if (parameter != StringName()) {
 		push_error(vformat(R"(Constant "%s" cannot be specialized by class type parameter "%s": every specialization of "%s" shares one constant.)",
-						   p_constant->identifier->name, parameter, _class_or_trait_name(parser->current_class)),
+						   p_constant->identifier->name, parameter, fs_class_or_trait_diagnostic_name(parser->current_class)),
 				p_constant);
 	}
 }
@@ -10541,7 +10527,7 @@ void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_
 		const StringName parameter = _remaining_class_type_parameter(constant_type);
 		if (parameter != StringName()) {
 			push_error(vformat(R"(Constant "%s" cannot be specialized by class type parameter "%s": every specialization of "%s" shares one constant.)",
-							   member.constant->identifier->name, parameter, _class_or_trait_name(p_class)),
+							   member.constant->identifier->name, parameter, fs_class_or_trait_diagnostic_name(p_class)),
 					member.constant);
 		}
 	}
@@ -10571,8 +10557,8 @@ void FSAnalyzer::validate_class_constant_type_parameters(FSParser::ClassNode *p_
 			const StringName parameter = _remaining_class_type_parameter(flattened);
 			if (parameter != StringName()) {
 				push_error(vformat(R"(Constant "%s" flattened from trait "%s" cannot be specialized by class type parameter "%s": every specialization of "%s" shares one constant.)",
-								   member.constant->identifier->name, _class_or_trait_name(trait), parameter,
-								   _class_or_trait_name(p_class)),
+								   member.constant->identifier->name, fs_class_or_trait_diagnostic_name(trait), parameter,
+								   fs_class_or_trait_diagnostic_name(p_class)),
 						_trait_requirement_source(p_class, trait));
 			}
 		}
@@ -10624,7 +10610,7 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 					const FSParser::ClassNode::Member class_member = p_class->get_member(member_name);
 					if (class_member.type != FSParser::ClassNode::Member::FUNCTION) {
 						push_error(vformat(R"*(Class "%s" redeclares trait method "%s()" from "%s" with a %s member.)*",
-										   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait),
+										   fs_class_or_trait_diagnostic_name(p_class), member_name, fs_class_or_trait_diagnostic_name(trait),
 										   class_member.get_type_name()),
 								class_member.get_source_node());
 						continue;
@@ -10675,8 +10661,8 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 				HashMap<StringName, TraitMemberSource>::Iterator previous = trait_methods.find(member_name);
 				if (previous) {
 					push_error(vformat(R"*(Trait method "%s()" from "%s" conflicts with trait method "%s()" from "%s"; override it in "%s" to disambiguate.)*",
-									   member_name, _class_or_trait_name(previous->value.trait), member_name,
-									   _class_or_trait_name(trait), _class_or_trait_name(p_class)),
+									   member_name, fs_class_or_trait_diagnostic_name(previous->value.trait), member_name,
+									   fs_class_or_trait_diagnostic_name(trait), fs_class_or_trait_diagnostic_name(p_class)),
 							_trait_requirement_source(p_class, trait));
 					continue;
 				}
@@ -10692,7 +10678,7 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 				const FSParser::ClassNode::Member class_member = p_class->get_member(member_name);
 				if (class_member.type == FSParser::ClassNode::Member::FUNCTION) {
 					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with a function.)",
-									   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait)),
+									   fs_class_or_trait_diagnostic_name(p_class), member_name, fs_class_or_trait_diagnostic_name(trait)),
 							class_member.get_source_node());
 					continue;
 				}
@@ -10702,7 +10688,7 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 				const FSParser::DataType class_type = class_member.get_datatype();
 				if (!_trait_state_type_is_compatible(trait_type, class_type)) {
 					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with incompatible type. Expected "%s", got "%s".)",
-									   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait),
+									   fs_class_or_trait_diagnostic_name(p_class), member_name, fs_class_or_trait_diagnostic_name(trait),
 									   trait_type.to_string(), class_type.to_string()),
 							class_member.get_source_node());
 				}
@@ -10712,8 +10698,8 @@ void FSAnalyzer::validate_trait_conflicts(FSParser::ClassNode *p_class) {
 			HashMap<StringName, TraitMemberSource>::Iterator previous = trait_state.find(member_name);
 			if (previous) {
 				push_error(vformat(R"(Trait member "%s" from "%s" conflicts with trait member "%s" from "%s"; redeclare it in "%s" with type "%s" to disambiguate.)",
-								   member_name, _class_or_trait_name(previous->value.trait), member_name,
-								   _class_or_trait_name(trait), _class_or_trait_name(p_class),
+								   member_name, fs_class_or_trait_diagnostic_name(previous->value.trait), member_name,
+								   fs_class_or_trait_diagnostic_name(trait), fs_class_or_trait_diagnostic_name(p_class),
 								   previous->value.member.get_datatype().to_string()),
 						_trait_requirement_source(p_class, trait));
 				continue;
@@ -10752,7 +10738,7 @@ void FSAnalyzer::validate_trait_requirements(FSParser::ClassNode *p_class) {
 				if (!missing_trait_methods.has(function_name)) {
 					missing_trait_methods.insert(function_name);
 					push_error(vformat(R"*(Class "%s" must implement trait method "%s.%s()".)*",
-									   _class_or_trait_name(p_class), _class_or_trait_name(trait),
+									   fs_class_or_trait_diagnostic_name(p_class), fs_class_or_trait_diagnostic_name(trait),
 									   function_name),
 							_trait_requirement_source(p_class, trait));
 				}
@@ -10950,7 +10936,7 @@ Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::ensure_cached_external_pars
 	}
 
 	if (parser_ref.is_null()) {
-		analyzer->push_error(vformat(R"(Parser bug (please report): Could not find external parser for class "%s". (%s))", p_class->fqcn, p_context), p_source);
+		analyzer->push_error(vformat(R"(Parser bug (please report): Could not find external parser for class "%s". (%s))", fs_class_or_trait_diagnostic_name(p_class), p_context), p_source);
 		// A null parser will be inserted into the cache, so this error won't spam for the same class.
 		// This is ok, the values of external_class_parser_cache are not assumed to be valid references.
 	}
@@ -11035,7 +11021,7 @@ void FSAnalyzer::reduce_identifier_from_base_set_class(FSParser::IdentifierNode 
 	Error err = OK;
 	Ref<FoundryScript> scr = get_depended_shallow_script(p_identifier_datatype.script_path, err);
 	if (err) {
-		push_error(vformat(R"(Error while getting cache for script "%s".)", p_identifier_datatype.script_path), p_identifier);
+		push_error(vformat(R"(Error while getting cache for script "%s".)", fs_diagnostic_file_reference(p_identifier_datatype.script_path)), p_identifier);
 		return;
 	}
 	p_identifier->reduced_value = scr->find_class(p_identifier_datatype.class_type->fqcn);
@@ -12223,7 +12209,7 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 		if (is_bootstrap_script_preload) {
 			if (!is_bootstrap_dependency_path_allowed(p_preload->resolved_path)) {
 				push_error(vformat(R"(Build task bootstrap cannot preload script "%s"; it is outside the provider bootstrap root "%s".)",
-								   p_preload->resolved_path, bootstrap_allowed_dependency_root),
+								   fs_diagnostic_file_reference(p_preload->resolved_path), bootstrap_allowed_dependency_root),
 						p_preload->path);
 				return;
 			}
@@ -12232,7 +12218,7 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 			Ref<FoundryScript> res = get_depended_shallow_script(p_preload->resolved_path, err);
 			p_preload->resource = res;
 			if (err != OK) {
-				push_error(vformat(R"(Could not preload resource script "%s".)", p_preload->resolved_path), p_preload->path);
+				push_error(vformat(R"(Could not preload resource script "%s".)", fs_diagnostic_file_reference(p_preload->resolved_path)), p_preload->path);
 			} else {
 				raise_preloaded_script_conformances();
 			}
@@ -12240,9 +12226,9 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 			Ref<FileAccess> file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
 
 			if (file_check->file_exists(p_preload->resolved_path)) {
-				push_error(vformat(R"(Preload file "%s" has no resource loaders (unrecognized file extension).)", p_preload->resolved_path), p_preload->path);
+				push_error(vformat(R"(Preload file "%s" has no resource loaders (unrecognized file extension).)", fs_diagnostic_file_reference(p_preload->resolved_path)), p_preload->path);
 			} else {
-				push_error(vformat(R"(Preload file "%s" does not exist.)", p_preload->resolved_path), p_preload->path);
+				push_error(vformat(R"(Preload file "%s" does not exist.)", fs_diagnostic_file_reference(p_preload->resolved_path)), p_preload->path);
 			}
 		} else {
 			// TODO: Don't load if validating: use completion cache.
@@ -12255,7 +12241,7 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 				Ref<FoundryScript> res = get_depended_shallow_script(p_preload->resolved_path, err);
 				p_preload->resource = res;
 				if (err != OK) {
-					push_error(vformat(R"(Could not preload resource script "%s".)", p_preload->resolved_path), p_preload->path);
+					push_error(vformat(R"(Could not preload resource script "%s".)", fs_diagnostic_file_reference(p_preload->resolved_path)), p_preload->path);
 				} else {
 					// A retroactive conformance (`extend Target uses Trait: ...`) takes effect when its
 					// declaring file is loaded by the using code, analogous to importing a module. When a
@@ -12273,7 +12259,7 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 					p_preload->resource = ResourceLoader::ensure_resource_ref_override_for_outer_load(p_preload->resolved_path, res_type);
 				}
 				if (p_preload->resource.is_null()) {
-					push_error(vformat(R"(Could not preload resource file "%s".)", p_preload->resolved_path), p_preload->path);
+					push_error(vformat(R"(Could not preload resource file "%s".)", fs_diagnostic_file_reference(p_preload->resolved_path)), p_preload->path);
 				}
 			}
 		}
@@ -14119,7 +14105,7 @@ ContainerType FSAnalyzer::make_container_type_from_datatype(const FSParser::Data
 			Error err = OK;
 			Ref<FoundryScript> scr = get_depended_shallow_script(p_datatype.script_path, err);
 			if (err) {
-				push_error(vformat(R"(Error while getting cache for script "%s".)", p_datatype.script_path), p_source_node);
+				push_error(vformat(R"(Error while getting cache for script "%s".)", fs_diagnostic_file_reference(p_datatype.script_path)), p_source_node);
 				return type;
 			}
 			script_type.reference_ptr(scr->find_class(p_datatype.class_type->fqcn));
@@ -14266,7 +14252,7 @@ FSParser::DataType FSAnalyzer::type_from_variant(const Variant &p_value, const F
 				Ref<FSParserRef> ref;
 				Error err = dependency_parser_access.raise_depended_parser_for(script_path, FSParserRef::INHERITANCE_SOLVED, ref);
 				if (ref.is_null()) {
-					push_error(vformat(R"(Could not find script "%s".)", script_path), p_source);
+					push_error(vformat(R"(Could not find script "%s".)", fs_diagnostic_file_reference(script_path)), p_source);
 					FSParser::DataType error_type;
 					error_type.kind = FSParser::DataType::VARIANT;
 					return error_type;
@@ -14279,7 +14265,7 @@ FSParser::DataType FSAnalyzer::type_from_variant(const Variant &p_value, const F
 					}
 				}
 				if (err || found == nullptr) {
-					push_error(vformat(R"(Could not resolve script "%s".)", script_path), p_source);
+					push_error(vformat(R"(Could not resolve script "%s".)", fs_diagnostic_file_reference(script_path)), p_source);
 					FSParser::DataType error_type;
 					error_type.kind = FSParser::DataType::VARIANT;
 					return error_type;
@@ -15425,9 +15411,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			return false;
 		} else if (p_is_constructor && ClassDB::is_abstract(base_native)) {
 			if (p_base_type.kind == FSParser::DataType::CLASS) {
-				push_error(vformat(R"(Class "%s" cannot be constructed as it is based on abstract native class "%s".)", p_base_type.class_type->fqcn.get_file(), base_native), p_source);
+				push_error(vformat(R"(Class "%s" cannot be constructed as it is based on abstract native class "%s".)", fs_class_or_trait_diagnostic_name(p_base_type.class_type), base_native), p_source);
 			} else if (p_base_type.kind == FSParser::DataType::SCRIPT) {
-				push_error(vformat(R"(Script "%s" cannot be constructed as it is based on abstract native class "%s".)", p_base_type.script_path.get_file(), base_native), p_source);
+				push_error(vformat(R"(Script "%s" cannot be constructed as it is based on abstract native class "%s".)", fs_diagnostic_type_name_for_path(p_base_type.script_path), base_native), p_source);
 			} else {
 				push_error(vformat(R"(Native class "%s" cannot be constructed as it is abstract.)", base_native), p_source);
 			}

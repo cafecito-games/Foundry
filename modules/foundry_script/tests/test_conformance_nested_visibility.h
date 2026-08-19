@@ -385,7 +385,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a cached interface failure prop
 			nested_conformance_visibility_errors(a_result));
 	String expected_body_error =
 			vformat(R"(Could not resolve class "RtcviB". The class is declared in "%s", which has errors, )",
-					fixture.path("b.fs"));
+					fixture.path("b.fs").get_file());
 	expected_body_error += R"(the first at line 4: Cannot assign a value of type RtcviWidget )";
 	expected_body_error += R"(to parameter "thing" with specified type RtcviGadgetlike.)";
 	CHECK_MESSAGE(nested_conformance_visibility_has_exact_error(c_result, expected_body_error),
@@ -434,7 +434,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a repeated foreign body failure
 			analyze_nested_conformance_visibility_file(fixture.path("repeat.fs"));
 	String expected_body_error =
 			vformat(R"(Could not resolve class "RtcvbB". The class is declared in "%s", which has errors, )",
-					fixture.path("b.fs"));
+					fixture.path("b.fs").get_file());
 	expected_body_error += R"(the first at line 5: Cannot return value of type "RtcvbWidget" )";
 	expected_body_error += R"(because the function return type is "RtcvbGadgetlike".)";
 	CHECK_MESSAGE(nested_conformance_visibility_count_exact_errors(result, expected_body_error) == 1,

@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_conformance_registry.h"
+#include "fs_diagnostic_names.h"
 #include "fs_trait_utils.h"
 #include "fs_type.h"
 
@@ -39,16 +40,6 @@
 #include "core/config/project_settings.h"
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
-
-static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
-	if (p_class == nullptr) {
-		return "<unknown>";
-	}
-	if (p_class->identifier != nullptr) {
-		return p_class->identifier->name;
-	}
-	return p_class->fqcn.get_file();
-}
 
 // The arguments one conformance supplies for one trait identity in its implied closure, flattened for
 // the registry. The direct trait takes the declaration's own arguments; an implied supertrait takes
@@ -153,13 +144,6 @@ static bool _native_chain_binding_conflicts(const StringName &p_native_class, co
 	return false;
 }
 
-static String _localize_script_path(const String &p_path) {
-	if (ProjectSettings::get_singleton() == nullptr || p_path.is_empty()) {
-		return p_path;
-	}
-	return ProjectSettings::get_singleton()->localize_path(p_path);
-}
-
 // The one diagnostic every chain-coherence rejection uses, so the same contradiction reads the same
 // way whichever of the two declarations is the one being analyzed.
 // How a conflicting declaration's location is spelled in a diagnostic: a contradiction with another
@@ -168,7 +152,7 @@ static String _localize_script_path(const String &p_path) {
 static String _conflict_location(const String &p_conflicting_source, const String &p_analyzed_file) {
 	return p_conflicting_source == p_analyzed_file
 			? String("this file")
-			: vformat(R"("%s")", _localize_script_path(p_conflicting_source));
+			: vformat(R"("%s")", fs_diagnostic_file_reference(p_conflicting_source));
 }
 
 static String _chain_conflict_message(const String &p_trait_label, const String &p_conflicting_target,
@@ -316,7 +300,7 @@ bool FSAnalyzer::trait_binding_conflicts_with_native_ancestry(const FSParser::Cl
 			continue;
 		}
 		if (FSTypeCompatibility::recorded_arguments_conflict(pending.trait_type_arguments, p_applied)) {
-			r_message = _chain_conflict_message(_class_or_trait_name(p_identity_trait), String(pending_class),
+			r_message = _chain_conflict_message(fs_class_or_trait_diagnostic_name(p_identity_trait), String(pending_class),
 					pending.source_file, source_file);
 			return true;
 		}
@@ -330,7 +314,7 @@ bool FSAnalyzer::trait_binding_conflicts_with_native_ancestry(const FSParser::Cl
 			continue;
 		}
 		if (FSTypeCompatibility::recorded_arguments_conflict(record.trait_type_arguments, p_applied)) {
-			r_message = _chain_conflict_message(_class_or_trait_name(p_identity_trait), String(record.native_class),
+			r_message = _chain_conflict_message(fs_class_or_trait_diagnostic_name(p_identity_trait), String(record.native_class),
 					record.source_file, source_file);
 			return true;
 		}
@@ -355,7 +339,7 @@ bool FSAnalyzer::trait_binding_conflicts_with_script_ancestry(const FSParser::Cl
 	}
 
 	const String source_file = parser->script_path;
-	const String trait_label = _class_or_trait_name(p_identity_trait);
+	const String trait_label = fs_class_or_trait_diagnostic_name(p_identity_trait);
 	const Vector<String> ancestor_keys = _script_ancestor_keys(p_class);
 	// Either declaration may be the one being analyzed, so both directions of the chain relation are
 	// asked: the other target may stand above `p_class` or below it.
@@ -390,7 +374,7 @@ bool FSAnalyzer::trait_binding_conflicts_with_script_ancestry(const FSParser::Cl
 		const Vector<FSConformanceRegistry::RecordedTypeArgument> used =
 				_recorded_class_trait_arguments(declared, p_identity_trait);
 		if (FSTypeCompatibility::recorded_arguments_conflict(used, p_applied)) {
-			r_message = _chain_conflict_message(trait_label, _class_or_trait_name(declared), source_file, source_file);
+			r_message = _chain_conflict_message(trait_label, fs_class_or_trait_diagnostic_name(declared), source_file, source_file);
 			return true;
 		}
 	}
@@ -422,7 +406,7 @@ bool FSAnalyzer::native_conformance_conflicts_with_script_chain(const StringName
 	}
 
 	const String source_file = parser->script_path;
-	const String trait_label = _class_or_trait_name(p_identity_trait);
+	const String trait_label = fs_class_or_trait_diagnostic_name(p_identity_trait);
 
 	for (const FSConformanceRegistry::Conformance &pending : p_pending) {
 		if (pending.trait_name != identity || pending.target_script_path.is_empty() ||
@@ -448,7 +432,7 @@ bool FSAnalyzer::native_conformance_conflicts_with_script_chain(const StringName
 		const Vector<FSConformanceRegistry::RecordedTypeArgument> used =
 				_recorded_class_trait_arguments(declared, p_identity_trait);
 		if (FSTypeCompatibility::recorded_arguments_conflict(used, p_applied)) {
-			r_message = _chain_conflict_message(trait_label, _class_or_trait_name(declared), source_file, source_file);
+			r_message = _chain_conflict_message(trait_label, fs_class_or_trait_diagnostic_name(declared), source_file, source_file);
 			return true;
 		}
 	}
@@ -989,8 +973,8 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 			if (!missing_methods.has(function_name)) {
 				missing_methods.insert(function_name);
 				push_error(vformat(R"*(Conformance of "%s" to trait "%s" must implement trait method "%s.%s()".)*",
-								   _class_or_trait_name(p_target), _class_or_trait_name(p_trait),
-								   _class_or_trait_name(requirement_trait), function_name),
+								   fs_class_or_trait_diagnostic_name(p_target), fs_class_or_trait_diagnostic_name(p_trait),
+								   fs_class_or_trait_diagnostic_name(requirement_trait), function_name),
 						p_conformance);
 			}
 			valid = false;
@@ -1125,14 +1109,14 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					trait_use.resolved_type_arguments = trait_handle.type_arguments;
 				}
 			} else if (!trait_use.type_arguments.is_empty() && trait->type_parameters.is_empty()) {
-				push_error(vformat(R"(Trait "%s" is not generic and cannot take type arguments.)", _class_or_trait_name(trait)), trait_use.type_arguments[0]);
+				push_error(vformat(R"(Trait "%s" is not generic and cannot take type arguments.)", fs_class_or_trait_diagnostic_name(trait)), trait_use.type_arguments[0]);
 				continue;
 			}
 
 			// The trait's base constraint is an inheritance requirement on the target.
 			if (!class_satisfies_trait_base(target, trait)) {
 				push_error(vformat(R"(Class "%s" cannot conform to trait "%s" because it does not inherit from "%s".)",
-								   _class_or_trait_name(target), _class_or_trait_name(trait),
+								   fs_class_or_trait_diagnostic_name(target), fs_class_or_trait_diagnostic_name(trait),
 								   trait->base_type.to_string()),
 						conformance);
 				continue;
@@ -1158,7 +1142,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			}
 			if (redundant) {
 				push_error(vformat(R"(Class "%s" already conforms to trait "%s" through its own "uses"; the conformance is redundant.)",
-								   _class_or_trait_name(target), _class_or_trait_name(trait)),
+								   fs_class_or_trait_diagnostic_name(target), fs_class_or_trait_diagnostic_name(trait)),
 						conformance);
 				continue;
 			}
@@ -1173,8 +1157,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				if (trait_binding_conflicts_with_chain(target, trait, trait_use.resolved_type_arguments,
 							conformance, inherited_arguments, recorded_arguments, binding_ancestor)) {
 					push_error(vformat(R"(Trait "%s" is already applied with type arguments ("%s") by "%s"; the conformance for "%s" cannot record ("%s").)",
-									   _class_or_trait_name(trait), inherited_arguments,
-									   _class_or_trait_name(binding_ancestor), _class_or_trait_name(target),
+									   fs_class_or_trait_diagnostic_name(trait), inherited_arguments,
+									   fs_class_or_trait_diagnostic_name(binding_ancestor), fs_class_or_trait_diagnostic_name(target),
 									   recorded_arguments),
 							conformance);
 					continue;
@@ -1206,7 +1190,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 								identity_arguments[identity_index], valid_entries, source_file, conflicting_class,
 								conflicting_source)) {
 						chain_conflict_message = _chain_conflict_message(
-								_class_or_trait_name(trait_identity_nodes[identity_index]), String(conflicting_class),
+								fs_class_or_trait_diagnostic_name(trait_identity_nodes[identity_index]), String(conflicting_class),
 								conflicting_source, source_file);
 						chain_conflict = true;
 						break;
@@ -1242,7 +1226,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				if (existing_conformance != nullptr &&
 						(*existing_conformance != conformance_index || identity_index == 0)) {
 					push_error(vformat(R"(Class "%s" already has a conformance to trait "%s" in this file.)",
-									   _class_or_trait_name(target), String(identity)),
+									   fs_class_or_trait_diagnostic_name(target), String(identity)),
 							conformance);
 					membership_conflict = true;
 					// The declaration is rejected here, so the registry's own verdict on it below would be
@@ -1254,7 +1238,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				const String other_source = registry->get_conformance_source(target->fqcn, identity);
 				if (!other_source.is_empty() && other_source != source_file) {
 					push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in "%s".)",
-									   _class_or_trait_name(target), String(identity), _localize_script_path(other_source)),
+									   fs_class_or_trait_diagnostic_name(target), String(identity), fs_diagnostic_file_reference(other_source)),
 							conformance);
 					membership_conflict = true;
 					reported_declarations.insert(conformance_index);
@@ -1280,7 +1264,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					const StringName *existing_trait = seen_witnesses.getptr(witness_name);
 					if (existing_trait != nullptr) {
 						push_error(vformat(R"*(Class "%s" already provides a witness for method "%s()" through its conformance to trait "%s" in this file.)*",
-										   _class_or_trait_name(target), witness_name, String(*existing_trait)),
+										   fs_class_or_trait_diagnostic_name(target), witness_name, String(*existing_trait)),
 								conformance);
 						conformance_witness_collision = true;
 						// As above: this declaration has already been told why it is rejected.
@@ -1292,7 +1276,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					const String other_witness_source = registry->get_witness_source(target_key, witness_name, other_trait);
 					if (!other_witness_source.is_empty() && other_witness_source != source_file) {
 						push_error(vformat(R"*(Class "%s" already has a witness for method "%s()" via a conformance in "%s".)*",
-										   _class_or_trait_name(target), witness_name, _localize_script_path(other_witness_source)),
+										   fs_class_or_trait_diagnostic_name(target), witness_name, fs_diagnostic_file_reference(other_witness_source)),
 								conformance);
 						conformance_witness_collision = true;
 						reported_declarations.insert(conformance_index);
@@ -1322,7 +1306,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				// target's receivers too, and another file cannot see that from the target's name alone.
 				entry.target_script_ancestor_fqcns = _script_ancestor_keys(target);
 			}
-			entry.target_label = _class_or_trait_name(target);
+			entry.target_label = fs_class_or_trait_diagnostic_name(target);
 			entry.source_file = source_file;
 			entry.conformance_index = conformance_index;
 			for (FSParser::FunctionNode *witness : conformance->witnesses) {
@@ -1341,7 +1325,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				entry.trait_type_arguments = identity_arguments[identity_index];
 				valid_entries.push_back(entry);
 				seen_membership_conformances.insert(pair_key, conformance_index);
-				identity_labels.insert(identity, _class_or_trait_name(trait_identity_nodes[identity_index]));
+				identity_labels.insert(identity, fs_class_or_trait_diagnostic_name(trait_identity_nodes[identity_index]));
 			}
 			if (witness_trait_label == StringName()) {
 				witness_trait_label = trait_identity;

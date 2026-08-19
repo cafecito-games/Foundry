@@ -35,6 +35,7 @@
 #include "fs_byte_codegen.h"
 #include "fs_cache.h"
 #include "fs_conformance_registry.h"
+#include "fs_diagnostic_names.h"
 #include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
 #include "fs_type.h"
@@ -471,7 +472,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				Error err = OK;
 				script = FSCache::get_shallow_script(p_datatype.script_path, err, p_owner->path);
 				if (err) {
-					_set_error(vformat(R"(Could not find script "%s": %s)", p_datatype.script_path, error_names[err]), nullptr);
+					_set_error(vformat(R"(Could not find script "%s": %s)", fs_diagnostic_file_reference(p_datatype.script_path), error_names[err]), nullptr);
 					return FSDataType();
 				}
 			}
@@ -481,7 +482,9 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			}
 
 			if (script.is_null()) {
-				_set_error(vformat(R"(Could not find class "%s" in "%s".)", p_datatype.class_type->fqcn, p_datatype.script_path), nullptr);
+				_set_error(vformat(R"(Could not find class "%s" in "%s".)", fs_class_or_trait_diagnostic_name(p_datatype.class_type),
+								   fs_diagnostic_file_reference(p_datatype.script_path)),
+						nullptr);
 				return FSDataType();
 			} else {
 				// Only hold a strong reference if the owner of the element qualified with this type is not local, to avoid cyclic references (leaks).
@@ -5725,7 +5728,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	FSDataType base_type = _gdtype_from_datatype(p_class->base_type, p_script, false);
 
 	if (base_type.native_type == StringName()) {
-		_set_error(vformat(R"(Parser bug (please report): Empty native type in base class "%s")", p_script->path), p_class);
+		_set_error(vformat(R"(Parser bug (please report): Empty native type in base class "%s")", fs_diagnostic_type_name_for_path(p_script->path)), p_class);
 		return ERR_BUG;
 	}
 
@@ -5762,20 +5765,24 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				Error err = OK;
 				Ref<FoundryScript> base_root = FSCache::get_shallow_script(base->path, err, p_script->path);
 				if (err) {
-					_set_error(vformat(R"(Could not parse base class "%s" from "%s": %s)", base->fully_qualified_name, base->path, error_names[err]), nullptr);
+					_set_error(vformat(R"(Could not parse base class "%s" from "%s": %s)", base->fully_qualified_name,
+									   fs_diagnostic_file_reference(base->path), error_names[err]),
+							nullptr);
 					return err;
 				}
 				if (base_root.is_valid()) {
 					base = Ref<FoundryScript>(base_root->find_class(base->fully_qualified_name));
 				}
 				if (base.is_null()) {
-					_set_error(vformat(R"(Could not find class "%s" in "%s".)", base->fully_qualified_name, base->path), nullptr);
+					_set_error(vformat(R"(Could not find class "%s" in "%s".)", base->fully_qualified_name, fs_diagnostic_file_reference(base->path)), nullptr);
 					return ERR_COMPILATION_FAILED;
 				}
 
 				err = _prepare_compilation(base.ptr(), p_class->base_type.class_type, p_keep_state);
 				if (err) {
-					_set_error(vformat(R"(Could not populate class members of base class "%s" in "%s".)", base->fully_qualified_name, base->path), nullptr);
+					_set_error(vformat(R"(Could not populate class members of base class "%s" in "%s".)", base->fully_qualified_name,
+									   fs_diagnostic_file_reference(base->path)),
+							nullptr);
 					return err;
 				}
 			}
@@ -5784,7 +5791,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 			// cannot be extended. The analyzer rejects this for statically analyzed scripts;
 			// this load-time guard covers the runtime `load()`/`reload()` path.
 			if (base->is_final()) {
-				_set_error(vformat(R"(Cannot extend final class "%s".)", base->fully_qualified_name.is_empty() ? base->path : base->fully_qualified_name), p_class);
+				_set_error(vformat(R"(Cannot extend final class "%s".)", base->fully_qualified_name.is_empty() ? fs_diagnostic_type_name_for_path(base->path) : base->fully_qualified_name), p_class);
 				return ERR_PARSE_ERROR;
 			}
 
@@ -6863,7 +6870,7 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 		// from a witness; `Self` denotes the unspecialized target class, as it did before.
 		target_self_type.type_arguments.clear();
 		if (!conformance->witnesses.is_empty() && !target_self_type.is_set()) {
-			_set_error(vformat(R"(Compiler bug (please report): retroactive conformance target "%s" has no resolved type.)", target_class->fqcn), conformance->target);
+			_set_error(vformat(R"(Compiler bug (please report): retroactive conformance target "%s" has no resolved type.)", fs_class_or_trait_diagnostic_name(target_class)), conformance->target);
 			return ERR_COMPILATION_FAILED;
 		}
 		WitnessSelfTypeScope self_type_scope(&witness_self_type, target_self_type);
