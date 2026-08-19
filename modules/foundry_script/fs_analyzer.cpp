@@ -13077,9 +13077,11 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 
 	bool frame_self_is_declaring_instance = false;
 	if (!static_context && declaring_class != nullptr) {
+		// A union declared by a trait is flattened into every implementer, so a frame whose class
+		// applies the declaring trait is as much its instance as a frame of the declaring class.
 		for (const FSParser::ClassNode *scope = parser->current_class; scope != nullptr;
 				scope = scope->base_type.class_type) {
-			if (scope == declaring_class) {
+			if (scope == declaring_class || scope->resolved_traits.has(declaring_class)) {
 				frame_self_is_declaring_instance = true;
 				break;
 			}
@@ -13100,7 +13102,11 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		union_base_type = union_base_expression->get_datatype();
 		if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation)) {
 			self_field_leg = union_base_type.class_type != nullptr ? SelfFieldLeg::EXACT_HANDLE : SelfFieldLeg::EXACT_DECLARING;
-		} else if (union_base_type.is_set() && union_base_type.kind == FSParser::DataType::CLASS) {
+		} else if (union_base_type.is_set() &&
+				(union_base_type.kind == FSParser::DataType::CLASS ||
+						union_base_type.kind == FSParser::DataType::TYPE_PARAMETER)) {
+			// A class-typed instance and a bounded type-parameter receiver both name a live value the
+			// `Self` fields stay relative to.
 			self_field_leg = SelfFieldLeg::BASE_RECEIVER;
 		}
 	} else if (frame_self_is_declaring_instance) {
