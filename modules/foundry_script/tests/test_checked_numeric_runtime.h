@@ -356,6 +356,64 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A uint value widens to long 
 	CHECK(add_int_uint_result == Variant(int64_t(5) + int64_t(uint64_t(UINT32_MAX))));
 }
 
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A dynamic member write widens uint to long") {
+	ScopedCheckedNumericLanguage language;
+
+	// The dynamic analog of a typed store: `object->set()` routes through
+	// `FoundryScript::_coerce_member_write`, which must apply the same design-6.1 widen-then-width
+	// rule as OPCODE_ASSIGN_TYPED_BUILTIN. One coercion point covers instance members, static
+	// members, and setter-backed members, so all four shapes are pinned here.
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"var m: long\n"
+			"var n: int\n"
+			"static var s: long\n"
+			"var observed: long = 0:\n"
+			"\tset(value):\n"
+			"\t\tobserved = value + 1\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	const auto set_member = [&](const StringName &p_name, const Variant &p_value) {
+		bool valid = false;
+		object->set(p_name, p_value, &valid);
+		return valid;
+	};
+
+	// An in-`uint`-range value above `int`'s range widens onto the `INT` carrier for a `long` member.
+	CHECK(set_member(SNAME("m"), Variant(uint64_t(4000000000))));
+	Variant member_value = object->get(SNAME("m"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(4000000000)));
+
+	// A `ulong`-magnitude value stays rejected even though it would fit `long`; the slot is unchanged.
+	CHECK_FALSE(set_member(SNAME("m"), Variant(uint64_t(5000000000))));
+	CHECK(object->get(SNAME("m")) == Variant(int64_t(4000000000)));
+
+	// The declared width is asked about the widened value: `int` admits a small `uint` value and
+	// refuses a `uint`-range value above its own range.
+	CHECK(set_member(SNAME("n"), Variant(uint64_t(5))));
+	member_value = object->get(SNAME("n"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(5));
+	CHECK_FALSE(set_member(SNAME("n"), Variant(uint64_t(3000000000))));
+	CHECK(object->get(SNAME("n")) == Variant(5));
+
+	// The static-member path funnels through the same coercion point.
+	CHECK(set_member(SNAME("s"), Variant(uint64_t(4000000000))));
+	member_value = object->get(SNAME("s"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(4000000000)));
+
+	// A setter-backed member receives the already-widened `INT`-carrier value: the setter's `+ 1`
+	// computes on the real magnitude rather than tripping an invalid-operands error.
+	CHECK(set_member(SNAME("observed"), Variant(uint64_t(4000000000))));
+	member_value = object->get(SNAME("observed"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(4000000001)));
+}
+
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic keeps its declared width") {
 	ScopedCheckedNumericLanguage language;
 

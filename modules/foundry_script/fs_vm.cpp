@@ -2096,20 +2096,6 @@ Variant FSFunction::call_witness(const Variant &p_self, const Variant **p_args, 
 	return call(nullptr, p_args, p_argcount, r_err, nullptr, &p_self);
 }
 
-// The design-6.1 `uint` -> `long` implicit widening, decided by value once static types are erased.
-// `Variant::can_convert_strict(UINT, INT)` is deliberately unregistered -- half of the `ulong` range
-// is not representable as `long`, and a blanket engine-wide conversion would loosen every `Variant`
-// consumer -- so each Foundry Script boundary asks this instead: only a value the `uint` range
-// contains crosses, re-carriered onto `Variant::INT`. A larger value stays rejected even when it
-// would fit `long`, mirroring the static rule that `ulong` -> `long` requires an explicit cast.
-static bool fs_try_widen_uint_to_long(const Variant &p_value, Variant &r_result) {
-	if (p_value.get_type() != Variant::UINT || !numeric_type_contains(NumericType::UINT32, p_value)) {
-		return false;
-	}
-	r_result = int64_t(p_value.operator uint64_t());
-	return true;
-}
-
 static String fs_uint_widen_range_error(const Variant &p_value) {
 	return vformat(R"(Cannot implicitly convert %s to "long": the value is outside the "uint" range %s. Use an explicit cast.)",
 			p_value.stringify(), FSNumericOps::describe_range(NumericType::UINT32));

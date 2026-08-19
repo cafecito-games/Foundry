@@ -39,6 +39,7 @@
 #include "fs_cache.h"
 #include "fs_conformance_registry.h"
 #include "fs_no_frontend.h"
+#include "fs_numeric_ops.h"
 #include "fs_parser.h"
 #include "fs_project_scripts.h"
 #include "fs_reflection.h"
@@ -602,6 +603,22 @@ bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Varia
 		return true;
 	}
 	if (!p_member.data_type.is_type(r_value)) {
+		// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's
+		// widen-then-width order: the value must be inside the `uint` range to cross carriers at
+		// all, and `is_type()` is then asked about the widened value this write is about to commit.
+		// The branch is terminal for an unsigned-carrier source: the `Variant::construct` fallback
+		// below implements the explicit `int(...)` cast, which admits the whole `ulong` range up to
+		// `INT64_MAX`, and letting it rescue a refused value would erase the rule that
+		// `ulong` -> `long` requires an explicit cast.
+		if (p_member.data_type.kind == FSDataType::BUILTIN && p_member.data_type.builtin_type == Variant::INT &&
+				r_value.get_type() == Variant::UINT) {
+			Variant widened;
+			if (fs_try_widen_uint_to_long(r_value, widened) && p_member.data_type.is_type(widened)) {
+				r_value = widened;
+				return true;
+			}
+			return false;
+		}
 		const Variant *args = &p_original;
 		Callable::CallError err;
 		Variant::construct(p_member.data_type.builtin_type, r_value, &args, 1, err);

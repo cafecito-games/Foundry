@@ -506,6 +506,7 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Property writes validate against decl
 	const char *source =
 			"trait Bag:\n"
 			"\tvar count: int\n"
+			"\tvar big: long\n"
 			"\tvar ratio: float\n"
 			"\tvar label: String\n"
 			"\tvar tags: Array[int]\n"
@@ -515,6 +516,7 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Property writes validate against decl
 			"\n"
 			"class RealBag:\n"
 			"\tvar count: int\n"
+			"\tvar big: long\n"
 			"\tvar ratio: float\n"
 			"\tvar label: String\n"
 			"\tvar tags: Array[int]\n"
@@ -571,6 +573,10 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Property writes validate against decl
 		{ "count", 5 }, // exact int.
 		{ "count", 5.0 }, // float -> int coercion.
 		{ "count", "oops" }, // non-numeric string.
+		{ "big", Variant(uint64_t(4000000000)) }, // uint -> long widening.
+		{ "big", Variant(uint64_t(5000000000)) }, // above the uint range: rejected.
+		{ "count", Variant(uint64_t(5)) }, // uint widens, and `int` holds the widened value.
+		{ "count", Variant(uint64_t(3000000000)) }, // uint widens, but `int` refuses the result.
 		{ "ratio", 3 }, // int -> float coercion.
 		{ "label", 42 }, // int -> String.
 		{ "tags", typed_tags }, // correctly-typed Array[int].
@@ -594,6 +600,33 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Property writes validate against decl
 		// Both must hold the same value after the write (rejected writes leave both
 		// slots unchanged; accepted writes coerce to the same stored value).
 		CHECK_MESSAGE(proxy_value == real_value, vformat("get(\"%s\") value mismatch after write", String(name)).utf8().get_data());
+	}
+
+	// Parity alone would also pass if both stores still rejected the `uint` writes, so pin the
+	// absolute outcomes on each store: an in-`uint`-range value widens onto the `INT` carrier
+	// (into `long` always, into `int` when `int` holds it), while an out-of-range value is
+	// rejected and leaves the slot unchanged.
+	ScriptInstance *const stores[] = { proxy_instance, real_instance };
+	for (ScriptInstance *store : stores) {
+		CHECK(store->set("big", Variant(uint64_t(4000000000))));
+		Variant big_value;
+		store->get("big", big_value);
+		CHECK(big_value.get_type() == Variant::INT);
+		CHECK(big_value == Variant(int64_t(4000000000)));
+
+		CHECK_FALSE(store->set("big", Variant(uint64_t(5000000000))));
+		store->get("big", big_value);
+		CHECK(big_value == Variant(int64_t(4000000000)));
+
+		CHECK(store->set("count", Variant(uint64_t(5))));
+		Variant count_value;
+		store->get("count", count_value);
+		CHECK(count_value.get_type() == Variant::INT);
+		CHECK(count_value == Variant(5));
+
+		CHECK_FALSE(store->set("count", Variant(uint64_t(3000000000))));
+		store->get("count", count_value);
+		CHECK(count_value == Variant(5));
 	}
 
 	// The reproduction from the issue: a wrong primitive write is no longer silently
@@ -1095,6 +1128,7 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Handler return coercion and validatio
 	const char *source =
 			"abstract class Service:\n"
 			"\tabstract func get_count() -> int\n"
+			"\tabstract func get_big() -> long\n"
 			"\tabstract func get_ratio() -> float\n"
 			"\tabstract func get_label() -> String\n"
 			"\tabstract func do_nothing() -> void\n"
@@ -1191,6 +1225,45 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Handler return coercion and validatio
 	// The same conversion with a result the width holds still coerces.
 	recorder->set("stub_return", 41.5);
 	CHECK(call("get_count") == Variant(41));
+
+	// A `uint`-carrier value inside the `uint` range widens onto the `INT` carrier for a `long`
+	// return, mirroring OPCODE_RETURN_TYPED_BUILTIN.
+	recorder->set("stub_return", Variant(uint64_t(4000000000)));
+	{
+		Variant widened = call("get_big");
+		CHECK(widened.get_type() == Variant::INT);
+		CHECK(widened == Variant(int64_t(4000000000)));
+	}
+
+	// A `ulong`-magnitude value stays rejected even though it would fit `long`: the widen is gated
+	// on the `uint` range, mirroring the static rule that `ulong` -> `long` needs an explicit cast.
+	recorder->set("stub_return", Variant(uint64_t(5000000000)));
+	{
+		ERR_PRINT_OFF;
+		Variant coerced = call("get_big");
+		ERR_PRINT_ON;
+		CHECK(coerced.get_type() == Variant::INT);
+		CHECK(coerced == Variant(0));
+	}
+
+	// The widen answers the carrier question only; the declared width is then asked about the
+	// widened value, so a `uint`-range value above `int`'s range is still refused for `-> int`.
+	recorder->set("stub_return", Variant(uint64_t(3000000000)));
+	{
+		ERR_PRINT_OFF;
+		Variant coerced = call("get_count");
+		ERR_PRINT_ON;
+		CHECK(coerced.get_type() == Variant::INT);
+		CHECK(coerced == Variant(0));
+	}
+
+	// A widened value the declared width does hold is admitted into an `int` return.
+	recorder->set("stub_return", Variant(uint64_t(5)));
+	{
+		Variant widened = call("get_count");
+		CHECK(widened.get_type() == Variant::INT);
+		CHECK(widened == Variant(5));
+	}
 
 	// A correctly-typed container passes through.
 	{

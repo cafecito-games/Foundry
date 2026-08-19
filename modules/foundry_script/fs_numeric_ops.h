@@ -129,3 +129,17 @@ public:
 	static String describe_conversion_error(FSNumericError p_error, NumericType p_target, const Variant &p_value,
 			const String &p_target_name);
 };
+
+// The design-6.1 `uint` -> `long` implicit widening, decided by value once static types are erased.
+// `Variant::can_convert_strict(UINT, INT)` is deliberately unregistered -- half of the `ulong` range
+// is not representable as `long`, and a blanket engine-wide conversion would loosen every `Variant`
+// consumer -- so each Foundry Script boundary asks this instead: only a value the `uint` range
+// contains crosses, re-carriered onto `Variant::INT`. A larger value stays rejected even when it
+// would fit `long`, mirroring the static rule that `ulong` -> `long` requires an explicit cast.
+inline bool fs_try_widen_uint_to_long(const Variant &p_value, Variant &r_result) {
+	if (p_value.get_type() != Variant::UINT || !numeric_type_contains(NumericType::UINT32, p_value)) {
+		return false;
+	}
+	r_result = int64_t(p_value.operator uint64_t());
+	return true;
+}
