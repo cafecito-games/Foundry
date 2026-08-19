@@ -37,7 +37,7 @@
 namespace TestGltf {
 
 TEST_CASE("[SceneTree][Node] GLTF emissiveTexture without emissiveFactor uses white emission") {
-	ResourcePathGuard resource_path_guard;
+	TestProjectSettingsRestoreScope restore_project_settings;
 	init("gltf_emissive_no_factor", "res://");
 
 	Node *loaded = gltf_import("res://emissive_no_factor.gltf");

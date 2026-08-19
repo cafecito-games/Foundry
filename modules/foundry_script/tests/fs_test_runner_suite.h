@@ -32,7 +32,12 @@
 
 #include "fs_test_runner.h"
 
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+#include "core/os/os.h"
 #include "modules/foundry_script/fs_cache.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
 
@@ -218,6 +223,51 @@ TEST_CASE("[Modules][FoundryScript] Validate built-in API") {
 			}
 		}
 	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Re-activating the language project keeps user:// writable") {
+	// Bring the language up first (a fast no-op when an earlier suite already did), so the
+	// second `init_language()` below takes the already-initialized re-activation branch.
+	init_language("modules/foundry_script/tests/scripts");
+
+	TestProjectSettingsRestoreScope restore_project_settings;
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+
+	// Stage an unrelated project and activate it. `ProjectSettings::setup()` resolves
+	// `res://` through the *current* `resource_path` first, so the switch only takes effect
+	// from a cleared `resource_path` — the state a restoring guard leaves behind.
+	const String unrelated_project = TestUtils::get_temp_path("fs_reactivation_unrelated_project");
+	Ref<DirAccess> staging = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(staging.is_valid());
+	REQUIRE_EQ(staging->make_dir_recursive(unrelated_project), OK);
+	{
+		Ref<FileAccess> project_file = FileAccess::open(unrelated_project.path_join("project.foundry"), FileAccess::WRITE);
+		REQUIRE(project_file.is_valid());
+		project_file->store_string("config_version=5\n\n[application]\n\nconfig/name=\"Unrelated re-activation probe\"\n");
+	}
+	const String language_project_path = settings->get_resource_path();
+	TestProjectSettingsInternalsAccessor::resource_path() = String();
+	const Error activate_err = settings->setup(unrelated_project, String(), true);
+	REQUIRE_EQ(activate_err, OK);
+	CHECK_EQ(String(GLOBAL_GET("application/config/name")), "Unrelated re-activation probe");
+	CHECK_MESSAGE(!DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
+			"The unrelated project's app-userdata leaf should not exist yet: ",
+			OS::get_singleton()->get_user_data_dir());
+
+	// Restore `resource_path` but keep the unrelated `config/name`, mirroring a guard that
+	// leaks the rename: the re-activation must reload the language project's settings and
+	// re-create its `user://` leaf (or `user://` writes fail on a missing parent).
+	TestProjectSettingsInternalsAccessor::resource_path() = String();
+	init_language("modules/foundry_script/tests/scripts");
+	CHECK_EQ(settings->get_resource_path(), language_project_path);
+	CHECK_EQ(String(GLOBAL_GET("application/config/name")), "GDScript Integration Test Suite");
+	{
+		Ref<FileAccess> probe = FileAccess::open("user://reactivation_writable_probe.txt", FileAccess::WRITE);
+		CHECK_MESSAGE(probe.is_valid(), "user:// should be writable after re-activating the language project");
+	}
+	Ref<DirAccess> user_dir = DirAccess::open("user://");
+	REQUIRE(user_dir.is_valid());
+	CHECK_EQ(user_dir->remove("reactivation_writable_probe.txt"), OK);
 }
 
 } // namespace FSTests

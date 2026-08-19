@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/config/project_settings.h"
+#include "core/os/os.h"
 
 class TestProjectSettingsInternalsAccessor {
 public:
@@ -60,23 +61,38 @@ public:
 };
 
 // RAII guard for tests that call ProjectSettings::setup() against a temporary
-// project root. Restores the fields that affect res:// and user:// resolution
-// so later cases keep a writable user:// mapping under arbitrary --case filters.
+// project root. Restores every setting that participates in `res://` and `user://`
+// resolution (`resource_path`, `project_loaded`, `application/config/name`,
+// `application/config/use_custom_user_dir`, `application/config/custom_user_dir_name`)
+// and leaves `user://` writable after the scope dies, so later cases keep a writable
+// `user://` mapping under arbitrary --case filters.
 class TestProjectSettingsRestoreScope {
 	String saved_resource_path;
 	bool saved_project_loaded = false;
 	String saved_app_name;
+	Variant saved_use_custom_user_dir;
+	Variant saved_custom_user_dir_name;
 
 public:
 	TestProjectSettingsRestoreScope() {
-		saved_resource_path = ProjectSettings::get_singleton()->get_resource_path();
-		saved_project_loaded = ProjectSettings::get_singleton()->is_project_loaded();
+		ProjectSettings *settings = ProjectSettings::get_singleton();
+		saved_resource_path = settings->get_resource_path();
+		saved_project_loaded = settings->is_project_loaded();
 		saved_app_name = GLOBAL_GET("application/config/name");
+		saved_use_custom_user_dir = GLOBAL_GET("application/config/use_custom_user_dir");
+		saved_custom_user_dir_name = GLOBAL_GET("application/config/custom_user_dir_name");
 	}
 
 	~TestProjectSettingsRestoreScope() {
 		TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
 		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
-		ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
+		ProjectSettings *settings = ProjectSettings::get_singleton();
+		settings->set_setting("application/config/name", saved_app_name);
+		settings->set_setting("application/config/use_custom_user_dir", saved_use_custom_user_dir);
+		settings->set_setting("application/config/custom_user_dir_name", saved_custom_user_dir_name);
+		// Restoring the settings above retargets `user://` at the pre-scope mapping, whose
+		// leaf may not exist yet, and `FileAccess::open(…, WRITE)` does not create parents —
+		// re-create the leaf so `user://` stays writable for whatever runs next.
+		OS::get_singleton()->ensure_user_data_dir();
 	}
 };
