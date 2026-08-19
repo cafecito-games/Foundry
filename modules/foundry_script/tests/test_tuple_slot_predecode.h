@@ -492,44 +492,46 @@ TEST_CASE("[FoundryScript][TupleStore] A Self-dependent slot is cached per speci
 	CHECK(nested_shape->container_element_types[1].container_element_types[1].to_container_type().script == Ref<Script>(anchor->value));
 }
 
-TEST_CASE("[FoundryScript][TupleStore] A static specialized slot is answered from the specialization cache") {
+TEST_CASE("[FoundryScript][TupleStore] A static Self-dependent slot is answered from the specialization cache") {
+	// A static frame has no `FSInstance`, so the store must read the interned table from the
+	// receiver context. `Self` is the descriptor a static method can name; a class type
+	// parameter is erased in a static body and is refused at analysis.
 	Ref<FoundryScript> script = compile_bytecode_test_source(
-			"class Crate[T]:\n"
-			"\tstatic func keep(value) -> (int, T):\n"
-			"\t\tvar kept: (int, T) = value\n"
+			"class Anchor:\n"
+			"\tstatic func keep(value: (int, Self)) -> (int, Self):\n"
+			"\t\tvar kept: (int, Self) = value\n"
 			"\t\treturn kept\n");
 
-	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
-	REQUIRE(crate != script->get_subclasses().end());
-	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator anchor = script->get_subclasses().find(SNAME("Anchor"));
+	REQUIRE(anchor != script->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(anchor->value, SNAME("keep"));
 	CHECK(keep->get_predecoded_tuple_shape_count() == 0);
 	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
 
-	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
-	const Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(crate->value, string_arguments);
-	REQUIRE(handle.is_valid());
-
-	const FSStaticSelfContext context = FSStaticSelfContext::for_specialized_script(crate->value, string_arguments);
+	const FSStaticSelfContext context = FSStaticSelfContext::for_script(anchor->value);
 	const FSTupleSlotSpecialization *specialization = context.get_tuple_slot_specialization();
 	REQUIRE(specialization != nullptr);
-	CHECK(specialization == crate->value->find_tuple_slot_specialization(string_arguments).ptr());
+	CHECK(specialization == anchor->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
 
 	const FSDataType *shape = only_specialized_tuple_shape(keep, specialization);
 	REQUIRE(shape != nullptr);
 	REQUIRE(shape->container_element_types.size() == 2);
-	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
+	CHECK(shape->container_element_types[1].to_container_type().script == Ref<Script>(anchor->value));
+
+	Callable::CallError call_error;
+	const Variant receiver = anchor->value->_new(nullptr, -1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
 
 	Array source;
 	source.push_back(7);
-	source.push_back("seven");
+	source.push_back(receiver);
 	const Variant accepted_argument = source;
 	const Variant *accepted_arguments[1] = { &accepted_argument };
-	Callable::CallError call_error;
-	const Array stored = handle->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	const Array stored = anchor->value->callp(SNAME("keep"), accepted_arguments, 1, call_error);
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
 	REQUIRE(stored.size() == 2);
 	CHECK(int(stored[0]) == 7);
-	CHECK(String(stored[1]) == "seven");
+	CHECK(stored[1] == receiver);
 	CHECK(stored.is_read_only());
 }
 
