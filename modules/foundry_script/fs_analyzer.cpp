@@ -1184,11 +1184,19 @@ static bool call_argument_is_same_receiver(
 	if (p_call->is_enum_case_construction) {
 		// The callee's base is the union spelling, not the receiver: the receiver instance, when the
 		// construction has one, is the base one attribute level further in, as in
-		// `receiver.Message.Attach(...)`.
-		if (subscript->base->type != FSParser::Node::SUBSCRIPT) {
+		// `receiver.Message.Attach(...)`. A generic application wraps the spelling in one more index
+		// subscript (`receiver.Box[int].Full(...)`), unwrapped first.
+		const FSParser::ExpressionNode *union_spelling = subscript->base;
+		if (union_spelling->type == FSParser::Node::SUBSCRIPT) {
+			const FSParser::SubscriptNode *union_application = static_cast<const FSParser::SubscriptNode *>(union_spelling);
+			if (!union_application->is_attribute && union_application->base != nullptr) {
+				union_spelling = union_application->base;
+			}
+		}
+		if (union_spelling->type != FSParser::Node::SUBSCRIPT) {
 			return false;
 		}
-		const FSParser::SubscriptNode *union_subscript = static_cast<const FSParser::SubscriptNode *>(subscript->base);
+		const FSParser::SubscriptNode *union_subscript = static_cast<const FSParser::SubscriptNode *>(union_spelling);
 		if (!union_subscript->is_attribute || union_subscript->base == nullptr) {
 			return false;
 		}
@@ -13065,6 +13073,14 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		const FSParser::SubscriptNode *callee_subscript = static_cast<const FSParser::SubscriptNode *>(p_call->callee);
 		if (callee_subscript->is_attribute) {
 			union_expression = callee_subscript->base;
+		}
+	}
+	if (union_expression != nullptr && union_expression->type == FSParser::Node::SUBSCRIPT) {
+		// A generic union application wraps the union spelling in an index subscript
+		// (`other.Box[int]`); the receiver question is about the spelling under it.
+		const FSParser::SubscriptNode *union_application = static_cast<const FSParser::SubscriptNode *>(union_expression);
+		if (!union_application->is_attribute && union_application->base != nullptr) {
+			union_expression = union_application->base;
 		}
 	}
 	const FSParser::ExpressionNode *union_base_expression = nullptr;
