@@ -30,6 +30,8 @@
 
 #include "fs_proxy.h"
 
+#include "fs_numeric_ops.h"
+
 #include "core/object/class_db.h"
 #include "core/object/ref_counted.h"
 
@@ -168,6 +170,20 @@ Variant FSProxyInstance::_coerce_handler_return(const FSDataType &p_return_type,
 	// typed containers, and `null`/instances for native/script types).
 	if (p_return_type.is_type(p_value)) {
 		return p_value;
+	}
+
+	// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_RETURN_TYPED_BUILTIN's
+	// widen-then-width order: the value must be inside the `uint` range to cross carriers at all,
+	// and the declared width is then asked about the widened value it is about to commit. On either
+	// refusal this falls through -- `can_convert_strict(UINT, INT)` is deliberately unregistered, so
+	// the conversion branch below cannot re-admit the value and the mismatch tail reports it.
+	if (p_return_type.kind == FSDataType::BUILTIN && p_return_type.builtin_type == Variant::INT &&
+			p_value.get_type() == Variant::UINT) {
+		Variant widened;
+		if (fs_try_widen_uint_to_long(p_value, widened) &&
+				(p_return_type.numeric_type == NumericType::NONE || numeric_type_contains(p_return_type.numeric_type, widened))) {
+			return widened;
+		}
 	}
 
 	// Implicit builtin conversion (e.g. int -> float), mirroring the VM's
@@ -422,11 +438,27 @@ bool FSProxyInstance::set(const StringName &p_name, const Variant &p_value) {
 	if (type_element) {
 		const FSDataType &data_type = type_element->value;
 		if (!data_type.is_type(value)) {
-			const Variant *args = &p_value;
-			Callable::CallError convert_error;
-			Variant::construct(data_type.builtin_type, value, &args, 1, convert_error);
-			if (convert_error.error != Callable::CallError::CALL_OK || !data_type.is_type(value)) {
-				return false;
+			// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's
+			// widen-then-width order and kept structurally parallel to
+			// `FoundryScript::_coerce_member_write` so the proxy store and a real instance agree on
+			// every write. The branch is terminal for an unsigned-carrier source: the
+			// `Variant::construct` fallback below implements the explicit `int(...)` cast, which
+			// admits the whole `ulong` range up to `INT64_MAX`, and letting it rescue a refused
+			// value would erase the rule that `ulong` -> `long` requires an explicit cast.
+			if (data_type.kind == FSDataType::BUILTIN && data_type.builtin_type == Variant::INT &&
+					value.get_type() == Variant::UINT) {
+				Variant widened;
+				if (!fs_try_widen_uint_to_long(value, widened) || !data_type.is_type(widened)) {
+					return false;
+				}
+				value = widened;
+			} else {
+				const Variant *args = &p_value;
+				Callable::CallError convert_error;
+				Variant::construct(data_type.builtin_type, value, &args, 1, convert_error);
+				if (convert_error.error != Callable::CallError::CALL_OK || !data_type.is_type(value)) {
+					return false;
+				}
 			}
 		}
 	}
