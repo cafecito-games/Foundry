@@ -41,8 +41,9 @@
 
 namespace TestDDS {
 // Repoints `res://` at a temporary project. The caller must hold a
-// `TestProjectSettingsRestoreScope` for the duration of the case so the project switch
-// (which also retargets `user://`) cannot leak into later cases.
+// `TestProjectSettingsRestoreScope` for the duration of the case: `init()` moves
+// `resource_path`, and a `setup()` that finds a project would also dirty the settings
+// behind `user://`. The scope restores both so nothing leaks into later cases.
 void init(const String &p_test, const String &p_copy_target = String()) {
 	Error err;
 	// Setup project settings with `res://` set to a temporary path.

@@ -133,10 +133,11 @@ static Node *gltf_export_then_import(Node *p_root, const String &p_test_name) {
 	return gltf_import(tempfile + ".gltf");
 }
 
-// `init()` repoints `res://` at a throwaway project (which also retargets `user://`);
-// without restoring, the temporary path leaks into later suites that rely on their own
-// fixtures (e.g. the FoundryScript tests, which crash if `res://` no longer resolves).
-// Declare a `TestProjectSettingsRestoreScope` in any test case that calls `init()`.
+// `init()` repoints `res://` at a throwaway project; without restoring, the temporary path
+// leaks into later suites that rely on their own fixtures (e.g. the FoundryScript tests,
+// which crash if `res://` no longer resolves). A `setup()` that finds a project would also
+// dirty the settings behind `user://`, so the scope restores those too. Declare a
+// `TestProjectSettingsRestoreScope` in any test case that calls `init()`.
 
 void init(const String &p_test, const String &p_copy_target = String()) {
 	Error err;

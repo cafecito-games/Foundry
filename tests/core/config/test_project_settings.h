@@ -358,18 +358,30 @@ TEST_CASE("[ProjectSettings][UInt] Binary project settings round-trip unsigned v
 
 TEST_CASE("[ProjectSettings] Restore scope leaves user:// writable after a project rename") {
 	ProjectSettings *settings = ProjectSettings::get_singleton();
+	const String real_app_name = GLOBAL_GET("application/config/name");
+
+	// Retarget to a mapping whose app-userdata leaf does not exist yet, then take the scope:
+	// its restore target is that never-created leaf, so the destructor's leaf re-creation is
+	// the only thing that can make the mapping writable again (`FileAccess::open(..., WRITE)`
+	// does not create parents). `use_custom_user_dir` is pinned so the leaf is deterministic.
+	settings->set_setting("application/config/use_custom_user_dir", false);
+	settings->set_setting("application/config/name", "restore_scope_missing_leaf_probe");
+	CHECK_MESSAGE(!DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
+			"The restore target's app-userdata leaf should not exist yet: ",
+			OS::get_singleton()->get_user_data_dir());
 	{
 		TestProjectSettingsRestoreScope restore_scope;
-		// A rename whose app-userdata leaf is never created; `use_custom_user_dir` is pinned
-		// so the resolved leaf is deterministic.
-		settings->set_setting("application/config/use_custom_user_dir", false);
+		// A rename whose leaf is never created either.
 		settings->set_setting("application/config/name", "restore_scope_rename_probe");
 		CHECK_MESSAGE(!DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
 				"The renamed mapping's app-userdata leaf should not exist while the scope is live: ",
 				OS::get_singleton()->get_user_data_dir());
 	}
-	// The scope restored the pre-scope mapping and re-created its leaf, so a `user://`
-	// write must succeed again for whatever runs next.
+
+	// The scope restored the never-created mapping *and* re-created its leaf.
+	CHECK_MESSAGE(DirAccess::exists(OS::get_singleton()->get_user_data_dir()),
+			"The restored mapping's leaf should exist again after the scope dies: ",
+			OS::get_singleton()->get_user_data_dir());
 	{
 		Ref<FileAccess> probe = FileAccess::open("user://restore_scope_writable_probe.txt", FileAccess::WRITE);
 		CHECK_MESSAGE(probe.is_valid(), "user:// should be writable again after the scope dies");
@@ -377,6 +389,10 @@ TEST_CASE("[ProjectSettings] Restore scope leaves user:// writable after a proje
 	Ref<DirAccess> user_dir = DirAccess::open("user://");
 	REQUIRE(user_dir.is_valid());
 	CHECK_EQ(user_dir->remove("restore_scope_writable_probe.txt"), OK);
+
+	// Leave the case-entry mapping (and its leaf) as this case found them.
+	settings->set_setting("application/config/name", real_app_name);
+	OS::get_singleton()->ensure_user_data_dir();
 }
 
 TEST_CASE("[ProjectSettings] Restore scope restores custom user dir settings") {

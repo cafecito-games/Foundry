@@ -983,9 +983,12 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 
 	// A per-process root belongs to one run alone, so it is removed once that run is done with
 	// it; leaving it behind would accumulate one directory per invocation, including per failed
-	// invocation. Every exit below goes through this.
+	// invocation. Every exit below goes through this. The generator verbs own their root too:
+	// they never run `test_main`'s cleanup, and their outputs are repo fixture files, not
+	// `user://` artifacts, so there is nothing inside the root worth preserving.
 	Vector<String> owned_user_root_artifacts;
-	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES;
+	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES ||
+			kind == Kind::TEST_GENERATE_FIXTURES || kind == Kind::TEST_GENERATE_FORMAT_FIXTURES;
 	if (kind == Kind::TEST_BENCHMARK) {
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_output);
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
