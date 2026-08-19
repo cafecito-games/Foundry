@@ -527,7 +527,8 @@ TEST_CASE("[FoundryScript][TupleStore] A static Self-dependent slot is answered 
 	source.push_back(receiver);
 	const Variant accepted_argument = source;
 	const Variant *accepted_arguments[1] = { &accepted_argument };
-	const Array stored = anchor->value->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	Object *static_receiver = anchor->value.ptr();
+	const Array stored = static_receiver->callp(SNAME("keep"), accepted_arguments, 1, call_error);
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
 	REQUIRE(stored.size() == 2);
 	CHECK(int(stored[0]) == 7);
