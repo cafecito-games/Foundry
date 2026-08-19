@@ -769,23 +769,23 @@ TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle loaded from c
 }
 
 TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not serve a stale derived shape") {
-	static int unique_index = 0;
-	const String class_name = vformat("TupleSlotReloadBase_%d", unique_index++);
-	Ref<FoundryScript> base = compile_bytecode_test_source(vformat(
-			"class_name %s[T]\n"
-			"func keep(value) -> Variant:\n"
-			"\tvar kept: (int, T) = value\n"
-			"\treturn kept\n",
-			class_name));
+	Ref<FoundryScript> base = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> Variant:\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n");
 	REQUIRE(base.is_valid());
 	if (!base->is_valid()) {
 		return;
 	}
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = base->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != base->get_subclasses().end());
 
 	Ref<FoundryScript> derived_script = compile_bytecode_test_source(vformat(
-			"class Derived extends %s[int]:\n"
+			"const CrateLib = preload(\"%s\")\n"
+			"class Derived extends CrateLib.Crate[int]:\n"
 			"\tpass\n",
-			class_name));
+			base->get_script_path()));
 	REQUIRE(derived_script.is_valid());
 	if (!derived_script->is_valid()) {
 		return;
@@ -793,7 +793,7 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator derived = derived_script->get_subclasses().find(SNAME("Derived"));
 	REQUIRE(derived != derived_script->get_subclasses().end());
 
-	const FSFunction *keep_before = predecode_test_function(base, SNAME("keep"));
+	const FSFunction *keep_before = predecode_test_function(crate->value, SNAME("keep"));
 	const FSDataType *shape_before = only_specialized_tuple_shape(
 			keep_before, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
 	REQUIRE(shape_before != nullptr);
@@ -815,15 +815,16 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
 	REQUIRE(stored_before.size() == 2);
 
-	base->set_source_code(vformat(
-			"class_name %s[T]\n"
-			"func keep(value) -> Variant:\n"
-			"\tvar kept: (String, T) = value\n"
-			"\treturn kept\n",
-			class_name));
+	base->set_source_code(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> Variant:\n"
+			"\t\tvar kept: (String, T) = value\n"
+			"\t\treturn kept\n");
 	REQUIRE(base->reload() == OK);
 
-	const FSFunction *keep_after = predecode_test_function(base, SNAME("keep"));
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded_crate = base->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(reloaded_crate != base->get_subclasses().end());
+	const FSFunction *keep_after = predecode_test_function(reloaded_crate->value, SNAME("keep"));
 	// The derived table is still the one interned against the old functions. Address reuse must
 	// not make it answer for the new `keep`; a generation miss falls through to per-execution decode.
 	CHECK(only_specialized_tuple_shape(
