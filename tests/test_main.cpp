@@ -457,7 +457,10 @@ int test_main(int argc, char *argv[]) {
 
 	WorkerThreadPool::get_singleton()->init();
 
-	ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, 1, "Failed to clean test temp path");
+	if (cleanup_test_temp_path() != OK) {
+		cleanup_test_user_data_root(1);
+		ERR_FAIL_V_MSG(1, "Failed to clean test temp path");
+	}
 
 	// Run custom test tools.
 	if (test_commands) {
@@ -504,6 +507,7 @@ int test_main(int argc, char *argv[]) {
 		for (const String &argument : test_args) {
 			if (FoundryTestCaseFilter::is_no_skip_argument(argument)) {
 				ERR_PRINT("--no-skip cannot be combined with --case, --suite, or --shard; it would run every registered test.");
+				cleanup_test_user_data_root(EXIT_FAILURE);
 				ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, EXIT_FAILURE, "Failed to clean test temp path");
 				return EXIT_FAILURE;
 			}

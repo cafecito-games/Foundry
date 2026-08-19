@@ -359,6 +359,7 @@ TEST_CASE("[ProjectSettings][UInt] Binary project settings round-trip unsigned v
 TEST_CASE("[ProjectSettings] Restore scope leaves user:// writable after a project rename") {
 	ProjectSettings *settings = ProjectSettings::get_singleton();
 	const String real_app_name = GLOBAL_GET("application/config/name");
+	const Variant real_use_custom_user_dir = GLOBAL_GET("application/config/use_custom_user_dir");
 
 	// Retarget to a mapping whose app-userdata leaf does not exist yet, then take the scope:
 	// its restore target is that never-created leaf, so the destructor's leaf re-creation is
@@ -392,6 +393,7 @@ TEST_CASE("[ProjectSettings] Restore scope leaves user:// writable after a proje
 
 	// Leave the case-entry mapping (and its leaf) as this case found them.
 	settings->set_setting("application/config/name", real_app_name);
+	settings->set_setting("application/config/use_custom_user_dir", real_use_custom_user_dir);
 	OS::get_singleton()->ensure_user_data_dir();
 }
 

@@ -1000,6 +1000,16 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			FoundryCLIUserRoot::remove_owned_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
 		}
 	};
+	// A `test run` failure keeps its root for post-mortem inspection; `test_main` prints the
+	// kept path for every exit that reaches it, but the early failures below return before
+	// `test_main` runs, so the path is printed here instead. Root-owning kinds have already
+	// had their root removed by then.
+	const auto report_kept_user_root = [&]() {
+		const String user_data_root = OS::get_singleton()->get_user_data_root_override();
+		if (!owns_user_root && !user_data_root.is_empty()) {
+			print_line(vformat("[foundry-test] failed run; kept user:// isolation root for inspection: %s", user_data_root));
+		}
+	};
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	bool project_loaded_for_build_pipeline = false;
@@ -1010,6 +1020,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (project_err != OK) {
 			ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
 			remove_owned_user_root();
+			report_kept_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
@@ -1034,6 +1045,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
 		if (!pre_compile_ok) {
 			remove_owned_user_root();
+			report_kept_user_root();
 			test_cleanup();
 			return EXIT_FAILURE;
 		}
