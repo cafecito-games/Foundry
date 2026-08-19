@@ -883,6 +883,22 @@ void FSFunction::setup_runtime_pointers() {
 	// Derived from the constants just published, so it is rebuilt whenever they are and can never
 	// describe a constant table the function no longer has.
 	_build_predecoded_tuple_shapes();
+	_tuple_slot_generation = _script != nullptr ? _script->get_tuple_slot_function_generation() : 0;
+}
+
+const FSDataType *FSTupleSlotSpecialization::get_shape(const FSFunction *p_function, int p_constant_index) const {
+	if (p_function == nullptr) {
+		return nullptr;
+	}
+	const FunctionShapes *entry = function_shapes.getptr(p_function);
+	if (entry == nullptr) {
+		return nullptr;
+	}
+	const FoundryScript *owner_script = Object::cast_to<FoundryScript>(ObjectDB::get_instance(entry->script_id));
+	if (owner_script == nullptr || entry->generation != owner_script->get_tuple_slot_function_generation()) {
+		return nullptr;
+	}
+	return entry->get(p_constant_index);
 }
 
 #ifdef TOOLS_ENABLED
@@ -892,6 +908,10 @@ const FSDataType *FSFunction::get_predecoded_tuple_shape_for_constant(int p_cons
 	}
 	const int shape_index = _predecoded_tuple_shape_indices_ptr[p_constant_index];
 	return shape_index < 0 ? nullptr : &_predecoded_tuple_shapes_ptr[shape_index];
+}
+
+const FSDataType *FSFunction::get_specialized_tuple_shape_for_constant(const FSTupleSlotSpecialization *p_specialization, int p_constant_index) const {
+	return p_specialization == nullptr ? nullptr : p_specialization->get_shape(this, p_constant_index);
 }
 #endif // TOOLS_ENABLED
 

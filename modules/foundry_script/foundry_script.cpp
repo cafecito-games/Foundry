@@ -282,6 +282,9 @@ Ref<FSSpecializedClassHandle> FSSpecializedClassHandle::create(const Ref<Foundry
 	for (int i = 0; i < p_type_arguments.size(); i++) {
 		handle->type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
 	}
+	if (p_script.is_valid()) {
+		p_script->intern_tuple_slot_specialization(p_type_arguments);
+	}
 	return handle;
 }
 
@@ -1032,6 +1035,7 @@ FSInstance *FoundryScript::_create_instance(const Variant **p_args, int p_argcou
 	if (p_type_arguments != nullptr) {
 		instance->type_arguments = *p_type_arguments;
 	}
+	instance->tuple_slot_specialization = get_or_create_tuple_slot_specialization(instance->type_arguments);
 #ifdef DEBUG_ENABLED
 	//needed for hot reloading
 	for (const KeyValue<StringName, MemberInfo> &E : member_indices) {
@@ -1911,6 +1915,8 @@ void FoundryScript::_erase_function_lambda_info(FoundryScript *p_script, FSFunct
 }
 
 void FoundryScript::_clear_partial_bytecode_link_state() {
+	_clear_tuple_slot_specializations();
+
 	for (KeyValue<StringName, Ref<FoundryScript>> &subclass : subclasses) {
 		subclass.value->_clear_partial_bytecode_link_state();
 	}
@@ -2462,6 +2468,174 @@ bool FoundryScript::project_type_arguments_onto_base(const Ref<Script> &p_base, 
 	return true;
 }
 
+void FoundryScript::_drop_instance_tuple_slot_specializations() {
+	for (RBSet<Object *>::Element *E = instances.front(); E; E = E->next()) {
+		ScriptInstance *si = E->get()->get_script_instance();
+		if (si == nullptr || si->is_placeholder()) {
+			continue;
+		}
+		static_cast<FSInstance *>(si)->tuple_slot_specialization.unref();
+	}
+}
+
+void FoundryScript::_refresh_instance_tuple_slot_specializations() {
+	for (RBSet<Object *>::Element *E = instances.front(); E; E = E->next()) {
+		ScriptInstance *si = E->get()->get_script_instance();
+		if (si == nullptr || si->is_placeholder()) {
+			continue;
+		}
+		FSInstance *instance = static_cast<FSInstance *>(si);
+		instance->tuple_slot_specialization = get_or_create_tuple_slot_specialization(instance->type_arguments);
+	}
+	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
+		if (entry.value.is_valid()) {
+			entry.value->_refresh_instance_tuple_slot_specializations();
+		}
+	}
+}
+
+void FoundryScript::_clear_tuple_slot_specializations() {
+	_drop_instance_tuple_slot_specializations();
+	MutexLock lock(tuple_slot_specialization_mutex);
+	tuple_slot_specializations.clear();
+	dependent_tuple_descriptor_hierarchy_known = false;
+	has_dependent_tuple_descriptor_hierarchy = false;
+	tuple_slot_function_generation++;
+}
+
+bool FoundryScript::_hierarchy_has_dependent_tuple_descriptors() const {
+	for (const FoundryScript *owner = this; owner != nullptr; owner = owner->base.ptr()) {
+		for (const KeyValue<StringName, FSFunction *> &entry : owner->member_functions) {
+			if (entry.value != nullptr && entry.value->has_dependent_tuple_descriptors_recursive()) {
+				return true;
+			}
+		}
+		for (const KeyValue<StringName, EnumFunctionSet> &enum_entry : owner->enum_functions) {
+			for (const KeyValue<StringName, FSFunction *> &entry : enum_entry.value.instance_functions) {
+				if (entry.value != nullptr && entry.value->has_dependent_tuple_descriptors_recursive()) {
+					return true;
+				}
+			}
+			for (const KeyValue<StringName, FSFunction *> &entry : enum_entry.value.static_functions) {
+				if (entry.value != nullptr && entry.value->has_dependent_tuple_descriptors_recursive()) {
+					return true;
+				}
+			}
+		}
+		if (owner->implicit_initializer != nullptr && owner->implicit_initializer->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+		if (owner->implicit_ready != nullptr && owner->implicit_ready->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+		if (owner->static_initializer != nullptr && owner->static_initializer->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+		if (owner->initializer != nullptr && owner->initializer->has_dependent_tuple_descriptors_recursive()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void FoundryScript::_publish_dependent_tuple_descriptor_flag() {
+	const bool has = _hierarchy_has_dependent_tuple_descriptors();
+	MutexLock lock(tuple_slot_specialization_mutex);
+	has_dependent_tuple_descriptor_hierarchy = has;
+	dependent_tuple_descriptor_hierarchy_known = true;
+}
+
+bool FoundryScript::_script_has_dependent_tuple_descriptors() const {
+	{
+		MutexLock lock(tuple_slot_specialization_mutex);
+		if (dependent_tuple_descriptor_hierarchy_known) {
+			return has_dependent_tuple_descriptor_hierarchy;
+		}
+	}
+	// Not published yet: answer honestly for this call, but do not make it sticky. A handle
+	// constant folded during `_prepare_compilation` sees a class whose functions were just
+	// deleted, and an inner class keeps `valid == true` across a soft reload.
+	return _hierarchy_has_dependent_tuple_descriptors();
+}
+
+Ref<FSTupleSlotSpecialization> FoundryScript::find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const {
+	MutexLock lock(tuple_slot_specialization_mutex);
+	for (const Ref<FSTupleSlotSpecialization> &existing : tuple_slot_specializations) {
+		if (existing.is_valid() && existing->type_arguments == p_type_arguments) {
+			return existing;
+		}
+	}
+	return Ref<FSTupleSlotSpecialization>();
+}
+
+Ref<FSTupleSlotSpecialization> FoundryScript::get_or_create_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) {
+	if (!_script_has_dependent_tuple_descriptors()) {
+		return Ref<FSTupleSlotSpecialization>();
+	}
+
+	{
+		Ref<FSTupleSlotSpecialization> existing = find_tuple_slot_specialization(p_type_arguments);
+		if (existing.is_valid()) {
+			return existing;
+		}
+	}
+
+	Ref<FSTupleSlotSpecialization> created = FSTupleSlotSpecialization::create(this, p_type_arguments);
+	if (created.is_null()) {
+		return Ref<FSTupleSlotSpecialization>();
+	}
+
+	MutexLock lock(tuple_slot_specialization_mutex);
+	for (const Ref<FSTupleSlotSpecialization> &existing : tuple_slot_specializations) {
+		if (existing.is_valid() && existing->type_arguments == p_type_arguments) {
+			return existing;
+		}
+	}
+	tuple_slot_specializations.push_back(created);
+	return created;
+}
+
+void FoundryScript::intern_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) {
+	get_or_create_tuple_slot_specialization(p_type_arguments);
+}
+
+void FoundryScript::_intern_tuple_slot_specializations_from_constants() {
+	for (const KeyValue<StringName, Variant> &entry : constants) {
+		if (entry.value.get_type() != Variant::OBJECT) {
+			continue;
+		}
+		Object *object = entry.value;
+		FSSpecializedClassHandle *handle = Object::cast_to<FSSpecializedClassHandle>(object);
+		if (handle == nullptr) {
+			continue;
+		}
+		const Ref<FoundryScript> target = handle->get_specialized_script();
+		if (target.is_valid()) {
+			target->intern_tuple_slot_specialization(handle->get_type_arguments());
+		}
+	}
+}
+
+void FoundryScript::_intern_tuple_slot_specializations_from_constants_recursive() {
+	_intern_tuple_slot_specializations_from_constants();
+	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
+		if (entry.value.is_valid()) {
+			entry.value->_intern_tuple_slot_specializations_from_constants_recursive();
+		}
+	}
+}
+
+void FoundryScript::intern_tuple_slot_specializations_recursive() {
+	_publish_dependent_tuple_descriptor_flag();
+	intern_tuple_slot_specialization();
+	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
+		if (entry.value.is_valid()) {
+			entry.value->intern_tuple_slot_specializations_recursive();
+		}
+	}
+	_intern_tuple_slot_specializations_from_constants_recursive();
+}
+
 FoundryScript *FoundryScript::find_class(const String &p_qualified_name) {
 	String first = p_qualified_name.get_slice("::", 0);
 
@@ -2822,6 +2996,8 @@ void FoundryScript::clear() {
 	// half-constructed instances. This matters for scripts that outlive language shutdown through
 	// a stale Ref or ResourceCache entry and get handed out again by a later cache-hit load.
 	valid = false;
+
+	_clear_tuple_slot_specializations();
 
 	RBSet<FSFunction *> functions_to_clear;
 

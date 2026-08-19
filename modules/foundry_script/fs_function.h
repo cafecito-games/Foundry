@@ -37,6 +37,7 @@
 #include "core/object/script_language.h"
 #include "core/os/thread.h"
 #include "core/string/string_name.h"
+#include "core/templates/hash_map.h"
 #include "core/templates/pair.h"
 #include "core/templates/self_list.h"
 #include "core/variant/container_type_validate.h"
@@ -568,6 +569,50 @@ struct FSWeakContainerType {
 	_FORCE_INLINE_ bool operator!=(const FSWeakContainerType &p_other) const { return !(*this == p_other); }
 };
 
+class FSFunction;
+
+// Decoded receiver-dependent tuple slot shapes for one leaf specialization. The function that owns a
+// `(int, T)` slot is compiled once on the generic class and shared by every `Crate[String]` /
+// `Crate[int]`, so the shape cannot live on the function itself. This table is keyed by that
+// function and is immutable once published: it is built when a specialization is materialized
+// (script finalization for a compile-time binding, or handle/instance creation for a runtime one)
+// and concurrent stores only ever read it.
+class FSTupleSlotSpecialization : public RefCounted {
+	FOUNDRY_SOFTCLASS(FSTupleSlotSpecialization, RefCounted);
+	friend class FoundryScript;
+	friend class FSFunction;
+
+	struct FunctionShapes {
+		// Indexed by constant index, like the receiver-independent predecode table: -1 means this
+		// constant is not a dependent tuple descriptor of this function.
+		Vector<int> constant_index_to_shape;
+		Vector<FSDataType> shapes;
+		// Identity of the script that owned the function at intern time, plus that script's
+		// generation. `get_shape()` consults the live script so a reloaded base cannot serve a
+		// shape through a freed or address-reused `FSFunction *`.
+		ObjectID script_id;
+		uint64_t generation = 0;
+
+		const FSDataType *get(int p_constant_index) const {
+			if (p_constant_index < 0 || p_constant_index >= constant_index_to_shape.size()) {
+				return nullptr;
+			}
+			const int shape_index = constant_index_to_shape[p_constant_index];
+			return shape_index < 0 ? nullptr : &shapes[shape_index];
+		}
+	};
+
+	Vector<ContainerType> type_arguments;
+	HashMap<const FSFunction *, FunctionShapes> function_shapes;
+
+public:
+	// `p_function` is a hash key only and is never dereferenced. A leftover pointer from a
+	// reloaded base is therefore safe to probe: a generation mismatch or a freed owner misses.
+	const FSDataType *get_shape(const FSFunction *p_function, int p_constant_index) const;
+
+	static Ref<FSTupleSlotSpecialization> create(FoundryScript *p_leaf, const Vector<ContainerType> &p_type_arguments);
+};
+
 class FSStaticSelfContext {
 public:
 	enum Kind {
@@ -936,6 +981,7 @@ private:
 	friend class FSBytecodeExporter;
 	friend class FSBytecodeLoader;
 	friend class FSBytecodeVerifier;
+	friend class FSTupleSlotSpecialization;
 #ifdef TOOLS_ENABLED
 	friend class FSNameManglerApplication;
 	friend class FSNameManglerAnalysis;
@@ -1119,23 +1165,31 @@ private:
 	// A tuple slot's declared shape travels to run time as a descriptor constant, and rebuilding it on
 	// every store walks a Dictionary tree and allocates a fresh element vector. A descriptor whose whole
 	// tree names neither a type parameter nor `Self` decodes to the same shape on every execution, so it
-	// is decoded once here and shared by every instruction storing through that constant. A
-	// receiver-dependent descriptor has no frame-independent answer and keeps the per-execution path.
+	// is decoded once here and shared by every instruction storing through that constant.
+	//
+	// A receiver-dependent descriptor (one whose tree names a type parameter or `Self`) has no single
+	// frame-independent answer. Its constant index is recorded here so a specialization can decode it
+	// once against that specialization's projected arguments and `Self` binding. The decoded shapes
+	// live on `FSTupleSlotSpecialization`, not on this function, because the function is shared.
 	//
 	// `_predecoded_tuple_shape_indices` is indexed by constant index and holds an index into
 	// `_predecoded_tuple_shapes`, or -1 for a constant that is not a receiver-independent tuple
-	// descriptor. Both are derived, never serialized, and immutable once `setup_runtime_pointers()`
-	// finishes, so concurrent calls into the same function only ever read them.
+	// descriptor. Both tables are derived, never serialized, and immutable once
+	// `setup_runtime_pointers()` finishes, so concurrent calls into the same function only ever read
+	// them.
 	Vector<int> _predecoded_tuple_shape_indices;
 	Vector<FSDataType> _predecoded_tuple_shapes;
 	const int *_predecoded_tuple_shape_indices_ptr = nullptr;
 	const FSDataType *_predecoded_tuple_shapes_ptr = nullptr;
 	int _predecoded_tuple_shape_index_count = 0;
+	Vector<int> _dependent_tuple_descriptor_indices;
+	uint64_t _tuple_slot_generation = 0;
 
 	void _build_predecoded_tuple_shapes();
+	void _collect_dependent_tuple_functions(Vector<FSFunction *> &r_functions);
 
 	// The predecoded shape for a tuple store's descriptor operand, or `nullptr` when the descriptor is
-	// receiver-dependent and the caller must decode it against the running frame.
+	// receiver-dependent and the caller must decode it against a specialization or the running frame.
 	_FORCE_INLINE_ const FSDataType *_predecoded_tuple_shape(int p_address) const {
 		if (((p_address & ADDR_TYPE_MASK) >> ADDR_BITS) != ADDR_TYPE_CONSTANT) {
 			return nullptr;
@@ -1147,6 +1201,20 @@ private:
 		const int shape_index = _predecoded_tuple_shape_indices_ptr[constant_index];
 		return shape_index < 0 ? nullptr : &_predecoded_tuple_shapes_ptr[shape_index];
 	}
+
+	_FORCE_INLINE_ const FSDataType *_specialized_tuple_shape(const FSTupleSlotSpecialization *p_specialization, int p_address) const {
+		if (p_specialization == nullptr) {
+			return nullptr;
+		}
+		if (((p_address & ADDR_TYPE_MASK) >> ADDR_BITS) != ADDR_TYPE_CONSTANT) {
+			return nullptr;
+		}
+		return p_specialization->get_shape(this, p_address & ADDR_MASK);
+	}
+
+	_FORCE_INLINE_ bool has_dependent_tuple_descriptors() const { return !_dependent_tuple_descriptor_indices.is_empty(); }
+	_FORCE_INLINE_ uint64_t get_tuple_slot_generation() const { return _tuple_slot_generation; }
+	bool has_dependent_tuple_descriptors_recursive() const;
 
 	static thread_local const FSStaticSelfContext *_current_static_self_context;
 
@@ -1256,6 +1324,8 @@ public:
 	// constant is receiver-dependent or is not a tuple descriptor at all).
 	_FORCE_INLINE_ int get_predecoded_tuple_shape_count() const { return _predecoded_tuple_shapes.size(); }
 	const FSDataType *get_predecoded_tuple_shape_for_constant(int p_constant_index) const;
+	_FORCE_INLINE_ int get_dependent_tuple_descriptor_count() const { return _dependent_tuple_descriptor_indices.size(); }
+	const FSDataType *get_specialized_tuple_shape_for_constant(const FSTupleSlotSpecialization *p_specialization, int p_constant_index) const;
 #endif // TOOLS_ENABLED
 
 	// `p_static_self` describes the exact class handle a static call was made through. The pointed-to

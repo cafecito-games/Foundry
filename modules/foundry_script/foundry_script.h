@@ -146,6 +146,7 @@ class TestFSNameManglerApplicationAccessor;
 class FoundryScript : public Script {
 	FOUNDRY_CLASS(FoundryScript, Script);
 	friend class FSSpecializedClassHandle;
+	friend class FSTupleSlotSpecialization;
 	bool tool = false;
 	bool valid = false;
 	bool reloading = false;
@@ -417,6 +418,26 @@ private:
 	Vector<TypeParameter> type_parameters;
 	Dictionary rpc_config;
 
+	mutable Mutex tuple_slot_specialization_mutex;
+	Vector<Ref<FSTupleSlotSpecialization>> tuple_slot_specializations;
+	// Published only after the unit is finalized. A mid-compile walk (including a soft reload
+	// that leaves an inner class `valid`) must not record `false`.
+	bool dependent_tuple_descriptor_hierarchy_known = false;
+	bool has_dependent_tuple_descriptor_hierarchy = false;
+	// Bumped whenever this script drops its published tables. Stored on each `FSFunction` and on
+	// each cached `FunctionShapes` so a subclass table cannot serve a shape for a reloaded base
+	// function that reused the same heap address.
+	uint64_t tuple_slot_function_generation = 1;
+
+	void _clear_tuple_slot_specializations();
+	void _drop_instance_tuple_slot_specializations();
+	void _refresh_instance_tuple_slot_specializations();
+	void _intern_tuple_slot_specializations_from_constants();
+	void _intern_tuple_slot_specializations_from_constants_recursive();
+	void _publish_dependent_tuple_descriptor_flag();
+	bool _hierarchy_has_dependent_tuple_descriptors() const;
+	bool _script_has_dependent_tuple_descriptors() const;
+
 	// Passive annotation metadata resolved by the analyzer and persisted by the compiler. Holds both
 	// user-declared custom annotations and Godot's built-in annotations (tagged via `is_builtin`), in
 	// source order. Class annotations are direct-only; method/variable/signal/constant tables include
@@ -618,6 +639,16 @@ public:
 	const Ref<FSNativeClass> &get_native() const { return native; }
 
 	_FORCE_INLINE_ const HashMap<StringName, FSFunction *> &get_member_functions() const { return member_functions; }
+
+	// Published, immutable decoded shapes for receiver-dependent tuple slots of this leaf
+	// specialization. Null when this argument vector is unspecialized or forwarded and still takes
+	// the per-execution decode path. Interned after the whole compilation unit (or `.fsb` load) is
+	// complete, and again when a specialized handle or instance is created.
+	Ref<FSTupleSlotSpecialization> get_or_create_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments);
+	Ref<FSTupleSlotSpecialization> find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const;
+	void intern_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments = Vector<ContainerType>());
+	void intern_tuple_slot_specializations_recursive();
+	uint64_t get_tuple_slot_function_generation() const { return tuple_slot_function_generation; }
 	FSFunction *get_enum_function(const StringName &p_enum_type, const StringName &p_function, bool p_static) const;
 	_FORCE_INLINE_ const HashMap<StringName, AbstractTraitRequirement> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
 
@@ -904,6 +935,10 @@ class FSInstance : public ScriptInstance {
 	// Reified type arguments bound at construction (e.g. the `int` in `Box[int].new()`). Empty for
 	// instances of non-generic classes or generic classes instantiated without explicit arguments.
 	Vector<ContainerType> type_arguments;
+	// Owning Ref to the leaf script's interned table for this instance's type arguments. Dropped
+	// on teardown and re-resolved after the unit is finalized; null when this receiver is
+	// unspecialized or forwarded.
+	Ref<FSTupleSlotSpecialization> tuple_slot_specialization;
 
 	SelfList<FSFunctionState>::List pending_func_states;
 

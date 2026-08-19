@@ -2682,6 +2682,16 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 		loaded_class->_static_default_init();
 		loaded_class->valid = true;
 	}
+	// After every class in the unit is valid, so a derived intern can see its generic base's
+	// compiled functions regardless of declaration order.
+	for (FoundryScript *loaded_class : local_classes) {
+		loaded_class->_publish_dependent_tuple_descriptor_flag();
+		loaded_class->intern_tuple_slot_specialization();
+	}
+	for (FoundryScript *loaded_class : local_classes) {
+		loaded_class->_intern_tuple_slot_specializations_from_constants();
+	}
+	p_script->_refresh_instance_tuple_slot_specializations();
 
 	// Load the conformance files reached through a namespace, mirroring
 	// `FSCompiler::_load_namespace_conformance_scripts`. It runs after this script is linked and
