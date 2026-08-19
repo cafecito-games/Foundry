@@ -13129,9 +13129,13 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			self_field_leg = SelfFieldLeg::EXACT_HANDLE;
 		} else if (union_base_type.is_set() &&
 				(union_base_type.kind == FSParser::DataType::CLASS ||
-						union_base_type.kind == FSParser::DataType::TYPE_PARAMETER)) {
+						(union_base_type.kind == FSParser::DataType::TYPE_PARAMETER &&
+								(union_base_type.type_parameter_bound.is_empty() ||
+										!_type_handle_source_is_handle(union_base_type.type_parameter_bound[0]))))) {
 			// A class-typed instance and a bounded type-parameter receiver both name a live value the
-			// `Self` fields stay relative to.
+			// `Self` fields stay relative to. A type parameter bounded by a handle names a class, not an
+			// instance, so it keeps the declaring-class substitution below: receiver identity against a
+			// handle would admit a value lowering then rejects at the conversion boundary.
 			self_field_leg = SelfFieldLeg::BASE_RECEIVER;
 		}
 	} else if (frame_self_is_declaring_instance) {
