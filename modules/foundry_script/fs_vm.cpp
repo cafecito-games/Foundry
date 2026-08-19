@@ -3515,7 +3515,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// `Variant::construct()` cannot perform this crossing -- `can_convert_strict()` has no
 					// `UINT` -> `INT` entry -- so the design-6.1 `uint` -> `long` widening runs value-checked
 					// here, in every build configuration: a gradual source can carry any `ulong` value, and
-					// an unchecked construct would silently store null into a non-nullable slot.
+					// an unchecked construct would silently store null into a non-nullable slot. This opcode
+					// carries only the destination's carrier, so a declared `int` width is not enforceable
+					// here; that is the same gradual-store width erasure the `INT`-carrier source path has,
+					// and both are the numeric-descriptor gap tracked by #2397.
 					if (unlikely(!fs_try_widen_uint_to_long(*src, *dst))) {
 						err_text = fs_uint_widen_range_error(*src);
 						OPCODE_BREAK;
