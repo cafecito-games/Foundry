@@ -13126,7 +13126,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 					? SelfFieldLeg::FRAME_RECEIVER
 					: SelfFieldLeg::LITERAL_SELF;
 		} else if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation)) {
-			self_field_leg = union_base_type.class_type != nullptr ? SelfFieldLeg::EXACT_HANDLE : SelfFieldLeg::EXACT_DECLARING;
+			self_field_leg = SelfFieldLeg::EXACT_HANDLE;
 		} else if (union_base_type.is_set() &&
 				(union_base_type.kind == FSParser::DataType::CLASS ||
 						union_base_type.kind == FSParser::DataType::TYPE_PARAMETER)) {
@@ -13156,10 +13156,16 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				receiver_self.is_receiver_self_contract = true;
 				return substitute_member_type(p_field_type, union_base_type, nullptr, &receiver_self);
 			}
-			case SelfFieldLeg::EXACT_HANDLE:
-				// The class-handle spelling is exact: `Self` substitutes to the named class and the
-				// diagnostic keeps naming it.
-				return substitute_member_type(p_field_type, union_base_type, nullptr, nullptr);
+			case SelfFieldLeg::EXACT_HANDLE: {
+				// The class-handle spelling is exact: `Self` substitutes to the represented type and the
+				// diagnostic keeps naming it. Substituting the represented type explicitly also covers a
+				// `Type[T]` handle, whose represented type is a type parameter with no class node.
+				FSParser::DataType represented_type = type_handle_represented_type(union_base_type);
+				if (!represented_type.is_set()) {
+					return p_field_type;
+				}
+				return substitute_member_type(p_field_type, union_base_type, nullptr, &represented_type);
+			}
 			case SelfFieldLeg::LITERAL_SELF: {
 				// Rebound to the frame class's own `Self` so an inherited declaration's field and a
 				// `Self`-typed value of this frame compare as the same parameter, while anything not
