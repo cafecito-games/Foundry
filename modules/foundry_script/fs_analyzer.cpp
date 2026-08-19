@@ -1151,6 +1151,11 @@ static bool call_argument_is_same_receiver(
 	if (p_call == nullptr || p_argument == nullptr) {
 		return false;
 	}
+	if (p_call->receiver_is_current_self) {
+		// The call was resolved to dispatch on the calling frame's own receiver, however it is
+		// spelled; the receiver expression is therefore `self` itself.
+		return p_argument->type == FSParser::Node::SELF;
+	}
 	if (p_call->is_super || p_call->get_callee_type() == FSParser::Node::IDENTIFIER) {
 		return p_argument->type == FSParser::Node::SELF;
 	}
@@ -1175,6 +1180,27 @@ static bool call_argument_is_same_receiver(
 	}
 	if (!subscript->is_attribute || subscript->base == nullptr) {
 		return false;
+	}
+	if (p_call->is_enum_case_construction) {
+		// The callee's base is the union spelling, not the receiver: the receiver instance, when the
+		// construction has one, is the base one attribute level further in, as in
+		// `receiver.Message.Attach(...)`. A generic application wraps the spelling in one more index
+		// subscript (`receiver.Box[int].Full(...)`), unwrapped first.
+		const FSParser::ExpressionNode *union_spelling = subscript->base;
+		if (union_spelling->type == FSParser::Node::SUBSCRIPT) {
+			const FSParser::SubscriptNode *union_application = static_cast<const FSParser::SubscriptNode *>(union_spelling);
+			if (!union_application->is_attribute && union_application->base != nullptr) {
+				union_spelling = union_application->base;
+			}
+		}
+		if (union_spelling->type != FSParser::Node::SUBSCRIPT) {
+			return false;
+		}
+		const FSParser::SubscriptNode *union_subscript = static_cast<const FSParser::SubscriptNode *>(union_spelling);
+		if (!union_subscript->is_attribute || union_subscript->base == nullptr) {
+			return false;
+		}
+		return expression_is_same_reference(union_subscript->base, p_argument);
 	}
 	return expression_is_same_reference(subscript->base, p_argument);
 }
@@ -13028,10 +13054,178 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	const FSParser::DataType::EnumCasePayload *payload = p_enum_meta_type.get_enum_case_payload(case_name);
 	ERR_FAIL_NULL(payload);
 
-	const FSParser::DataType case_value_type = type_from_metatype(p_enum_meta_type);
 	const int64_t *tag = p_enum_meta_type.enum_values.getptr(case_name);
 	p_call->is_enum_case_construction = true;
 	p_call->enum_case_tag = tag != nullptr ? *tag : 0;
+
+	// Which spelling reached the union decides what a `Self` payload field denotes, mirroring named
+	// tuple construction. The unqualified, `self.`-qualified, and contextual shorthand spellings
+	// construct against a live receiver when the calling frame is an instance of the declaring class,
+	// so `Self` stays the receiver contract the shared call-parameter gate answers by contract or
+	// identity. An instance base keeps literal `Self`, answered by identity against the base
+	// expression. A class handle, a static function, and a frame whose `self` is not an instance of
+	// the declaring class have no receiver a `Self` leaf could denote, so `Self` substitutes to the
+	// named (or declaring) class and admission stays ordinary compatibility -- otherwise the case
+	// would be legal and unconstructible from exactly those frames.
+	FSParser::ClassNode *declaring_class = p_enum_meta_type.class_type;
+	const FSParser::ExpressionNode *union_expression = nullptr;
+	if (p_call->callee != nullptr && p_call->callee->type == FSParser::Node::SUBSCRIPT) {
+		const FSParser::SubscriptNode *callee_subscript = static_cast<const FSParser::SubscriptNode *>(p_call->callee);
+		if (callee_subscript->is_attribute) {
+			union_expression = callee_subscript->base;
+		}
+	}
+	if (union_expression != nullptr && union_expression->type == FSParser::Node::SUBSCRIPT) {
+		// A generic union application wraps the union spelling in an index subscript
+		// (`other.Box[int]`); the receiver question is about the spelling under it.
+		const FSParser::SubscriptNode *union_application = static_cast<const FSParser::SubscriptNode *>(union_expression);
+		if (!union_application->is_attribute && union_application->base != nullptr) {
+			union_expression = union_application->base;
+		}
+	}
+	const FSParser::ExpressionNode *union_base_expression = nullptr;
+	if (union_expression != nullptr && union_expression->type == FSParser::Node::SUBSCRIPT) {
+		const FSParser::SubscriptNode *union_subscript = static_cast<const FSParser::SubscriptNode *>(union_expression);
+		if (union_subscript->is_attribute) {
+			union_base_expression = union_subscript->base;
+		}
+	}
+
+	bool frame_self_is_declaring_instance = false;
+	if (!static_context && declaring_class != nullptr) {
+		// A union declared by a trait is flattened into every implementer, so a frame whose class
+		// applies the declaring trait is as much its instance as a frame of the declaring class.
+		for (const FSParser::ClassNode *scope = parser->current_class; scope != nullptr;
+				scope = scope->base_type.class_type) {
+			if (scope == declaring_class || scope->resolved_traits.has(declaring_class)) {
+				frame_self_is_declaring_instance = true;
+				break;
+			}
+		}
+	}
+
+	enum class SelfFieldLeg {
+		FRAME_RECEIVER,
+		BASE_RECEIVER,
+		EXACT_HANDLE,
+		EXACT_DECLARING,
+		LITERAL_SELF,
+	};
+	SelfFieldLeg self_field_leg = SelfFieldLeg::EXACT_DECLARING;
+	FSParser::DataType union_base_type;
+	if (union_base_expression != nullptr && union_base_expression->type == FSParser::Node::SELF) {
+		self_field_leg = SelfFieldLeg::FRAME_RECEIVER;
+	} else if (union_base_expression != nullptr) {
+		union_base_type = union_base_expression->get_datatype();
+		if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation) &&
+				_is_self_type_parameter(union_base_type)) {
+			// The `Self.Message` spelling names the running receiver's class. An instance frame answers
+			// it as the frame's own receiver; a static frame has no instance to prove identity against,
+			// so the field keeps literal `Self` and admits only values already typed as `Self`.
+			self_field_leg = !static_context && parser->current_class != nullptr
+					? SelfFieldLeg::FRAME_RECEIVER
+					: SelfFieldLeg::LITERAL_SELF;
+		} else if (union_base_type.is_set() && (union_base_type.is_meta_type || union_base_type.is_type_handle_annotation)) {
+			self_field_leg = SelfFieldLeg::EXACT_HANDLE;
+		} else if (union_base_type.is_set() &&
+				(union_base_type.kind == FSParser::DataType::CLASS ||
+						union_base_type.kind == FSParser::DataType::TYPE_PARAMETER)) {
+			// A class-typed instance and a bounded type-parameter receiver both name a live value the
+			// `Self` fields stay relative to. A type parameter whose bound chain ends in a handle names
+			// a class, not an instance, so it keeps the declaring-class substitution below: receiver
+			// identity against a handle would admit a value lowering then rejects at the conversion
+			// boundary.
+			bool names_a_handle = false;
+			const FSParser::DataType *bound_step = &union_base_type;
+			while (bound_step->kind == FSParser::DataType::TYPE_PARAMETER && !bound_step->type_parameter_bound.is_empty()) {
+				const FSParser::DataType &bound = bound_step->type_parameter_bound[0];
+				if (_type_handle_source_is_handle(bound)) {
+					names_a_handle = true;
+					break;
+				}
+				if (bound.kind != FSParser::DataType::TYPE_PARAMETER) {
+					break;
+				}
+				bound_step = &bound;
+			}
+			if (!names_a_handle) {
+				self_field_leg = SelfFieldLeg::BASE_RECEIVER;
+			}
+		}
+	} else if (frame_self_is_declaring_instance) {
+		self_field_leg = SelfFieldLeg::FRAME_RECEIVER;
+	}
+	if (self_field_leg == SelfFieldLeg::FRAME_RECEIVER) {
+		p_call->receiver_is_current_self = true;
+	}
+
+	const auto payload_field_type_for_spelling = [&](const FSParser::DataType &p_field_type) -> FSParser::DataType {
+		if (!_datatype_contains_self_type_parameter(p_field_type)) {
+			return p_field_type;
+		}
+		switch (self_field_leg) {
+			case SelfFieldLeg::FRAME_RECEIVER: {
+				FSParser::DataType receiver_self = _self_type_parameter_from_bound(_self_type_for_class(parser->current_class));
+				receiver_self.is_receiver_self_contract = true;
+				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &receiver_self);
+			}
+			case SelfFieldLeg::BASE_RECEIVER: {
+				FSParser::DataType receiver_self = _self_type_parameter_from_bound(union_base_type);
+				receiver_self.is_receiver_self_contract = true;
+				return substitute_member_type(p_field_type, union_base_type, nullptr, &receiver_self);
+			}
+			case SelfFieldLeg::EXACT_HANDLE: {
+				// The class-handle spelling is exact: `Self` substitutes to the represented type and the
+				// diagnostic keeps naming it. Substituting the represented type explicitly also covers a
+				// `Type[T]` handle, whose represented type is a type parameter with no class node.
+				FSParser::DataType represented_type = type_handle_represented_type(union_base_type);
+				if (!represented_type.is_set()) {
+					return p_field_type;
+				}
+				return substitute_member_type(p_field_type, union_base_type, nullptr, &represented_type);
+			}
+			case SelfFieldLeg::LITERAL_SELF: {
+				// Rebound to the frame class's own `Self` so an inherited declaration's field and a
+				// `Self`-typed value of this frame compare as the same parameter, while anything not
+				// already typed as `Self` stays rejected.
+				if (parser->current_class == nullptr) {
+					return p_field_type;
+				}
+				FSParser::DataType frame_self = _self_type_parameter_for_class(parser->current_class);
+				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &frame_self);
+			}
+			case SelfFieldLeg::EXACT_DECLARING:
+				break;
+		}
+		if (declaring_class == nullptr) {
+			return _substitute_self_type_parameter_with_bounds(p_field_type);
+		}
+		FSParser::DataType declaring_self = _self_type_for_class(declaring_class);
+		return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &declaring_self);
+	};
+
+	// The construction checks below read the transformed field types, whose `Self` positions are the
+	// receiver contract. The value the construction produces substitutes those fields when the receiver
+	// is not the constructing frame's own, because lowering converts each argument against the payload
+	// schema of the call's own result type and erases a literal `Self` field against the frame's owner
+	// script, which is not the receiver's class. The exact spellings substitute the class the checks
+	// named, so a dynamic argument's runtime conversion enforces the same class the analyzer checked
+	// (`Sub.Message` converts to `Sub`, not to the declaration bound); the receiver-relative base
+	// spelling substitutes the bound instead, since its identity gate admits no dynamic argument.
+	FSParser::DataType case_value_type = type_from_metatype(p_enum_meta_type);
+	if (!p_call->receiver_is_current_self) {
+		for (KeyValue<StringName, FSParser::DataType::EnumCasePayload> &case_payload : case_value_type.enum_case_payloads) {
+			for (int i = 0; i < case_payload.value.field_types.size(); i++) {
+				const FSParser::DataType &payload_field_type = case_payload.value.field_types[i];
+				if (!_datatype_contains_self_type_parameter(payload_field_type)) {
+					continue;
+				}
+				case_payload.value.field_types.write[i] = self_field_leg == SelfFieldLeg::BASE_RECEIVER
+						? _substitute_self_type_parameter_with_bounds(payload_field_type)
+						: payload_field_type_for_spelling(payload_field_type);
+			}
+		}
+	}
 
 	const int expected_count = payload->field_types.size();
 	if (p_call->arguments.size() != expected_count) {
@@ -13044,12 +13238,35 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 
 	bool payload_is_bakeable = true;
 	for (int i = 0; i < expected_count; i++) {
-		const FSParser::DataType field_type = complete_self_referential_enum_type(payload->field_types[i]);
+		const FSParser::DataType field_type =
+				payload_field_type_for_spelling(complete_self_referential_enum_type(payload->field_types[i]));
 		FSParser::ExpressionNode *argument = p_call->arguments[i];
 		// A shorthand in payload position takes its union from the field type, which is only known
 		// here, so it is qualified before the field's own check reads the argument's type. This is what
 		// makes a nested shorthand such as `.Ok(.Ok(1))` resolve.
 		resolve_contextual_enum_case(argument, field_type);
+		if (datatype_contains_self_type_parameter(field_type)) {
+			// A `Self`-bearing payload field is the same receiver contract as a `Self` call parameter,
+			// so it is answered by the shared predicates instead of bound compatibility: the contract
+			// admits `null` for a nullable field and a `final` class's single binding, and identity
+			// admits the receiver expression itself, recursively through unnamed tuple element
+			// positions.
+			update_container_literal_element_types(argument, field_type, true);
+			const FSParser::DataType self_field_argument_type = argument->get_datatype();
+			if (!self_field_argument_type.is_set()) {
+				payload_is_bakeable = false;
+				continue;
+			}
+			if (!self_parameter_contract_admits_argument_type(field_type, self_field_argument_type, p_call) &&
+					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
+				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
+								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument"),
+						argument);
+				payload_is_bakeable = false;
+			}
+			continue;
+		}
 		const FSParser::DataType argument_type = argument->get_datatype();
 		if (!argument_type.is_set()) {
 			payload_is_bakeable = false;

@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 15: Invalid argument 2 for enum case "Message.Attach": should be "T" but is "Receiver".
