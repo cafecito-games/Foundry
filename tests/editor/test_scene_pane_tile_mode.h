@@ -98,6 +98,47 @@ TEST_CASE("[Editor][ScenePaneTileMode] first scene infers mode and manual choice
 	memdelete(tile);
 }
 
+TEST_CASE("[Editor][ScenePaneTileMode] rootless context defers inference until a rooted scene arrives") {
+	EditorData editor_data;
+	EditorSelection selection;
+
+	ScenePaneTile *tile = memnew(ScenePaneTile);
+	tile->setup(20, &selection, editor_data);
+	requested_count = 0;
+	tile->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+
+	EditorSceneContext *rootless_context = memnew(EditorSceneContext);
+	REQUIRE(rootless_context->get_scene_root_node() == nullptr);
+	tile->initialize_scene_editor_mode(rootless_context);
+	CHECK_FALSE(tile->is_scene_editor_mode_initialized());
+	CHECK(requested_count == 0);
+
+	EditorSceneContext *context_3d = memnew(EditorSceneContext);
+	context_3d->set_scene_root_node(memnew(Node3D));
+	tile->initialize_scene_editor_mode(context_3d);
+	CHECK(tile->is_scene_editor_mode_initialized());
+	CHECK(tile->get_scene_editor_mode() == SceneEditorMode::MODE_3D);
+	CHECK(requested_count == 0);
+
+	ScenePaneTile *tile_2d = memnew(ScenePaneTile);
+	tile_2d->setup(21, &selection, editor_data);
+	EditorSceneContext *rootless_first = memnew(EditorSceneContext);
+	tile_2d->initialize_scene_editor_mode(rootless_first);
+	CHECK_FALSE(tile_2d->is_scene_editor_mode_initialized());
+	EditorSceneContext *context_2d = memnew(EditorSceneContext);
+	context_2d->set_scene_root_node(memnew(Node2D));
+	tile_2d->initialize_scene_editor_mode(context_2d);
+	CHECK(tile_2d->is_scene_editor_mode_initialized());
+	CHECK(tile_2d->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+
+	memdelete(context_2d);
+	memdelete(rootless_first);
+	memdelete(tile_2d);
+	memdelete(context_3d);
+	memdelete(rootless_context);
+	memdelete(tile);
+}
+
 TEST_CASE("[Editor][ScenePaneTileMode] layout round-trips mode and missing key stays uninitialized") {
 	EditorData editor_data;
 	EditorSelection selection;

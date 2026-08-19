@@ -252,6 +252,12 @@ void ScenePaneTile::initialize_scene_editor_mode(EditorSceneContext *p_context) 
 	if (scene_editor_mode_initialized || p_context == nullptr) {
 		return;
 	}
+	if (p_context->get_scene_root_node() == nullptr) {
+		// A rootless context (e.g. the startup placeholder scene) carries no
+		// content to infer from; defer initialization until the tile sees a
+		// context with a real scene root.
+		return;
+	}
 	set_scene_editor_mode(
 			p_context->scene_has_3d_content() && scene_mode_switcher->is_3d_enabled()
 					? SceneEditorMode::MODE_3D
