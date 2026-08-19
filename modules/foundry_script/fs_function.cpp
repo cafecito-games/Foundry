@@ -594,6 +594,9 @@ FSStaticSelfContext FSStaticSelfContext::for_script(const Ref<Script> &p_script)
 	}
 	context.kind = SCRIPT;
 	context.script_id = p_script->get_instance_id();
+	if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr())) {
+		context.tuple_slot_specialization = foundry_script->find_tuple_slot_specialization(Vector<ContainerType>()).ptr();
+	}
 	return context;
 }
 
@@ -604,6 +607,9 @@ FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script
 		for (int i = 0; i < p_type_arguments.size(); i++) {
 			context.type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
 		}
+		if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr())) {
+			context.tuple_slot_specialization = foundry_script->find_tuple_slot_specialization(p_type_arguments).ptr();
+		}
 	}
 	return context;
 }
@@ -612,6 +618,9 @@ FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script
 	FSStaticSelfContext context = for_script(p_script);
 	if (context.kind == SCRIPT) {
 		context.type_arguments = p_type_arguments;
+		if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr())) {
+			context.tuple_slot_specialization = foundry_script->find_tuple_slot_specialization(context.get_type_arguments()).ptr();
+		}
 	}
 	return context;
 }
@@ -666,6 +675,7 @@ void FSStaticSelfContext::clear() {
 	script_id = ObjectID();
 	type_arguments.clear();
 	builtin_type = Variant::NIL;
+	tuple_slot_specialization = nullptr;
 }
 
 bool FSStaticSelfContext::operator==(const FSStaticSelfContext &p_other) const {
@@ -892,6 +902,10 @@ const FSDataType *FSFunction::get_predecoded_tuple_shape_for_constant(int p_cons
 	}
 	const int shape_index = _predecoded_tuple_shape_indices_ptr[p_constant_index];
 	return shape_index < 0 ? nullptr : &_predecoded_tuple_shapes_ptr[shape_index];
+}
+
+const FSDataType *FSFunction::get_specialized_tuple_shape_for_constant(const FSTupleSlotSpecialization *p_specialization, int p_constant_index) const {
+	return p_specialization == nullptr ? nullptr : p_specialization->get_shape(this, p_constant_index);
 }
 #endif // TOOLS_ENABLED
 

@@ -6495,6 +6495,7 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 	p_script->_static_default_init();
 
 	p_script->valid = true;
+	p_script->intern_tuple_slot_specialization();
 	return OK;
 }
 

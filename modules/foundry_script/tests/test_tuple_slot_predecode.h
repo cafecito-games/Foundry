@@ -143,13 +143,16 @@ TEST_CASE("[FoundryScript][TupleStore] A shape that names the receiver keeps the
 	REQUIRE(anchor != script->get_subclasses().end());
 
 	// Each of these does store through a tuple descriptor -- otherwise "nothing was predecoded" would
-	// be true for the uninteresting reason that there is nothing to predecode.
+	// be true for the uninteresting reason that there is nothing to predecode. The independent table
+	// stays empty; the function records the descriptor as specialization-dependent instead.
 	auto check_dependent = [](const Ref<FoundryScript> &p_owner, const StringName &p_function_name) {
 		CAPTURE(String(p_function_name));
 		CHECK_FALSE(filter_disassembly_lines(
 				disassemble_test_function(p_owner, p_function_name), "assign typed tuple")
 						.is_empty());
-		CHECK(predecode_test_function(p_owner, p_function_name)->get_predecoded_tuple_shape_count() == 0);
+		const FSFunction *function = predecode_test_function(p_owner, p_function_name);
+		CHECK(function->get_predecoded_tuple_shape_count() == 0);
+		CHECK(function->get_dependent_tuple_descriptor_count() == 1);
 	};
 	check_dependent(crate->value, SNAME("direct_parameter"));
 	check_dependent(crate->value, SNAME("nested_parameter"));
@@ -270,6 +273,260 @@ TEST_CASE("[FoundryScript][TupleStore] A slot shape loaded from compiled bytecod
 	source.push_back("one");
 	const Variant argument = source;
 	const Variant *arguments[1] = { &argument };
+	const Array stored = instance->callp(SNAME("keep"), arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(stored.size() == 2);
+	CHECK(int(stored[0]) == 1);
+	CHECK(String(stored[1]) == "one");
+	CHECK(stored.is_read_only());
+}
+
+static FSInstance *tuple_slot_test_instance(const Variant &p_value) {
+	Object *object = p_value;
+	REQUIRE(object != nullptr);
+	ScriptInstance *instance = object->get_script_instance();
+	REQUIRE(instance != nullptr);
+	return static_cast<FSInstance *>(instance);
+}
+
+static ContainerType tuple_slot_builtin_type(Variant::Type p_builtin_type) {
+	ContainerType type;
+	type.builtin_type = p_builtin_type;
+	return type;
+}
+
+static Vector<ContainerType> tuple_slot_one_argument(Variant::Type p_builtin_type) {
+	Vector<ContainerType> arguments;
+	arguments.push_back(tuple_slot_builtin_type(p_builtin_type));
+	return arguments;
+}
+
+static const FSDataType *only_specialized_tuple_shape(const FSFunction *p_function, const FSTupleSlotSpecialization *p_specialization) {
+	const FSDataType *found = nullptr;
+	for (int constant_index = 0; constant_index < p_function->get_constants_count(); constant_index++) {
+		const FSDataType *shape = p_function->get_specialized_tuple_shape_for_constant(p_specialization, constant_index);
+		if (shape != nullptr) {
+			CHECK(found == nullptr);
+			found = shape;
+		}
+	}
+	return found;
+}
+
+static Variant construct_specialized_crate(const Ref<FoundryScript> &p_crate, const Vector<ContainerType> &p_type_arguments) {
+	Callable::CallError call_error;
+	const Variant constructed = p_crate->_new_specialized(nullptr, -1, p_type_arguments, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	return constructed;
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A specialized dependent slot is answered from the specialization cache") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> (int, T):\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	CHECK(keep->get_predecoded_tuple_shape_count() == 0);
+	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
+
+	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
+	const Variant string_crate = construct_specialized_crate(crate->value, string_arguments);
+	const FSTupleSlotSpecialization *string_specialization =
+			crate->value->find_tuple_slot_specialization(string_arguments).ptr();
+	REQUIRE(string_specialization != nullptr);
+	CHECK(tuple_slot_test_instance(string_crate)->get_type_arguments() == string_arguments);
+
+	const FSDataType *shape = only_specialized_tuple_shape(keep, string_specialization);
+	REQUIRE(shape != nullptr);
+	REQUIRE(shape->container_element_types.size() == 2);
+	CHECK(shape->container_element_types[0].builtin_type == Variant::INT);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
+
+	Array source;
+	source.push_back(7);
+	source.push_back("seven");
+	const Variant accepted_argument = source;
+	const Variant *accepted_arguments[1] = { &accepted_argument };
+	Callable::CallError call_error;
+	Object *instance = string_crate;
+	const Array stored = instance->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(stored.size() == 2);
+	CHECK(int(stored[0]) == 7);
+	CHECK(String(stored[1]) == "seven");
+	CHECK(stored.is_read_only());
+	CHECK_FALSE(stored.is_typed());
+}
+
+TEST_CASE("[FoundryScript][TupleStore] Two specializations of one function do not share a shape") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> void:\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\n"
+			"\tfunc nested(value) -> void:\n"
+			"\t\tvar kept: (int, (String, T)) = value\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	const FSFunction *nested = predecode_test_function(crate->value, SNAME("nested"));
+
+	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
+	const Vector<ContainerType> int_arguments = tuple_slot_one_argument(Variant::INT);
+	construct_specialized_crate(crate->value, string_arguments);
+	construct_specialized_crate(crate->value, int_arguments);
+
+	const FSTupleSlotSpecialization *string_specialization =
+			crate->value->find_tuple_slot_specialization(string_arguments).ptr();
+	const FSTupleSlotSpecialization *int_specialization =
+			crate->value->find_tuple_slot_specialization(int_arguments).ptr();
+	REQUIRE(string_specialization != nullptr);
+	REQUIRE(int_specialization != nullptr);
+	CHECK(string_specialization != int_specialization);
+
+	const FSDataType *string_shape = only_specialized_tuple_shape(keep, string_specialization);
+	const FSDataType *int_shape = only_specialized_tuple_shape(keep, int_specialization);
+	REQUIRE(string_shape != nullptr);
+	REQUIRE(int_shape != nullptr);
+	CHECK(string_shape != int_shape);
+	CHECK(string_shape->container_element_types[1].builtin_type == Variant::STRING);
+	CHECK(int_shape->container_element_types[1].builtin_type == Variant::INT);
+
+	const FSDataType *nested_string = only_specialized_tuple_shape(nested, string_specialization);
+	REQUIRE(nested_string != nullptr);
+	REQUIRE(nested_string->container_element_types.size() == 2);
+	REQUIRE(nested_string->container_element_types[1].container_element_types.size() == 2);
+	CHECK(nested_string->container_element_types[1].container_element_types[1].builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[FoundryScript][TupleStore] An unspecialized receiver stays on the per-execution path") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> (int, T):\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
+	CHECK(crate->value->find_tuple_slot_specialization(Vector<ContainerType>()).is_null());
+
+	Callable::CallError call_error;
+	const Variant raw = crate->value->_new(nullptr, -1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	CHECK(crate->value->find_tuple_slot_specialization(Vector<ContainerType>()).is_null());
+	CHECK(only_specialized_tuple_shape(keep, crate->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr()) == nullptr);
+
+	Array source;
+	source.push_back(1);
+	source.push_back("anything");
+	const Variant argument = source;
+	const Variant *arguments[1] = { &argument };
+	Object *instance = raw;
+	const Array stored = instance->callp(SNAME("keep"), arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(stored.size() == 2);
+	CHECK(int(stored[0]) == 1);
+	CHECK(String(stored[1]) == "anything");
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A Self-dependent slot is cached per specialization") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Anchor:\n"
+			"\tfunc keep(value: (int, Self)) -> (int, Self):\n"
+			"\t\tvar kept: (int, Self) = value\n"
+			"\t\treturn kept\n"
+			"\n"
+			"\tfunc nested(value: (int, (String, Self))) -> void:\n"
+			"\t\tvar kept: (int, (String, Self)) = value\n"
+			"\n"
+			"class Derived extends Anchor:\n"
+			"\tpass\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator anchor = script->get_subclasses().find(SNAME("Anchor"));
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator derived = script->get_subclasses().find(SNAME("Derived"));
+	REQUIRE(anchor != script->get_subclasses().end());
+	REQUIRE(derived != script->get_subclasses().end());
+
+	const FSFunction *keep = predecode_test_function(anchor->value, SNAME("keep"));
+	CHECK(keep->get_predecoded_tuple_shape_count() == 0);
+	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
+
+	const FSTupleSlotSpecialization *anchor_specialization =
+			anchor->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr();
+	const FSTupleSlotSpecialization *derived_specialization =
+			derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr();
+	REQUIRE(anchor_specialization != nullptr);
+	REQUIRE(derived_specialization != nullptr);
+	CHECK(anchor_specialization != derived_specialization);
+
+	const FSDataType *anchor_shape = only_specialized_tuple_shape(keep, anchor_specialization);
+	const FSDataType *derived_shape = only_specialized_tuple_shape(keep, derived_specialization);
+	REQUIRE(anchor_shape != nullptr);
+	REQUIRE(derived_shape != nullptr);
+	CHECK(anchor_shape != derived_shape);
+	CHECK(anchor_shape->container_element_types[1].to_container_type().script == Ref<Script>(anchor->value));
+	CHECK(derived_shape->container_element_types[1].to_container_type().script == Ref<Script>(derived->value));
+
+	const FSFunction *nested = predecode_test_function(anchor->value, SNAME("nested"));
+	const FSDataType *nested_shape = only_specialized_tuple_shape(nested, anchor_specialization);
+	REQUIRE(nested_shape != nullptr);
+	REQUIRE(nested_shape->container_element_types[1].container_element_types.size() == 2);
+	CHECK(nested_shape->container_element_types[1].container_element_types[1].to_container_type().script == Ref<Script>(anchor->value));
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A specialized dependent slot loaded from compiled bytecode is cached too") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> (int, T):\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n");
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator original_crate = original->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(original_crate != original->get_subclasses().end());
+	CHECK(predecode_test_function(original_crate->value, SNAME("keep"))->get_dependent_tuple_descriptor_count() == 1);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	const String script_path = original->get_script_path();
+	REQUIRE(DirAccess::remove_absolute(script_path) == OK);
+
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	REQUIRE(restored->is_valid());
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = restored->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != restored->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	CHECK(keep->get_predecoded_tuple_shape_count() == 0);
+	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
+
+	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
+	const Variant string_crate = construct_specialized_crate(crate->value, string_arguments);
+	const FSDataType *shape = only_specialized_tuple_shape(keep, crate->value->find_tuple_slot_specialization(string_arguments).ptr());
+	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
+
+	Array source;
+	source.push_back(1);
+	source.push_back("one");
+	const Variant argument = source;
+	const Variant *arguments[1] = { &argument };
+	Callable::CallError call_error;
+	Object *instance = string_crate;
 	const Array stored = instance->callp(SNAME("keep"), arguments, 1, call_error);
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
 	REQUIRE(stored.size() == 2);

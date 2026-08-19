@@ -282,6 +282,9 @@ Ref<FSSpecializedClassHandle> FSSpecializedClassHandle::create(const Ref<Foundry
 	for (int i = 0; i < p_type_arguments.size(); i++) {
 		handle->type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
 	}
+	if (p_script.is_valid()) {
+		p_script->intern_tuple_slot_specialization(p_type_arguments);
+	}
 	return handle;
 }
 
@@ -1032,6 +1035,7 @@ FSInstance *FoundryScript::_create_instance(const Variant **p_args, int p_argcou
 	if (p_type_arguments != nullptr) {
 		instance->type_arguments = *p_type_arguments;
 	}
+	instance->tuple_slot_specialization = get_or_create_tuple_slot_specialization(instance->type_arguments);
 #ifdef DEBUG_ENABLED
 	//needed for hot reloading
 	for (const KeyValue<StringName, MemberInfo> &E : member_indices) {
@@ -2462,6 +2466,43 @@ bool FoundryScript::project_type_arguments_onto_base(const Ref<Script> &p_base, 
 	return true;
 }
 
+Ref<FSTupleSlotSpecialization> FoundryScript::find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const {
+	MutexLock lock(tuple_slot_specialization_mutex);
+	for (const Ref<FSTupleSlotSpecialization> &existing : tuple_slot_specializations) {
+		if (existing.is_valid() && existing->type_arguments == p_type_arguments) {
+			return existing;
+		}
+	}
+	return Ref<FSTupleSlotSpecialization>();
+}
+
+Ref<FSTupleSlotSpecialization> FoundryScript::get_or_create_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) {
+	{
+		Ref<FSTupleSlotSpecialization> existing = find_tuple_slot_specialization(p_type_arguments);
+		if (existing.is_valid()) {
+			return existing;
+		}
+	}
+
+	Ref<FSTupleSlotSpecialization> created = FSTupleSlotSpecialization::create(this, p_type_arguments);
+	if (created.is_null()) {
+		return Ref<FSTupleSlotSpecialization>();
+	}
+
+	MutexLock lock(tuple_slot_specialization_mutex);
+	for (const Ref<FSTupleSlotSpecialization> &existing : tuple_slot_specializations) {
+		if (existing.is_valid() && existing->type_arguments == p_type_arguments) {
+			return existing;
+		}
+	}
+	tuple_slot_specializations.push_back(created);
+	return created;
+}
+
+void FoundryScript::intern_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) {
+	get_or_create_tuple_slot_specialization(p_type_arguments);
+}
+
 FoundryScript *FoundryScript::find_class(const String &p_qualified_name) {
 	String first = p_qualified_name.get_slice("::", 0);
 
@@ -2822,6 +2863,8 @@ void FoundryScript::clear() {
 	// half-constructed instances. This matters for scripts that outlive language shutdown through
 	// a stale Ref or ResourceCache entry and get handed out again by a later cache-hit load.
 	valid = false;
+
+	tuple_slot_specializations.clear();
 
 	RBSet<FSFunction *> functions_to_clear;
 
