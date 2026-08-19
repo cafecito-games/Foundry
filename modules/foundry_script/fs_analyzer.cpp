@@ -13160,8 +13160,16 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				// The class-handle spelling is exact: `Self` substitutes to the named class and the
 				// diagnostic keeps naming it.
 				return substitute_member_type(p_field_type, union_base_type, nullptr, nullptr);
-			case SelfFieldLeg::LITERAL_SELF:
-				return p_field_type;
+			case SelfFieldLeg::LITERAL_SELF: {
+				// Rebound to the frame class's own `Self` so an inherited declaration's field and a
+				// `Self`-typed value of this frame compare as the same parameter, while anything not
+				// already typed as `Self` stays rejected.
+				if (parser->current_class == nullptr) {
+					return p_field_type;
+				}
+				FSParser::DataType frame_self = _self_type_parameter_for_class(parser->current_class);
+				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &frame_self);
+			}
 			case SelfFieldLeg::EXACT_DECLARING:
 				break;
 		}
