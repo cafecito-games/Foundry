@@ -5167,7 +5167,8 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 									   initializer_type.to_string(),
 									   p_kind,
 									   p_assignable->identifier->name,
-									   specified_type.to_string()),
+									   specified_type.to_string()) +
+									FSParser::DataType::same_rendered_name_clause(initializer_type, "value", specified_type, "specified type"),
 							p_assignable->initializer);
 				}
 			} else if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
@@ -5222,7 +5223,8 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 										   initializer_type.to_string(),
 										   p_kind,
 										   p_assignable->identifier->name,
-										   specified_type.to_string()),
+										   specified_type.to_string()) +
+										FSParser::DataType::same_rendered_name_clause(initializer_type, "value", specified_type, "specified type"),
 								p_assignable->initializer);
 					}
 				}
@@ -6288,7 +6290,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 			if (!self_container_literal_validated && (!result.is_hard_type() || !_datatype_matches_self_return_contract(expected_type, result))) {
 				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
 								   result.to_string(),
-								   expected_type.to_string()),
+								   expected_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(result, "returned value", expected_type, "return type"),
 						p_return);
 			}
 			p_return->set_datatype(result);
@@ -6324,7 +6327,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 				} else {
 					push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
 									   result.to_string(),
-									   expected_type.to_string()),
+									   expected_type.to_string()) +
+									FSParser::DataType::same_rendered_name_clause(result, "returned value", expected_type, "return type"),
 							p_return);
 				}
 			}
@@ -7178,7 +7182,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 				mark_node_unsafe(p_assignment);
 				push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
 								   assigned_value_type.to_string(),
-								   assignee_type.to_string()),
+								   assignee_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(assigned_value_type, "value", assignee_type, "variable's type"),
 						p_assignment->assigned_value);
 			}
 		} else if (assignee_is_hard && !assigned_is_hard) {
@@ -7261,7 +7266,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 						} else {
 							push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
 											   assigned_value_type.to_string(),
-											   assignee_type.to_string()),
+											   assignee_type.to_string()) +
+											FSParser::DataType::same_rendered_name_clause(assigned_value_type, "value", assignee_type, "variable's type"),
 									p_assignment->assigned_value);
 						}
 					}
@@ -8548,7 +8554,9 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 									   operand_is_union_to_int ? op_type.enum_type : cast_type.enum_type),
 							p_cast->cast_type);
 				} else {
-					push_error(vformat(R"(Invalid cast. Cannot convert from "%s" to "%s".)", op_type.to_string(), cast_type.to_string()), p_cast->cast_type);
+					push_error(vformat(R"(Invalid cast. Cannot convert from "%s" to "%s".)", op_type.to_string(), cast_type.to_string()) +
+									FSParser::DataType::same_rendered_name_clause(op_type, "operand's type", cast_type, "cast target type"),
+							p_cast->cast_type);
 				}
 			}
 		}
@@ -12593,7 +12601,8 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 		}
 		if (!is_type_compatible(field_type, argument_type, true, nullptr, argument)) {
 			push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
-							   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()),
+							   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()) +
+							FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument"),
 					argument);
 			continue;
 		}
@@ -12974,7 +12983,8 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		}
 		if (!is_type_compatible(field_type, argument_type, true, nullptr, argument)) {
 			push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
-							   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), argument_type.to_string()),
+							   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), argument_type.to_string()) +
+							FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", argument_type, "argument"),
 					argument);
 			payload_is_bakeable = false;
 			continue;

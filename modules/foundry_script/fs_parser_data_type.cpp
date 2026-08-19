@@ -444,6 +444,56 @@ String FSParser::DataType::to_string_diagnostic() const {
 	return to_string();
 }
 
+String FSParser::DataType::declaring_script_path() const {
+	switch (kind) {
+		case CLASS: {
+			if (!script_path.is_empty()) {
+				return script_path;
+			}
+			if (class_type != nullptr) {
+				// A class fqcn's leading segment is the canonicalized declaring path; everything from
+				// the first `::` onward is declared name.
+				return class_type->fqcn.get_slice("::", 0);
+			}
+			return String();
+		}
+		case SCRIPT: {
+			if (!script_path.is_empty()) {
+				return script_path;
+			}
+			if (script_type.is_valid()) {
+				return script_type->get_path();
+			}
+			return String();
+		}
+		default:
+			return String();
+	}
+}
+
+String FSParser::DataType::same_rendered_name_clause(const DataType &p_first, const String &p_first_subject, const DataType &p_second, const String &p_second_subject) {
+	const String first_path = p_first.declaring_script_path();
+	const String second_path = p_second.declaring_script_path();
+	if (first_path.is_empty() || second_path.is_empty()) {
+		return String();
+	}
+	if (FoundryScript::is_canonically_equal_paths(first_path, second_path)) {
+		return String();
+	}
+	if (p_first.to_string_diagnostic() != p_second.to_string_diagnostic()) {
+		return String();
+	}
+	const String first_reference = fs_diagnostic_file_reference(first_path);
+	const String second_reference = fs_diagnostic_file_reference(second_path);
+	if (first_reference == second_reference) {
+		// Both spellings fell back to the same basename (neither file localizes under a resource
+		// root), so the clause would repeat the colliding name twice and disambiguate nothing.
+		return String();
+	}
+	return vformat(R"( The %s is declared in "%s"; the %s is declared in "%s".)",
+			p_first_subject, first_reference, p_second_subject, second_reference);
+}
+
 FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings,
 		bool p_mark_substituted_self) {
 	if (p_type.kind == TYPE_PARAMETER) {
