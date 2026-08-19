@@ -471,27 +471,145 @@ String FSParser::DataType::declaring_script_path() const {
 	}
 }
 
+static bool _slot_is_self_type_parameter(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.type_parameter_name == SNAME("@Self");
+}
+
+// Finds the first parallel slot where exactly one side still reads `Self` while the other carries a
+// concrete binding in its place: a named composite type (`tuple Pair(index: int, owner: Self)`)
+// renders only its declared name, so a value whose `Self` positions were substituted at construction
+// contrasts against the declaration as two identical spellings. Walks only lists whose sizes match —
+// a size mismatch means the two sides differ structurally, which is not this clause's collision.
+// `r_bound_slot` receives the concrete type standing where the other side reads `Self`, and
+// `r_field_name` the innermost enclosing tuple field name when there is one.
+static bool _find_divergent_self_binding(const FSParser::DataType &p_first, const FSParser::DataType &p_second,
+		bool &r_first_side_is_self, FSParser::DataType &r_bound_slot, StringName &r_field_name) {
+	const bool first_is_self = _slot_is_self_type_parameter(p_first);
+	const bool second_is_self = _slot_is_self_type_parameter(p_second);
+	if (first_is_self != second_is_self) {
+		r_first_side_is_self = first_is_self;
+		r_bound_slot = first_is_self ? p_second : p_first;
+		return true;
+	}
+	if (first_is_self) {
+		// Both sides read `Self`; there is no binding to contrast at this slot.
+		return false;
+	}
+	if (p_first.kind != p_second.kind) {
+		return false;
+	}
+	// Two distinct nominal declarations can share a displayed name, so pairing their slots
+	// positionally would describe one declaration's slot with the other's type; the incompatibility
+	// is then the outer identities, not any `Self` binding. Require the same nominal identity, per
+	// kind as `operator==` defines it, before descending.
+	switch (p_first.kind) {
+		case FSParser::DataType::TUPLE: {
+			// A named tuple's nominal identity is its class-qualified `native_type` plus declaring
+			// `script_path`; the field layout must also line up for slots to pair positionally.
+			if (p_first.tuple_name != p_second.tuple_name || p_first.tuple_field_names != p_second.tuple_field_names ||
+					p_first.native_type != p_second.native_type || p_first.script_path != p_second.script_path) {
+				return false;
+			}
+		} break;
+		case FSParser::DataType::CLASS: {
+			const bool same_class = p_first.class_type == p_second.class_type ||
+					(p_first.class_type != nullptr && p_second.class_type != nullptr &&
+							p_first.class_type->fqcn == p_second.class_type->fqcn);
+			if (!same_class) {
+				return false;
+			}
+		} break;
+		case FSParser::DataType::SCRIPT: {
+			if (p_first.script_type != p_second.script_type || p_first.script_path != p_second.script_path) {
+				return false;
+			}
+		} break;
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::ENUM: {
+			if (p_first.native_type != p_second.native_type) {
+				return false;
+			}
+		} break;
+		default:
+			break;
+	}
+	if (p_first.container_element_types.size() == p_second.container_element_types.size()) {
+		for (int i = 0; i < p_first.container_element_types.size(); i++) {
+			if (_find_divergent_self_binding(p_first.container_element_types[i], p_second.container_element_types[i],
+						r_first_side_is_self, r_bound_slot, r_field_name)) {
+				if (r_field_name == StringName() && p_first.kind == FSParser::DataType::TUPLE &&
+						i < p_first.tuple_field_names.size()) {
+					r_field_name = p_first.tuple_field_names[i];
+				}
+				return true;
+			}
+		}
+	}
+	if (p_first.type_arguments.size() == p_second.type_arguments.size()) {
+		for (int i = 0; i < p_first.type_arguments.size(); i++) {
+			if (_find_divergent_self_binding(p_first.type_arguments[i], p_second.type_arguments[i],
+						r_first_side_is_self, r_bound_slot, r_field_name)) {
+				return true;
+			}
+		}
+	}
+	if (p_first.method_parameter_types.size() == p_second.method_parameter_types.size()) {
+		for (int i = 0; i < p_first.method_parameter_types.size(); i++) {
+			if (_find_divergent_self_binding(p_first.method_parameter_types[i], p_second.method_parameter_types[i],
+						r_first_side_is_self, r_bound_slot, r_field_name)) {
+				return true;
+			}
+		}
+	}
+	if (p_first.method_return_type.size() == p_second.method_return_type.size()) {
+		for (int i = 0; i < p_first.method_return_type.size(); i++) {
+			if (_find_divergent_self_binding(p_first.method_return_type[i], p_second.method_return_type[i],
+						r_first_side_is_self, r_bound_slot, r_field_name)) {
+				return true;
+			}
+		}
+	}
+	if (p_first.method_rest_parameter_type.size() == p_second.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_first.method_rest_parameter_type.size(); i++) {
+			if (_find_divergent_self_binding(p_first.method_rest_parameter_type[i], p_second.method_rest_parameter_type[i],
+						r_first_side_is_self, r_bound_slot, r_field_name)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 String FSParser::DataType::same_rendered_name_clause(const DataType &p_first, const String &p_first_subject, const DataType &p_second, const String &p_second_subject) {
-	const String first_path = p_first.declaring_script_path();
-	const String second_path = p_second.declaring_script_path();
-	if (first_path.is_empty() || second_path.is_empty()) {
-		return String();
-	}
-	if (FoundryScript::is_canonically_equal_paths(first_path, second_path)) {
-		return String();
-	}
 	if (p_first.to_string_diagnostic() != p_second.to_string_diagnostic()) {
 		return String();
 	}
-	const String first_reference = fs_diagnostic_file_reference(first_path);
-	const String second_reference = fs_diagnostic_file_reference(second_path);
-	if (first_reference == second_reference) {
+	const String first_path = p_first.declaring_script_path();
+	const String second_path = p_second.declaring_script_path();
+	if (!first_path.is_empty() && !second_path.is_empty() &&
+			!FoundryScript::is_canonically_equal_paths(first_path, second_path)) {
+		const String first_reference = fs_diagnostic_file_reference(first_path);
+		const String second_reference = fs_diagnostic_file_reference(second_path);
+		if (first_reference != second_reference) {
+			return vformat(R"( The %s is declared in "%s"; the %s is declared in "%s".)",
+					p_first_subject, first_reference, p_second_subject, second_reference);
+		}
 		// Both spellings fell back to the same basename (neither file localizes under a resource
-		// root), so the clause would repeat the colliding name twice and disambiguate nothing.
-		return String();
+		// root), so a file clause would repeat the colliding name twice and disambiguate nothing.
 	}
-	return vformat(R"( The %s is declared in "%s"; the %s is declared in "%s".)",
-			p_first_subject, first_reference, p_second_subject, second_reference);
+	// Same declaration on both sides: the spellings can still collide when they differ only in their
+	// `Self` binding, because a named composite renders its declared name without its slots.
+	bool first_side_is_self = false;
+	DataType bound_slot;
+	StringName field_name;
+	if (_find_divergent_self_binding(p_first, p_second, first_side_is_self, bound_slot, field_name)) {
+		const String &self_subject = first_side_is_self ? p_first_subject : p_second_subject;
+		const String &bound_subject = first_side_is_self ? p_second_subject : p_first_subject;
+		const String position = field_name == StringName() ? String("in its place") : vformat(R"(as field "%s")", field_name);
+		return vformat(R"( The %s's "Self" stands for the exact receiver at this use; the %s has "%s" %s.)",
+				self_subject, bound_subject, bound_slot.to_string_diagnostic(), position);
+	}
+	return String();
 }
 
 FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings,

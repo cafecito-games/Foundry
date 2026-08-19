@@ -338,9 +338,13 @@ public:
 		// contrasts them reads self-contradictorily ("cannot assign helper.fs ... expected helper.fs").
 		// When the two rendered names are equal while the declaring files differ, this returns a
 		// disambiguating clause (beginning with a single space) that names both declaring files; sites
-		// append it to the base message with plain `+`. Returns an empty string when the names differ,
-		// the files are the same, either side has no declaring file, or both file references collapse
-		// to the same basename (the clause would then repeat the colliding name and help nobody).
+		// append it to the base message with plain `+`. When the rendered names are equal and no file
+		// clause applies, the sides can still differ only in their `Self` binding — a named composite
+		// (`tuple Pair(index: int, owner: Self)`) renders its declared name without its slots, so a
+		// declaration that reads `Self` contrasts identically against a value whose `Self` was already
+		// substituted with a receiver's class ("should be Pair but is Pair"); that collision returns a
+		// clause naming the side that keeps `Self` and the concrete type the other side carries in its
+		// place. Returns an empty string when the names differ or neither clause can disambiguate.
 		static String same_rendered_name_clause(const DataType &p_first, const String &p_first_subject, const DataType &p_second, const String &p_second_subject);
 		_FORCE_INLINE_ String to_string_strict() const { return is_hard_type() ? to_string() : "Variant"; }
 		PropertyInfo to_property_info(const String &p_name) const;
