@@ -202,6 +202,35 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause omits th
 			String(R"( The parameter's "Self" stands for the exact receiver at this use; the argument has "Node" in its place.)"));
 }
 
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause finds a Self binding in a callable rest slot") {
+	// A variadic callable's rest slot is a supported `Self` position, so a named tuple field holding
+	// such a callable must not retain the contradictory rendering.
+	FSParser::DataType expected_callable;
+	expected_callable.kind = FSParser::DataType::BUILTIN;
+	expected_callable.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	expected_callable.builtin_type = Variant::CALLABLE;
+	FSParser::DataType actual_callable = expected_callable;
+	expected_callable.set_method_rest_parameter_type(self_type_parameter());
+	actual_callable.set_method_rest_parameter_type(native_data_type(StringName("Node")));
+	FSParser::DataType expected = named_tuple_data_type(StringName("Pair"), expected_callable);
+	FSParser::DataType actual = named_tuple_data_type(StringName("Pair"), actual_callable);
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"),
+			String(R"( The parameter's "Self" stands for the exact receiver at this use; the argument has "Node" as field "owner".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause does not descend across distinct wrapper declarations") {
+	// Two same-basename scripts outside every resource root render identically and their file
+	// references collapse, so neither the file clause nor the Self clause may fire: the wrapper
+	// identities differ, and that — not any nested Self binding — is the incompatibility.
+	FSParser::DataType expected = data_type_for_script_path("/x/a/helper.fs");
+	expected.method_parameter_types.push_back(self_type_parameter());
+	FSParser::DataType actual = data_type_for_script_path("/y/b/helper.fs");
+	actual.method_parameter_types.push_back(native_data_type(StringName("Node")));
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"), String());
+}
+
 TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause finds a Self binding inside a type argument") {
 	FSParser::DataType expected = native_data_type(StringName("Box"));
 	expected.add_type_argument(self_type_parameter());

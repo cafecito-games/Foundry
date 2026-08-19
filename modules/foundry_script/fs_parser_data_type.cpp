@@ -498,14 +498,40 @@ static bool _find_divergent_self_binding(const FSParser::DataType &p_first, cons
 	if (p_first.kind != p_second.kind) {
 		return false;
 	}
-	if (p_first.kind == FSParser::DataType::TUPLE &&
-			(p_first.tuple_name != p_second.tuple_name || p_first.tuple_field_names != p_second.tuple_field_names ||
-					p_first.native_type != p_second.native_type || p_first.script_path != p_second.script_path)) {
-		// Two distinct named tuples can share a displayed name — and even a field layout — so pairing
-		// their slots positionally would describe one declaration's field with the other's type. A
-		// named tuple's nominal identity is its class-qualified `native_type` plus declaring
-		// `script_path` (see `operator==`); only the same declaration is comparable slot by slot.
-		return false;
+	// Two distinct nominal declarations can share a displayed name, so pairing their slots
+	// positionally would describe one declaration's slot with the other's type; the incompatibility
+	// is then the outer identities, not any `Self` binding. Require the same nominal identity, per
+	// kind as `operator==` defines it, before descending.
+	switch (p_first.kind) {
+		case FSParser::DataType::TUPLE: {
+			// A named tuple's nominal identity is its class-qualified `native_type` plus declaring
+			// `script_path`; the field layout must also line up for slots to pair positionally.
+			if (p_first.tuple_name != p_second.tuple_name || p_first.tuple_field_names != p_second.tuple_field_names ||
+					p_first.native_type != p_second.native_type || p_first.script_path != p_second.script_path) {
+				return false;
+			}
+		} break;
+		case FSParser::DataType::CLASS: {
+			const bool same_class = p_first.class_type == p_second.class_type ||
+					(p_first.class_type != nullptr && p_second.class_type != nullptr &&
+							p_first.class_type->fqcn == p_second.class_type->fqcn);
+			if (!same_class) {
+				return false;
+			}
+		} break;
+		case FSParser::DataType::SCRIPT: {
+			if (p_first.script_type != p_second.script_type || p_first.script_path != p_second.script_path) {
+				return false;
+			}
+		} break;
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::ENUM: {
+			if (p_first.native_type != p_second.native_type) {
+				return false;
+			}
+		} break;
+		default:
+			break;
 	}
 	if (p_first.container_element_types.size() == p_second.container_element_types.size()) {
 		for (int i = 0; i < p_first.container_element_types.size(); i++) {
@@ -538,6 +564,14 @@ static bool _find_divergent_self_binding(const FSParser::DataType &p_first, cons
 	if (p_first.method_return_type.size() == p_second.method_return_type.size()) {
 		for (int i = 0; i < p_first.method_return_type.size(); i++) {
 			if (_find_divergent_self_binding(p_first.method_return_type[i], p_second.method_return_type[i],
+						r_first_side_is_self, r_bound_slot, r_field_name)) {
+				return true;
+			}
+		}
+	}
+	if (p_first.method_rest_parameter_type.size() == p_second.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_first.method_rest_parameter_type.size(); i++) {
+			if (_find_divergent_self_binding(p_first.method_rest_parameter_type[i], p_second.method_rest_parameter_type[i],
 						r_first_side_is_self, r_bound_slot, r_field_name)) {
 				return true;
 			}
