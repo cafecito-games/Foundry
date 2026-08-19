@@ -730,6 +730,16 @@ TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle still publish
 			keep, crate->value->find_tuple_slot_specialization(int_arguments).ptr());
 	REQUIRE(shape != nullptr);
 	CHECK(shape->container_element_types[1].builtin_type == Variant::INT);
+
+	// Soft reload reuses the inner-class objects and leaves `Crate.valid == true` while
+	// `_prepare_compilation` has already deleted its functions. The memo must not record that
+	// empty walk as a sticky negative, or the cache stays off for the rest of the process.
+	REQUIRE(script->reload(true) == OK);
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded_crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(reloaded_crate != script->get_subclasses().end());
+	const Vector<ContainerType> reloaded_arguments =
+			specialized_handle_type_arguments(class_constant(script, SNAME("Holder"), SNAME("CRATE")));
+	CHECK(reloaded_crate->value->find_tuple_slot_specialization(reloaded_arguments).is_valid());
 }
 
 TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle loaded from compiled bytecode is cached too") {
@@ -794,11 +804,15 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 	REQUIRE(derived != derived_script->get_subclasses().end());
 
 	const FSFunction *keep_before = predecode_test_function(crate->value, SNAME("keep"));
-	const FSDataType *shape_before = only_specialized_tuple_shape(
-			keep_before, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
+	const Ref<FSTupleSlotSpecialization> derived_shapes =
+			derived->value->find_tuple_slot_specialization(Vector<ContainerType>());
+	REQUIRE(derived_shapes.is_valid());
+	const FSDataType *shape_before = only_specialized_tuple_shape(keep_before, derived_shapes.ptr());
 	REQUIRE(shape_before != nullptr);
 	CHECK(shape_before->container_element_types[0].builtin_type == Variant::INT);
 	CHECK(shape_before->container_element_types[1].builtin_type == Variant::INT);
+	const int keep_before_constant_count = keep_before->get_constants_count();
+	const uintptr_t keep_before_address = reinterpret_cast<uintptr_t>(keep_before);
 
 	Callable::CallError call_error;
 	const Variant derived_owner = derived->value->_new(nullptr, -1, call_error);
@@ -820,15 +834,22 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not se
 			"\tfunc keep(value) -> Variant:\n"
 			"\t\tvar kept: (String, T) = value\n"
 			"\t\treturn kept\n");
+	// Reloading a preloaded base while a dependent file is already compiled emits a
+	// pre-existing analyzer phase-order diagnostic; the reload itself still succeeds.
+	ERR_PRINT_OFF;
 	REQUIRE(base->reload() == OK);
+	ERR_PRINT_ON;
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded_crate = base->get_subclasses().find(SNAME("Crate"));
 	REQUIRE(reloaded_crate != base->get_subclasses().end());
 	FSFunction *keep_after = const_cast<FSFunction *>(predecode_test_function(reloaded_crate->value, SNAME("keep")));
-	// The derived table is still the one interned against the old functions. Address reuse must
-	// not make it answer for the new `keep`; a generation miss falls through to per-execution decode.
-	CHECK(only_specialized_tuple_shape(
-			keep_after, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr()) == nullptr);
+	REQUIRE(derived->value->find_tuple_slot_specialization(Vector<ContainerType>()) == derived_shapes);
+	// The derived table still holds the pre-reload entry, keyed by the freed function's
+	// address. `get_shape()` must miss on the generation check even if that address was reused.
+	for (int constant_index = 0; constant_index < keep_before_constant_count; constant_index++) {
+		CHECK(derived_shapes->get_shape(reinterpret_cast<const FSFunction *>(keep_before_address), constant_index) == nullptr);
+	}
+	CHECK(only_specialized_tuple_shape(keep_after, derived_shapes.ptr()) == nullptr);
 
 	// Call the replacement function directly. A `Script.reload()` of the base alone does not
 	// rewrite the derived class's member-function table, so `instance->callp("keep")` would

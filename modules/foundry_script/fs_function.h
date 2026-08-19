@@ -606,6 +606,8 @@ class FSTupleSlotSpecialization : public RefCounted {
 	HashMap<const FSFunction *, FunctionShapes> function_shapes;
 
 public:
+	// `p_function` is a hash key only and is never dereferenced. A leftover pointer from a
+	// reloaded base is therefore safe to probe: a generation mismatch or a freed owner misses.
 	const FSDataType *get_shape(const FSFunction *p_function, int p_constant_index) const;
 
 	static Ref<FSTupleSlotSpecialization> create(FoundryScript *p_leaf, const Vector<ContainerType> &p_type_arguments);

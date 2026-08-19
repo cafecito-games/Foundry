@@ -282,7 +282,7 @@ Ref<FSSpecializedClassHandle> FSSpecializedClassHandle::create(const Ref<Foundry
 	for (int i = 0; i < p_type_arguments.size(); i++) {
 		handle->type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
 	}
-	if (p_script.is_valid() && p_script->is_valid()) {
+	if (p_script.is_valid()) {
 		p_script->intern_tuple_slot_specialization(p_type_arguments);
 	}
 	return handle;
@@ -2538,19 +2538,24 @@ bool FoundryScript::_hierarchy_has_dependent_tuple_descriptors() const {
 	return false;
 }
 
-bool FoundryScript::_script_has_dependent_tuple_descriptors() {
-	if (dependent_tuple_descriptor_hierarchy_known) {
-		return has_dependent_tuple_descriptor_hierarchy;
-	}
+void FoundryScript::_publish_dependent_tuple_descriptor_flag() {
 	const bool has = _hierarchy_has_dependent_tuple_descriptors();
-	// A handle folded during `_prepare_compilation` walks this before any function exists. Recording
-	// that empty walk as `false` would keep later interns from publishing a table. Only a positive
-	// answer, or a walk after this script is already valid, is sticky.
-	if (has || valid) {
-		dependent_tuple_descriptor_hierarchy_known = true;
-		has_dependent_tuple_descriptor_hierarchy = has;
+	MutexLock lock(tuple_slot_specialization_mutex);
+	has_dependent_tuple_descriptor_hierarchy = has;
+	dependent_tuple_descriptor_hierarchy_known = true;
+}
+
+bool FoundryScript::_script_has_dependent_tuple_descriptors() const {
+	{
+		MutexLock lock(tuple_slot_specialization_mutex);
+		if (dependent_tuple_descriptor_hierarchy_known) {
+			return has_dependent_tuple_descriptor_hierarchy;
+		}
 	}
-	return has;
+	// Not published yet: answer honestly for this call, but do not make it sticky. A handle
+	// constant folded during `_prepare_compilation` sees a class whose functions were just
+	// deleted, and an inner class keeps `valid == true` across a soft reload.
+	return _hierarchy_has_dependent_tuple_descriptors();
 }
 
 Ref<FSTupleSlotSpecialization> FoundryScript::find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const {
@@ -2621,6 +2626,7 @@ void FoundryScript::_intern_tuple_slot_specializations_from_constants_recursive(
 }
 
 void FoundryScript::intern_tuple_slot_specializations_recursive() {
+	_publish_dependent_tuple_descriptor_flag();
 	intern_tuple_slot_specialization();
 	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
 		if (entry.value.is_valid()) {

@@ -420,8 +420,8 @@ private:
 
 	mutable Mutex tuple_slot_specialization_mutex;
 	Vector<Ref<FSTupleSlotSpecialization>> tuple_slot_specializations;
-	// Cached after the compiled functions exist. A mid-compile walk that sees no functions yet must
-	// not record `false`; only a positive answer or a walk after `valid` is sticky.
+	// Published only after the unit is finalized. A mid-compile walk (including a soft reload
+	// that leaves an inner class `valid`) must not record `false`.
 	bool dependent_tuple_descriptor_hierarchy_known = false;
 	bool has_dependent_tuple_descriptor_hierarchy = false;
 	// Bumped whenever this script drops its published tables. Stored on each `FSFunction` and on
@@ -434,8 +434,9 @@ private:
 	void _refresh_instance_tuple_slot_specializations();
 	void _intern_tuple_slot_specializations_from_constants();
 	void _intern_tuple_slot_specializations_from_constants_recursive();
+	void _publish_dependent_tuple_descriptor_flag();
 	bool _hierarchy_has_dependent_tuple_descriptors() const;
-	bool _script_has_dependent_tuple_descriptors();
+	bool _script_has_dependent_tuple_descriptors() const;
 
 	// Passive annotation metadata resolved by the analyzer and persisted by the compiler. Holds both
 	// user-declared custom annotations and Godot's built-in annotations (tagged via `is_builtin`), in
@@ -934,8 +935,9 @@ class FSInstance : public ScriptInstance {
 	// Reified type arguments bound at construction (e.g. the `int` in `Box[int].new()`). Empty for
 	// instances of non-generic classes or generic classes instantiated without explicit arguments.
 	Vector<ContainerType> type_arguments;
-	// Borrowed from the leaf script's interned table for this instance's type arguments. Immutable
-	// after construction; null when this receiver is unspecialized or forwarded.
+	// Owning Ref to the leaf script's interned table for this instance's type arguments. Dropped
+	// on teardown and re-resolved after the unit is finalized; null when this receiver is
+	// unspecialized or forwarded.
 	Ref<FSTupleSlotSpecialization> tuple_slot_specialization;
 
 	SelfList<FSFunctionState>::List pending_func_states;

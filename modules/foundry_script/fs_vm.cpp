@@ -2499,9 +2499,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 	// Resolved once per frame, and only for a function that actually has a dependent descriptor.
 	// The frame holds a Ref so a receiver-script reload cannot free the table mid-call. Instance
-	// stores read the published Ref; static stores look the table up from the receiver script (and
-	// intern it if a handle folded before the unit was valid). An independent predecode hit never
-	// consults this pointer.
+	// stores read the published Ref; static stores look the already-interned table up from the
+	// receiver script. Folded handles are interned at finalization, so this path does not create.
 	Ref<FSTupleSlotSpecialization> frame_tuple_slot_specialization;
 	if (has_dependent_tuple_descriptors()) {
 		if (p_instance != nullptr) {
@@ -2509,7 +2508,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		} else if (p_static_self != nullptr) {
 			const Ref<Script> receiver = p_static_self->get_script();
 			if (FoundryScript *receiver_script = Object::cast_to<FoundryScript>(receiver.ptr())) {
-				frame_tuple_slot_specialization = receiver_script->get_or_create_tuple_slot_specialization(p_static_self->get_type_arguments());
+				frame_tuple_slot_specialization = receiver_script->find_tuple_slot_specialization(p_static_self->get_type_arguments());
 			}
 		}
 	}
