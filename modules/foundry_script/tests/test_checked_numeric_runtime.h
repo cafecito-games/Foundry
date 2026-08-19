@@ -359,7 +359,7 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A uint value widens to long 
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A dynamic member write widens uint to long") {
 	ScopedCheckedNumericLanguage language;
 
-	// The dynamic analogue of a typed store: `object->set()` routes through
+	// The dynamic analog of a typed store: `object->set()` routes through
 	// `FoundryScript::_coerce_member_write`, which must apply the same design-6.1 widen-then-width
 	// rule as OPCODE_ASSIGN_TYPED_BUILTIN. One coercion point covers instance members, static
 	// members, and setter-backed members, so all four shapes are pinned here.
