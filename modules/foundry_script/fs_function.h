@@ -587,6 +587,9 @@ class FSTupleSlotSpecialization : public RefCounted {
 		// constant is not a dependent tuple descriptor of this function.
 		Vector<int> constant_index_to_shape;
 		Vector<FSDataType> shapes;
+		// Copied from the function at intern time. A reloaded function that reused this pointer
+		// carries a newer generation, so `get_shape()` misses instead of serving the old decode.
+		uint64_t generation = 0;
 
 		const FSDataType *get(int p_constant_index) const {
 			if (p_constant_index < 0 || p_constant_index >= constant_index_to_shape.size()) {
@@ -601,10 +604,7 @@ class FSTupleSlotSpecialization : public RefCounted {
 	HashMap<const FSFunction *, FunctionShapes> function_shapes;
 
 public:
-	_FORCE_INLINE_ const FSDataType *get_shape(const FSFunction *p_function, int p_constant_index) const {
-		const FunctionShapes *entry = function_shapes.getptr(p_function);
-		return entry == nullptr ? nullptr : entry->get(p_constant_index);
-	}
+	_FORCE_INLINE_ const FSDataType *get_shape(const FSFunction *p_function, int p_constant_index) const;
 
 	static Ref<FSTupleSlotSpecialization> create(FoundryScript *p_leaf, const Vector<ContainerType> &p_type_arguments);
 };
@@ -1179,6 +1179,7 @@ private:
 	const FSDataType *_predecoded_tuple_shapes_ptr = nullptr;
 	int _predecoded_tuple_shape_index_count = 0;
 	Vector<int> _dependent_tuple_descriptor_indices;
+	uint64_t _tuple_slot_generation = 0;
 
 	void _build_predecoded_tuple_shapes();
 	void _collect_dependent_tuple_functions(Vector<FSFunction *> &r_functions);
@@ -1208,6 +1209,7 @@ private:
 	}
 
 	_FORCE_INLINE_ bool has_dependent_tuple_descriptors() const { return !_dependent_tuple_descriptor_indices.is_empty(); }
+	_FORCE_INLINE_ uint64_t get_tuple_slot_generation() const { return _tuple_slot_generation; }
 	bool has_dependent_tuple_descriptors_recursive() const;
 
 	static thread_local const FSStaticSelfContext *_current_static_self_context;
@@ -1371,6 +1373,17 @@ public:
 	FSFunction();
 	~FSFunction();
 };
+
+_FORCE_INLINE_ const FSDataType *FSTupleSlotSpecialization::get_shape(const FSFunction *p_function, int p_constant_index) const {
+	if (p_function == nullptr) {
+		return nullptr;
+	}
+	const FunctionShapes *entry = function_shapes.getptr(p_function);
+	if (entry == nullptr || entry->generation != p_function->get_tuple_slot_generation()) {
+		return nullptr;
+	}
+	return entry->get(p_constant_index);
+}
 
 class FSFunctionState : public ScriptFunctionState {
 	FOUNDRY_CLASS(FSFunctionState, ScriptFunctionState);

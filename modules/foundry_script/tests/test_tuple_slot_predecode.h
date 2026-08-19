@@ -652,22 +652,27 @@ TEST_CASE("[FoundryScript][TupleStore] Reloading a script republishes shapes aga
 	const FSFunction *keep_before = predecode_test_function(crate->value, SNAME("keep"));
 	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
 	crate->value->intern_tuple_slot_specialization(string_arguments);
-	REQUIRE(only_specialized_tuple_shape(keep_before, crate->value->find_tuple_slot_specialization(string_arguments).ptr()) != nullptr);
+	const FSDataType *shape_before = only_specialized_tuple_shape(
+			keep_before, crate->value->find_tuple_slot_specialization(string_arguments).ptr());
+	REQUIRE(shape_before != nullptr);
+	CHECK(shape_before->container_element_types[0].builtin_type == Variant::INT);
 
+	// Reload with a different leading slot so a surviving pre-reload table cannot satisfy the
+	// assertion. The function pointer itself is not compared: the allocator commonly reuses it.
 	script->set_source_code(
 			"class Crate[T]:\n"
 			"\tfunc keep(value) -> void:\n"
-			"\t\tvar kept: (int, T) = value\n");
+			"\t\tvar kept: (String, T) = value\n");
 	REQUIRE(script->reload() == OK);
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded = script->get_subclasses().find(SNAME("Crate"));
 	REQUIRE(reloaded != script->get_subclasses().end());
 	const FSFunction *keep_after = predecode_test_function(reloaded->value, SNAME("keep"));
-	CHECK(keep_after != keep_before);
 	reloaded->value->intern_tuple_slot_specialization(string_arguments);
 	const FSDataType *shape = only_specialized_tuple_shape(
 			keep_after, reloaded->value->find_tuple_slot_specialization(string_arguments).ptr());
 	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[0].builtin_type == Variant::STRING);
 	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
 }
 
@@ -690,6 +695,140 @@ TEST_CASE("[FoundryScript][TupleStore] A derived class declared before its gener
 			keep, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
 	REQUIRE(shape != nullptr);
 	CHECK(shape->container_element_types[1].builtin_type == Variant::INT);
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle still publishes the cache") {
+	// `_prepare_compilation` stores `CRATE` before any function exists. Interning then must not
+	// record a sticky "no dependent descriptors" answer, or the end-of-unit intern publishes nothing.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> void:\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\n"
+			"class Holder:\n"
+			"\tconst CRATE := Crate[int]\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	const Vector<ContainerType> int_arguments = tuple_slot_one_argument(Variant::INT);
+	const FSDataType *shape = only_specialized_tuple_shape(
+			keep, crate->value->find_tuple_slot_specialization(int_arguments).ptr());
+	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::INT);
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A folded specialized handle loaded from compiled bytecode is cached too") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> void:\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\n"
+			"class Holder:\n"
+			"\tconst CRATE := Crate[int]\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	const String script_path = original->get_script_path();
+	REQUIRE(DirAccess::remove_absolute(script_path) == OK);
+
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	REQUIRE(restored->is_valid());
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = restored->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != restored->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	const Vector<ContainerType> int_arguments = tuple_slot_one_argument(Variant::INT);
+	const FSDataType *shape = only_specialized_tuple_shape(
+			keep, crate->value->find_tuple_slot_specialization(int_arguments).ptr());
+	REQUIRE(shape != nullptr);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::INT);
+}
+
+TEST_CASE("[FoundryScript][TupleStore] Reloading only a generic base does not serve a stale derived shape") {
+	static int unique_index = 0;
+	const String class_name = vformat("TupleSlotReloadBase_%d", unique_index++);
+	Ref<FoundryScript> base = compile_bytecode_test_source(vformat(
+			"class_name %s\n"
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> Variant:\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n",
+			class_name));
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = base->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != base->get_subclasses().end());
+
+	Ref<FoundryScript> derived_script = compile_bytecode_test_source(vformat(
+			"class Derived extends %s.Crate[int]:\n"
+			"\tpass\n",
+			class_name));
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator derived = derived_script->get_subclasses().find(SNAME("Derived"));
+	REQUIRE(derived != derived_script->get_subclasses().end());
+
+	const FSFunction *keep_before = predecode_test_function(crate->value, SNAME("keep"));
+	const FSDataType *shape_before = only_specialized_tuple_shape(
+			keep_before, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr());
+	REQUIRE(shape_before != nullptr);
+	CHECK(shape_before->container_element_types[0].builtin_type == Variant::INT);
+	CHECK(shape_before->container_element_types[1].builtin_type == Variant::INT);
+
+	Callable::CallError call_error;
+	const Variant derived_owner = derived->value->_new(nullptr, -1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	Object *instance = derived_owner;
+	REQUIRE(instance != nullptr);
+
+	Array accepted_before;
+	accepted_before.push_back(7);
+	accepted_before.push_back(2);
+	const Variant accepted_argument = accepted_before;
+	const Variant *accepted_arguments[1] = { &accepted_argument };
+	const Array stored_before = instance->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(stored_before.size() == 2);
+
+	base->set_source_code(vformat(
+			"class_name %s\n"
+			"class Crate[T]:\n"
+			"\tfunc keep(value) -> Variant:\n"
+			"\t\tvar kept: (String, T) = value\n"
+			"\t\treturn kept\n",
+			class_name));
+	REQUIRE(base->reload() == OK);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator reloaded_crate = base->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(reloaded_crate != base->get_subclasses().end());
+	const FSFunction *keep_after = predecode_test_function(reloaded_crate->value, SNAME("keep"));
+	// The derived table is still the one interned against the old functions. Address reuse must
+	// not make it answer for the new `keep`; a generation miss falls through to per-execution decode.
+	CHECK(only_specialized_tuple_shape(
+			keep_after, derived->value->find_tuple_slot_specialization(Vector<ContainerType>()).ptr()) == nullptr);
+
+	ERR_PRINT_OFF;
+	const Variant rejected = instance->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	ERR_PRINT_ON;
+	CHECK(rejected.get_type() == Variant::NIL);
+
+	Array accepted_after;
+	accepted_after.push_back("seven");
+	accepted_after.push_back(2);
+	const Variant after_argument = accepted_after;
+	const Variant *after_arguments[1] = { &after_argument };
+	const Array stored_after = instance->callp(SNAME("keep"), after_arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(stored_after.size() == 2);
+	CHECK(String(stored_after[0]) == "seven");
+	CHECK(int(stored_after[1]) == 2);
 }
 
 } // namespace FSTests

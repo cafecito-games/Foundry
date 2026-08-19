@@ -420,14 +420,20 @@ private:
 
 	mutable Mutex tuple_slot_specialization_mutex;
 	Vector<Ref<FSTupleSlotSpecialization>> tuple_slot_specializations;
-	// Cached after the compiled functions exist. Unknown until the first intern/lookup after a
-	// teardown, then sticky until the next `_clear_tuple_slot_specializations()`.
+	// Cached after the compiled functions exist. A mid-compile walk that sees no functions yet must
+	// not record `false`; only a positive answer or a walk after `valid` is sticky.
 	bool dependent_tuple_descriptor_hierarchy_known = false;
 	bool has_dependent_tuple_descriptor_hierarchy = false;
+	// Bumped whenever this script drops its published tables. Stored on each `FSFunction` and on
+	// each cached `FunctionShapes` so a subclass table cannot serve a shape for a reloaded base
+	// function that reused the same heap address.
+	uint64_t tuple_slot_function_generation = 1;
 
 	void _clear_tuple_slot_specializations();
 	void _drop_instance_tuple_slot_specializations();
 	void _refresh_instance_tuple_slot_specializations();
+	void _intern_tuple_slot_specializations_from_constants();
+	void _intern_tuple_slot_specializations_from_constants_recursive();
 	bool _hierarchy_has_dependent_tuple_descriptors() const;
 	bool _script_has_dependent_tuple_descriptors();
 
@@ -641,6 +647,7 @@ public:
 	Ref<FSTupleSlotSpecialization> find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const;
 	void intern_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments = Vector<ContainerType>());
 	void intern_tuple_slot_specializations_recursive();
+	uint64_t get_tuple_slot_function_generation() const { return tuple_slot_function_generation; }
 	FSFunction *get_enum_function(const StringName &p_enum_type, const StringName &p_function, bool p_static) const;
 	_FORCE_INLINE_ const HashMap<StringName, AbstractTraitRequirement> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
 

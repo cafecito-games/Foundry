@@ -282,7 +282,7 @@ Ref<FSSpecializedClassHandle> FSSpecializedClassHandle::create(const Ref<Foundry
 	for (int i = 0; i < p_type_arguments.size(); i++) {
 		handle->type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
 	}
-	if (p_script.is_valid()) {
+	if (p_script.is_valid() && p_script->is_valid()) {
 		p_script->intern_tuple_slot_specialization(p_type_arguments);
 	}
 	return handle;
@@ -2500,6 +2500,7 @@ void FoundryScript::_clear_tuple_slot_specializations() {
 	tuple_slot_specializations.clear();
 	dependent_tuple_descriptor_hierarchy_known = false;
 	has_dependent_tuple_descriptor_hierarchy = false;
+	tuple_slot_function_generation++;
 }
 
 bool FoundryScript::_hierarchy_has_dependent_tuple_descriptors() const {
@@ -2538,11 +2539,18 @@ bool FoundryScript::_hierarchy_has_dependent_tuple_descriptors() const {
 }
 
 bool FoundryScript::_script_has_dependent_tuple_descriptors() {
-	if (!dependent_tuple_descriptor_hierarchy_known) {
-		has_dependent_tuple_descriptor_hierarchy = _hierarchy_has_dependent_tuple_descriptors();
-		dependent_tuple_descriptor_hierarchy_known = true;
+	if (dependent_tuple_descriptor_hierarchy_known) {
+		return has_dependent_tuple_descriptor_hierarchy;
 	}
-	return has_dependent_tuple_descriptor_hierarchy;
+	const bool has = _hierarchy_has_dependent_tuple_descriptors();
+	// A handle folded during `_prepare_compilation` walks this before any function exists. Recording
+	// that empty walk as `false` would keep later interns from publishing a table. Only a positive
+	// answer, or a walk after this script is already valid, is sticky.
+	if (has || valid) {
+		dependent_tuple_descriptor_hierarchy_known = true;
+		has_dependent_tuple_descriptor_hierarchy = has;
+	}
+	return has;
 }
 
 Ref<FSTupleSlotSpecialization> FoundryScript::find_tuple_slot_specialization(const Vector<ContainerType> &p_type_arguments) const {
@@ -2586,6 +2594,32 @@ void FoundryScript::intern_tuple_slot_specialization(const Vector<ContainerType>
 	get_or_create_tuple_slot_specialization(p_type_arguments);
 }
 
+void FoundryScript::_intern_tuple_slot_specializations_from_constants() {
+	for (const KeyValue<StringName, Variant> &entry : constants) {
+		if (entry.value.get_type() != Variant::OBJECT) {
+			continue;
+		}
+		Object *object = entry.value.get_validated_object();
+		FSSpecializedClassHandle *handle = Object::cast_to<FSSpecializedClassHandle>(object);
+		if (handle == nullptr) {
+			continue;
+		}
+		const Ref<FoundryScript> target = handle->get_specialized_script();
+		if (target.is_valid()) {
+			target->intern_tuple_slot_specialization(handle->get_type_arguments());
+		}
+	}
+}
+
+void FoundryScript::_intern_tuple_slot_specializations_from_constants_recursive() {
+	_intern_tuple_slot_specializations_from_constants();
+	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
+		if (entry.value.is_valid()) {
+			entry.value->_intern_tuple_slot_specializations_from_constants_recursive();
+		}
+	}
+}
+
 void FoundryScript::intern_tuple_slot_specializations_recursive() {
 	intern_tuple_slot_specialization();
 	for (const KeyValue<StringName, Ref<FoundryScript>> &entry : subclasses) {
@@ -2593,6 +2627,7 @@ void FoundryScript::intern_tuple_slot_specializations_recursive() {
 			entry.value->intern_tuple_slot_specializations_recursive();
 		}
 	}
+	_intern_tuple_slot_specializations_from_constants_recursive();
 }
 
 FoundryScript *FoundryScript::find_class(const String &p_qualified_name) {

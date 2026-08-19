@@ -883,6 +883,7 @@ void FSFunction::setup_runtime_pointers() {
 	// Derived from the constants just published, so it is rebuilt whenever they are and can never
 	// describe a constant table the function no longer has.
 	_build_predecoded_tuple_shapes();
+	_tuple_slot_generation = _script != nullptr ? _script->get_tuple_slot_function_generation() : 0;
 }
 
 #ifdef TOOLS_ENABLED

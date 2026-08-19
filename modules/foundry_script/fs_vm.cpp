@@ -862,6 +862,7 @@ Ref<FSTupleSlotSpecialization> FSTupleSlotSpecialization::create(FoundryScript *
 		}
 
 		FunctionShapes shapes;
+		shapes.generation = function->get_tuple_slot_generation();
 		for (int constant_index : function->_dependent_tuple_descriptor_indices) {
 			if (constant_index < 0 || constant_index >= function->_constant_count) {
 				continue;
@@ -2492,15 +2493,18 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	const FrameSelfBinding frame_self{ frame_self_receiver, _static };
 
 	// Resolved once per frame, and only for a function that actually has a dependent descriptor.
-	// Instance stores read the published Ref; static stores look the table up from the receiver
-	// script. An independent predecode hit never consults this pointer.
-	const FSTupleSlotSpecialization *frame_tuple_slot_specialization = nullptr;
+	// The frame holds a Ref so a receiver-script reload cannot free the table mid-call. Instance
+	// stores read the published Ref; static stores look the table up from the receiver script (and
+	// intern it if a handle folded before the unit was valid). An independent predecode hit never
+	// consults this pointer.
+	Ref<FSTupleSlotSpecialization> frame_tuple_slot_specialization;
 	if (has_dependent_tuple_descriptors()) {
 		if (p_instance != nullptr) {
-			frame_tuple_slot_specialization = p_instance->tuple_slot_specialization.ptr();
+			frame_tuple_slot_specialization = p_instance->tuple_slot_specialization;
 		} else if (p_static_self != nullptr) {
-			if (FoundryScript *receiver_script = Object::cast_to<FoundryScript>(p_static_self->get_script().ptr())) {
-				frame_tuple_slot_specialization = receiver_script->find_tuple_slot_specialization(p_static_self->get_type_arguments()).ptr();
+			const Ref<Script> receiver = p_static_self->get_script();
+			if (FoundryScript *receiver_script = Object::cast_to<FoundryScript>(receiver.ptr())) {
+				frame_tuple_slot_specialization = receiver_script->get_or_create_tuple_slot_specialization(p_static_self->get_type_arguments());
 			}
 		}
 	}
@@ -4103,7 +4107,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// distinct shapes; an unspecialized or forwarded receiver is not interned and falls through.
 				const FSDataType *specialized_tuple_type = predecoded_tuple_type != nullptr
 						? nullptr
-						: _specialized_tuple_shape(frame_tuple_slot_specialization, _code_ptr[ip + 3]);
+						: _specialized_tuple_shape(frame_tuple_slot_specialization.ptr(), _code_ptr[ip + 3]);
 
 				// A class type parameter is reified onto the instance, but a function body compiled once in
 				// the declaring class sees only the parameter. An element naming one therefore reaches here
