@@ -41,8 +41,8 @@ func test() -> void:
 	var label: String = "label"
 	Utils.check(identity[StringName](label) == &"label")
 
-	# A widening between two integer carriers is accepted because every source value is representable,
-	# not because anything converts it; the value passes through unconverted.
+	# A widening between two integer carriers converts like the rest of the class: the call site
+	# re-carriers the `uint` value onto the substituted `long`'s carrier.
 	var unsigned_value: uint = 5
 	Utils.check(identity[long](unsigned_value) == 5)
 

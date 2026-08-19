@@ -1909,6 +1909,25 @@ Variant FSFunction::call_witness(const Variant &p_self, const Variant **p_args, 
 	return call(nullptr, p_args, p_argcount, r_err, nullptr, &p_self);
 }
 
+// The design-6.1 `uint` -> `long` implicit widening, decided by value once static types are erased.
+// `Variant::can_convert_strict(UINT, INT)` is deliberately unregistered -- half of the `ulong` range
+// is not representable as `long`, and a blanket engine-wide conversion would loosen every `Variant`
+// consumer -- so each Foundry Script boundary asks this instead: only a value the `uint` range
+// contains crosses, re-carriered onto `Variant::INT`. A larger value stays rejected even when it
+// would fit `long`, mirroring the static rule that `ulong` -> `long` requires an explicit cast.
+static bool fs_try_widen_uint_to_long(const Variant &p_value, Variant &r_result) {
+	if (p_value.get_type() != Variant::UINT || !numeric_type_contains(NumericType::UINT32, p_value)) {
+		return false;
+	}
+	r_result = int64_t(p_value.operator uint64_t());
+	return true;
+}
+
+static String fs_uint_widen_range_error(const Variant &p_value) {
+	return vformat(R"(Cannot implicitly convert %s to "long": the value is outside the "uint" range %s. Use an explicit cast.)",
+			p_value.stringify(), FSNumericOps::describe_range(NumericType::UINT32));
+}
+
 bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType &p_type, Variant &r_value,
 		Callable::CallError &r_err, int p_argument_index) const {
 	if (!p_type.has_type()) {
@@ -1950,6 +1969,15 @@ bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType
 		return true;
 	}
 	if (!p_type.is_type(p_value, true)) {
+		// `is_type()`'s converting probe answers through `Variant::can_convert_strict()`, which has no
+		// `UINT` -> `INT` entry, so the design-6.1 `uint` -> `long` widening is asked here by value. Only
+		// an `INT`-carrier destination whose declared width can hold every `uint` -- `long`, or a
+		// width-erased slot -- takes it; an `int`-width slot keeps rejecting, as the analyzer does.
+		if (p_type.kind == FSDataType::BUILTIN && p_type.builtin_type == Variant::INT &&
+				(p_type.numeric_type == NumericType::INT64 || p_type.numeric_type == NumericType::NONE) &&
+				fs_try_widen_uint_to_long(p_value, r_value)) {
+			return true;
+		}
 		r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 		r_err.argument = p_argument_index;
 		r_err.expected = p_type.builtin_type;
@@ -3483,15 +3511,18 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (is_nullable && src->get_type() == Variant::NIL) {
 					// A nullable target stores null as-is instead of converting it to the underlying type.
 					*dst = *src;
+				} else if (src->get_type() == Variant::UINT && var_type == Variant::INT) {
+					// `Variant::construct()` cannot perform this crossing -- `can_convert_strict()` has no
+					// `UINT` -> `INT` entry -- so the design-6.1 `uint` -> `long` widening runs value-checked
+					// here, in every build configuration: a gradual source can carry any `ulong` value, and
+					// an unchecked construct would silently store null into a non-nullable slot.
+					if (unlikely(!fs_try_widen_uint_to_long(*src, *dst))) {
+						err_text = fs_uint_widen_range_error(*src);
+						OPCODE_BREAK;
+					}
 				} else if (src->get_type() != var_type) {
 #ifdef DEBUG_ENABLED
-					// `Variant::can_convert_strict()` has no unconditional entry for `UINT` -> `INT`, since
-					// most `uint` values are not representable as a 32-bit `int`. A `uint` widening to
-					// `long` is the one crossing design section 6.1 lists as always safe, and the analyzer
-					// (`FSTypeCompatibility::check()`) is the only source of this opcode's `UINT` source, so
-					// the runtime carrier check just needs to agree with what the analyzer already proved.
-					const bool is_uint_to_long_widen = src->get_type() == Variant::UINT && var_type == Variant::INT;
-					if (Variant::can_convert_strict(src->get_type(), var_type) || is_uint_to_long_widen) {
+					if (Variant::can_convert_strict(src->get_type(), var_type)) {
 #endif // DEBUG_ENABLED
 						Callable::CallError ce;
 						Variant::construct(var_type, *dst, const_cast<const Variant **>(&src), 1, ce);
@@ -5696,13 +5727,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (is_nullable && r->get_type() == Variant::NIL) {
 					// A nullable return type returns null as-is instead of converting it to the underlying type.
 					retvalue = *r;
+				} else if (r->get_type() == Variant::UINT && ret_type == Variant::INT) {
+					// See `OPCODE_ASSIGN_TYPED_BUILTIN`: `Variant::construct()` cannot perform this
+					// crossing, so the design-6.1 `uint` -> `long` widening runs value-checked here.
+					if (unlikely(!fs_try_widen_uint_to_long(*r, retvalue))) {
+						err_text = fs_uint_widen_range_error(*r);
+						OPCODE_BREAK;
+					}
 				} else if (r->get_type() != ret_type) {
-					// See `OPCODE_ASSIGN_TYPED_BUILTIN`: `Variant::can_convert_strict()` has no entry for
-					// `UINT` -> `INT`, but a `uint` widening to `long` is unconditionally safe and is the
-					// only source `FSTypeCompatibility::check()` lets reach this opcode with mismatched
-					// carriers.
-					const bool is_uint_to_long_widen = r->get_type() == Variant::UINT && ret_type == Variant::INT;
-					if (Variant::can_convert_strict(r->get_type(), ret_type) || is_uint_to_long_widen) {
+					if (Variant::can_convert_strict(r->get_type(), ret_type)) {
 						Callable::CallError ce;
 						Variant::construct(ret_type, retvalue, const_cast<const Variant **>(&r), 1, ce);
 					} else {

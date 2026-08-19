@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+before return
+>> SCRIPT ERROR at runtime/errors/uint_to_long_return_out_of_range.fs:6 on produce(): Cannot implicitly convert 4294967296 to "long": the value is outside the "uint" range 0 to 4294967295. Use an explicit cast.
+after failed return
