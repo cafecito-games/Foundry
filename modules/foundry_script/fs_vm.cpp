@@ -4078,7 +4078,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (p_instance != nullptr) {
 					tuple_slot_specialization = p_instance->tuple_slot_specialization.ptr();
 				} else if (frame_self.receiver != nullptr) {
-					tuple_slot_specialization = frame_self.receiver->tuple_slot_specialization;
+					tuple_slot_specialization = frame_self.receiver->get_tuple_slot_specialization();
 				}
 				const FSDataType *specialized_tuple_type = predecoded_tuple_type != nullptr
 						? nullptr

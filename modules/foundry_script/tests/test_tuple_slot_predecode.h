@@ -481,6 +481,63 @@ TEST_CASE("[FoundryScript][TupleStore] A Self-dependent slot is cached per speci
 	CHECK(nested_shape->container_element_types[1].container_element_types[1].to_container_type().script == Ref<Script>(anchor->value));
 }
 
+TEST_CASE("[FoundryScript][TupleStore] A static specialized slot is answered from the specialization cache") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tstatic func keep(value) -> (int, T):\n"
+			"\t\tvar kept: (int, T) = value\n"
+			"\t\treturn kept\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate != script->get_subclasses().end());
+	const FSFunction *keep = predecode_test_function(crate->value, SNAME("keep"));
+	CHECK(keep->get_predecoded_tuple_shape_count() == 0);
+	CHECK(keep->get_dependent_tuple_descriptor_count() == 1);
+
+	const Vector<ContainerType> string_arguments = tuple_slot_one_argument(Variant::STRING);
+	const Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(crate->value, string_arguments);
+	REQUIRE(handle.is_valid());
+
+	const FSStaticSelfContext context = FSStaticSelfContext::for_specialized_script(crate->value, string_arguments);
+	const FSTupleSlotSpecialization *specialization = context.get_tuple_slot_specialization();
+	REQUIRE(specialization != nullptr);
+	CHECK(specialization == crate->value->find_tuple_slot_specialization(string_arguments).ptr());
+
+	const FSDataType *shape = only_specialized_tuple_shape(keep, specialization);
+	REQUIRE(shape != nullptr);
+	REQUIRE(shape->container_element_types.size() == 2);
+	CHECK(shape->container_element_types[1].builtin_type == Variant::STRING);
+
+	Array source;
+	source.push_back(7);
+	source.push_back("seven");
+	const Variant accepted_argument = source;
+	const Variant *accepted_arguments[1] = { &accepted_argument };
+	Callable::CallError call_error;
+	const Array stored = handle->callp(SNAME("keep"), accepted_arguments, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(stored.size() == 2);
+	CHECK(int(stored[0]) == 7);
+	CHECK(String(stored[1]) == "seven");
+	CHECK(stored.is_read_only());
+}
+
+TEST_CASE("[FoundryScript][TupleStore] A freed specialization table is not used by a retained receiver") {
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Anchor:\n"
+			"\tfunc keep(value: (int, Self)) -> void:\n"
+			"\t\tvar kept: (int, Self) = value\n");
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator anchor = script->get_subclasses().find(SNAME("Anchor"));
+	REQUIRE(anchor != script->get_subclasses().end());
+
+	const FSStaticSelfContext context = FSStaticSelfContext::for_script(anchor->value);
+	REQUIRE(context.get_tuple_slot_specialization() != nullptr);
+
+	anchor->value->clear();
+	CHECK(context.get_tuple_slot_specialization() == nullptr);
+}
+
 TEST_CASE("[FoundryScript][TupleStore] A specialized dependent slot loaded from compiled bytecode is cached too") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"class Crate[T]:\n"
