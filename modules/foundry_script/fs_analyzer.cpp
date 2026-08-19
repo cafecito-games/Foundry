@@ -13146,19 +13146,24 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	};
 
 	// The construction checks below read the transformed field types, whose `Self` positions are the
-	// receiver contract. The value the construction produces is typed with those fields substituted to
-	// their bounds when the receiver is not the constructing frame's own: lowering converts each
-	// argument against the payload schema of the call's own result type and erases a literal `Self`
-	// field against the frame's owner script, which is not the receiver's class, exactly as
-	// `resolved_parameter_types` substitutes at an ordinary call boundary.
+	// receiver contract. The value the construction produces substitutes those fields when the receiver
+	// is not the constructing frame's own, because lowering converts each argument against the payload
+	// schema of the call's own result type and erases a literal `Self` field against the frame's owner
+	// script, which is not the receiver's class. The exact spellings substitute the class the checks
+	// named, so a dynamic argument's runtime conversion enforces the same class the analyzer checked
+	// (`Sub.Message` converts to `Sub`, not to the declaration bound); the receiver-relative base
+	// spelling substitutes the bound instead, since its identity gate admits no dynamic argument.
 	FSParser::DataType case_value_type = type_from_metatype(p_enum_meta_type);
 	if (!p_call->receiver_is_current_self) {
 		for (KeyValue<StringName, FSParser::DataType::EnumCasePayload> &case_payload : case_value_type.enum_case_payloads) {
 			for (int i = 0; i < case_payload.value.field_types.size(); i++) {
 				const FSParser::DataType &payload_field_type = case_payload.value.field_types[i];
-				if (_datatype_contains_self_type_parameter(payload_field_type)) {
-					case_payload.value.field_types.write[i] = _substitute_self_type_parameter_with_bounds(payload_field_type);
+				if (!_datatype_contains_self_type_parameter(payload_field_type)) {
+					continue;
 				}
+				case_payload.value.field_types.write[i] = self_field_leg == SelfFieldLeg::BASE_RECEIVER
+						? _substitute_self_type_parameter_with_bounds(payload_field_type)
+						: payload_field_type_for_spelling(payload_field_type);
 			}
 		}
 	}
