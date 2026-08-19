@@ -330,6 +330,18 @@ public:
 		// contrast two types must not render distinct widths identically; source-writing callers must
 		// keep using `to_string()`.
 		String to_string_diagnostic() const;
+		// The script file that declares this type at its top level: a CLASS's declaring script, a
+		// SCRIPT's own path, an empty string for every other kind. Containers, unions, and type
+		// arguments are not recursed into.
+		String declaring_script_path() const;
+		// Two unnamed types declared in same-named files render identically, so a diagnostic that
+		// contrasts them reads self-contradictorily ("cannot assign helper.fs ... expected helper.fs").
+		// When the two rendered names are equal while the declaring files differ, this returns a
+		// disambiguating clause (beginning with a single space) that names both declaring files; sites
+		// append it to the base message with plain `+`. Returns an empty string when the names differ,
+		// the files are the same, either side has no declaring file, or both file references collapse
+		// to the same basename (the clause would then repeat the colliding name and help nobody).
+		static String same_rendered_name_clause(const DataType &p_first, const String &p_first_subject, const DataType &p_second, const String &p_second_subject);
 		_FORCE_INLINE_ String to_string_strict() const { return is_hard_type() ? to_string() : "Variant"; }
 		PropertyInfo to_property_info(const String &p_name) const;
 

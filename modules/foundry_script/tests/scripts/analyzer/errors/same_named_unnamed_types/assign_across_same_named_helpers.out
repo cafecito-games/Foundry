@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Cannot assign a value of type helper.notest.fs to variable "value" with specified type helper.notest.fs. The value is declared in "res://analyzer/errors/same_named_unnamed_types/a/helper.notest.fs"; the specified type is declared in "res://analyzer/errors/same_named_unnamed_types/b/helper.notest.fs".

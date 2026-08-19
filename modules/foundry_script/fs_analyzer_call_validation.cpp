@@ -1021,10 +1021,11 @@ String FSAnalyzer::CallSiteValidationContext::make_invalid_argument_error(
 		return type_handle_error;
 	}
 	return vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-			p_function,
-			p_argument_number,
-			p_expected_type.to_string_diagnostic(),
-			p_actual_type.to_string_diagnostic());
+				   p_function,
+				   p_argument_number,
+				   p_expected_type.to_string_diagnostic(),
+				   p_actual_type.to_string_diagnostic()) +
+			FSParser::DataType::same_rendered_name_clause(p_expected_type, "parameter", p_actual_type, "argument");
 }
 
 const FSParser::DataType *FSAnalyzer::CallSiteValidationContext::rest_element_type(const FSParser::DataType *p_rest_parameter_type) {
