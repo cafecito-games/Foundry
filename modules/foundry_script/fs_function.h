@@ -578,6 +578,7 @@ class FSFunction;
 // (script finalization for a compile-time binding, or handle/instance creation for a runtime one)
 // and concurrent stores only ever read it.
 class FSTupleSlotSpecialization : public RefCounted {
+	FOUNDRY_SOFTCLASS(FSTupleSlotSpecialization, RefCounted);
 	friend class FoundryScript;
 	friend class FSFunction;
 
