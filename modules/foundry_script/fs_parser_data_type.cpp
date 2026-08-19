@@ -495,6 +495,16 @@ static bool _find_divergent_self_binding(const FSParser::DataType &p_first, cons
 		// Both sides read `Self`; there is no binding to contrast at this slot.
 		return false;
 	}
+	if (p_first.kind != p_second.kind) {
+		return false;
+	}
+	if (p_first.kind == FSParser::DataType::TUPLE &&
+			(p_first.tuple_name != p_second.tuple_name || p_first.tuple_field_names != p_second.tuple_field_names)) {
+		// Two distinct named tuples can share a displayed name; pairing their slots positionally
+		// would describe one declaration's field with the other's type. Only the same declaration's
+		// layout is comparable slot by slot.
+		return false;
+	}
 	if (p_first.container_element_types.size() == p_second.container_element_types.size()) {
 		for (int i = 0; i < p_first.container_element_types.size(); i++) {
 			if (_find_divergent_self_binding(p_first.container_element_types[i], p_second.container_element_types[i],

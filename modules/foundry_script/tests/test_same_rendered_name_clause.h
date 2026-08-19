@@ -158,6 +158,22 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silen
 	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(first, "parameter", second, "argument"), String());
 }
 
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent across same-named tuples with different layouts") {
+	// Two distinct named tuples can share a displayed name while declaring different fields; pairing
+	// their slots positionally would describe one declaration's field with the other's type.
+	FSParser::DataType expected = named_tuple_data_type(StringName("Pair"), self_type_parameter());
+	FSParser::DataType actual;
+	actual.kind = FSParser::DataType::TUPLE;
+	actual.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	actual.tuple_name = StringName("Pair");
+	actual.container_element_types.push_back(int_data_type());
+	actual.container_element_types.push_back(native_data_type(StringName("Node")));
+	actual.tuple_field_names.push_back(StringName("count"));
+	actual.tuple_field_names.push_back(StringName("target"));
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"), String());
+}
+
 TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause skips lists whose sizes differ") {
 	FSParser::DataType expected = named_tuple_data_type(StringName("Pair"), self_type_parameter());
 	FSParser::DataType actual = named_tuple_data_type(StringName("Pair"), native_data_type(StringName("Node")));
