@@ -6756,11 +6756,19 @@ bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	// An int constant may be cast into an int-backed enum, but never into a tagged union.
 	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
 			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
-	// A position only runs its own type comparison for a hard, non-gradual value; a Variant or a soft
-	// type takes its gradual branch, which accepts and at most warns.
-	const bool declared_type_is_checked_by_position = expression_type.is_hard_type() && !expression_type.is_variant();
+	// Whether a refusal between these two declared types is one the position would reach on its own.
+	// Every reporting position guards its error with the same three admissions, so a source type any
+	// of them admits is one this helper must keep reporting: a gradual carrier takes the branch that
+	// only warns, a raw generic projection takes it too, and a source the destination can narrow at
+	// run time is converted rather than refused -- which is what lets a union stand in for the
+	// alternative it does not hold. A `Self` contract is decided by a comparison of its own.
+	const bool position_refuses_declared_type = expression_type.is_hard_type() &&
+			!expression_type.is_variant() &&
+			!raw_generic_projection_crosses_boundary(p_type, expression_type) &&
+			!allows_runtime_narrowing(p_type, expression_type) &&
+			!datatype_contains_self_type_parameter(p_type);
 	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression, p_expression)) {
-		return report_refusal(expression_type, declared_type_is_checked_by_position);
+		return report_refusal(expression_type, position_refuses_declared_type);
 	}
 	if (p_type.is_variant() &&
 			expression_type.is_meta_type && expression_type.kind == FSParser::DataType::CLASS &&
