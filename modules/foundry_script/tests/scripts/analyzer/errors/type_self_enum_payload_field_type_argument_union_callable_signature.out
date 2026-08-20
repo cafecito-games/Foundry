@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 27: Invalid argument 1 for enum case "Box.Wide": should be "Keeper[(Callable[[String], void], Self)]" but is "Keeper[(Callable[[int], void], Self)]". The payload field's "Self" at element 2 of type argument 1 is resolved against the receiver expression; the argument is relative to the calling frame's receiver.
+>> ERROR at line 28: Invalid argument 1 for enum case "Box.Wide": should be "Keeper[(Callable[[String], void], Self)]" but is "Keeper[int]".

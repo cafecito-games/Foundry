@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 19: Invalid argument 1 for enum case "Box.Full": should be "Keeper[String | (int, Self)]" but is "Keeper[String]".
+>> ERROR at line 20: Invalid argument 1 for enum case "Box.Full": should be "Keeper[String | (int, Self)]" but is "Keeper[(int, Self)]".
+>> ERROR at line 21: Invalid argument 1 for enum case "Box.Full": should be "Keeper[String | (int, Self)]" but is "Keeper[int]".

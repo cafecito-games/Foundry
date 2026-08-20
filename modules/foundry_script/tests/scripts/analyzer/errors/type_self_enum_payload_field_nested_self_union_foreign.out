@@ -1,0 +1,8 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 20: Invalid argument 1 for enum case "Nested.DeclarationFirst": should be "((int, Self), int)" but is "int".
+>> ERROR at line 21: Invalid argument 1 for enum case "Nested.DeclarationFirst": should be "((int, Self), int)" but is "((int, Self), int, int)".
+>> ERROR at line 22: Invalid argument 1 for enum case "Nested.DeclarationFirst": should be "((int, Self), int)" but is "((int, Foreign), int)".
+>> ERROR at line 23: Invalid argument 1 for enum case "Nested.ArgumentFirst": should be "((int, Self), int)" but is "((String, Self), int)". The payload field's "Self" at element 2 of element 1 is resolved against the receiver expression; the argument is relative to the calling frame's receiver.
+>> ERROR at line 23: Cannot include a value of type "String" as "int".
+>> ERROR at line 24: Invalid argument 1 for enum case "Nested.ArgumentFirst": should be "((int, Self), int)" but is "((int, Foreign), int)".
+>> ERROR at line 25: Invalid argument 1 for enum case "Flat.DeclarationFirst": should be "(int, Self)" but is "(int, Foreign)".

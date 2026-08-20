@@ -13721,6 +13721,116 @@ bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode 
 	return true;
 }
 
+// Upper bound on the combinations one carrier's slots may be expanded into. Expanding a union a
+// carrier holds multiplies the alternatives of every slot together, which is the only growth here that
+// is not linear in what the author wrote, so that is the only growth this bounds. Enumerating the
+// members of a union directly is linear and deliberately unbounded: a payload union is decomposed
+// however many alternatives it declares. A slot whose expansion would pass the bound is left
+// un-decomposed instead, which yields the type the assembled field already stands for.
+static constexpr int MAX_OPEN_SCHEMA_CARRIER_COMBINATIONS = 64;
+
+// True when p_type is a union, or reaches one through a carrier that can legally hold one. A typed
+// container refuses a union element type and a generic tagged union refuses a union type argument, so
+// an unnamed tuple's elements and a specialization's type arguments are the only carriers to walk.
+static bool open_schema_carries_union(const FSParser::DataType &p_type) {
+	if (p_type.kind == FSParser::DataType::UNION) {
+		return true;
+	}
+	if (p_type.is_tuple() && p_type.tuple_name == StringName()) {
+		for (const FSParser::DataType &element : p_type.container_element_types) {
+			if (::open_schema_carries_union(element)) {
+				return true;
+			}
+		}
+	}
+	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
+		if (::open_schema_carries_union(type_argument)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Decomposes an open schema position into the individual types it denotes: each alternative of a union
+// it names directly, and each combination of the alternatives of the unions it carries. Walking the
+// carriers is what keeps two alternatives that differ only in which frame their `Self` belongs to
+// separable one level down, where substitution would otherwise normalize them into one.
+//
+// A specialization's type argument is matched invariantly, so everything beneath one is a single type
+// rather than a choice: `Keeper[String | (int, Self)]` does not admit `Keeper[String]`, and splitting a
+// union there would distribute it over an invariant constructor. `p_invariant` marks that region, and
+// inside it only a union whose members all denote the same type once the application binds them may be
+// split -- which is exactly the collapse this decomposition exists to survive, and no widening of what
+// the position accepts. Unnamed tuple elements are erased structural positions and keep the broader
+// decomposition.
+template <typename TUnionCollapsesUnderApplication>
+static void collect_open_schema_alternatives(const FSParser::DataType &p_type, bool p_invariant,
+		const TUnionCollapsesUnderApplication &p_union_collapses, Vector<FSParser::DataType> &r_alternatives) {
+	if (p_type.kind == FSParser::DataType::UNION) {
+		if (p_invariant && !p_union_collapses(p_type.union_members)) {
+			r_alternatives.push_back(p_type);
+			return;
+		}
+		for (const FSParser::DataType &member : p_type.union_members) {
+			Vector<FSParser::DataType> member_alternatives;
+			::collect_open_schema_alternatives(member, p_invariant, p_union_collapses, member_alternatives);
+			for (FSParser::DataType &member_alternative : member_alternatives) {
+				// Normalization hoists nullability onto the union, so an alternative standing alone gets it
+				// back before it faces its own null rules.
+				member_alternative.is_nullable = member_alternative.is_nullable || p_type.is_nullable;
+				r_alternatives.push_back(member_alternative);
+			}
+		}
+		// The set is itself one of the types the position denotes, and a value whose own type is that set
+		// satisfies it without satisfying any single alternative. Offering only the alternatives would
+		// therefore refuse a value the position took before it was decomposed at all, so decomposition
+		// stays what it is meant to be: strictly more types asked, never fewer. A carrier one level up
+		// picks this variant up as one more option for its slot, which is what keeps an enclosing
+		// alternative's own intact form among the types asked.
+		r_alternatives.push_back(p_type);
+		return;
+	}
+
+	Vector<FSParser::DataType> alternatives;
+	alternatives.push_back(p_type);
+	const auto fill_slot = [&](int p_slot, const FSParser::DataType &p_slot_type, bool p_is_element) {
+		if (!::open_schema_carries_union(p_slot_type)) {
+			return;
+		}
+		Vector<FSParser::DataType> slot_alternatives;
+		::collect_open_schema_alternatives(p_slot_type, p_invariant || !p_is_element, p_union_collapses, slot_alternatives);
+		if (alternatives.size() * slot_alternatives.size() > MAX_OPEN_SCHEMA_CARRIER_COMBINATIONS) {
+			// Leaving the slot alone keeps the carrier's other slots decomposed and costs only the
+			// alternatives this one would have contributed, where failing outright would drop the whole
+			// position back to the answer the assembled field type already gave.
+			return;
+		}
+		Vector<FSParser::DataType> combined;
+		for (const FSParser::DataType &carrier : alternatives) {
+			for (const FSParser::DataType &slot_alternative : slot_alternatives) {
+				FSParser::DataType filled = carrier;
+				if (p_is_element) {
+					filled.set_container_element_type(p_slot, slot_alternative);
+				} else {
+					filled.set_type_argument(p_slot, slot_alternative);
+				}
+				combined.push_back(filled);
+			}
+		}
+		alternatives = combined;
+	};
+
+	if (p_type.is_tuple() && p_type.tuple_name == StringName()) {
+		for (int i = 0; i < p_type.container_element_types.size(); i++) {
+			fill_slot(i, p_type.container_element_types[i], true);
+		}
+	}
+	for (int i = 0; i < p_type.type_arguments.size(); i++) {
+		fill_slot(i, p_type.type_arguments[i], false);
+	}
+	r_alternatives.append_array(alternatives);
+}
+
 void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type) {
 	call_site_validation.reject_named_call_arguments(p_call);
 
@@ -13945,19 +14055,48 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	// declaration's open schema, where both owners still exist. A value admitted by one alternative is
 	// admitted by the union, so this only ever widens admission, and it runs only after the assembled
 	// field type has already refused the argument.
-	const auto open_union_alternative_admits = [&](const StringName &p_case_name, int p_index,
-													   const FSParser::DataType &p_field_type,
-													   const FSParser::DataType &p_argument_type,
-													   FSParser::ExpressionNode *p_argument) -> bool {
+	//
+	// The same collapse happens to a union the schema carries one or more carriers deep, so the
+	// decomposition follows the carriers instead of stopping at the field's own type.
+	//
+	// Two members denote the same type once the application binds them exactly when they differ in
+	// nothing but which frame their `Self` belongs to, provenance being no part of type identity. That
+	// is the only split an invariant position -- a specialization's type argument -- may be decomposed
+	// on, since any other split would narrow the position to one alternative of a type argument the
+	// declaration matches whole.
+	//
+	// Sameness is asked of the strict identity comparison rather than of `operator==`, which stops at a
+	// type's kind and carrier: two callable alternatives read as one type there, so
+	// `Callable[[int], void] | Callable[[String], void]` would be classified as collapsing and each
+	// signature distributed through the specialization, admitting one the payload conversion refuses.
+	const auto open_union_members_collapse = [&](const Vector<FSParser::DataType> &p_members) -> bool {
+		if (p_members.size() < 2) {
+			return true;
+		}
+		const FSParser::DataType applied_first = FSParser::DataType::substitute(
+				payload_field_type_for_spelling(p_members[0]), type_argument_bindings);
+		for (int i = 1; i < p_members.size(); i++) {
+			const FSParser::DataType applied_member = FSParser::DataType::substitute(
+					payload_field_type_for_spelling(p_members[i]), type_argument_bindings);
+			if (!::_datatype_strict_identity_equal(applied_member, applied_first)) {
+				return false;
+			}
+		}
+		return true;
+	};
+	const auto open_schema_alternative_admits = [&](const StringName &p_case_name, int p_index,
+														const FSParser::DataType &p_field_type,
+														const FSParser::DataType &p_argument_type,
+														FSParser::ExpressionNode *p_argument) -> bool {
 		const FSParser::DataType *open_field = open_payload_field(p_case_name, p_index);
-		if (open_field == nullptr || open_field->kind != FSParser::DataType::UNION) {
+		if (open_field == nullptr || !::open_schema_carries_union(*open_field)) {
 			return false;
 		}
-		for (const FSParser::DataType &member : open_field->union_members) {
-			// Normalization hoists nullability onto the union, so an alternative standing alone gets it
-			// back before it faces its own null rules.
+		Vector<FSParser::DataType> open_alternatives;
+		::collect_open_schema_alternatives(*open_field, false, open_union_members_collapse, open_alternatives);
+		for (const FSParser::DataType &open_alternative : open_alternatives) {
 			FSParser::DataType alternative = complete_self_referential_enum_type(
-					FSParser::DataType::substitute(payload_field_type_for_spelling(member), type_argument_bindings));
+					FSParser::DataType::substitute(payload_field_type_for_spelling(open_alternative), type_argument_bindings));
 			alternative.is_nullable = alternative.is_nullable || p_field_type.is_nullable;
 			if (self_parameter_contract_admits_argument_type(alternative, p_argument_type, p_call, p_argument) ||
 					self_parameter_satisfied_by_receiver_identity(alternative, p_argument, p_call)) {
@@ -14030,7 +14169,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			}
 			if (!self_parameter_contract_admits_argument_type(field_type, self_field_argument_type, p_call, argument) &&
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call) &&
-					!open_union_alternative_admits(case_name, i, field_type, self_field_argument_type, argument)) {
+					!open_schema_alternative_admits(case_name, i, field_type, self_field_argument_type, argument)) {
 				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument") +
