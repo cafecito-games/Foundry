@@ -172,6 +172,18 @@ Variant FSProxyInstance::_coerce_handler_return(const FSDataType &p_return_type,
 		return p_value;
 	}
 
+	if (p_return_type.kind == FSDataType::UNION) {
+		// Membership, through the one relation every union boundary asks, so a proxy return accepts
+		// exactly what a plain union-returning function accepts -- the untyped-container retyping
+		// included. A value no alternative describes falls into the shared mismatch tail below: the
+		// widening and conversion branches are both keyed on `BUILTIN` and could only ask
+		// `Variant::construct()` about the `NIL` carrier a union does not have.
+		Variant accepted;
+		if (fs_union_accepts(p_return_type, p_value, accepted)) {
+			return accepted;
+		}
+	}
+
 	// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_RETURN_TYPED_BUILTIN's
 	// widen-then-width order: the value must be inside the `uint` range to cross carriers at all,
 	// and the declared width is then asked about the widened value it is about to commit. On either
