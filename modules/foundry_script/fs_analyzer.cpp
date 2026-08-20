@@ -13745,6 +13745,13 @@ static void collect_open_schema_alternatives(const FSParser::DataType &p_type, b
 				r_alternatives.push_back(member_alternative);
 			}
 		}
+		// The set is itself one of the types the position denotes, and a value whose own type is that set
+		// satisfies it without satisfying any single alternative. Offering only the alternatives would
+		// therefore refuse a value the position took before it was decomposed at all, so decomposition
+		// stays what it is meant to be: strictly more types asked, never fewer. A carrier one level up
+		// picks this variant up as one more option for its slot, which is what keeps an enclosing
+		// alternative's own intact form among the types asked.
+		r_alternatives.push_back(p_type);
 		return;
 	}
 
