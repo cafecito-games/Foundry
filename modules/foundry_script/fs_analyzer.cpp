@@ -7057,7 +7057,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 			continue;
 		}
 		if (_datatype_contains_self_type_parameter(expected_type)) {
-			const bool valid_self_element = self_contract_admits_container_element(expected_type, actual_type, p_self_parameter_contract);
+			const bool valid_self_element = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_type, actual_type) : _datatype_matches_self_return_contract(expected_type, actual_type);
 			if (!valid_self_element) {
 				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
 				return;
@@ -7141,7 +7141,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 			}
 			mark_node_unsafe(key_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_key_type)) {
-			const bool valid_self_key = self_contract_admits_container_element(expected_key_type, actual_key_type, p_self_parameter_contract);
+			const bool valid_self_key = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_key_type, actual_key_type) : _datatype_matches_self_return_contract(expected_key_type, actual_key_type);
 			if (!valid_self_key) {
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
 				return;
@@ -7201,7 +7201,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 			}
 			mark_node_unsafe(value_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_value_type)) {
-			const bool valid_self_value = self_contract_admits_container_element(expected_value_type, actual_value_type, p_self_parameter_contract);
+			const bool valid_self_value = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_value_type, actual_value_type) : _datatype_matches_self_return_contract(expected_value_type, actual_value_type);
 			if (!valid_self_value) {
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
 				return;
@@ -18182,35 +18182,6 @@ bool FSAnalyzer::self_contract_union_admits_value_type(
 		*r_matched_value = p_value_type;
 	}
 	return true;
-}
-
-// A container element type may itself be a union, and the element position is invariant: an
-// alternative that names no `Self` is answered by ordinary compatibility here rather than by the
-// value-flow admission a parameter or return position uses, which reconciles callable arity and tails.
-bool FSAnalyzer::self_contract_admits_container_element(
-		const FSParser::DataType &p_expected_type,
-		const FSParser::DataType &p_actual_type,
-		bool p_self_parameter_contract) {
-	// An element position is invariant, so a value that is itself a union has to be the same set rather
-	// than a subset of it; the leaf comparison below answers that directly.
-	if (p_expected_type.kind == FSParser::DataType::UNION && p_actual_type.kind != FSParser::DataType::UNION) {
-		Vector<FSParser::DataType> self_free_members;
-		for (const FSParser::DataType &member : p_expected_type.union_members) {
-			if (!_datatype_contains_self_type_parameter(member)) {
-				self_free_members.push_back(member);
-				continue;
-			}
-			FSParser::DataType alternative = member;
-			alternative.is_nullable = p_expected_type.is_nullable;
-			if (self_contract_admits_container_element(alternative, p_actual_type, p_self_parameter_contract)) {
-				return true;
-			}
-		}
-		return self_free_union_members_admit_value(self_free_members, p_expected_type.is_nullable, p_actual_type);
-	}
-	return p_self_parameter_contract
-			? _datatype_matches_self_parameter_contract(p_expected_type, p_actual_type)
-			: _datatype_matches_self_return_contract(p_expected_type, p_actual_type);
 }
 
 // The single admission point for a value flowing into a `Self`-bearing destination, whether that
