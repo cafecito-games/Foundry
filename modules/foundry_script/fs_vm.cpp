@@ -1212,6 +1212,18 @@ static String _freed_specialization_argument_error(const StringName &p_function_
 			String(p_function_name));
 }
 
+// The same refusal for a specialization that arrives as the *value* a reified check reads its type
+// from, rather than as a construction target. Materializing its freed argument would substitute the
+// native class that argument captured for the script identity it lost, so the check would enforce a
+// type the caller never named. The stale slot is named, because the caller chose which handle to pass.
+[[maybe_unused]] static String _freed_specialization_type_operand_error(const StringName &p_function_name,
+		const String &p_freed_type_argument) {
+	return vformat(
+			R"(Cannot check an assignment in "%s" against a specialized class handle: %s references a script that has been freed.)",
+			String(p_function_name),
+			p_freed_type_argument.is_empty() ? String("one of its type arguments") : p_freed_type_argument);
+}
+
 // Returns the fully wrapped `Type[...]` display name for a class-handle-typed slot, ready to use
 // in a diagnostic without any further wrapping by the caller: `ContainerType::get_type_name()`
 // already renders the `Type[...]` wrapper once `is_type_handle` is threaded through the conversion.
@@ -1248,6 +1260,80 @@ static bool _script_type_from_type_info(const Variant &p_type_info, const FrameS
 	}
 	r_script = script;
 	return true;
+}
+
+// How a reified type operand resolved.
+enum class ReifiedTypeOperand {
+	// The operand named a class the store can be checked against.
+	RESOLVED,
+	// The operand denotes no class at all. The frame holds no evidence about the slot, which is the
+	// gradual case a store admits rather than an error to report.
+	NO_EVIDENCE,
+	// The operand is a specialization one of whose type-argument scripts has been freed.
+	FREED_TYPE_ARGUMENT,
+};
+
+// The class a live class-handle value denotes, as the type a store checks a value against. A reified
+// type operand carries such a value rather than a compile-time descriptor, and every shape a handle
+// takes -- a bare script resource, a specialized script handle, a native class handle -- answers the
+// same questions, so all of them are decoded here.
+//
+// A specialized handle holds its type arguments weakly, and materializing a freed one yields a
+// scriptless slot carrying the class name the freed script captured -- so the check would enforce a
+// substituted native type and admit an instance of some other specialization. That substitution is
+// refused everywhere else it can arise (`FSSpecializedClassHandle::callp("new")`,
+// `OPCODE_CONSTRUCT_SPECIALIZED`, `FSStaticSelfContext::to_data_type()`, bytecode export), so it is
+// refused here too. The refusal is decided by the materialization itself rather than by a liveness
+// question asked beforehand: there is exactly one read of each argument's weak reference, and the
+// strong reference that keeps it alive is taken at that same read, so no window exists in which a
+// concurrent release could turn an approved descriptor into a degraded one.
+// `r_freed_type_argument` names the stale slot.
+[[maybe_unused]] static ReifiedTypeOperand _reified_type_from_class_handle_value(const Variant &p_handle,
+		Script *&r_script, FSDataType &r_type, Vector<ContainerType> &r_type_arguments,
+		String &r_freed_type_argument) {
+	if (p_handle.get_type() != Variant::OBJECT) {
+		return ReifiedTypeOperand::NO_EVIDENCE;
+	}
+	Object *object = p_handle.operator Object *();
+	if (object == nullptr) {
+		return ReifiedTypeOperand::NO_EVIDENCE;
+	}
+
+	ContainerType type;
+	type.builtin_type = Variant::OBJECT;
+	if (Script *script = Object::cast_to<Script>(object)) {
+		type.class_name = script->get_instance_base_type();
+		type.script = Ref<Script>(script);
+	} else if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(object)) {
+		// The handle's own script is held strongly by the handle, so only its arguments can go stale.
+		const Ref<Script> represented_script = class_handle->get_represented_script();
+		type.class_name = represented_script.is_valid()
+				? represented_script->get_instance_base_type()
+				: class_handle->get_represented_native_class();
+		type.script = represented_script;
+		if (FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(object)) {
+			bool saw_freed_type_argument = false;
+			type.type_arguments = specialized_handle->get_type_arguments(saw_freed_type_argument);
+			if (unlikely(saw_freed_type_argument)) {
+				// Rendering re-reads the weak nodes, but a freed object never becomes live again, so the
+				// description can only fail to find the slot, never contradict the refusal.
+				r_freed_type_argument = specialized_handle->describe_freed_type_argument();
+				return ReifiedTypeOperand::FREED_TYPE_ARGUMENT;
+			}
+		} else {
+			class_handle->get_represented_type_arguments(type.type_arguments);
+		}
+		if (type.script.is_null() && type.class_name == StringName()) {
+			return ReifiedTypeOperand::NO_EVIDENCE;
+		}
+	} else {
+		return ReifiedTypeOperand::NO_EVIDENCE;
+	}
+
+	r_script = type.script.ptr();
+	r_type_arguments = type.type_arguments;
+	r_type = FSDataType::from_type_handle_container_type(type);
+	return ReifiedTypeOperand::RESOLVED;
 }
 
 // The type operand of a native-lowered type test or cast. A plain operand is the `FSNativeClass`
@@ -3933,46 +4019,70 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				FSDataType expected_handle_type;
 				Script *base_type = nullptr;
 				Vector<ContainerType> expected_type_arguments;
-				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
-					err_text = _missing_static_self_error(name);
-					OPCODE_BREAK;
-				}
+				// A method-scope type parameter is erased at compile time, so no constant can name the class it
+				// stands for -- but where the frame received the class handle that reified it, the operand
+				// addresses that register instead. The address encoding already says which form the operand is,
+				// and a live handle denotes a class no descriptor was built for, so a dynamic operand is decoded
+				// from the value it holds. A value denoting no class leaves the store unchecked: no evidence is
+				// the gradual case, not a malformed program.
+				bool has_expected_type = true;
+				if (((_code_ptr[ip + 3] & ADDR_TYPE_MASK) >> ADDR_BITS) != ADDR_TYPE_CONSTANT) {
+					String freed_type_argument;
+					const ReifiedTypeOperand resolution = _reified_type_from_class_handle_value(*type, base_type,
+							expected_handle_type, expected_type_arguments, freed_type_argument);
+					if (unlikely(resolution == ReifiedTypeOperand::FREED_TYPE_ARGUMENT)) {
+						err_text = _freed_specialization_type_operand_error(name, freed_type_argument);
+						OPCODE_BREAK;
+					}
+					has_expected_type = resolution == ReifiedTypeOperand::RESOLVED;
+				} else {
+					if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
 
-				GD_ERR_BREAK(!base_type);
+					GD_ERR_BREAK(!base_type);
+				}
 				const bool is_type_handle = _code_ptr[ip + 4];
 
-				if (is_type_handle) {
-					if (!expected_handle_type.is_type(*src)) {
-						err_text = "Trying to assign value of type '" + _class_handle_boundary_value_type_name(src) +
-								"' to a variable of type '" + _get_type_handle_type_name(expected_handle_type, base_type) + "'.";
-						OPCODE_BREAK;
-					}
-				} else {
-					// The declared specialization is part of the slot's type, so a nominally correct value
-					// whose reified arguments contradict it is not a value of that type -- the same question
-					// the member store, the call boundary and the return already ask. It is answered here by
-					// the shared structural relation rather than by a second, local rule: that relation owns
-					// the base-script chain walk, declared and inherited `uses`, supertraits, retroactive
-					// script, native and builtin conformance, and the gradual argument comparison in which
-					// only contradicting evidence rejects.
-					FSDataType expected_value_type = expected_handle_type;
-					expected_value_type.is_type_handle = false;
-
-					// The relation reports a freed instance as a plain mismatch, so the more precise
-					// diagnostic is taken first.
-					if (src->get_type() == Variant::OBJECT) {
-						bool was_freed = false;
-						src->get_validated_object_with_check(was_freed);
-						if (was_freed) {
-							err_text = "Trying to assign invalid previously freed instance.";
+				if (has_expected_type) {
+					if (is_type_handle) {
+						if (!expected_handle_type.is_type(*src)) {
+							err_text = "Trying to assign value of type '" + _class_handle_boundary_value_type_name(src) +
+									"' to a variable of type '" + _get_type_handle_type_name(expected_handle_type, base_type) + "'.";
 							OPCODE_BREAK;
 						}
-					}
+					} else {
+						// The declared specialization is part of the slot's type, so a nominally correct value
+						// whose reified arguments contradict it is not a value of that type -- the same question
+						// the member store, the call boundary and the return already ask. It is answered here by
+						// the shared structural relation rather than by a second, local rule: that relation owns
+						// the base-script chain walk, declared and inherited `uses`, supertraits, retroactive
+						// script, native and builtin conformance, and the gradual argument comparison in which
+						// only contradicting evidence rejects.
+						FSDataType expected_value_type = expected_handle_type;
+						expected_value_type.is_type_handle = false;
 
-					if (!expected_value_type.is_type(*src)) {
-						err_text = "Trying to assign value of type '" + _script_boundary_value_type_name(src) +
-								"' to a variable of type '" + _specialized_script_type_name(base_type, expected_type_arguments) + "'.";
-						OPCODE_BREAK;
+						// The relation reports a freed instance as a plain mismatch, so the more precise
+						// diagnostic is taken first.
+						if (src->get_type() == Variant::OBJECT) {
+							bool was_freed = false;
+							src->get_validated_object_with_check(was_freed);
+							if (was_freed) {
+								err_text = "Trying to assign invalid previously freed instance.";
+								OPCODE_BREAK;
+							}
+						}
+
+						if (!expected_value_type.is_type(*src)) {
+							// A reified operand can name an engine class, which has no script to name it by.
+							const String expected_type_name = base_type != nullptr
+									? _specialized_script_type_name(base_type, expected_type_arguments)
+									: String(expected_value_type.native_type);
+							err_text = "Trying to assign value of type '" + _script_boundary_value_type_name(src) +
+									"' to a variable of type '" + expected_type_name + "'.";
+							OPCODE_BREAK;
+						}
 					}
 				}
 #endif // DEBUG_ENABLED

@@ -13809,6 +13809,19 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	if (self_field_leg == SelfFieldLeg::FRAME_RECEIVER) {
 		p_call->receiver_is_current_self = true;
 	}
+	if (self_field_leg == SelfFieldLeg::EXACT_HANDLE) {
+		// A handle whose represented type is a type parameter says exactly which class the payload's
+		// `Self` fields -- and any field the application typed by that same parameter -- stand for, but
+		// the parameter erases to Variant, so lowering has no static class to convert against. The
+		// handle expression is recorded here, where the spelling is already decided, so the compiler
+		// checks those arguments against the class the handle actually holds instead of re-deriving
+		// the spelling from the callee tree.
+		const FSParser::DataType represented_type = type_handle_represented_type(union_base_type);
+		if (represented_type.is_set() && represented_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+			p_call->enum_case_receiver_handle = union_base_expression;
+			p_call->enum_case_reified_parameter = represented_type;
+		}
+	}
 
 	const auto payload_field_type_for_spelling = [&](const FSParser::DataType &p_field_type) -> FSParser::DataType {
 		if (!_datatype_contains_self_type_parameter(p_field_type)) {

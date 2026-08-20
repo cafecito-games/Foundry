@@ -138,6 +138,15 @@ Vector<ContainerType> FSSpecializedClassHandle::get_type_arguments() const {
 	return result;
 }
 
+Vector<ContainerType> FSSpecializedClassHandle::get_type_arguments(bool &r_saw_freed) const {
+	Vector<ContainerType> result;
+	result.resize(type_arguments.size());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		result.write[i] = type_arguments[i].to_container_type(r_saw_freed);
+	}
+	return result;
+}
+
 void FSSpecializedClassHandle::get_represented_type_arguments(Vector<ContainerType> &r_arguments) const {
 	r_arguments = get_type_arguments();
 }

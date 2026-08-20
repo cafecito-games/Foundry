@@ -111,6 +111,11 @@ public:
 	const Ref<FoundryScript> &get_specialized_script() const { return script; }
 	// Materializes the concrete arguments. Returns by value because the handle stores them weakly.
 	Vector<ContainerType> get_type_arguments() const;
+	// The same, additionally reporting whether any argument (at any nesting depth) named a script that
+	// is gone. Liveness and materialization come from the same lookups, so a consumer that refuses on
+	// the report cannot be handed a degraded argument by a script released between a separate
+	// `is_fully_live()` query and this call.
+	Vector<ContainerType> get_type_arguments(bool &r_saw_freed) const;
 	// True when every type-argument script (at any nesting depth) is still reachable. The handle's own
 	// script is held strongly, so only the arguments can go stale; a stale argument makes the handle
 	// unusable for construction or `Self` resolution.
