@@ -5399,7 +5399,10 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			}
 		} else if (!specified_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(specified_type)) {
-				const bool value_is_gradual = !initializer_type.is_hard_type();
+				// The condition ordinary validation routes into its own gradual arm with. An annotated
+				// `Variant` is a hard type, but it promises no more about the value than a weak one does,
+				// so both carriers face the same questions here.
+				const bool value_is_gradual = initializer_type.is_variant() || !initializer_type.is_hard_type();
 				if (value_is_gradual
 								? !self_contract_admits_gradual_value(specified_type, initializer_type)
 								: !self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN, p_assignable->initializer)) {
@@ -6550,7 +6553,9 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 
 	if (has_expected_type && !compatibility_expected_type.is_variant()) {
 		if (preserve_self_contract) {
-			const bool value_is_gradual = !result.is_hard_type();
+			// The condition ordinary validation routes into its own gradual arm with; an annotated
+			// `Variant` promises no more about the value than a weak type does.
+			const bool value_is_gradual = result.is_variant() || !result.is_hard_type();
 			if (!self_container_literal_validated &&
 					(value_is_gradual
 									? !self_contract_admits_gradual_value(expected_type, result)
@@ -7627,7 +7632,9 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		}
 	} else {
 		if (_datatype_contains_self_type_parameter(assignee_type)) {
-			const bool value_is_gradual = !op_type.is_hard_type();
+			// The condition ordinary validation routes into its own gradual arm with; an annotated
+			// `Variant` promises no more about the value than a weak type does.
+			const bool value_is_gradual = op_type.is_variant() || !op_type.is_hard_type();
 			if (value_is_gradual
 							? !self_contract_admits_gradual_value(assignee_type, op_type)
 							: !self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN, p_assignment->assigned_value)) {

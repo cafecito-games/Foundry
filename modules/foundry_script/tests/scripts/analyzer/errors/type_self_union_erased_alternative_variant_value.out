@@ -1,0 +1,7 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Cannot assign a value of type Variant to variable "link" with specified type Array[T] | (int, Self): an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 10: Value of type "Variant" cannot be assigned to a variable of type "Array[T] | (int, Self)": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 15: Cannot assign a value of type Variant to variable "link" with specified type Array[T] | String: an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 16: Value of type "Variant" cannot be assigned to a variable of type "Array[T] | String": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 21: Cannot return value of type "Variant" because the function return type is "Array[T] | (int, Self)": an erased type parameter has no run-time type to check the value against.
+>> ERROR at line 25: Cannot return value of type "Variant" because the function return type is "Array[T] | String": an erased type parameter has no run-time type to check the value against.
