@@ -1098,33 +1098,46 @@ static bool _datatype_matches_self_return_contract(
 	return false;
 }
 
-// A callable supplied for a fixed-arity parameter may accept more than the parameter promises to send:
-// the parameter's static type permits exactly its fixed arity, so a tail beyond that is never invoked
-// and its element type cannot be observed. A variadic *expectation* is the unsound direction and keeps
-// the exact comparison, as does a tail both sides declare.
+// Rewrites a callable argument into the shape the parameter position compares against, so the exact
+// comparison below decides sameness while arity substitution is settled here. Two rewrites apply, both
+// contravariant and both matching what ordinary argument compatibility has always admitted:
 //
-// Only this position substitutes. A callable reached through a carrier element or a class type argument
-// sits in an invariant slot, where the supplied type has to be the declared one rather than one that
-// merely accepts every call it would receive, so the relaxation deliberately does not enter the
-// recursive identity walk.
-static bool _callable_argument_relaxes_to_fixed_expectation(
+//   - A fixed-arity parameter never invokes a tail, because its static type permits exactly its fixed
+//     arity, so a variadic argument drops its tail rather than being rejected for having one.
+//   - A gradual tail (`...Array`) accepts every trailing argument, so it satisfies whatever tail the
+//     parameter declares. Variadicity lives in the flags while a narrowed tail also fills the rest
+//     slot, so the gradual argument takes on the declared tail instead of failing a slot count.
+//
+// The unsound directions keep the exact comparison: a variadic parameter is not satisfied by a
+// fixed-arity argument, and two declared tails must agree on their element type. Only this position
+// substitutes -- a callable reached through a carrier element or a class type argument sits in an
+// invariant slot, where the supplied type has to be the declared one rather than one that merely
+// accepts every call it would receive -- so the rewrite deliberately does not enter the recursive
+// identity walk. The result is idempotent, which is what lets the identity gate reuse it.
+static FSParser::DataType _self_contract_comparable_callable_argument(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
-	return p_expected_type.has_method_signature && p_argument_type.has_method_signature &&
-			(p_expected_type.method_info.flags & METHOD_FLAG_VARARG) == 0 &&
-			(p_argument_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
+	if (!p_expected_type.has_method_signature || !p_argument_type.has_method_signature ||
+			(p_argument_type.method_info.flags & METHOD_FLAG_VARARG) == 0) {
+		return p_argument_type;
+	}
+	if ((p_expected_type.method_info.flags & METHOD_FLAG_VARARG) == 0) {
+		FSParser::DataType result = p_argument_type;
+		result.method_info.flags &= ~METHOD_FLAG_VARARG;
+		result.clear_method_rest_parameter_type();
+		return result;
+	}
+	if (p_expected_type.method_rest_parameter_type.size() == 1 && p_argument_type.method_rest_parameter_type.is_empty()) {
+		FSParser::DataType result = p_argument_type;
+		result.set_method_rest_parameter_type(p_expected_type.method_rest_parameter_type[0]);
+		return result;
+	}
+	return p_argument_type;
 }
 
-static bool _datatype_matches_self_parameter_contract(
+static bool _datatype_matches_self_parameter_contract_exact(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
-	if (_callable_argument_relaxes_to_fixed_expectation(p_expected_type, p_argument_type)) {
-		// The normalized argument is no longer variadic, so this re-entry cannot relax again.
-		FSParser::DataType fixed_argument = p_argument_type;
-		fixed_argument.method_info.flags &= ~METHOD_FLAG_VARARG;
-		fixed_argument.clear_method_rest_parameter_type();
-		return _datatype_matches_self_parameter_contract(p_expected_type, fixed_argument);
-	}
 	if (_datatype_strict_identity_equal(p_expected_type, p_argument_type)) {
 		return true;
 	}
@@ -1169,6 +1182,13 @@ static bool _datatype_matches_self_parameter_contract(
 		return _datatype_strict_identity_equal(non_nullable_expected, p_argument_type);
 	}
 	return false;
+}
+
+static bool _datatype_matches_self_parameter_contract(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type) {
+	return _datatype_matches_self_parameter_contract_exact(
+			p_expected_type, _self_contract_comparable_callable_argument(p_expected_type, p_argument_type));
 }
 
 static String identifier_name_from_expression(const FSParser::ExpressionNode *p_expression) {
@@ -17851,10 +17871,13 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 }
 
 bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) const {
-	if (!_datatype_matches_self_parameter_contract(p_expected_type, p_argument_type)) {
+	// The identity gate reads the same rewritten argument the contract matched, so a callable whose
+	// tail was settled by arity substitution still answers for the `Self` positions that tail carries.
+	const FSParser::DataType argument_type = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
+	if (!_datatype_matches_self_parameter_contract_exact(p_expected_type, argument_type)) {
 		return false;
 	}
-	if (!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, p_argument_type)) {
+	if (!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return true;
 	}
 	// With no call node there is no receiver expression to compare against, so the type-level answer
@@ -17872,8 +17895,9 @@ String FSAnalyzer::self_parameter_receiver_identity_clause(
 		const FSParser::CallNode *p_call,
 		const String &p_expected_subject,
 		const String &p_argument_subject) const {
-	if (!_datatype_matches_self_parameter_contract(p_expected_type, p_argument_type) ||
-			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, p_argument_type)) {
+	const FSParser::DataType argument_type = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
+	if (!_datatype_matches_self_parameter_contract_exact(p_expected_type, argument_type) ||
+			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return String();
 	}
 	if (p_call == nullptr || call_receiver_is_current_self(p_call)) {
