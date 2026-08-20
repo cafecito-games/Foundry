@@ -195,6 +195,12 @@ public:
 		// can tell a raw receiver's parameter from an identically named one the use site already binds.
 		// Provenance only: it takes no part in type identity.
 		ClassNode *raw_generic_projection_owner = nullptr;
+		// True when this Variant replaced a type parameter that generic inference could not solve, so
+		// the rest of the call stays type-checkable after the inference error. Nothing at the call site
+		// expects a Variant there; a diagnostic that names what a position expects must not present
+		// this recovery type as the author's expectation. Provenance only: it takes no part in type
+		// identity.
+		bool is_unresolved_inference_fallback = false;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;
