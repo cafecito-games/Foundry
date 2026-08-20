@@ -1058,22 +1058,28 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 	return valid;
 }
 
-// Whether a parsed file declares a class that applies a trait with type arguments, anywhere in its
-// class tree. Readable straight off the parse tree, before trait uses are resolved, because a `uses`
-// clause that wrote no arguments can bind nothing whatever it resolves to.
-static bool _declares_argument_bearing_trait_use(const FSParser::ClassNode *p_class) {
+// Whether a parsed file declares a class that applies any trait, anywhere in its class tree.
+//
+// Deliberately coarser than what `_collect_class_trait_bindings()` ends up recording. This runs on a
+// merely parsed tree, where no `uses` clause has been resolved yet, so the trait a clause names — and
+// with it the identity closure the binding is actually read off — is not known. A clause that writes no
+// type arguments of its own still binds a generic trait whenever the trait it names specializes one
+// (`trait IntKeeper uses Keeper[int]`), and that specialization is only visible after resolution.
+//
+// Answering "declares a `uses` at all" is the smallest question that can be answered here and can never
+// be narrower than what collection records, so the prescan cannot skip a file whose bindings would have
+// mattered. Over-answering only raises a file whose recorded bindings then turn out to be empty, which
+// costs an interface resolution and states nothing.
+static bool _declares_class_trait_use(const FSParser::ClassNode *p_class) {
 	if (p_class == nullptr) {
 		return false;
 	}
-	if (!p_class->is_trait) {
-		for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
-			if (!trait_use.type_arguments.is_empty()) {
-				return true;
-			}
-		}
+	// Only a class binds a trait for receivers; a trait declaration has none of its own.
+	if (!p_class->is_trait && !p_class->used_traits.is_empty()) {
+		return true;
 	}
 	for (const FSParser::ClassNode::Member &member : p_class->members) {
-		if (member.type == FSParser::ClassNode::Member::CLASS && _declares_argument_bearing_trait_use(member.m_class)) {
+		if (member.type == FSParser::ClassNode::Member::CLASS && _declares_class_trait_use(member.m_class)) {
 			return true;
 		}
 	}
@@ -1130,7 +1136,7 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 			}
 		}
 		if (dependency_parser->head->conformances.is_empty() &&
-				!(declares_conformances && _declares_argument_bearing_trait_use(dependency_parser->head))) {
+				!(declares_conformances && _declares_class_trait_use(dependency_parser->head))) {
 			continue;
 		}
 		dependency_parser_access.raise_parser_to_status(dependency_ref, FSParserRef::INTERFACE_SOLVED);
