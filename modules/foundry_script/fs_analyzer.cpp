@@ -13868,6 +13868,39 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				FSParser::DataType::substitute(payload_field_type_for_spelling(*open_field), type_argument_bindings));
 	};
 
+	// Two alternatives of a union payload field can be written over different owners and still describe
+	// the same type, as `(int, Self) | (int, T)` does once the application binds `T := Self`. Which frame
+	// a `Self` belongs to is provenance, deliberately not part of type identity, so union normalization
+	// keeps exactly one of the two and the other owner's admission would silently disappear -- rejecting
+	// a construction the author's own annotation allows.
+	//
+	// Rather than carry a malformed union with two members that compare equal, which every consumer of a
+	// normalized union would then have to tolerate, the alternatives are asked individually off the
+	// declaration's open schema, where both owners still exist. A value admitted by one alternative is
+	// admitted by the union, so this only ever widens admission, and it runs only after the assembled
+	// field type has already refused the argument.
+	const auto open_union_alternative_admits = [&](const StringName &p_case_name, int p_index,
+													   const FSParser::DataType &p_field_type,
+													   const FSParser::DataType &p_argument_type,
+													   FSParser::ExpressionNode *p_argument) -> bool {
+		const FSParser::DataType *open_field = open_payload_field(p_case_name, p_index);
+		if (open_field == nullptr || open_field->kind != FSParser::DataType::UNION) {
+			return false;
+		}
+		for (const FSParser::DataType &member : open_field->union_members) {
+			// Normalization hoists nullability onto the union, so an alternative standing alone gets it
+			// back before it faces its own null rules.
+			FSParser::DataType alternative = complete_self_referential_enum_type(
+					FSParser::DataType::substitute(payload_field_type_for_spelling(member), type_argument_bindings));
+			alternative.is_nullable = alternative.is_nullable || p_field_type.is_nullable;
+			if (self_parameter_contract_admits_argument_type(alternative, p_argument_type, p_call, p_argument) ||
+					self_parameter_satisfied_by_receiver_identity(alternative, p_argument, p_call)) {
+				return true;
+			}
+		}
+		return false;
+	};
+
 	// The construction checks below read the transformed field types, whose `Self` positions are the
 	// receiver contract. The value the construction produces substitutes those fields when the receiver
 	// is not the constructing frame's own, because lowering converts each argument against the payload
@@ -13930,7 +13963,8 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				continue;
 			}
 			if (!self_parameter_contract_admits_argument_type(field_type, self_field_argument_type, p_call, argument) &&
-					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
+					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call) &&
+					!open_union_alternative_admits(case_name, i, field_type, self_field_argument_type, argument)) {
 				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument") +
