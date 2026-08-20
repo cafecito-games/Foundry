@@ -53,6 +53,23 @@
 #define TEST_FAIL_COND(cond, ...) DOCTEST_REQUIRE_FALSE_MESSAGE(cond, __VA_ARGS__)
 #define TEST_FAIL_COND_WARN(cond, ...) DOCTEST_WARN_FALSE_MESSAGE(cond, __VA_ARGS__)
 
+// A failed `REQUIRE` cannot unwind: the test build disables exceptions
+// (`DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS`), so the case is marked failed and keeps
+// running. Use this where the code below the assertion would crash without it -- indexing a
+// container whose size was just required, dereferencing a pointer just required non-null.
+//
+// It returns from the enclosing function, so it must not be placed after setup that the same
+// function tears down by hand; put it before that setup, or make the teardown RAII first.
+#define REQUIRE_OR_RETURN(m_condition)                       \
+	{                                                        \
+		const bool _foundry_requirement = bool(m_condition); \
+		REQUIRE_MESSAGE(_foundry_requirement, #m_condition); \
+		if (!_foundry_requirement) {                         \
+			return;                                          \
+		}                                                    \
+	}                                                        \
+	((void)0)
+
 // Temporarily disable error prints to test failure paths.
 // This allows to avoid polluting the test summary with error messages.
 // The `print_error_enabled` boolean is defined in `core/core_globals.cpp` and

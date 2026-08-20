@@ -135,7 +135,7 @@ TEST_CASE("[Modules][FoundryScript][Generics] Specialized construction binds rei
 		REQUIRE(instance != nullptr);
 
 		const Vector<ContainerType> &bound = instance->get_type_arguments();
-		REQUIRE(bound.size() == 1);
+		REQUIRE_OR_RETURN(bound.size() == 1);
 		CHECK(bound[0].builtin_type == Variant::INT);
 
 		Object *box_object = box_instance;
@@ -160,9 +160,9 @@ TEST_CASE("[Modules][FoundryScript][Generics] Specialized construction binds rei
 		REQUIRE(instance != nullptr);
 
 		const Vector<ContainerType> &bound = instance->get_type_arguments();
-		REQUIRE(bound.size() == 1);
+		REQUIRE_OR_RETURN(bound.size() == 1);
 		CHECK(bound[0].builtin_type == Variant::ARRAY);
-		REQUIRE(bound[0].element_types.size() == 1);
+		REQUIRE_OR_RETURN(bound[0].element_types.size() == 1);
 		CHECK(bound[0].element_types[0].builtin_type == Variant::INT);
 	}
 
@@ -252,7 +252,7 @@ TEST_CASE("[Modules][FoundryScript][Generics] ContainerType carries and serializ
 	String error;
 	REQUIRE(ContainerTypeDescriptor::from_variant(descriptor, restored, &error));
 	CHECK(restored == specialized);
-	REQUIRE(restored.type_arguments.size() == 1);
+	REQUIRE_OR_RETURN(restored.type_arguments.size() == 1);
 	CHECK(restored.type_arguments[0].builtin_type == Variant::INT);
 
 	// The type name reflects the specialization.
@@ -333,10 +333,10 @@ TEST_CASE("[Modules][FoundryScript][Generics] Reified type arguments round-trip 
 	CHECK(restored_instance->set(type_arguments_property, serialized));
 
 	const Vector<ContainerType> &restored = restored_instance->get_type_arguments();
-	REQUIRE(restored.size() == 2);
+	REQUIRE_OR_RETURN(restored.size() == 2);
 	CHECK(restored[0] == array_argument);
 	CHECK(restored[1] == script_argument);
-	REQUIRE(restored[0].element_types.size() == 1);
+	REQUIRE_OR_RETURN(restored[0].element_types.size() == 1);
 	CHECK(restored[0].element_types[0].builtin_type == Variant::INT);
 	CHECK(restored[1].script == pair);
 
@@ -376,7 +376,7 @@ TEST_CASE("[Modules][FoundryScript][Generics] FSDataType lowers type arguments t
 	handle.type_arguments.push_back(argument);
 
 	const ContainerType lowered = handle.to_container_type();
-	REQUIRE(lowered.type_arguments.size() == 1);
+	REQUIRE_OR_RETURN(lowered.type_arguments.size() == 1);
 	CHECK(lowered.type_arguments[0].builtin_type == Variant::STRING);
 }
 
@@ -489,10 +489,11 @@ static void check_specialized_generic_is_as(const Ref<FoundryScript> &p_script) 
 
 	FSInstance *array_crate_instance = fs_instance_of(array_crate);
 	REQUIRE(array_crate_instance != nullptr);
-	REQUIRE(array_crate_instance->get_type_arguments().size() == 1);
-	CHECK(array_crate_instance->get_type_arguments()[0].builtin_type == Variant::ARRAY);
-	REQUIRE(array_crate_instance->get_type_arguments()[0].element_types.size() == 1);
-	CHECK(array_crate_instance->get_type_arguments()[0].element_types[0].builtin_type == Variant::INT);
+	const Vector<ContainerType> &array_crate_bound = array_crate_instance->get_type_arguments();
+	REQUIRE_OR_RETURN(array_crate_bound.size() == 1);
+	CHECK(array_crate_bound[0].builtin_type == Variant::ARRAY);
+	REQUIRE_OR_RETURN(array_crate_bound[0].element_types.size() == 1);
+	CHECK(array_crate_bound[0].element_types[0].builtin_type == Variant::INT);
 
 	// Raw targets stay nominal.
 	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_crate"), { int_crate })));
@@ -646,7 +647,7 @@ static void check_specialized_generic_trait_is_as(const Ref<FoundryScript> &p_sc
 
 	Vector<ProjectedContainerType> projected;
 	REQUIRE(int_holder->project_type_arguments_onto_base(holder_trait, Vector<ContainerType>(), projected));
-	REQUIRE(projected.size() == 1);
+	REQUIRE_OR_RETURN(projected.size() == 1);
 	CHECK(projected[0].state == ProjectedContainerType::EXACT);
 	CHECK(projected[0].outer.builtin_type == Variant::INT);
 
@@ -853,14 +854,14 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] Retroactive conformance argu
 	Vector<ContainerType> recorded;
 	REQUIRE(registry->get_conformance_type_arguments(target->get_fully_qualified_name(),
 			sub_store->get_trait_type_name(), recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
 	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
 	CHECK(recorded[0] == int_argument);
 
 	REQUIRE(registry->get_conformance_type_arguments(target->get_fully_qualified_name(),
 			script_store->get_trait_type_name(), recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
 	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
 
@@ -868,16 +869,16 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] Retroactive conformance argu
 	// subclasses.
 	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"),
 			native_store->get_trait_type_name(), recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
 	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("Resource"),
 			native_store->get_trait_type_name(), recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
 
 	REQUIRE(registry->get_builtin_conformance_type_arguments(Variant::INT,
 			builtin_store->get_trait_type_name(), recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
 
 	// A trait nothing conformed to, and a target nothing conformed, report an absence of evidence
@@ -957,7 +958,7 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-arg
 	// The live baseline: a script-typed argument is recorded and answers the specialized target.
 	Vector<ContainerType> recorded;
 	REQUIRE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK(recorded[0].script.is_valid());
 	CHECK(bool(call_generic_runtime_static(script, SNAME("is_boxed"), { target_value })));
 	CHECK(bool(call_generic_runtime_static(script, SNAME("is_payload_boxed"), { target_value })));
@@ -981,7 +982,7 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-arg
 		registry->register_runtime_witnesses(script_path, conformances);
 	}
 	REQUIRE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK(recorded[0].script.ptr() == free_standing_argument.ptr());
 
 	// Dropping the last strong reference frees the argument. The record still names it, so the query
@@ -992,7 +993,7 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-arg
 	free_standing_argument = Ref<FoundryScript>();
 
 	REQUIRE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
-	REQUIRE_EQ(recorded.size(), 1);
+	REQUIRE_OR_RETURN(recorded.size() == 1);
 	CHECK_EQ(recorded[0].builtin_type, Variant::NIL);
 	CHECK(recorded[0].script.is_null());
 	CHECK(recorded[0].class_name == StringName());

@@ -205,7 +205,7 @@ public:
 
 		CHECK(winner.conflicts.is_empty());
 		CHECK_GT(winner.registered_count, 0);
-		REQUIRE_EQ(loser.conflicts.size(), 1);
+		REQUIRE_OR_RETURN(loser.conflicts.size() == 1);
 		CHECK_EQ(loser.conflicts[0].kind, p_kind);
 		CHECK_EQ(loser.registered_count, 0);
 		CHECK_FALSE(loser.conflicts[0].conflicting_source_file.is_empty());
@@ -334,7 +334,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Concurrent witness collisions l
 				FSConformanceRegistry::RegistrationConflict::WITNESS_COLLISION);
 		const FSConformanceRegistry::RegistrationResult &loser =
 				submission.first_won() ? submission.second_result : submission.first_result;
-		REQUIRE_EQ(loser.conflicts.size(), 1);
+		REQUIRE_OR_RETURN(loser.conflicts.size() == 1);
 		CHECK_EQ(loser.conflicts[0].method_name, StringName("atomic_witness_label"));
 		CHECK_EQ(loser.conflicts[0].target_label, String("AtomicWitnessTarget"));
 	});
@@ -513,7 +513,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] A rejected replacement still dr
 
 	const FSConformanceRegistry::RegistrationResult result =
 			registry->try_replace_file_conformances(owner_file, replacement);
-	REQUIRE_EQ(result.conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
 	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::DUPLICATE_MEMBERSHIP);
 	CHECK_EQ(result.conflicts[0].conformance_index, 0);
 	CHECK_EQ(result.conflicts[0].conflicting_source_file, other_file);
@@ -597,7 +597,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Interleaved declaration entries
 
 	const FSConformanceRegistry::RegistrationResult result =
 			registry->try_replace_file_conformances(owner_file, candidates);
-	REQUIRE_EQ(result.conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
 	CHECK_EQ(result.conflicts[0].conformance_index, 1);
 	CHECK_EQ(result.registered_count, 2);
 	CHECK_EQ(registry->get_conformance_source("AtomicInterleavedOther", "AtomicInterleavedTrait"), owner_file);
