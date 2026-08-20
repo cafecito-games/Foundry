@@ -1,6 +1,8 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 17: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[String]], void]".
->> ERROR at line 18: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[String]], void]".
->> ERROR at line 19: Invalid argument for "self_tail_declared()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]".
->> ERROR at line 20: Invalid argument for "self_tail_declared()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]".
->> ERROR at line 23: Invalid argument for "self_fixed()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]". The parameter's "Self" is resolved against the receiver expression; the argument is relative to the calling frame's receiver.
+>> ERROR at line 19: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[String]], void]".
+>> ERROR at line 20: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[String]], void]".
+>> ERROR at line 21: Invalid argument for "self_tail_declared()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]".
+>> ERROR at line 22: Invalid argument for "self_tail_declared()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]".
+>> ERROR at line 25: Invalid argument for "self_fixed()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]". The parameter's "Self" is resolved against the receiver expression; the argument is relative to the calling frame's receiver.
+>> ERROR at line 29: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[Leaf]], void]".
+>> ERROR at line 30: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[Leaf]], void]".

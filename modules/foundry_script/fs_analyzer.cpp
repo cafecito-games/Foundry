@@ -17905,9 +17905,51 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 	return true;
 }
 
-bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) const {
-	const FSParser::DataType argument_type = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
-	if (!_datatype_matches_self_parameter_contract_exact(p_expected_type, argument_type)) {
+// A callable's rest tail is the one signature slot ordinary argument compatibility admits
+// contravariantly: the callee sends values *into* the callback, so a tail that accepts a supertype of
+// the declared element accepts everything the parameter can ever send it. `Self` substitutes to its
+// bound for that question, because every receiver the parameter resolves to is an instance of the
+// bound, and a supertype of the bound therefore accepts every leaf.
+//
+// The value positions of a `Self` parameter keep the exact comparison for the reason this contract
+// exists -- a value typed as the bound is not the receiver's leaf -- and so do fixed signature slots,
+// which ordinary compatibility leaves invariant. Direction is what separates them: a value flows into
+// a `Self` position, while a tail receives from one.
+bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) {
+	if (!p_expected_type.has_method_signature || !p_argument_type.has_method_signature ||
+			p_expected_type.method_rest_parameter_type.size() != 1 ||
+			p_argument_type.method_rest_parameter_type.size() != 1) {
+		return false;
+	}
+	const FSParser::DataType expected_element = _substitute_self_type_parameter_with_bounds(
+			p_expected_type.method_rest_parameter_type[0].get_container_element_type(0));
+	const FSParser::DataType supplied_element = p_argument_type.method_rest_parameter_type[0].get_container_element_type(0);
+	if (!expected_element.is_set() || !supplied_element.is_set()) {
+		return false;
+	}
+	return is_type_compatible(supplied_element, expected_element);
+}
+
+// Answers whether the contract matches at all, and reports the argument shape it matched against so
+// the receiver-identity gate and the diagnostic clause read the same comparison this did.
+bool FSAnalyzer::self_parameter_contract_matched_argument(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type,
+		FSParser::DataType &r_matched_argument) {
+	r_matched_argument = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
+	if (_datatype_matches_self_parameter_contract_exact(p_expected_type, r_matched_argument)) {
+		return true;
+	}
+	if (!callable_rest_tail_accepts_expected_element(p_expected_type, r_matched_argument)) {
+		return false;
+	}
+	r_matched_argument.set_method_rest_parameter_type(p_expected_type.method_rest_parameter_type[0]);
+	return _datatype_matches_self_parameter_contract_exact(p_expected_type, r_matched_argument);
+}
+
+bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) {
+	FSParser::DataType argument_type;
+	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type)) {
 		return false;
 	}
 	// Receiver identity protects the *supplied* value's own `Self`, so it is asked of the type as
@@ -17936,9 +17978,9 @@ String FSAnalyzer::self_parameter_receiver_identity_clause(
 		const FSParser::DataType &p_argument_type,
 		const FSParser::CallNode *p_call,
 		const String &p_expected_subject,
-		const String &p_argument_subject) const {
-	const FSParser::DataType argument_type = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
-	if (!_datatype_matches_self_parameter_contract_exact(p_expected_type, argument_type) ||
+		const String &p_argument_subject) {
+	FSParser::DataType argument_type;
+	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type) ||
 			!_datatype_contains_caller_relative_self(p_argument_type) ||
 			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return String();

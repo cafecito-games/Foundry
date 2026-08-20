@@ -1,8 +1,10 @@
 # The `Self` contract decides a callable argument by structural identity, so a tail the parameter
-# declares is part of what the argument must supply: a tail whose element type differs is rejected, and
-# so is a fixed-arity callable where the parameter declares a tail it will invoke. A tail the parameter
-# never invokes is admitted instead, but that argument still carries `Self` in its own fixed prefix, so
-# it answers to receiver identity and the relaxation reaches only the calling frame's own receiver.
+# declares is part of what the argument must supply: a tail whose element type is unrelated is
+# rejected, and so is one narrower than `Self`, since the receiver may resolve to a sibling leaf that
+# is not that subclass. A fixed-arity callable is rejected where the parameter declares a tail it will
+# invoke. A tail the parameter never invokes is admitted instead, but that argument still carries
+# `Self` in its own fixed prefix, so it answers to receiver identity and reaches only the calling
+# frame's own receiver.
 class Cell:
 	func self_tail(_callback: Callable[[...Array[Self]], void]) -> void:
 		pass
@@ -22,6 +24,14 @@ class Cell:
 	func route_relaxed(other: Cell, variadic: Callable[[Self, ...Array], void]) -> void:
 		other.self_fixed(variadic)
 		self_fixed(variadic)
+
+	func route_narrow_tail(other: Cell, narrow: Callable[[...Array[Leaf]], void]) -> void:
+		other.self_tail(narrow)
+		self_tail(narrow)
+
+
+class Leaf:
+	extends Cell
 
 
 func test() -> void:
