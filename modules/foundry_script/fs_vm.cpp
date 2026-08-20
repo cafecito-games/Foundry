@@ -1220,7 +1220,8 @@ static String _freed_specialization_argument_error(const StringName &p_function_
 		const String &p_freed_type_argument) {
 	return vformat(
 			R"(Cannot check an assignment in "%s" against a specialized class handle: %s references a script that has been freed.)",
-			String(p_function_name), p_freed_type_argument);
+			String(p_function_name),
+			p_freed_type_argument.is_empty() ? String("one of its type arguments") : p_freed_type_argument);
 }
 
 // Returns the fully wrapped `Type[...]` display name for a class-handle-typed slot, ready to use
@@ -1282,7 +1283,11 @@ enum class ReifiedTypeOperand {
 // substituted native type and admit an instance of some other specialization. That substitution is
 // refused everywhere else it can arise (`FSSpecializedClassHandle::callp("new")`,
 // `OPCODE_CONSTRUCT_SPECIALIZED`, `FSStaticSelfContext::to_data_type()`, bytecode export), so it is
-// refused here too, before anything is materialized. `r_freed_type_argument` names the stale slot.
+// refused here too. The refusal is decided by the materialization itself rather than by a liveness
+// question asked beforehand: there is exactly one read of each argument's weak reference, and the
+// strong reference that keeps it alive is taken at that same read, so no window exists in which a
+// concurrent release could turn an approved descriptor into a degraded one.
+// `r_freed_type_argument` names the stale slot.
 [[maybe_unused]] static ReifiedTypeOperand _reified_type_from_class_handle_value(const Variant &p_handle,
 		Script *&r_script, FSDataType &r_type, Vector<ContainerType> &r_type_arguments,
 		String &r_freed_type_argument) {
@@ -1300,18 +1305,24 @@ enum class ReifiedTypeOperand {
 		type.class_name = script->get_instance_base_type();
 		type.script = Ref<Script>(script);
 	} else if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(object)) {
-		if (FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(object)) {
-			if (unlikely(!specialized_handle->is_fully_live())) {
-				r_freed_type_argument = specialized_handle->describe_freed_type_argument();
-				return ReifiedTypeOperand::FREED_TYPE_ARGUMENT;
-			}
-		}
+		// The handle's own script is held strongly by the handle, so only its arguments can go stale.
 		const Ref<Script> represented_script = class_handle->get_represented_script();
 		type.class_name = represented_script.is_valid()
 				? represented_script->get_instance_base_type()
 				: class_handle->get_represented_native_class();
 		type.script = represented_script;
-		class_handle->get_represented_type_arguments(type.type_arguments);
+		if (FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(object)) {
+			bool saw_freed_type_argument = false;
+			type.type_arguments = specialized_handle->get_type_arguments(saw_freed_type_argument);
+			if (unlikely(saw_freed_type_argument)) {
+				// Rendering re-reads the weak nodes, but a freed object never becomes live again, so the
+				// description can only fail to find the slot, never contradict the refusal.
+				r_freed_type_argument = specialized_handle->describe_freed_type_argument();
+				return ReifiedTypeOperand::FREED_TYPE_ARGUMENT;
+			}
+		} else {
+			class_handle->get_represented_type_arguments(type.type_arguments);
+		}
 		if (type.script.is_null() && type.class_name == StringName()) {
 			return ReifiedTypeOperand::NO_EVIDENCE;
 		}

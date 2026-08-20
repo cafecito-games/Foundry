@@ -516,11 +516,18 @@ FSWeakContainerType FSWeakContainerType::from_container_type(const ContainerType
 	return weak;
 }
 
-static ContainerType _materialize_weak_container_type(const FSWeakContainerType &p_weak, bool p_degrade_freed) {
+static ContainerType _materialize_weak_container_type(const FSWeakContainerType &p_weak, bool p_degrade_freed,
+		bool *r_saw_freed = nullptr) {
 	ContainerType type;
 	Ref<Script> script;
 	if (p_weak.script_id.is_valid()) {
 		script = Ref<Script>(Object::cast_to<Script>(ObjectDB::get_instance(p_weak.script_id)));
+		// Reported from the same lookup that produced the slot, and before the strong reference below is
+		// taken: a caller that refuses on the report cannot be handed a degraded slot by a script
+		// released between a separate liveness query and this materialization.
+		if (script.is_null() && r_saw_freed != nullptr) {
+			*r_saw_freed = true;
+		}
 		if (p_degrade_freed && script.is_null()) {
 			return type;
 		}
@@ -531,16 +538,20 @@ static ContainerType _materialize_weak_container_type(const FSWeakContainerType 
 	type.script = script;
 	type.is_type_handle = p_weak.is_type_handle;
 	for (const FSWeakContainerType &element_type : p_weak.element_types) {
-		type.element_types.push_back(_materialize_weak_container_type(element_type, p_degrade_freed));
+		type.element_types.push_back(_materialize_weak_container_type(element_type, p_degrade_freed, r_saw_freed));
 	}
 	for (const FSWeakContainerType &argument_type : p_weak.type_arguments) {
-		type.type_arguments.push_back(_materialize_weak_container_type(argument_type, p_degrade_freed));
+		type.type_arguments.push_back(_materialize_weak_container_type(argument_type, p_degrade_freed, r_saw_freed));
 	}
 	return type;
 }
 
 ContainerType FSWeakContainerType::to_container_type() const {
 	return _materialize_weak_container_type(*this, false);
+}
+
+ContainerType FSWeakContainerType::to_container_type(bool &r_saw_freed) const {
+	return _materialize_weak_container_type(*this, false, &r_saw_freed);
 }
 
 ContainerType FSWeakContainerType::to_live_container_type() const {
