@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Cannot convert 5000000000 to "int": the value is outside its range -2147483648 to 2147483647.
+>> ERROR at line 3: Cannot convert 5000000000 to "int": the value is outside its range -2147483648 to 2147483647.
+>> ERROR at line 4: Cannot convert 5000000000 to "int": the value is outside its range -2147483648 to 2147483647.

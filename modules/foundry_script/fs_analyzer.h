@@ -1103,14 +1103,27 @@ private:
 	bool property_type_from_indexed_receiver(const FSParser::DataType &p_receiver_type, const Vector<StringName> &p_property_path, FSParser::Node *p_source, FSParser::DataType &r_property_type);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, const FSParser::Node *p_source);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, bool &r_valid, const FSParser::Node *p_source);
-	// Retypes a constant expression to the type its position declares. Returns false once it has
-	// reported the mismatch itself, so a position that also reports must then stay silent rather than
-	// describe the same mistake a second time. Positions that own their own, more specific wording pass
+	// What a position must do after `update_const_expression_builtin_type()` ran, so that one mistake
+	// is described once and by whichever of the two can describe it.
+	enum class ConstantRetypeOutcome {
+		// Nothing was reported. The position validates and reports exactly as it would have.
+		PROCEED,
+		// The mismatch between the two declared types was reported here. A position whose own report
+		// would name the same two types stays silent; a position whose report says something else --
+		// a container element naming its container, say -- still has something to add.
+		REPORTED_BY_NAME,
+		// Only the reduced value proves the refusal, and it was reported by that value. No position can
+		// improve on it and every one of them stays silent, containers included.
+		REPORTED_BY_VALUE,
+	};
+
+	// Retypes a constant expression to the type its position declares, reporting a refusal the position
+	// itself could not. Positions that own their own, more specific wording pass
 	// `p_position_reports_mismatch`, and this helper then leaves them only the refusals their own
 	// comparison also reaches. A refusal a position admits instead of reporting -- a gradual carrier, a
 	// raw generic projection, a source it narrows at run time -- and a refusal only the reduced value
 	// proves are both still reported here, because the position would accept them.
-	bool update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false, bool p_position_reports_mismatch = false);
+	ConstantRetypeOutcome update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false, bool p_position_reports_mismatch = false);
 	static bool _is_container_literal(const FSParser::ExpressionNode *p_expression);
 	// Pushes a declared type into a container literal written where that type is expected. Every
 	// position that knows what it is building — a declaration, an assignment, a return, a cast, a call
