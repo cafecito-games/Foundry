@@ -1,0 +1,12 @@
+FS_TEST_OK
+uint <- 5: uint 5 / uint 5 -> true
+uint <- 5L: uint 5 / uint 5 -> true
+uint <- 5UL: uint 5 / uint 5 -> true
+int <- 5: int 5 / int 5 -> true
+int <- 5L: int 5 / int 5 -> true
+int <- 5U: int 5 / int 5 -> true
+long <- 5: int 5 / int 5 -> true
+ulong <- 5: uint 5 / uint 5 -> true
+float <- 5: float 5.0 / float 5.0 -> true
+float <- 5L: float 5.0 / float 5.0 -> true
+float <- 5UL: float 5.0 / float 5.0 -> true

@@ -1,0 +1,9 @@
+FS_TEST_OK
+uint 5
+uint 5
+String five
+true
+uint 7
+uint 9
+long 4000000000
+long 5

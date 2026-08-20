@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Invalid argument for "take_plain()" function: argument 1 should be "uint" but is "int".
+>> ERROR at line 14: Invalid argument for "take_union()" function: argument 1 should be "String | uint" but is "int".
+>> ERROR at line 16: Cannot assign a value of type int to variable "stored" with specified type String | uint.
