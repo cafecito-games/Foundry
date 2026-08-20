@@ -266,7 +266,7 @@ func test() -> void:
 	// mistaken for one in the engine-to-engine half of the rule. A script class still reaches the
 	// engine chain through its terminal base, which the script-target half compares separately, so all
 	// three declarations here agree on the arguments.
-	REQUIRE_EQ(records.size(), 1);
+	REQUIRE_OR_RETURN(records.size() == 1);
 	CHECK_EQ(records[0].native_class, StringName("RefCounted"));
 	CHECK_EQ(records[0].source_file, String(NativeChainFixture::SOURCE_PATH));
 	CHECK_EQ(records[0].trait_type_arguments.size(), 1);
@@ -696,7 +696,7 @@ func test() -> void:
 	const StringName identity = fixture.trait_identity(StringName("NccAncestorRejectedKeeper"));
 	const Vector<FSConformanceRegistry::ScriptConformanceRecord> records =
 			FSConformanceRegistry::get_singleton()->get_script_conformance_records(identity);
-	REQUIRE_EQ(records.size(), 1);
+	REQUIRE_OR_RETURN(records.size() == 1);
 	CHECK(records[0].target_label.contains("NccAncestorRejectedMiddle"));
 	String witness_source;
 	int witness_conformance_index = -1;
@@ -1135,7 +1135,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Engine declaration rejects a lo
 	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
 			declaring_file, native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
 
-	REQUIRE_EQ(result.conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
 	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
 	CHECK_EQ(result.conflicts[0].conflicting_source_file, dependency_file);
 	CHECK_EQ(result.conflicts[0].trait_name, trait_name);
@@ -1165,7 +1165,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Dependency class-uses binding r
 	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
 			declaring_file, native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
 
-	REQUIRE_EQ(result.conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
 	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
 	CHECK_EQ(result.registered_count, 0);
 }
@@ -1232,7 +1232,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Script-class conformance reject
 	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(declaring_file,
 			script_conformance(declaring_file, base_fqcn, base_file, "RefCounted", trait_name, Variant::INT));
 
-	REQUIRE_EQ(result.conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
 	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
 	CHECK_EQ(result.conflicts[0].conflicting_source_file, dependency_file);
 	CHECK_EQ(result.registered_count, 0);
@@ -1259,7 +1259,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Conformance published first sti
 			dependency_file, Vector<FSConformanceRegistry::Conformance>(),
 			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
 
-	REQUIRE_EQ(result.binding_conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.binding_conflicts.size() == 1);
 	CHECK_EQ(result.binding_conflicts[0].target_fqcn, dependency_file + "::Holder");
 	CHECK_EQ(result.binding_conflicts[0].trait_name, trait_name);
 	CHECK_EQ(result.binding_conflicts[0].conflicting_source_file, declaring_file);
@@ -1348,7 +1348,7 @@ TEST_CASE("[Modules][FoundryScript][Conformance] A loaded file's binding contrad
 			loaded_file, Vector<FSConformanceRegistry::Conformance>(),
 			class_binding(loaded_file, loaded_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
 
-	REQUIRE_EQ(result.binding_conflicts.size(), 1);
+	REQUIRE_OR_RETURN(result.binding_conflicts.size() == 1);
 	CHECK_EQ(result.binding_conflicts[0].conflicting_source_file, loader_file);
 	CHECK_EQ(result.binding_conflicts[0].trait_name, trait_name);
 }

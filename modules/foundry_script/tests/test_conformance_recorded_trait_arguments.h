@@ -329,7 +329,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A recorded argument the r
 		const RecordedTypeArgument array_recorded =
 				FSConformanceRegistry::reduce_type_argument(recorded_array_type);
 		REQUIRE_EQ(array_recorded.kind, RecordedTypeArgument::BUILTIN);
-		REQUIRE_EQ(array_recorded.container_element_types.size(), 1);
+		REQUIRE_OR_RETURN(array_recorded.container_element_types.size() == 1);
 		REQUIRE_EQ(array_recorded.container_element_types[0].kind, RecordedTypeArgument::UNKNOWN);
 
 		FSParser::DataType typed_array = make_builtin(Variant::ARRAY);
@@ -352,7 +352,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A composite recorded argu
 	const RecordedTypeArgument recorded = FSConformanceRegistry::reduce_type_argument(recorded_array_type);
 	REQUIRE_EQ(recorded.kind, RecordedTypeArgument::BUILTIN);
 	REQUIRE_EQ(recorded.builtin_type, Variant::ARRAY);
-	REQUIRE_EQ(recorded.container_element_types.size(), 1);
+	REQUIRE_OR_RETURN(recorded.container_element_types.size() == 1);
 	CHECK_EQ(recorded.container_element_types[0].kind, RecordedTypeArgument::BUILTIN);
 	CHECK_EQ(recorded.container_element_types[0].builtin_type, Variant::INT);
 
@@ -561,7 +561,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A conformance records a c
 
 	Vector<RecordedTypeArgument> recorded;
 	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
-	REQUIRE_EQ(recorded.size(), 2);
+	REQUIRE_OR_RETURN(recorded.size() == 2);
 	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::BUILTIN);
 	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
 	// `Self` on a non-final target is not reified here, so the position stays open rather than
@@ -585,7 +585,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A supertrait identity rec
 
 	Vector<RecordedTypeArgument> recorded;
 	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
-	REQUIRE_EQ(recorded.size(), 2);
+	REQUIRE_OR_RETURN(recorded.size() == 2);
 	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::BUILTIN);
 	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
 	CHECK_EQ(recorded[1].kind, RecordedTypeArgument::UNKNOWN);
@@ -604,9 +604,9 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A composite argument keep
 
 	Vector<RecordedTypeArgument> recorded;
 	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
-	REQUIRE_EQ(recorded.size(), 2);
+	REQUIRE_OR_RETURN(recorded.size() == 2);
 	REQUIRE_EQ(recorded[1].kind, RecordedTypeArgument::SCRIPT_CLASS);
-	REQUIRE_EQ(recorded[1].type_arguments.size(), 2);
+	REQUIRE_OR_RETURN(recorded[1].type_arguments.size() == 2);
 	CHECK_EQ(recorded[1].type_arguments[0].kind, RecordedTypeArgument::BUILTIN);
 	CHECK_EQ(recorded[1].type_arguments[0].builtin_type, Variant::INT);
 	CHECK_EQ(recorded[1].type_arguments[1].kind, RecordedTypeArgument::UNKNOWN);
@@ -627,7 +627,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An explicit Variant argum
 
 	Vector<RecordedTypeArgument> recorded;
 	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
-	REQUIRE_EQ(recorded.size(), 2);
+	REQUIRE_OR_RETURN(recorded.size() == 2);
 	// `Variant` is written evidence of nothing: the declaration named a position it does not constrain,
 	// which is deliberately the same record an open `Self` position leaves behind.
 	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::UNKNOWN);
@@ -652,7 +652,7 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A wholly open argument ve
 
 	Vector<RecordedTypeArgument> recorded;
 	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
-	REQUIRE_EQ(recorded.size(), 2);
+	REQUIRE_OR_RETURN(recorded.size() == 2);
 	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::UNKNOWN);
 	CHECK_EQ(recorded[1].kind, RecordedTypeArgument::UNKNOWN);
 
@@ -708,12 +708,14 @@ public:
 
 static void check_freed_position_degraded(const Vector<ContainerType> &p_arguments) {
 	REQUIRE_EQ(p_arguments.size(), 2);
-	// The freed position is unconstrained rather than a bare `RefCounted` stand-in, and rather than
-	// gone: keeping the arity is what lets the live sibling still be compared.
-	CHECK_EQ(p_arguments[0].builtin_type, Variant::NIL);
-	CHECK(p_arguments[0].script.is_null());
-	CHECK(p_arguments[0].class_name == StringName());
-	CHECK_EQ(p_arguments[1].builtin_type, Variant::INT);
+	if (p_arguments.size() == 2) {
+		// The freed position is unconstrained rather than a bare `RefCounted` stand-in, and rather than
+		// gone: keeping the arity is what lets the live sibling still be compared.
+		CHECK_EQ(p_arguments[0].builtin_type, Variant::NIL);
+		CHECK(p_arguments[0].script.is_null());
+		CHECK(p_arguments[0].class_name == StringName());
+		CHECK_EQ(p_arguments[1].builtin_type, Variant::INT);
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A freed argument script degrades only its own position") {

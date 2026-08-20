@@ -147,8 +147,8 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a conformance reaches only the 
 	CHECK_EQ(root_entry->source_file, markable_entry->source_file);
 	CHECK_EQ(root_entry->target_fqcn, markable_entry->target_fqcn);
 	CHECK_EQ(root_entry->conformance_index, markable_entry->conformance_index);
-	REQUIRE(root_entry->witnesses.has(SNAME("fsv_mark")));
-	REQUIRE(markable_entry->witnesses.has(SNAME("fsv_mark")));
+	REQUIRE_OR_RETURN(root_entry->witnesses.has(SNAME("fsv_mark")));
+	REQUIRE_OR_RETURN(markable_entry->witnesses.has(SNAME("fsv_mark")));
 	CHECK_EQ(root_entry->witnesses[SNAME("fsv_mark")], markable_entry->witnesses[SNAME("fsv_mark")]);
 	CHECK_EQ(FSConformanceRegistry::get_singleton()->get_conformance_source("FsvWidget", SNAME("FsvRoot")),
 			fixture.conformance_path);
