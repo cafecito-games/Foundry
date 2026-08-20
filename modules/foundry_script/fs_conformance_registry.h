@@ -148,6 +148,33 @@ public:
 		WitnessMap witnesses;
 	};
 
+	// One class's own `uses` clause, as another file's coherence check needs to see it.
+	//
+	// A class that applies a generic trait through `uses` fixes that trait's arguments for every receiver
+	// on its inheritance chain exactly as a conformance declared on that chain would, but it registers no
+	// `Conformance`: it declares no external membership and supplies no witnesses. Without a record of it,
+	// a declaration in another file could contradict the binding and be accepted, and a value widened to
+	// the contradicting side would then dispatch a witness written for the other argument list.
+	//
+	// These records exist for that comparison alone. They answer no membership, witness, argument, or
+	// runtime query, and only a binding that actually supplied arguments is recorded: an empty argument
+	// list is an absence of evidence, never a wildcard.
+	struct ClassTraitBinding {
+		// The binding class's fully-qualified name and the way a diagnostic should spell it, mirroring
+		// `Conformance::target_fqcn` / `Conformance::target_label`.
+		String target_fqcn;
+		String target_label;
+		// See `Conformance::target_native_base` and `Conformance::target_script_ancestor_fqcns`: the two
+		// halves of the class's semantic chain, so another file can decide the chain relation without
+		// re-loading this file's parse tree.
+		StringName target_native_base;
+		Vector<String> target_script_ancestor_fqcns;
+		// A trait identity from the class's `uses` closure, and the arguments the class binds it to.
+		StringName trait_name;
+		Vector<RecordedTypeArgument> trait_type_arguments;
+		String source_file;
+	};
+
 	// Limits which declaring files a caller is allowed to see.
 	//
 	// A conformance takes effect for code that loads its declaring file, the way an import does. The
@@ -288,6 +315,11 @@ private:
 	// Rebuilt whenever the owning store changes; registrations/clears are infrequent.
 	HashMap<String, HashMap<StringName, String>> index;
 
+	// Declaration-side class-`uses` bindings, grouped by declaring file so a reload replaces them
+	// wholesale alongside that file's conformances. Deliberately not indexed with `index`: these records
+	// state nothing about membership and must never answer a lookup that decides whether a type conforms.
+	HashMap<String, Vector<ClassTraitBinding>> trait_bindings_by_file;
+
 	void _rebuild_index();
 
 	// Runtime witness store, grouped by declaring file so a reload/unload can drop a file's compiled
@@ -316,6 +348,11 @@ private:
 	// replacement and never stored. Callers must hold `mutex`.
 	bool _candidate_conflicts(const Conformance &p_candidate, const String &p_source_file,
 			const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const;
+
+	// The chain-coherence conflict, if any, between one candidate and a class-`uses` binding recorded by
+	// another file the candidate may see. Callers must hold `mutex`.
+	bool _candidate_conflicts_with_trait_binding(const Conformance &p_candidate, const String &p_source_file,
+			RegistrationConflict &r_conflict) const;
 
 	// The witness-name collision, if any, between one candidate declaration and `p_view`. Checked once
 	// per declaration because every entry a declaration emits borrows the same witness map. Callers must
@@ -374,7 +411,13 @@ public:
 	// Returns value-only conflict records. Diagnostics must be produced from them after this call
 	// returns, never from inside the registry, which holds the mutex and knows nothing about source
 	// locations.
-	RegistrationResult try_replace_file_conformances(const String &p_source_file, const Vector<Conformance> &p_candidates);
+	//
+	// `p_trait_bindings` is the file's class-`uses` bindings, replaced in the same indivisible step. They
+	// are never rejected — a `uses` clause is not a declaration the registry arbitrates — but they take
+	// part in deciding the candidates, so a file cannot publish a conformance that contradicts a binding
+	// another file published a moment earlier.
+	RegistrationResult try_replace_file_conformances(const String &p_source_file, const Vector<Conformance> &p_candidates,
+			const Vector<ClassTraitBinding> &p_trait_bindings = Vector<ClassTraitBinding>());
 
 	// Drops every conformance previously registered by `p_source_file`.
 	void clear_file(const String &p_source_file);
@@ -478,6 +521,12 @@ public:
 	// Every script-class conformance to `p_trait_name` whose target resolved a terminal engine class.
 	// Filtered the same way `get_native_conformance_records` is.
 	Vector<ScriptConformanceRecord> get_script_conformance_records(const StringName &p_trait_name,
+			bool p_visible_only = false, const String &p_excluded_source_file = String()) const;
+
+	// Every class-`uses` binding of `p_trait_name` recorded by an analyzed file. Filtered exactly the way
+	// `get_script_conformance_records` is, and for the same reason: a binding reaches the class asking the
+	// way an import does, so one it never loads must not decide how it may bind the trait.
+	Vector<ClassTraitBinding> get_script_trait_binding_records(const StringName &p_trait_name,
 			bool p_visible_only = false, const String &p_excluded_source_file = String()) const;
 
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.

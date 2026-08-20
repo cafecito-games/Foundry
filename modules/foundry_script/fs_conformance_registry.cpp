@@ -320,6 +320,57 @@ bool FSConformanceRegistry::_declaration_witnesses_collide(const Conformance &p_
 	return false;
 }
 
+bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Conformance &p_candidate,
+		const String &p_source_file, RegistrationConflict &r_conflict) const {
+	if (p_candidate.trait_name == StringName() || p_candidate.trait_type_arguments.is_empty()) {
+		return false;
+	}
+	const bool candidate_is_native = _is_native_target(p_candidate);
+	const StringName candidate_native_class = candidate_is_native ? StringName(p_candidate.target_fqcn) : StringName();
+
+	// The submitting file's own bindings are excluded: they are what this call is about to replace, and
+	// a contradiction between a file's `extend` and its own class's `uses` is decided in that file's
+	// analyzer, against its parse tree, where the diagnostic can name both sides.
+	for (const KeyValue<String, Vector<ClassTraitBinding>> &file_entry : trait_bindings_by_file) {
+		if (file_entry.key == p_source_file || !_is_visible(file_entry.key)) {
+			continue;
+		}
+		for (const ClassTraitBinding &binding : file_entry.value) {
+			if (binding.trait_name != p_candidate.trait_name || binding.trait_type_arguments.is_empty()) {
+				continue;
+			}
+			bool answers_for_same_receivers = false;
+			if (candidate_is_native) {
+				// A class whose chain bottoms out on this engine class, or on a subclass of it, binds the
+				// trait for receivers the candidate also answers for.
+				answers_for_same_receivers =
+						_native_ancestry_answers_for(binding.target_native_base, candidate_native_class);
+			} else if (!p_candidate.target_fqcn.is_empty() && !binding.target_fqcn.is_empty() &&
+					p_candidate.target_fqcn != binding.target_fqcn) {
+				// Two script classes: either may stand above the other on one script chain.
+				answers_for_same_receivers = binding.target_script_ancestor_fqcns.has(p_candidate.target_fqcn) ||
+						p_candidate.target_script_ancestor_fqcns.has(binding.target_fqcn);
+			}
+			if (!answers_for_same_receivers) {
+				continue;
+			}
+			if (!FSTypeCompatibility::recorded_arguments_conflict(binding.trait_type_arguments,
+						p_candidate.trait_type_arguments)) {
+				continue;
+			}
+			r_conflict.kind = RegistrationConflict::CHAIN_COHERENCE;
+			r_conflict.conformance_index = p_candidate.conformance_index;
+			r_conflict.target_label = p_candidate.target_label;
+			r_conflict.trait_name = p_candidate.trait_name;
+			r_conflict.conflicting_target_label =
+					binding.target_label.is_empty() ? binding.target_fqcn : binding.target_label;
+			r_conflict.conflicting_source_file = binding.source_file;
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate, const String &p_source_file,
 		const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const {
 	if (p_candidate.trait_name == StringName()) {
@@ -379,6 +430,12 @@ bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate,
 			r_conflict.conflicting_source_file = existing->source_file;
 			return true;
 		}
+
+		// A class's own `uses` clause registers no conformance, so what it binds is recorded separately;
+		// it constrains a chain the same way a conformance on that chain does.
+		if (_candidate_conflicts_with_trait_binding(p_candidate, p_source_file, r_conflict)) {
+			return true;
+		}
 	}
 
 	// Duplicate membership. Matching is on the candidate's exact fully-qualified name against the other
@@ -404,7 +461,8 @@ bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate,
 }
 
 FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_file_conformances(
-		const String &p_source_file, const Vector<Conformance> &p_candidates) {
+		const String &p_source_file, const Vector<Conformance> &p_candidates,
+		const Vector<ClassTraitBinding> &p_trait_bindings) {
 	RegistrationResult result;
 
 	MutexLock lock(mutex);
@@ -482,6 +540,13 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 	} else {
 		conformances_by_file[p_source_file] = accepted;
 	}
+	// The bindings are published with the conformances, under the same lock, so no reader can observe a
+	// file's `extend` declarations and its classes' `uses` bindings from two different analyses of it.
+	if (p_trait_bindings.is_empty()) {
+		trait_bindings_by_file.erase(p_source_file);
+	} else {
+		trait_bindings_by_file[p_source_file] = p_trait_bindings;
+	}
 	_rebuild_index();
 
 	result.registered_count = accepted.size();
@@ -490,6 +555,7 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 
 void FSConformanceRegistry::clear_file(const String &p_source_file) {
 	MutexLock lock(mutex);
+	trait_bindings_by_file.erase(p_source_file);
 	if (conformances_by_file.erase(p_source_file)) {
 		_rebuild_index();
 	}
@@ -630,6 +696,7 @@ FSFunction *FSConformanceRegistry::find_native_trait_witness_function(const Stri
 void FSConformanceRegistry::clear() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
+	trait_bindings_by_file.clear();
 	index.clear();
 	runtime_by_file.clear();
 	runtime_index.clear();
@@ -639,6 +706,7 @@ void FSConformanceRegistry::clear() {
 void FSConformanceRegistry::clear_declarations() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
+	trait_bindings_by_file.clear();
 	index.clear();
 }
 
@@ -973,6 +1041,27 @@ Vector<FSConformanceRegistry::ScriptConformanceRecord> FSConformanceRegistry::ge
 			record.source_file = conformance.source_file;
 			record.trait_type_arguments = conformance.trait_type_arguments;
 			records.push_back(record);
+		}
+	}
+	return records;
+}
+
+Vector<FSConformanceRegistry::ClassTraitBinding> FSConformanceRegistry::get_script_trait_binding_records(
+		const StringName &p_trait_name, bool p_visible_only, const String &p_excluded_source_file) const {
+	Vector<ClassTraitBinding> records;
+	if (p_trait_name == StringName()) {
+		return records;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<ClassTraitBinding>> &file_entry : trait_bindings_by_file) {
+		if (file_entry.key == p_excluded_source_file || (p_visible_only && !_is_visible(file_entry.key))) {
+			continue;
+		}
+		for (const ClassTraitBinding &binding : file_entry.value) {
+			if (binding.trait_name != p_trait_name || binding.trait_type_arguments.is_empty()) {
+				continue;
+			}
+			records.push_back(binding);
 		}
 	}
 	return records;

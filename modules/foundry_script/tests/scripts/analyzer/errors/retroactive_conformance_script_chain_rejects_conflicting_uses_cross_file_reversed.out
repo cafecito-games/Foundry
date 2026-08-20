@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Trait "SccurKeeper" is already applied with different type arguments by the conformance for "SccurHolder" in "res://analyzer/errors/sccur_chain_dep_uses.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.
