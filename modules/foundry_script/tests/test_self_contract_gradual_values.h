@@ -136,8 +136,8 @@ class Receiver:
 }
 
 // The unsafe-line bookkeeping these cases assert on is recorded only where the parser keeps it, so
-// the cases that read it compile under the same condition the accessor is declared under.
-#if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
+// these cases compile only where those unsafe lines are kept, which is under DEBUG_ENABLED.
+#ifdef DEBUG_ENABLED
 
 // A destination that mentions `Self` is answered by the receiver contract rather than by ordinary
 // compatibility, and an alternative of a union that names no `Self` admits a value whose static type
@@ -488,6 +488,6 @@ class Receiver:
 	}
 }
 
-#endif // DEBUG_ENABLED && !FOUNDRY_SCRIPT_NO_FRONTEND
+#endif // DEBUG_ENABLED
 
 } // namespace FSTests

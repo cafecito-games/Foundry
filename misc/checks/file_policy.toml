@@ -866,3 +866,9 @@ paths = [
   "modules/foundry_script/tests/scripts/**/*.cfg",
 ]
 forbidden = ["/Users/", "/home/", "/root/", "/tmp/", "/private/", "/var/folders/", "C:\\", "$HOME"]
+
+[[rule]]
+name = "foundry-script-tests-assume-the-front-end"
+reason = "`tests=yes` with `foundry_script_frontend=no` is rejected in modules/foundry_script/SCsub, so no test translation unit ever sees FOUNDRY_SCRIPT_NO_FRONTEND. A guard for it is a branch for a build that cannot be configured, and the corpus already uses front-end-only declarations unguarded in nine other files."
+paths = ["modules/foundry_script/tests/**/*.h", "modules/foundry_script/tests/**/*.cpp"]
+forbidden = ["FOUNDRY_SCRIPT_NO_FRONTEND"]
