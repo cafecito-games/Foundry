@@ -1,0 +1,11 @@
+FS_TEST_OK
+~~ WARNING at line 17: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take_plain()" requires the subtype "(int, int)" but the supertype "Variant" was provided.
+~~ WARNING at line 18: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take_union()" requires the subtype "String | (int, int)" but the supertype "Variant" was provided.
+~~ WARNING at line 20: (UNSAFE_METHOD_ACCESS) The method "is_read_only()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 21: (UNSAFE_METHOD_ACCESS) The method "is_read_only()" is not present on the inferred type "Variant" (but may be present on a subtype).
+plain read only true
+union read only true
+source after mutation [1, 2, 3]
+plain slot unchanged [1, 2]
+union slot unchanged [1, 2]
+string alternative text
