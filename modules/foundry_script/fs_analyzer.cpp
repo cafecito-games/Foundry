@@ -13198,6 +13198,11 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 								FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument") +
 								self_parameter_receiver_identity_clause(field_type, argument_type, p_call, "tuple field", "argument"),
 						argument);
+			} else if (!field_type.is_variant() && (argument_type.is_variant() || !argument_type.is_hard_type())) {
+				// An alternative naming no `Self` admits a value that promises nothing, so the
+				// constructing call is booked unsafe exactly as the field branch below books it for a
+				// field mentioning no `Self` at all.
+				mark_node_unsafe(p_call);
 			}
 			continue;
 		}
@@ -13787,6 +13792,13 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 								self_parameter_receiver_identity_clause(field_type, self_field_argument_type, p_call, "payload field", "argument"),
 						argument);
 				payload_is_bakeable = false;
+			} else if (!field_type.is_variant() &&
+					(self_field_argument_type.is_variant() || !self_field_argument_type.is_hard_type())) {
+				// An alternative naming no `Self` admits a value that promises nothing, so the
+				// constructing call is booked unsafe exactly as the field branch below books it for a
+				// field mentioning no `Self` at all. Bakeability is settled from the arguments themselves
+				// afterwards, and a value with no static type is never a constant, so it needs nothing here.
+				mark_node_unsafe(p_call);
 			}
 			continue;
 		}

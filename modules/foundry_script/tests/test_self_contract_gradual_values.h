@@ -327,4 +327,82 @@ class Receiver:
 	}
 }
 
+// A named tuple's field and a tagged-union payload's field are the same receiver contract as a `Self`
+// call parameter, so they take the same branch -- and owe the same bookkeeping. The field branch beside
+// them books the constructing call unsafe when the value promises nothing; a field mentioning `Self`
+// books it too rather than passing silently through an alternative that names none.
+TEST_CASE("[Modules][FoundryScript][SelfContract] A gradual constructor field is booked unsafe for a Self-bearing union") {
+	SUBCASE("named tuple") {
+		const String self_union = R"(
+class Receiver:
+	tuple Link(index: int, value: int | (int, Self))
+
+	func drive() -> void:
+		var dynamic: Variant = 5
+		var made := Link(0, dynamic)
+		print(made.index)
+)";
+		const String plain_union = R"(
+class Receiver:
+	tuple Link(index: int, value: int | String)
+
+	func drive() -> void:
+		var dynamic: Variant = 5
+		var made := Link(0, dynamic)
+		print(made.index)
+)";
+		CHECK(self_contract_line_is_unsafe(plain_union, 7));
+		CHECK(self_contract_line_is_unsafe(self_union, 7));
+	}
+	SUBCASE("enum payload") {
+		const String self_union = R"(
+class Receiver:
+	enum Message:
+		Attach(link: int | (int, Self))
+
+	func drive() -> void:
+		var dynamic: Variant = 5
+		var made := Message.Attach(dynamic)
+		print(made)
+)";
+		const String plain_union = R"(
+class Receiver:
+	enum Message:
+		Attach(link: int | String)
+
+	func drive() -> void:
+		var dynamic: Variant = 5
+		var made := Message.Attach(dynamic)
+		print(made)
+)";
+		CHECK(self_contract_line_is_unsafe(plain_union, 8));
+		CHECK(self_contract_line_is_unsafe(self_union, 8));
+	}
+}
+
+// The container-literal element path is the one admission site with nothing to mirror: on the path
+// where an element is admitted, neither the `Self` branch nor the branch beside it books anything, and
+// every marking either one performs sits in a branch a `Self`-bearing element type turns into a report.
+// Asserted rather than read, so a marking added to one side later cannot go unnoticed on the other.
+TEST_CASE("[Modules][FoundryScript][SelfContract] An admitted container literal element books nothing either way") {
+	const String self_element = R"(
+class Receiver:
+	func take(entries: Array[Self]) -> String:
+		return str(entries.size())
+
+	func drive() -> void:
+		print(take([self]))
+)";
+	const String plain_element = R"(
+class Receiver:
+	func take(entries: Array[Receiver]) -> String:
+		return str(entries.size())
+
+	func drive() -> void:
+		print(take([self]))
+)";
+	CHECK_FALSE(self_contract_line_is_unsafe(plain_element, 7));
+	CHECK_FALSE(self_contract_line_is_unsafe(self_element, 7));
+}
+
 } // namespace FSTests
