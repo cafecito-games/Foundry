@@ -5306,8 +5306,9 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			}
 		}
 
+		bool initializer_mismatch_reported = false;
 		if (has_specified_type && p_assignable->initializer->is_constant) {
-			update_const_expression_builtin_type(p_assignable->initializer, specified_type, "assign");
+			initializer_mismatch_reported = !update_const_expression_builtin_type(p_assignable->initializer, specified_type, "assign", false, true);
 		}
 		FSParser::DataType initializer_type = p_assignable->initializer->get_datatype();
 
@@ -5340,7 +5341,7 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			} else {
 				type.type_source = FSParser::DataType::INFERRED;
 			}
-		} else if (!specified_type.is_variant()) {
+		} else if (!specified_type.is_variant() && !initializer_mismatch_reported) {
 			if (_datatype_contains_self_type_parameter(specified_type)) {
 				if (!initializer_type.is_hard_type() ||
 						!self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN)) {
@@ -6396,6 +6397,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 	const bool preserve_self_contract = has_expected_type && parser->current_class != nullptr &&
 			parser->current_function != nullptr &&
 			!parser->current_function->is_abstract && _datatype_contains_self_type_parameter(expected_type);
+	bool return_mismatch_reported = false;
 
 	if (p_return->return_value != nullptr) {
 		bool is_void_function = has_expected_type && expected_type.is_hard_type() && expected_type.kind == FSParser::DataType::BUILTIN && expected_type.builtin_type == Variant::NIL;
@@ -6451,7 +6453,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 						parser->get_errors().size() == literal_errors_before;
 			}
 			if (has_expected_type && compatibility_expected_type.is_hard_type() && p_return->return_value->is_constant) {
-				update_const_expression_builtin_type(p_return->return_value, compatibility_expected_type, "return");
+				return_mismatch_reported = !update_const_expression_builtin_type(p_return->return_value, compatibility_expected_type, "return", false, true);
 			}
 			if (has_expected_type) {
 				mark_coroutine_handle_capture(p_return->return_value, expected_type);
@@ -6466,7 +6468,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 		result.is_constant = true;
 	}
 
-	if (has_expected_type && !compatibility_expected_type.is_variant()) {
+	if (has_expected_type && !compatibility_expected_type.is_variant() && !return_mismatch_reported) {
 		if (preserve_self_contract) {
 			if (!self_container_literal_validated &&
 					(!result.is_hard_type() || !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN))) {
@@ -6694,43 +6696,77 @@ static bool enum_has_value(const FSParser::DataType p_type, int64_t p_value) {
 }
 #endif // DEBUG_ENABLED
 
-void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast) {
-	if (p_expression->get_datatype() == p_type) {
-		return;
+bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast, bool p_position_reports_mismatch) {
+	FSParser::DataType expression_type = p_expression->get_datatype();
+
+	// The width a numeric destination declares, when it declares one.
+	const NumericType destination_numeric_type = p_type.kind == FSParser::DataType::BUILTIN && p_type.numeric_type != NumericType::NONE
+			? FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type)
+			: NumericType::NONE;
+	// A constant written without a width descriptor carries no width to disagree with, so every
+	// comparison that only looks at the two type descriptions reads as agreement and every diagnostic
+	// that prints them can only say `"int" but is "int"`. Its value still has to fit the destination,
+	// so such a constant is range-checked here rather than waved through to a report that cannot
+	// describe the mistake.
+	const bool checks_unwidthed_constant = p_expression->is_constant &&
+			destination_numeric_type != NumericType::NONE &&
+			expression_type.kind == FSParser::DataType::BUILTIN &&
+			expression_type.builtin_type == p_type.builtin_type &&
+			expression_type.numeric_type == NumericType::NONE;
+
+	if (expression_type == p_type && !checks_unwidthed_constant) {
+		return true;
 	}
 	if (p_type.kind != FSParser::DataType::BUILTIN && p_type.kind != FSParser::DataType::ENUM) {
-		return;
+		return true;
 	}
 
-	FSParser::DataType expression_type = p_expression->get_datatype();
+	// One mistake is reported once. A refused unwidthed constant is described by its value and the
+	// destination's range, because the two type names coincide; every other refusal is left to the
+	// position's own wording when the position has one, and reported generically when it does not.
+	auto report_refusal = [&](const FSParser::DataType &p_reported_type) -> bool {
+		if (checks_unwidthed_constant) {
+			Variant range_checked;
+			FSNumericError range_error = FSNumericError::UNSUPPORTED;
+			if (!FSNumericOps::convert(destination_numeric_type, p_expression->reduced_value, range_checked, range_error) &&
+					range_error != FSNumericError::UNSUPPORTED) {
+				push_error(FSNumericOps::describe_conversion_error(range_error, destination_numeric_type,
+								   p_expression->reduced_value, p_type.to_string_diagnostic()),
+						p_expression);
+				return false;
+			}
+		}
+		if (p_position_reports_mismatch) {
+			return true;
+		}
+		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, p_reported_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
+						FSParser::DataType::same_rendered_name_clause(p_reported_type, "value", p_type, "target type"),
+				p_expression);
+		return false;
+	};
+
 	// An int constant may be cast into an int-backed enum, but never into a tagged union.
 	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
 			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
 	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression, p_expression)) {
-		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
-						FSParser::DataType::same_rendered_name_clause(expression_type, "value", p_type, "target type"),
-				p_expression);
-		return;
+		return report_refusal(expression_type);
 	}
 	if (p_type.is_variant() &&
 			expression_type.is_meta_type && expression_type.kind == FSParser::DataType::CLASS &&
 			!expression_type.type_arguments.is_empty()) {
-		return;
+		return true;
 	}
 
 	if (p_type.is_nullable && p_expression->is_constant && p_expression->reduced_value.get_type() == Variant::NIL) {
 		// An explicit null is kept as-is: a nullable target holds null without converting it to the underlying
 		// type. Keyed on the reduced value so a null constant typed as Variant is handled too.
 		p_expression->set_datatype(p_type);
-		return;
+		return true;
 	}
 
 	FSParser::DataType value_type = type_from_variant(p_expression->reduced_value, p_expression);
 	if (expression_type.is_variant() && !is_enum_cast && !is_type_compatible(p_type, value_type, true, p_expression, p_expression)) {
-		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, value_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
-						FSParser::DataType::same_rendered_name_clause(value_type, "value", p_type, "target type"),
-				p_expression);
-		return;
+		return report_refusal(value_type);
 	}
 
 #ifdef DEBUG_ENABLED
@@ -6741,7 +6777,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 
 	if (value_type.builtin_type == p_type.builtin_type) {
 		p_expression->set_datatype(p_type);
-		return;
+		return true;
 	}
 
 	Variant converted_to;
@@ -6758,7 +6794,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 		converted = FSNumericOps::convert(conversion_target, p_expression->reduced_value, converted_to, conversion_error);
 		if (!converted && conversion_error != FSNumericError::UNSUPPORTED) {
 			push_error(FSNumericOps::describe_conversion_error(conversion_error, conversion_target, p_expression->reduced_value, p_type.to_string()), p_expression);
-			return;
+			return false;
 		}
 	}
 	if (!converted) {
@@ -6767,7 +6803,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 		Variant::construct(p_type.builtin_type, converted_to, &converted_from, 1, call_error);
 		if (call_error.error) {
 			push_error(vformat(R"(Failed to convert a value of type "%s" to "%s".)", value_type.to_string(), p_type.to_string()), p_expression);
-			return;
+			return false;
 		}
 	}
 
@@ -6779,6 +6815,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 
 	p_expression->reduced_value = converted_to;
 	p_expression->set_datatype(p_type);
+	return true;
 }
 
 // The literal forms whose elements can be built from a declared type.
@@ -7282,7 +7319,9 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 	update_container_literal_element_types(p_assignment->assigned_value, assignee_type);
 
 	if (p_assignment->operation == FSParser::AssignmentNode::OP_NONE && assignee_type.is_hard_type() && p_assignment->assigned_value->is_constant) {
-		update_const_expression_builtin_type(p_assignment->assigned_value, assignee_type, "assign");
+		if (!update_const_expression_builtin_type(p_assignment->assigned_value, assignee_type, "assign", false, true)) {
+			return;
+		}
 	}
 
 	FSParser::DataType assigned_value_type = p_assignment->assigned_value->get_datatype();

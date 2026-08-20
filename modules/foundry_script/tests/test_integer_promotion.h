@@ -80,6 +80,11 @@ public:
 		const List<FSParser::ParserError> &errors = parser.get_errors();
 		return errors.is_empty() ? String() : errors.front()->get().message;
 	}
+
+	// One rejected constant is one mistake, so the count is part of what these cases assert.
+	int error_count() const {
+		return parser.get_errors().size();
+	}
 };
 
 // The width and carrier the analyzer recorded for `p_name`'s initializer. For an inferred local this
@@ -573,7 +578,8 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An unsuffixed constant crosses
 			"\tvar as_uint: uint = -1\n"
 			"\tprint(as_uint)\n");
 	CHECK(negative.parse_error == OK);
-	CHECK(negative.first_error().contains(R"(Cannot assign a value of type "int" as "uint".)"));
+	CHECK(negative.first_error().contains(R"(Cannot assign a value of type int to variable "as_uint" with specified type uint.)"));
+	CHECK(negative.error_count() == 1);
 
 	// An out-of-range constant still needs an explicit conversion even though its sign would cross fine.
 	const AnalyzedSnippet out_of_range(
@@ -581,7 +587,42 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An unsuffixed constant crosses
 			"\tvar as_uint: uint = 4294967296\n"
 			"\tprint(as_uint)\n");
 	CHECK(out_of_range.parse_error == OK);
-	CHECK(out_of_range.first_error().contains(R"(Cannot assign a value of type "int" as "uint".)"));
+	CHECK(out_of_range.first_error().contains(R"(Cannot assign a value of type int to variable "as_uint" with specified type uint.)"));
+	CHECK(out_of_range.error_count() == 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A constant too large for its own carrier's width is refused by value") {
+	using namespace TestIntegerPromotion;
+
+	// `int` and the unsuffixed constant's own type render under the same name, so naming the two types
+	// says nothing. The value and the destination's range are what describe the mistake, and they are
+	// said once: the declaration does not add a report of its own.
+	const AnalyzedSnippet declaration(
+			"func test():\n"
+			"\tvar v: int = 5000000000\n"
+			"\tprint(v)\n");
+	CHECK(declaration.parse_error == OK);
+	CHECK(declaration.first_error().contains(R"(Cannot convert 5000000000 to "int": the value is outside its range)"));
+	CHECK(declaration.error_count() == 1);
+
+	const AnalyzedSnippet argument(
+			"func take(v: int) -> int:\n"
+			"\treturn v\n"
+			"\n"
+			"func test():\n"
+			"\tprint(take(5000000000))\n");
+	CHECK(argument.parse_error == OK);
+	CHECK(argument.first_error().contains(R"(Cannot convert 5000000000 to "int": the value is outside its range)"));
+	CHECK(argument.error_count() == 1);
+
+	// A constant that fits keeps crossing, and takes the destination's width with it.
+	const AnalyzedSnippet in_range(
+			"func test():\n"
+			"\tvar v: int = 5\n"
+			"\tprint(v)\n");
+	CHECK(in_range.parse_error == OK);
+	CHECK_MESSAGE(in_range.first_error().is_empty(), in_range.first_error());
+	check_initializer_type(in_range, "v", Variant::INT, NumericType::INT32);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] `uint` now reaches `float`, but a non-constant `ulong` still needs a cast") {
@@ -624,7 +665,8 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] `uint` now reaches `float`, bu
 			"\tvar from_ulong: float = 9007199254740993UL\n"
 			"\tprint(from_ulong)\n");
 	CHECK(ulong_constant_too_large.parse_error == OK);
-	CHECK(ulong_constant_too_large.first_error().contains(R"(Cannot assign a value of type "ulong" as "float".)"));
+	CHECK(ulong_constant_too_large.first_error().contains(R"(Cannot assign a value of type ulong to variable "from_ulong" with specified type float.)"));
+	CHECK(ulong_constant_too_large.error_count() == 1);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A sum that leaves the promoted range is refused") {

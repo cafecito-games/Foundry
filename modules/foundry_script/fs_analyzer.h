@@ -1103,7 +1103,11 @@ private:
 	bool property_type_from_indexed_receiver(const FSParser::DataType &p_receiver_type, const Vector<StringName> &p_property_path, FSParser::Node *p_source, FSParser::DataType &r_property_type);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, const FSParser::Node *p_source);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, bool &r_valid, const FSParser::Node *p_source);
-	void update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
+	// Retypes a constant expression to the type its position declares. Returns false once it has
+	// reported the mismatch itself, so a position that also reports must then stay silent rather than
+	// describe the same mistake a second time. Positions that own their own, more specific wording pass
+	// `p_position_reports_mismatch` so this helper leaves the generic report to them.
+	bool update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false, bool p_position_reports_mismatch = false);
 	static bool _is_container_literal(const FSParser::ExpressionNode *p_expression);
 	// Pushes a declared type into a container literal written where that type is expected. Every
 	// position that knows what it is building — a declaration, an assignment, a return, a cast, a call

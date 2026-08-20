@@ -1061,7 +1061,9 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 	analyzer->mark_coroutine_handle_capture(p_argument, par_type);
 
 	if (par_type.is_hard_type() && p_argument->is_constant) {
-		analyzer->update_const_expression_builtin_type(p_argument, par_type, "pass");
+		if (!analyzer->update_const_expression_builtin_type(p_argument, par_type, "pass", false, true)) {
+			return;
+		}
 	}
 	FSParser::DataType arg_type = p_argument->get_datatype();
 

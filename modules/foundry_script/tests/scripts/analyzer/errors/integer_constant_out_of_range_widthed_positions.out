@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot return value of type "ulong" because the function return type is "long".
+>> ERROR at line 8: Invalid argument for "take_long()" function: argument 1 should be "long" but is "ulong".
+>> ERROR at line 9: Cannot assign a value of type ulong to variable "v" with specified type long.
