@@ -1,0 +1,6 @@
+FS_TEST_OK
+~~ WARNING at line 26: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "set()" requires the subtype "Array[Left] | int" but the supertype "Variant" was provided.
+~~ WARNING at line 29: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "set()" requires the subtype "Array[Left] | int" but the supertype "Variant" was provided.
+int alternative 7
+own class accepted left
+sibling refused, slot still holds left
