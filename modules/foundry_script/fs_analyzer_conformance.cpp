@@ -1106,11 +1106,18 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 	// ordinary file never pulls its dependencies' interfaces forward for a comparison it will not make.
 	//
 	// Loading composes: a file two hops away is loaded by this one exactly as a direct dependency is, and
-	// binds the chains this file's declarations sit on just the same. For a file with conformances to
-	// judge, the walk therefore follows the whole load closure rather than stopping at a direct
-	// dependency that happens to declare nothing itself. `visited` is what terminates it, since the load
-	// graph may contain cycles.
+	// binds the chains this file's declarations sit on just the same. The walk therefore follows the
+	// whole load closure rather than stopping at a direct dependency that happens to declare nothing
+	// itself. `visited` is what terminates it, since the load graph may contain cycles.
+	//
+	// Both kinds of declaration need that whole closure. The set accumulated here is published with what
+	// this file declares, and it is the only record of the load edge that licenses comparing this file's
+	// declarations against a contradicting one whose own visibility cannot reach back here — a file
+	// declaring nothing but `uses` is one end of such an edge as much as a file declaring `extend` is. A
+	// file that declares neither publishes nothing for an edge to license, so it keeps the cheap one-hop
+	// walk and pulls no dependency of a dependency in.
 	const bool declares_conformances = parser->head != nullptr && !parser->head->conformances.is_empty();
+	const bool declares_a_trait_chain = declares_conformances || _declares_class_trait_use(parser->head);
 	const String extension = FSLanguage::get_singleton()->get_extension();
 	List<String> frontier = parser->get_dependencies();
 	HashSet<String> visited;
@@ -1132,7 +1139,7 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 		if (dependency_parser == nullptr || dependency_parser->head == nullptr) {
 			continue;
 		}
-		if (declares_conformances) {
+		if (declares_a_trait_chain) {
 			for (const String &nested_path : dependency_parser->get_dependencies()) {
 				if (!visited.has(nested_path)) {
 					frontier.push_back(nested_path);
@@ -1196,9 +1203,12 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	const Vector<FSConformanceRegistry::ClassTraitBinding> trait_bindings =
 			_collect_class_trait_bindings(parser->head, source_file);
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
+		// The load closure is published here too: a file that declares only `uses` is still one end of the
+		// edge that licenses comparing its bindings against another file's conformance, and it is the only
+		// side that can record that edge.
 		report_binding_chain_conflicts(
-				registry->try_replace_file_conformances(
-						source_file, Vector<FSConformanceRegistry::Conformance>(), trait_bindings),
+				registry->try_replace_file_conformances(source_file,
+						Vector<FSConformanceRegistry::Conformance>(), trait_bindings, loaded_dependency_closure),
 				source_file);
 		return;
 	}

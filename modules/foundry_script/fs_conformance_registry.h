@@ -347,14 +347,15 @@ private:
 	// state nothing about membership and must never answer a lookup that decides whether a type conforms.
 	HashMap<String, Vector<ClassTraitBinding>> trait_bindings_by_file;
 
-	// The files each conformance-declaring file loads, as that file itself resolved them. Visibility is
-	// directional -- a thread analyzing a file can only see what that file loads -- so a file publishing
-	// a binding cannot tell whether some already-registered conformance belongs to a file that loads it.
-	// This is what lets it ask: the load edge that licenses the comparison is recorded by the side that
-	// has it, and stays readable from the other end no matter which side reaches the mutex first.
+	// The files each declaring file loads, as that file itself resolved them. Visibility is directional
+	// -- a thread analyzing a file can only see what that file loads -- so neither side of a
+	// conformance/binding comparison can tell on its own whether the other belongs to a file that loads
+	// it. This is what lets it ask: the load edge that licenses the comparison is recorded by the side
+	// that has it, and stays readable from the other end no matter which side reaches the mutex first.
 	//
-	// Only files that declare conformances submit one, which is the only side these edges are consulted
-	// for and keeps the store to the handful of files that use `extend` at all.
+	// Both directions are consulted, so both sides submit: a file records its edges when it publishes a
+	// conformance or a class-`uses` binding. A file that publishes neither can license no comparison and
+	// stays out of the store, which keeps it to the files that take part in a chain at all.
 	HashMap<String, HashSet<String>> loaded_files_by_file;
 
 	void _rebuild_index();
@@ -464,9 +465,9 @@ public:
 	// part in deciding the candidates, so a file cannot publish a conformance that contradicts a binding
 	// another file published a moment earlier.
 	//
-	// `p_loaded_files` is the set of files `p_source_file` loads, recorded when it declares conformances
-	// so that a file publishing a binding later can still tell that this file's conformance was licensed
-	// to be compared against it.
+	// `p_loaded_files` is the set of files `p_source_file` loads, recorded whenever it declares a
+	// conformance or a class-`uses` binding so that the file at the other end of an edge, publishing
+	// later, can still tell that these declarations were licensed to be compared against its own.
 	RegistrationResult try_replace_file_conformances(const String &p_source_file, const Vector<Conformance> &p_candidates,
 			const Vector<ClassTraitBinding> &p_trait_bindings = Vector<ClassTraitBinding>(),
 			const HashSet<String> &p_loaded_files = HashSet<String>());
