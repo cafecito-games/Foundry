@@ -561,6 +561,13 @@ struct FSWeakContainerType {
 	// Materializes the strong form. A `script_id` that no longer resolves yields a null `Ref<Script>`;
 	// the caller decides whether that is a freed argument it must diagnose.
 	ContainerType to_container_type() const;
+	// Materializes the strong form for a consumer that reads a missing script as an absence of
+	// evidence rather than an error. Every node whose `script_id` no longer resolves becomes an
+	// unconstrained descriptor -- no builtin type, no class name, no script, no components -- which is
+	// the same representation an open position uses. Live siblings and live components keep their
+	// exact identity, so a freed argument costs evidence only at its own position and is never
+	// widened into a null-script stand-in that could be compared against.
+	ContainerType to_live_container_type() const;
 	// True when this node and every descendant still resolve the script they describe. A node that
 	// never carried a script (a builtin or native class) is live.
 	bool is_fully_live() const;

@@ -173,6 +173,12 @@ static bool _projected_arguments_satisfy(const Vector<ContainerType> &p_expected
 // that a `Pair[float, ...]` destination genuinely contradicts. This interpretation is local to
 // recorded conformance evidence: an unconstrained node in an ordinary specialization is a written
 // `Variant`, not an absence of evidence.
+//
+// An explicitly written `Variant` argument -- `extend Target uses Duo[Variant, int]` -- is therefore
+// deliberately indistinguishable from a position the declaration left open, on this record and on the
+// declaration-side one. Both sides reduce it to nothing recorded, so it never rejects a destination
+// argument, exactly as an open position does not. A position whose argument script has since been
+// freed reaches this reading the same way, because the registry materializes it as unconstrained.
 static ProjectedContainerType _recorded_projected_node(const ContainerType &p_argument, int p_depth) {
 	ProjectedContainerType projected;
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
@@ -510,22 +516,35 @@ FSWeakContainerType FSWeakContainerType::from_container_type(const ContainerType
 	return weak;
 }
 
-ContainerType FSWeakContainerType::to_container_type() const {
+static ContainerType _materialize_weak_container_type(const FSWeakContainerType &p_weak, bool p_degrade_freed) {
 	ContainerType type;
-	type.builtin_type = builtin_type;
-	type.numeric_type = numeric_type;
-	type.class_name = class_name;
-	if (script_id.is_valid()) {
-		type.script = Ref<Script>(Object::cast_to<Script>(ObjectDB::get_instance(script_id)));
+	Ref<Script> script;
+	if (p_weak.script_id.is_valid()) {
+		script = Ref<Script>(Object::cast_to<Script>(ObjectDB::get_instance(p_weak.script_id)));
+		if (p_degrade_freed && script.is_null()) {
+			return type;
+		}
 	}
-	type.is_type_handle = is_type_handle;
-	for (const FSWeakContainerType &element_type : element_types) {
-		type.element_types.push_back(element_type.to_container_type());
+	type.builtin_type = p_weak.builtin_type;
+	type.numeric_type = p_weak.numeric_type;
+	type.class_name = p_weak.class_name;
+	type.script = script;
+	type.is_type_handle = p_weak.is_type_handle;
+	for (const FSWeakContainerType &element_type : p_weak.element_types) {
+		type.element_types.push_back(_materialize_weak_container_type(element_type, p_degrade_freed));
 	}
-	for (const FSWeakContainerType &argument_type : type_arguments) {
-		type.type_arguments.push_back(argument_type.to_container_type());
+	for (const FSWeakContainerType &argument_type : p_weak.type_arguments) {
+		type.type_arguments.push_back(_materialize_weak_container_type(argument_type, p_degrade_freed));
 	}
 	return type;
+}
+
+ContainerType FSWeakContainerType::to_container_type() const {
+	return _materialize_weak_container_type(*this, false);
+}
+
+ContainerType FSWeakContainerType::to_live_container_type() const {
+	return _materialize_weak_container_type(*this, true);
 }
 
 bool FSWeakContainerType::is_fully_live() const {
