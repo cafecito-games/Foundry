@@ -6848,6 +6848,54 @@ static bool enum_has_value(const FSParser::DataType p_type, int64_t p_value) {
 }
 #endif // DEBUG_ENABLED
 
+// A union destination has no carrier of its own, so a numeric constant reaching one is decided against
+// the alternative that admits it and rewritten onto that alternative's carrier. Baking is what makes
+// the two spellings agree: `uint` holds the `5` a plain slot converts at its binding, and a union that
+// stored the literal still carried as `int` would leave it failing the very alternative that admitted
+// it -- in a `const`, which no store ever revisits, permanently.
+//
+// A value no alternative holds is described by the sole numeric alternative when there is one, so an
+// out-of-range constant is refused in the same words the plain slot refuses it in. With several
+// numeric alternatives no single one is the refusal's subject, and the position's own type-name
+// mismatch is the whole story.
+FSAnalyzer::ConstantRetypeOutcome FSAnalyzer::update_const_expression_union_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_position_reports_mismatch) {
+	if (!p_expression->is_constant) {
+		return ConstantRetypeOutcome::PROCEED;
+	}
+	const FSParser::DataType expression_type = p_expression->get_datatype();
+	if (!FSNumericConversion::is_numeric_builtin(expression_type)) {
+		return ConstantRetypeOutcome::PROCEED;
+	}
+
+	FSTypeCompatibility::Options options;
+	options.allow_implicit_conversion = true;
+	options.strict_dynamic = strict_dynamic_checks;
+	options.strict_null = strict_null_checks;
+	options.receiver_is_available = !static_context;
+	options.constant_source_value = &p_expression->reduced_value;
+
+	FSParser::DataType alternative;
+	if (!FSTypeCompatibility::selected_union_alternative(p_type, expression_type, options, alternative)) {
+		int numeric_alternative_count = 0;
+		for (const FSParser::DataType &member : p_type.union_members) {
+			if (FSNumericConversion::is_numeric_builtin(member)) {
+				alternative = member;
+				numeric_alternative_count++;
+			}
+		}
+		if (numeric_alternative_count != 1) {
+			return ConstantRetypeOutcome::PROCEED;
+		}
+	} else if (!FSNumericConversion::is_numeric_builtin(alternative)) {
+		return ConstantRetypeOutcome::PROCEED;
+	}
+
+	// The alternative decides the constant on its own terms, nullability included: the union already
+	// answered whether a null may arrive, and a numeric constant is never one.
+	alternative.is_nullable = false;
+	return update_const_expression_builtin_type(p_expression, alternative, p_usage, false, p_position_reports_mismatch);
+}
+
 FSAnalyzer::ConstantRetypeOutcome FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast, bool p_position_reports_mismatch) {
 	FSParser::DataType expression_type = p_expression->get_datatype();
 
@@ -6866,6 +6914,9 @@ FSAnalyzer::ConstantRetypeOutcome FSAnalyzer::update_const_expression_builtin_ty
 
 	if (expression_type == p_type && !checks_unwidthed_constant) {
 		return ConstantRetypeOutcome::PROCEED;
+	}
+	if (p_type.kind == FSParser::DataType::UNION) {
+		return update_const_expression_union_type(p_expression, p_type, p_usage, p_position_reports_mismatch);
 	}
 	if (p_type.kind != FSParser::DataType::BUILTIN && p_type.kind != FSParser::DataType::ENUM) {
 		return ConstantRetypeOutcome::PROCEED;

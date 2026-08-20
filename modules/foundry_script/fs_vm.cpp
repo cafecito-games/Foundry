@@ -2249,6 +2249,36 @@ static String fs_return_width_range_error(const Variant &p_value, NumericType p_
 			p_value.stringify(), type_name, type_name, FSNumericOps::describe_range(p_numeric_type));
 }
 
+// The carrier conversion a plain numeric slot performs on a value that is not already its type, with
+// the declared-width re-check that decides whether the converted magnitude may be committed. Stated
+// once here because a numeric union alternative owes exactly what the same type owes standing alone:
+// `uint | String` has to hold the `5` a plain `uint` parameter holds, or the union is stricter than
+// its own alternative. See `_convert_call_argument()`, whose non-union path this mirrors step for
+// step.
+static bool fs_numeric_alternative_converts(const FSDataType &p_alternative, const Variant &p_value, Variant &r_value) {
+	if (p_alternative.kind != FSDataType::BUILTIN ||
+			(p_alternative.builtin_type != Variant::INT && p_alternative.builtin_type != Variant::UINT &&
+					p_alternative.builtin_type != Variant::FLOAT)) {
+		return false;
+	}
+	if (!p_alternative.is_type(p_value, true)) {
+		// `is_type()`'s converting probe answers through `Variant::can_convert_strict()`, which has no
+		// `UINT` -> `INT` entry, so the design-6.1 `uint` -> `long` widening is asked here by value.
+		return p_alternative.builtin_type == Variant::INT &&
+				(p_alternative.numeric_type == NumericType::INT64 || p_alternative.numeric_type == NumericType::NONE) &&
+				fs_try_widen_uint_to_long(p_value, r_value);
+	}
+	const Variant *argument = &p_value;
+	Variant constructed;
+	Callable::CallError construct_error;
+	Variant::construct(p_alternative.builtin_type, constructed, &argument, 1, construct_error);
+	if (unlikely(construct_error.error != Callable::CallError::CALL_OK) || !p_alternative.is_type(constructed, false)) {
+		return false;
+	}
+	r_value = constructed;
+	return true;
+}
+
 bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant &r_value) {
 	if (p_union.is_nullable && p_value.get_type() == Variant::NIL) {
 		r_value = p_value;
@@ -2276,14 +2306,16 @@ bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant
 				: p_value;
 		return true;
 	}
-	// Pass two: no alternative describes the value as it stands, so the one conversion a union performs
-	// is attempted -- again in canonical order, so the earliest alternative that can hold the contents
-	// wins.
+	// Pass two: no alternative describes the value as it stands, so the conversions a union performs are
+	// attempted -- again in canonical order, so the earliest alternative that can hold the value wins.
 	const Variant::Type carrier = p_value.get_type();
-	if (carrier != Variant::ARRAY && carrier != Variant::DICTIONARY) {
-		return false;
-	}
 	for (const FSDataType &alternative : p_union.union_alternatives) {
+		if (fs_numeric_alternative_converts(alternative, p_value, r_value)) {
+			return true;
+		}
+		if (carrier != Variant::ARRAY && carrier != Variant::DICTIONARY) {
+			continue;
+		}
 		if (alternative.kind != FSDataType::BUILTIN || alternative.builtin_type != carrier ||
 				!alternative.has_container_element_types()) {
 			continue;

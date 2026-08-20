@@ -553,16 +553,18 @@ Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_val
 // Whether `p_value` is one of `p_union`'s alternatives, yielding the value the slot stores.
 //
 // Membership answers almost every case, and the value is then stored exactly as it arrived: a union
-// has no carrier, so there is nothing to convert to. The single normalization is the one a *non-union*
-// typed-container slot already performs -- an untyped Array or Dictionary whose contents all satisfy an
-// alternative's declared element types is retyped into that alternative -- because without it
+// has no carrier, so there is nothing to convert to. The conversions that do run are exactly the ones
+// a *non-union* slot of the alternative's own type already performs at its binding -- an untyped Array
+// or Dictionary whose contents all satisfy an alternative's declared element types is retyped into
+// that alternative, and a numeric value is carried onto a numeric alternative with that
+// alternative's declared width re-checked afterwards -- because without them
 // `Array[int] | Array[String]` would reject the very literal a plain `Array[int]` parameter accepts,
 // which is the parity this check exists to restore.
 //
 // Selection rule, when more than one alternative could claim the value: the first alternative in
 // canonical order that the value ALREADY satisfies wins, and only if none does is the first
-// alternative in canonical order that admits it BY RETYPING chosen. An exact match is preferred over a
-// converting one for the reason the non-union binding beside this one already gives -- a conversion
+// alternative in canonical order that admits it BY CONVERTING chosen. An exact match is preferred over
+// a converting one for the reason the non-union binding beside this one already gives -- a conversion
 // copies, so binding a value to a type it already has is both cheaper and less surprising than
 // rewriting its representation to reach an alternative that merely sorts earlier.
 //
