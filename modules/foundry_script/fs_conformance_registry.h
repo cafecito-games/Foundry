@@ -37,6 +37,7 @@
 #include "core/string/string_name.h"
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 class FSFunction;
@@ -346,6 +347,16 @@ private:
 	// state nothing about membership and must never answer a lookup that decides whether a type conforms.
 	HashMap<String, Vector<ClassTraitBinding>> trait_bindings_by_file;
 
+	// The files each conformance-declaring file loads, as that file itself resolved them. Visibility is
+	// directional -- a thread analyzing a file can only see what that file loads -- so a file publishing
+	// a binding cannot tell whether some already-registered conformance belongs to a file that loads it.
+	// This is what lets it ask: the load edge that licenses the comparison is recorded by the side that
+	// has it, and stays readable from the other end no matter which side reaches the mutex first.
+	//
+	// Only files that declare conformances submit one, which is the only side these edges are consulted
+	// for and keeps the store to the handful of files that use `extend` at all.
+	HashMap<String, HashSet<String>> loaded_files_by_file;
+
 	void _rebuild_index();
 
 	// Runtime witness store, grouped by declaring file so a reload/unload can drop a file's compiled
@@ -380,8 +391,11 @@ private:
 	bool _candidate_conflicts_with_trait_binding(const Conformance &p_candidate, const String &p_source_file,
 			RegistrationConflict &r_conflict) const;
 
+	// True when `p_loader` recorded a load edge to `p_loaded`. Callers must hold `mutex`.
+	bool _file_loads(const String &p_loader, const String &p_loaded) const;
+
 	// The mirror: the chain-coherence conflict, if any, between one submitted binding and a conformance
-	// already registered by a file the binding's own file may see. `p_view` is the same borrowed set the
+	// declared by a file that either the binding's file loads, or that loads the binding's file. `p_view` is the same borrowed set the
 	// candidates are judged against, so a conformance this submission is publishing in the same call is
 	// compared too. Callers must hold `mutex`.
 	bool _binding_conflicts_with_conformance(const ClassTraitBinding &p_binding, const String &p_source_file,
@@ -449,8 +463,13 @@ public:
 	// are never rejected — a `uses` clause is not a declaration the registry arbitrates — but they take
 	// part in deciding the candidates, so a file cannot publish a conformance that contradicts a binding
 	// another file published a moment earlier.
+	//
+	// `p_loaded_files` is the set of files `p_source_file` loads, recorded when it declares conformances
+	// so that a file publishing a binding later can still tell that this file's conformance was licensed
+	// to be compared against it.
 	RegistrationResult try_replace_file_conformances(const String &p_source_file, const Vector<Conformance> &p_candidates,
-			const Vector<ClassTraitBinding> &p_trait_bindings = Vector<ClassTraitBinding>());
+			const Vector<ClassTraitBinding> &p_trait_bindings = Vector<ClassTraitBinding>(),
+			const HashSet<String> &p_loaded_files = HashSet<String>());
 
 	// Drops every conformance previously registered by `p_source_file`.
 	void clear_file(const String &p_source_file);

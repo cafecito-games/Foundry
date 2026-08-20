@@ -1115,6 +1115,7 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 	List<String> frontier = parser->get_dependencies();
 	HashSet<String> visited;
 	visited.insert(parser->script_path);
+	loaded_dependency_closure.clear();
 	while (!frontier.is_empty()) {
 		const String dependency_path = frontier.front()->get();
 		frontier.pop_front();
@@ -1122,6 +1123,7 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 			continue;
 		}
 		visited.insert(dependency_path);
+		loaded_dependency_closure.insert(dependency_path);
 		Ref<FSParserRef> dependency_ref;
 		if (dependency_parser_access.raise_depended_parser_for(dependency_path, FSParserRef::PARSED, dependency_ref) != OK) {
 			continue;
@@ -1529,7 +1531,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	// already released and each rejection anchored back to the `ConformanceNode` its
 	// `conformance_index` names.
 	const FSConformanceRegistry::RegistrationResult result =
-			registry->try_replace_file_conformances(source_file, valid_entries, trait_bindings);
+			registry->try_replace_file_conformances(source_file, valid_entries, trait_bindings,
+					loaded_dependency_closure);
 	report_binding_chain_conflicts(result, source_file);
 	for (const FSConformanceRegistry::RegistrationConflict &conflict : result.conflicts) {
 		if (reported_declarations.has(conflict.conformance_index)) {

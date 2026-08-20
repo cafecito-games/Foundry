@@ -371,6 +371,14 @@ bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Confor
 	return false;
 }
 
+bool FSConformanceRegistry::_file_loads(const String &p_loader, const String &p_loaded) const {
+	if (p_loader.is_empty() || p_loaded.is_empty()) {
+		return false;
+	}
+	const HashSet<String> *loaded = loaded_files_by_file.getptr(p_loader);
+	return loaded != nullptr && loaded->has(p_loaded);
+}
+
 bool FSConformanceRegistry::_binding_conflicts_with_conformance(const ClassTraitBinding &p_binding,
 		const String &p_source_file, const Vector<const Conformance *> &p_view, BindingConflict &r_conflict) const {
 	if (p_binding.trait_name == StringName() || p_binding.trait_type_arguments.is_empty()) {
@@ -383,9 +391,18 @@ bool FSConformanceRegistry::_binding_conflicts_with_conformance(const ClassTrait
 				existing->trait_type_arguments.is_empty()) {
 			continue;
 		}
-		// A conformance reaches the binding's file the way an import does, so one it never loads must not
-		// decide how it may bind a trait.
-		if (!_is_visible(existing->source_file) || !_conformance_answers_for_binding(*existing, p_binding)) {
+		// A conformance and a binding may be compared when a load edge joins their files, whichever way it
+		// runs. `_is_visible` answers only for the direction this thread has -- the file being analyzed and
+		// what it loads -- so the other direction is read from the edge the conformance's own file
+		// recorded. Without it the verdict would depend on which side reached the mutex first: the file
+		// that loads the other may well have published before the other's declaration existed, and it
+		// never looks again.
+		//
+		// Two files with no edge either way stay uncompared, which is the composition case that belongs to
+		// whichever file loads them both.
+		const bool joined_by_a_load_edge =
+				_is_visible(existing->source_file) || _file_loads(existing->source_file, p_source_file);
+		if (!joined_by_a_load_edge || !_conformance_answers_for_binding(*existing, p_binding)) {
 			continue;
 		}
 		if (!FSTypeCompatibility::recorded_arguments_conflict(existing->trait_type_arguments,
@@ -495,7 +512,7 @@ bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate,
 
 FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_file_conformances(
 		const String &p_source_file, const Vector<Conformance> &p_candidates,
-		const Vector<ClassTraitBinding> &p_trait_bindings) {
+		const Vector<ClassTraitBinding> &p_trait_bindings, const HashSet<String> &p_loaded_files) {
 	RegistrationResult result;
 
 	MutexLock lock(mutex);
@@ -568,6 +585,15 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 		}
 	}
 
+	// The load edges this file resolved are published with its conformances: they are what lets another
+	// file, judging its own bindings later, tell that one of these conformances was licensed to be
+	// compared against it.
+	if (p_loaded_files.is_empty()) {
+		loaded_files_by_file.erase(p_source_file);
+	} else {
+		loaded_files_by_file[p_source_file] = p_loaded_files;
+	}
+
 	// The bindings are published with the conformances, under the same lock, so no reader can observe a
 	// file's `extend` declarations and its classes' `uses` bindings from two different analyses of it.
 	//
@@ -603,6 +629,7 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 void FSConformanceRegistry::clear_file(const String &p_source_file) {
 	MutexLock lock(mutex);
 	trait_bindings_by_file.erase(p_source_file);
+	loaded_files_by_file.erase(p_source_file);
 	if (conformances_by_file.erase(p_source_file)) {
 		_rebuild_index();
 	}
@@ -744,6 +771,7 @@ void FSConformanceRegistry::clear() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
 	trait_bindings_by_file.clear();
+	loaded_files_by_file.clear();
 	index.clear();
 	runtime_by_file.clear();
 	runtime_index.clear();
@@ -754,6 +782,7 @@ void FSConformanceRegistry::clear_declarations() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
 	trait_bindings_by_file.clear();
+	loaded_files_by_file.clear();
 	index.clear();
 }
 

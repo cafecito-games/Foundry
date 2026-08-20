@@ -818,6 +818,11 @@ private:
 	// of its records naming a class reported here is the same contradiction seen twice, not a second one.
 	HashSet<String> reported_trait_use_chain_conflicts;
 
+	// The files this one loads, as `raise_declared_conformance_dependencies()` walked them. Published
+	// with this file's conformances so another file, judging its own bindings later, can still see the
+	// load edge that licenses comparing them -- an edge its own directional visibility cannot show it.
+	HashSet<String> loaded_dependency_closure;
+
 	// Reports the contradictions the registry found for this file's class-`uses` bindings when it
 	// published them. The verdict is the registry's, decided under its lock against the store as it
 	// stood at the write, so it catches a conformance that landed after this file's own `uses` check
