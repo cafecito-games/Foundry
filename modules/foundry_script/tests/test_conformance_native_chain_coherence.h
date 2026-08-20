@@ -31,10 +31,13 @@
 #pragma once
 
 #include "modules/foundry_script/fs_analyzer.h"
+#include "modules/foundry_script/fs_cache.h"
 #include "modules/foundry_script/fs_conformance_registry.h"
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_trait_utils.h"
+#include "modules/foundry_script/tests/fs_temporary_project_tree.h"
 
+#include "core/io/file_access.h"
 #include "tests/test_macros.h"
 
 // A retroactive conformance on an engine class also answers for every subclass of that class, so two
@@ -1489,6 +1492,111 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Binding records answer no membe
 	Vector<FSConformanceRegistry::RecordedTypeArgument> arguments;
 	CHECK_FALSE(registry->get_recorded_trait_arguments(target_fqcn, trait_name, arguments));
 	CHECK(registry->find_witness_function(target_fqcn, "make") == nullptr);
+}
+
+// Drops the cached parser of every scratch file it is told about, when it is told and again when the
+// case ends, so a file analyzed here is never read from a cache and never outlives the tree it was
+// written into.
+class ScratchParserCacheScope {
+	Vector<String> paths;
+
+public:
+	void track(const String &p_path) {
+		paths.push_back(p_path);
+		FSCache::remove_parser(p_path);
+	}
+
+	~ScratchParserCacheScope() {
+		for (const String &path : paths) {
+			FSCache::remove_parser(path);
+		}
+	}
+};
+
+// The trait a class-`uses` clause names, identified the way the registry records it, read off the
+// analyzed file's own parse tree so the test never has to spell a file-scoped identity.
+static StringName declared_trait_identity(const FSParser &p_parser, const StringName &p_name) {
+	const FSParser::ClassNode *head = p_parser.get_tree();
+	if (head == nullptr) {
+		return StringName();
+	}
+	for (const FSParser::ClassNode::Member &member : head->members) {
+		if (member.type == FSParser::ClassNode::Member::CLASS && member.m_class != nullptr &&
+				member.m_class->identifier != nullptr && member.m_class->identifier->name == p_name) {
+			return fs_trait_identity_name(member.m_class);
+		}
+	}
+	return StringName();
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A binding-only file publishes the load edges of its whole closure") {
+	// The load edge that licenses the comparison runs two hops: the binding file loads a middle file, and
+	// only that middle file loads the one whose conformance contradicts the binding. Nothing but the
+	// binding file's own analysis can record that edge -- the conformance's side never loads back -- so
+	// the closure it publishes has to be the transitive one, not just its direct dependencies.
+	FSTests::TemporaryProjectTree tree("foundry_conformance_binding_closure");
+	REQUIRE_OR_RETURN(tree.is_valid());
+
+	tree.write_file("ncc_closure_conformance.fs",
+			"class NccClosureAnchor:\n"
+			"\tvar mark: int = 1\n");
+	tree.write_file("ncc_closure_middle.fs", "extends \"ncc_closure_conformance.fs\"\n");
+	// The trait is declared here rather than in a shared file so the binding's recorded identity comes
+	// from this file's parse tree, and the test needs no globally named trait to talk about it.
+	tree.write_file("ncc_closure_binding.fs",
+			"extends \"ncc_closure_middle.fs\"\n"
+			"\n"
+			"\n"
+			"trait NccClosureKeeper[T]:\n"
+			"\tabstract func make() -> T\n"
+			"\n"
+			"\n"
+			"class NccClosureHolder extends RefCounted:\n"
+			"\tuses NccClosureKeeper[String]\n"
+			"\n"
+			"\tfunc make() -> String:\n"
+			"\t\treturn \"seven\"\n");
+
+	const String conformance_file = tree.root.path_join("ncc_closure_conformance.fs");
+	const String middle_file = tree.root.path_join("ncc_closure_middle.fs");
+	const String binding_file = tree.root.path_join("ncc_closure_binding.fs");
+
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	scope.track(conformance_file);
+	scope.track(middle_file);
+	scope.track(binding_file);
+
+	ScratchParserCacheScope parser_cache;
+	parser_cache.track(conformance_file);
+	parser_cache.track(middle_file);
+	parser_cache.track(binding_file);
+
+	// The binding file publishes first, through a real analysis, because the closure under test is what
+	// that analysis computes. Nothing contradicts it yet, so it registers cleanly.
+	FSParser parser;
+	REQUIRE_OR_RETURN(parser.parse(FileAccess::get_file_as_string(binding_file), binding_file, false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const StringName trait_name = declared_trait_identity(parser, StringName("NccClosureKeeper"));
+	REQUIRE_OR_RETURN(trait_name != StringName());
+	REQUIRE_OR_RETURN(registry->get_script_trait_binding_records(trait_name).size() == 1);
+
+	// The conformance publishes second, under a visibility that cannot reach the binding file at all.
+	Vector<String> conformance_sees;
+	conformance_sees.push_back(conformance_file);
+	const LoadsOnlyVisibility conformance_visibility(conformance_sees);
+	const FSConformanceRegistry::ScopedVisibility scoped(&conformance_visibility);
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			conformance_file, native_conformance(conformance_file, "RefCounted", trait_name, Variant::INT));
+
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
+	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
+	CHECK_EQ(result.conflicts[0].conflicting_source_file, binding_file);
+	CHECK_EQ(result.conflicts[0].trait_name, trait_name);
+	CHECK_EQ(result.registered_count, 0);
 }
 
 } // namespace TraitBindingRecords
