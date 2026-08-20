@@ -830,7 +830,7 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] Retroactive conformance argu
 			"\treturn value as SubStore[String]\n");
 	REQUIRE(script->is_valid());
 
-	BytecodeConformanceRegistryRestore registry_restore(script->get_script_path());
+	BytecodeConformanceRegistryScope registry_scope(script->get_script_path());
 
 	const Ref<FoundryScript> target = get_generic_subclass(script, SNAME("Target"));
 	const Ref<FoundryScript> derived_target = get_generic_subclass(script, SNAME("DerivedTarget"));
@@ -942,7 +942,7 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-arg
 	REQUIRE(script->is_valid());
 
 	const String script_path = script->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const Ref<FoundryScript> target = get_generic_subclass(script, SNAME("Target"));
 	const Ref<FoundryScript> boxed = get_generic_subclass(script, SNAME("Boxed"));

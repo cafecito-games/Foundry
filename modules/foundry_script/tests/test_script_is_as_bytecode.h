@@ -169,7 +169,7 @@ TEST_CASE("[FoundryScript][Bytecode][ScriptIsAs] Every membership source answers
 	const Ref<FoundryScript> original = compile_bytecode_test_source(script_is_as_source);
 	REQUIRE(original->is_valid());
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const Variant original_owner = bytecode_new_instance(original);
 	Object *original_instance = original_owner;
