@@ -14021,6 +14021,11 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	// is the only split an invariant position -- a specialization's type argument -- may be decomposed
 	// on, since any other split would narrow the position to one alternative of a type argument the
 	// declaration matches whole.
+	//
+	// Sameness is asked of the strict identity comparison rather than of `operator==`, which stops at a
+	// type's kind and carrier: two callable alternatives read as one type there, so
+	// `Callable[[int], void] | Callable[[String], void]` would be classified as collapsing and each
+	// signature distributed through the specialization, admitting one the payload conversion refuses.
 	const auto open_union_members_collapse = [&](const Vector<FSParser::DataType> &p_members) -> bool {
 		if (p_members.size() < 2) {
 			return true;
@@ -14030,7 +14035,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		for (int i = 1; i < p_members.size(); i++) {
 			const FSParser::DataType applied_member = FSParser::DataType::substitute(
 					payload_field_type_for_spelling(p_members[i]), type_argument_bindings);
-			if (applied_member != applied_first) {
+			if (!::_datatype_strict_identity_equal(applied_member, applied_first)) {
 				return false;
 			}
 		}
