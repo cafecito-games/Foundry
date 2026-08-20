@@ -557,8 +557,14 @@ Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_val
 // typed-container slot already performs -- an untyped Array or Dictionary whose contents all satisfy an
 // alternative's declared element types is retyped into that alternative -- because without it
 // `Array[int] | Array[String]` would reject the very literal a plain `Array[int]` parameter accepts,
-// which is the parity this check exists to restore. Alternatives are tried in the analyzer's canonical
-// order, so an untyped literal several alternatives could claim lands in the first that admits it.
+// which is the parity this check exists to restore.
+//
+// Selection rule, when more than one alternative could claim the value: the first alternative in
+// canonical order that the value ALREADY satisfies wins, and only if none does is the first
+// alternative in canonical order that admits it BY RETYPING chosen. An exact match is preferred over a
+// converting one for the reason the non-union binding beside this one already gives -- a conversion
+// copies, so binding a value to a type it already has is both cheaper and less surprising than
+// rewriting its representation to reach an alternative that merely sorts earlier.
 //
 // Every boundary into a union slot answers through this: the in-body store, the parameter binding, the
 // reflective member write, and the proxy write. Defined beside the store in `fs_vm.cpp`, whose rule it

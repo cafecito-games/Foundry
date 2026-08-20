@@ -2254,9 +2254,14 @@ bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant
 		r_value = p_value;
 		return true;
 	}
-	// The alternatives are walked here rather than through the union's own `is_type()` because the
-	// accepting alternative decides what the slot stores, and that answer is not the same for all of
-	// them: a tuple owes a carrier guarantee the others do not.
+	// Pass one: the alternatives the value already satisfies, in canonical order. Preferred over the
+	// retyping pass below for the reason `_convert_call_argument()` gives for a non-union type -- a
+	// conversion copies, so a value that already is an alternative's type binds to it rather than being
+	// rewritten to reach one that merely sorts earlier.
+	//
+	// Walked here rather than through the union's own `is_type()` because the accepting alternative
+	// decides what the slot stores, and that answer is not the same for all of them: a tuple owes a
+	// carrier guarantee the others do not.
 	for (const FSDataType &alternative : p_union.union_alternatives) {
 		if (!alternative.is_type(p_value)) {
 			continue;
@@ -2271,6 +2276,9 @@ bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant
 				: p_value;
 		return true;
 	}
+	// Pass two: no alternative describes the value as it stands, so the one conversion a union performs
+	// is attempted -- again in canonical order, so the earliest alternative that can hold the contents
+	// wins.
 	const Variant::Type carrier = p_value.get_type();
 	if (carrier != Variant::ARRAY && carrier != Variant::DICTIONARY) {
 		return false;
