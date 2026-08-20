@@ -30,8 +30,10 @@
 
 #pragma once
 
+#include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_conformance_registry.h"
+#include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_trait_utils.h"
 #include "modules/foundry_script/fs_type.h"
@@ -53,6 +55,13 @@ static FSParser::DataType make_builtin(Variant::Type p_type, NumericType p_numer
 	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 	type.builtin_type = p_type;
 	type.numeric_type = p_numeric_type;
+	return type;
+}
+
+static FSParser::DataType make_variant() {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::VARIANT;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 	return type;
 }
 
@@ -419,6 +428,7 @@ public:
 	FSParser::ClassNode *supertrait_target = nullptr;
 	FSParser::ClassNode *composite_target = nullptr;
 	FSParser::ClassNode *wholly_open_target = nullptr;
+	FSParser::ClassNode *variant_target = nullptr;
 
 	PartiallyOpenTraitArgumentFixture() {
 		const char *source = R"(
@@ -451,6 +461,10 @@ class CompositeTarget:
 
 
 class WhollyOpenTarget:
+	pass
+
+
+class VariantTarget:
 	pass
 
 
@@ -489,6 +503,14 @@ extend WhollyOpenTarget uses Duo[Self, Self]:
 		pass
 
 
+extend VariantTarget uses Duo[Variant, int]:
+	func first() -> Variant:
+		return 0
+
+	func accept(item: int) -> void:
+		pass
+
+
 func test() -> void:
 	pass
 )";
@@ -504,12 +526,14 @@ func test() -> void:
 		supertrait_target = find_member_class(tree, StringName("SupertraitTarget"));
 		composite_target = find_member_class(tree, StringName("CompositeTarget"));
 		wholly_open_target = find_member_class(tree, StringName("WhollyOpenTarget"));
+		variant_target = find_member_class(tree, StringName("VariantTarget"));
 		REQUIRE(duo != nullptr);
 		REQUIRE(pair != nullptr);
 		REQUIRE(direct_target != nullptr);
 		REQUIRE(supertrait_target != nullptr);
 		REQUIRE(composite_target != nullptr);
 		REQUIRE(wholly_open_target != nullptr);
+		REQUIRE(variant_target != nullptr);
 	}
 
 	~PartiallyOpenTraitArgumentFixture() {
@@ -597,6 +621,31 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A composite argument keep
 					.compatible);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An explicit Variant argument is recorded as an open position") {
+	PartiallyOpenTraitArgumentFixture fixture;
+	const FSParser::DataType source = fixture.source_of(fixture.variant_target);
+
+	Vector<RecordedTypeArgument> recorded;
+	REQUIRE(FSTypeCompatibility::project_registry_trait_arguments(source, fixture.duo_identity(), recorded));
+	REQUIRE_EQ(recorded.size(), 2);
+	// `Variant` is written evidence of nothing: the declaration named a position it does not constrain,
+	// which is deliberately the same record an open `Self` position leaves behind.
+	CHECK_EQ(recorded[0].kind, RecordedTypeArgument::UNKNOWN);
+	CHECK_EQ(recorded[1].kind, RecordedTypeArgument::BUILTIN);
+	CHECK_EQ(recorded[1].builtin_type, Variant::INT);
+
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::STRING), make_builtin(Variant::INT)), source)
+					.compatible);
+	CHECK(FSTypeCompatibility::check(
+			fixture.duo_of(make_builtin(Variant::FLOAT), make_builtin(Variant::INT)), source)
+					.compatible);
+	// The concrete sibling is untouched by the open position beside it.
+	CHECK_FALSE(FSTypeCompatibility::check(
+			fixture.duo_of(make_variant(), make_builtin(Variant::STRING)), source)
+					.compatible);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A wholly open argument vector accepts every specialization") {
 	PartiallyOpenTraitArgumentFixture fixture;
 	const FSParser::DataType source = fixture.source_of(fixture.wholly_open_target);
@@ -613,6 +662,100 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A wholly open argument ve
 	CHECK(FSTypeCompatibility::check(
 			fixture.duo_of(make_builtin(Variant::INT), make_builtin(Variant::INT)), source)
 					.compatible);
+}
+
+// One hand-built runtime record whose first argument names a script that no longer exists, standing in
+// for an argument script unloaded after the conformance was recorded. The registry holds argument
+// scripts weakly on purpose, so this is the state a real reload leaves behind.
+class FreedRuntimeArgumentFixture {
+public:
+	static constexpr const char *SOURCE_FILE = "user://freed_runtime_trait_argument.fs";
+	static constexpr const char *SCRIPT_TARGET_KEY = "FreedArgumentTarget";
+
+	StringName trait_name = StringName("FreedArgumentKeeper");
+	ObjectID freed_script_id;
+
+	FreedRuntimeArgumentFixture() {
+		{
+			Ref<FoundryScript> unloaded_argument;
+			unloaded_argument.instantiate();
+			freed_script_id = unloaded_argument->get_instance_id();
+		}
+		REQUIRE(freed_script_id.is_valid());
+		REQUIRE(ObjectDB::get_instance(freed_script_id) == nullptr);
+
+		FSWeakContainerType freed_argument;
+		freed_argument.builtin_type = Variant::OBJECT;
+		freed_argument.class_name = StringName("RefCounted");
+		freed_argument.script_id = freed_script_id;
+
+		FSWeakContainerType live_argument;
+		live_argument.builtin_type = Variant::INT;
+
+		FSConformanceRegistry::RuntimeConformance conformance;
+		// The same record answers the script-key, native-ancestry, and builtin lookups, so all three
+		// registry entry points are checked against one conformance.
+		conformance.target_keys = { String(SCRIPT_TARGET_KEY), String("RefCounted"), String("int") };
+		conformance.trait_name = trait_name;
+		conformance.trait_type_arguments = { freed_argument, live_argument };
+		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(SOURCE_FILE, { conformance });
+	}
+
+	~FreedRuntimeArgumentFixture() {
+		FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(SOURCE_FILE);
+	}
+};
+
+static void check_freed_position_degraded(const Vector<ContainerType> &p_arguments) {
+	REQUIRE_EQ(p_arguments.size(), 2);
+	// The freed position is unconstrained rather than a bare `RefCounted` stand-in, and rather than
+	// gone: keeping the arity is what lets the live sibling still be compared.
+	CHECK_EQ(p_arguments[0].builtin_type, Variant::NIL);
+	CHECK(p_arguments[0].script.is_null());
+	CHECK(p_arguments[0].class_name == StringName());
+	CHECK_EQ(p_arguments[1].builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A freed argument script degrades only its own position") {
+	FreedRuntimeArgumentFixture fixture;
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+
+	Vector<ContainerType> arguments;
+	REQUIRE(registry->get_conformance_type_arguments(
+			FreedRuntimeArgumentFixture::SCRIPT_TARGET_KEY, fixture.trait_name, arguments));
+	check_freed_position_degraded(arguments);
+
+	// The native chain reaches the same entry through the ancestor walk.
+	REQUIRE(registry->get_native_conformance_type_arguments(
+			StringName("Resource"), fixture.trait_name, arguments));
+	check_freed_position_degraded(arguments);
+
+	REQUIRE(registry->get_builtin_conformance_type_arguments(Variant::INT, fixture.trait_name, arguments));
+	check_freed_position_degraded(arguments);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A store through a degraded record still sees the live sibling") {
+	FreedRuntimeArgumentFixture fixture;
+
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+
+	// A store rejects only on evidence. The freed position carries none -- exactly like one the
+	// declaration left open -- so a destination that contradicts only there is accepted.
+	CHECK(FSDataType::trait_specialization_matches({ string_argument, int_argument },
+			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), false));
+	// The live `int` sibling survived the degradation and still rejects, which is the whole point of
+	// degrading per position instead of dropping the vector.
+	CHECK_FALSE(FSDataType::trait_specialization_matches({ string_argument, string_argument },
+			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), false));
+
+	// The narrowing rule is unchanged and stays stricter: `is Trait[...]` demands positive evidence at
+	// every position, and a degraded one has none, so it refuses even the otherwise agreeing
+	// destination. A freed argument therefore never widens a specialized test.
+	CHECK_FALSE(FSDataType::trait_specialization_matches({ string_argument, int_argument },
+			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), true));
 }
 
 } // namespace FSRecordedTraitArgumentTests

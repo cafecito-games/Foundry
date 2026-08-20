@@ -759,6 +759,10 @@ static FSConformanceRegistry::RecordedTypeArgument _reduce_type_argument(const F
 		default:
 			// `VARIANT`, `TYPE_PARAMETER`, `ENUM`, `TUPLE`, and `UNION` all reduce to an absence of
 			// evidence: none of them has an identity this flattened form can compare with certainty.
+			// For `VARIANT` that is a deliberate boundary rather than a limitation: an explicitly
+			// written `Variant` argument is recorded exactly like a position the declaration left
+			// open, so it constrains no destination argument and no discriminator tells the two
+			// apart. The runtime record reads it the same way.
 			return recorded;
 	}
 
@@ -850,19 +854,19 @@ bool FSConformanceRegistry::get_builtin_recorded_trait_arguments(Variant::Type p
 	return get_recorded_trait_arguments(Variant::get_type_name(p_type), p_trait_name, r_arguments);
 }
 
-bool FSConformanceRegistry::_live_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const {
+bool FSConformanceRegistry::_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const {
+	// An empty recorded vector is an absence of evidence for the conformance as a whole. A freed
+	// argument script is an absence of evidence at its own position only: it materializes as an
+	// unconstrained descriptor, never as a null-script stand-in that would silently widen the recorded
+	// argument to its bare class, and its live siblings stay exact. Arity always survives, so a
+	// destination is still compared position by position.
 	if (p_entry.type_arguments.is_empty()) {
 		return false;
 	}
 	Vector<ContainerType> arguments;
 	arguments.resize(p_entry.type_arguments.size());
 	for (int i = 0; i < p_entry.type_arguments.size(); i++) {
-		// A freed argument script is an absence of evidence, never a null-script stand-in to compare
-		// against: materializing one would silently widen the recorded argument to its bare class.
-		if (!p_entry.type_arguments[i].is_fully_live()) {
-			return false;
-		}
-		arguments.write[i] = p_entry.type_arguments[i].to_container_type();
+		arguments.write[i] = p_entry.type_arguments[i].to_live_container_type();
 	}
 	r_arguments = arguments;
 	return true;
@@ -881,7 +885,7 @@ bool FSConformanceRegistry::get_conformance_type_arguments(const String &p_targe
 		return false;
 	}
 	const RuntimeTraitEntry *entry = runtime_traits->getptr(p_trait_name);
-	return entry != nullptr && _live_runtime_type_arguments(*entry, r_arguments);
+	return entry != nullptr && _runtime_type_arguments(*entry, r_arguments);
 }
 
 bool FSConformanceRegistry::get_native_conformance_type_arguments(const StringName &p_native_class,
@@ -900,7 +904,7 @@ bool FSConformanceRegistry::get_native_conformance_type_arguments(const StringNa
 		}
 		const RuntimeTraitEntry *entry = runtime_traits->getptr(p_trait_name);
 		if (entry != nullptr) {
-			return _live_runtime_type_arguments(*entry, r_arguments);
+			return _runtime_type_arguments(*entry, r_arguments);
 		}
 	}
 	return false;

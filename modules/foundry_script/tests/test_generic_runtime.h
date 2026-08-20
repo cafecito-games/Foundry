@@ -985,12 +985,17 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-arg
 	CHECK(recorded[0].script.ptr() == free_standing_argument.ptr());
 
 	// Dropping the last strong reference frees the argument. The record still names it, so the query
-	// must report an absence of evidence rather than materialize a null-script stand-in, and the
-	// specialized target must fail while nominal membership is untouched.
+	// must report an absence of evidence at that position -- an unconstrained descriptor, never a
+	// null-script stand-in that could be compared against -- while keeping the vector's arity so any
+	// live sibling stays comparable. A specialized test demands positive evidence at every position,
+	// so it fails; nominal membership is untouched.
 	free_standing_argument = Ref<FoundryScript>();
 
-	CHECK_FALSE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
-	CHECK(recorded.is_empty());
+	REQUIRE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK_EQ(recorded[0].builtin_type, Variant::NIL);
+	CHECK(recorded[0].script.is_null());
+	CHECK(recorded[0].class_name == StringName());
 	CHECK(bool(call_generic_runtime_static(script, SNAME("is_boxed"), { target_value })));
 	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_payload_boxed"), { target_value })));
 

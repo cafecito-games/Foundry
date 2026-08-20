@@ -1332,6 +1332,144 @@ TEST_CASE("[FoundryScript][BytecodeScript] A partially open conformance argument
 	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] An explicit Variant conformance argument travels as an open position") {
+	// `Duo[Variant, int]` names the first position without constraining it. It is recorded exactly like
+	// a position the declaration left open -- no discriminator separates the two -- so the compiled and
+	// the loaded records both hold an unconstrained node beside the concrete `int` its sibling proved.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Duo[A, B]:\n"
+			"\tabstract func first() -> A\n"
+			"\n"
+			"\tabstract func accept(item: B) -> void\n"
+			"\n"
+			"class Gadget:\n"
+			"\tpass\n"
+			"\n"
+			"extend Gadget uses Duo[Variant, int]:\n"
+			"\tfunc first() -> Variant:\n"
+			"\t\treturn 7\n"
+			"\n"
+			"\tfunc accept(item: int) -> void:\n"
+			"\t\tpass\n");
+	REQUIRE(original->is_valid());
+	if (!original->is_valid()) {
+		return;
+	}
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const auto check_recorded_vector = [](const Vector<FSConformanceRegistry::RuntimeConformance> &p_conformances) {
+		REQUIRE_EQ(p_conformances.size(), 1);
+		const Vector<FSWeakContainerType> &arguments = p_conformances[0].trait_type_arguments;
+		REQUIRE_EQ(arguments.size(), 2);
+		CHECK_EQ(arguments[0].builtin_type, Variant::NIL);
+		CHECK(arguments[0].class_name == StringName());
+		CHECK_FALSE(arguments[0].script_id.is_valid());
+		CHECK_EQ(arguments[1].builtin_type, Variant::INT);
+	};
+
+	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	check_recorded_vector(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path));
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A freed conformance argument travels as an open position") {
+	// The registry holds argument scripts weakly, so one can be gone by the time the record is read or
+	// written. Only that position loses its evidence: the vector keeps its arity and its live `int`
+	// sibling, instead of being dropped whole and taking a genuinely proven argument with it.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Helper:\n"
+			"\tpass\n"
+			"\n"
+			"trait Duo[A, B]:\n"
+			"\tabstract func first() -> A\n"
+			"\n"
+			"\tabstract func accept(item: B) -> void\n"
+			"\n"
+			"class Gadget:\n"
+			"\tpass\n"
+			"\n"
+			"extend Gadget uses Duo[Helper, int]:\n"
+			"\tfunc first() -> Helper:\n"
+			"\t\treturn Helper.new()\n"
+			"\n"
+			"\tfunc accept(item: int) -> void:\n"
+			"\t\tpass\n");
+	REQUIRE(original->is_valid());
+	if (!original->is_valid()) {
+		return;
+	}
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	Vector<FSConformanceRegistry::RuntimeConformance> conformances =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path);
+	REQUIRE_EQ(conformances.size(), 1);
+	REQUIRE_EQ(conformances[0].trait_type_arguments.size(), 2);
+	REQUIRE(conformances[0].trait_type_arguments[0].script_id.is_valid());
+
+	// A script that really was created and released, so the recorded id resolves to nothing exactly as
+	// an unloaded argument script's does.
+	ObjectID freed_script_id;
+	{
+		Ref<FoundryScript> unloaded_argument;
+		unloaded_argument.instantiate();
+		freed_script_id = unloaded_argument->get_instance_id();
+	}
+	REQUIRE(freed_script_id.is_valid());
+	REQUIRE(ObjectDB::get_instance(freed_script_id) == nullptr);
+	conformances.write[0].trait_type_arguments.write[0].script_id = freed_script_id;
+	FSConformanceRegistry::get_singleton()->register_runtime_witnesses(script_path, conformances);
+
+	const StringName trait_name = conformances[0].trait_name;
+	const String target_key = conformances[0].target_keys[0];
+	Vector<ContainerType> degraded;
+	REQUIRE(FSConformanceRegistry::get_singleton()->get_conformance_type_arguments(target_key, trait_name, degraded));
+	REQUIRE_EQ(degraded.size(), 2);
+	CHECK_EQ(degraded[0].builtin_type, Variant::NIL);
+	CHECK(degraded[0].script.is_null());
+	CHECK(degraded[0].class_name == StringName());
+	CHECK_EQ(degraded[1].builtin_type, Variant::INT);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	const Vector<FSConformanceRegistry::RuntimeConformance> loaded =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path);
+	REQUIRE_EQ(loaded.size(), 1);
+	const Vector<FSWeakContainerType> &loaded_arguments = loaded[0].trait_type_arguments;
+	REQUIRE_EQ(loaded_arguments.size(), 2);
+	CHECK_EQ(loaded_arguments[0].builtin_type, Variant::NIL);
+	CHECK(loaded_arguments[0].class_name == StringName());
+	CHECK_FALSE(loaded_arguments[0].script_id.is_valid());
+	CHECK_EQ(loaded_arguments[1].builtin_type, Variant::INT);
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] A composite conformance argument keeps its known parts around an open Self") {
 	// `Duo[Pair[int, Self], int]` on a non-final target proves the `Pair` shell, its `int` child, and
 	// the sibling `int` position; only the `Self` child is open. Recording the whole composite as

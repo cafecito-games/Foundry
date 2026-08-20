@@ -332,9 +332,10 @@ private:
 	// Callers must hold `mutex`.
 	bool _has_visible_conformance(const String &p_target_key, const StringName &p_trait_name) const;
 
-	// The live argument vector recorded for a runtime membership hit, or false when the entry records
-	// none or any argument script has been freed. Callers must hold `mutex`.
-	bool _live_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const;
+	// The argument vector recorded for a runtime membership hit, or false when the entry records none.
+	// Arity is always preserved: a position whose argument script has been freed materializes as an
+	// unconstrained descriptor instead of dropping the whole vector. Callers must hold `mutex`.
+	bool _runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const;
 
 	void _rebuild_runtime_index();
 

@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 24: (UNUSED_PARAMETER) The parameter "item" is never used in the function "accept()". If this is intended, prefix it with an underscore: "_item".
+Variant position accepts String: rcv
+Variant position accepts float: rcv
+>> SCRIPT ERROR at runtime/errors/retroactive_conformance_variant_argument_open_position.fs:33 on reject_conflicting_known_position(): Trying to assign value of type 'RcvTarget' to a variable of type 'RcvDuo[int, String]'.
+done
