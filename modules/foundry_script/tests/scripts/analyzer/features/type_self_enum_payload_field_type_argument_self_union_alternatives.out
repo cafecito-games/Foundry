@@ -1,0 +1,5 @@
+FS_TEST_OK
+declaration-first caller 1 true
+declaration-first receiver 2 true
+argument-first caller 3 true
+argument-first receiver 4 true

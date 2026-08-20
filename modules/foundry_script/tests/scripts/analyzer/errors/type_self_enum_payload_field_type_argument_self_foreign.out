@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 11: Invalid argument 1 for enum case "Box.Full": should be "Self" but is "Receiver".
+>> ERROR at line 12: Invalid argument 1 for enum case "Box.Full": should be "Self" but is "Receiver".
+>> ERROR at line 12: Invalid argument 2 for enum case "Box.Full": should be "Self" but is "Self". The payload field's "Self" is resolved against the receiver expression; the argument is relative to the calling frame's receiver.

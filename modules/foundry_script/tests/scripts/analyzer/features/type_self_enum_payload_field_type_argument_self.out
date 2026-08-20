@@ -1,0 +1,6 @@
+FS_TEST_OK
+instance base true true
+frame true true
+class handle true true
+nullable true
+carrier 1 true

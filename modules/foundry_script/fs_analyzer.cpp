@@ -3398,7 +3398,8 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 		const FSParser::DataType &p_member_type,
 		const FSParser::DataType &p_base,
 		const FSParser::FunctionNode *p_shadowing_method,
-		const FSParser::DataType *p_self_type) {
+		const FSParser::DataType *p_self_type,
+		const FSParser::EnumNode *p_shadowing_enum) {
 	if (p_base.class_type == nullptr && p_self_type == nullptr) {
 		return p_member_type;
 	}
@@ -3444,6 +3445,16 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 	// class specialization must not rewrite them (e.g. `func echo[T](v: T)` on a `Box[int]`).
 	if (p_shadowing_method != nullptr) {
 		for (const FSParser::TypeParameterNode *parameter : p_shadowing_method->type_parameters) {
+			if (parameter != nullptr && parameter->identifier != nullptr) {
+				bindings.erase(parameter->identifier->name);
+			}
+		}
+	}
+	// A generic union's own parameters shadow same-named class parameters across its declared payload
+	// schema, which is what an open payload field is transformed as before the application's own type
+	// arguments are applied to it.
+	if (p_shadowing_enum != nullptr) {
+		for (const FSParser::TypeParameterNode *parameter : p_shadowing_enum->type_parameters) {
 			if (parameter != nullptr && parameter->identifier != nullptr) {
 				bindings.erase(parameter->identifier->name);
 			}
@@ -13668,6 +13679,36 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	p_call->is_enum_case_construction = true;
 	p_call->enum_case_tag = tag != nullptr ? *tag : 0;
 
+	// A `Self` written as an explicit type argument (`other.Box[Self]`) was written in the calling frame
+	// and stays governed by ordinary type equality there, while a `Self` written in the declaration's own
+	// payload schema is the construction receiver's contract. The two are the same name once the
+	// application has pasted the argument into the schema, so the spelling transform below runs on the
+	// declaration's *open* schema -- where the argument positions are still the union's own parameters --
+	// and the application's bindings are applied afterwards. Method calls keep the two apart the same way,
+	// by substituting `Self` and the type arguments in separate passes over different names.
+	const FSParser::EnumNode *declaration = resolve_enum_declaration(p_enum_meta_type, p_call);
+	HashMap<StringName, FSParser::DataType> type_argument_bindings;
+	FSParser::DataType open_declaration_type;
+	if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
+		type_argument_bindings = enum_type_argument_bindings(declaration, p_enum_meta_type.type_arguments);
+		if (!type_argument_bindings.is_empty()) {
+			open_declaration_type = declaration->get_datatype();
+		}
+	}
+	// The open field a payload position was declared as, or null when the union binds no arguments (a
+	// non-generic union, or a shell whose declaration published no schema), where the specialized field
+	// already is the declared one and today's single-pass transform is exact.
+	const auto open_payload_field = [&](const StringName &p_case_name, int p_index) -> const FSParser::DataType * {
+		if (!open_declaration_type.is_set()) {
+			return nullptr;
+		}
+		const FSParser::DataType::EnumCasePayload *open_payload = open_declaration_type.get_enum_case_payload(p_case_name);
+		if (open_payload == nullptr || p_index >= open_payload->field_types.size()) {
+			return nullptr;
+		}
+		return &open_payload->field_types[p_index];
+	};
+
 	// Which spelling reached the union decides what a `Self` payload field denotes, mirroring named
 	// tuple construction. The unqualified, `self.`-qualified, and contextual shorthand spellings
 	// construct against a live receiver when the calling frame is an instance of the declaring class,
@@ -13777,12 +13818,12 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			case SelfFieldLeg::FRAME_RECEIVER: {
 				FSParser::DataType receiver_self = _self_type_parameter_from_bound(_self_type_for_class(parser->current_class));
 				receiver_self.is_receiver_self_contract = true;
-				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &receiver_self);
+				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &receiver_self, declaration);
 			}
 			case SelfFieldLeg::BASE_RECEIVER: {
 				FSParser::DataType receiver_self = _self_type_parameter_from_bound(union_base_type);
 				receiver_self.is_receiver_self_contract = true;
-				return substitute_member_type(p_field_type, union_base_type, nullptr, &receiver_self);
+				return substitute_member_type(p_field_type, union_base_type, nullptr, &receiver_self, declaration);
 			}
 			case SelfFieldLeg::EXACT_HANDLE: {
 				// The class-handle spelling is exact: `Self` substitutes to the represented type and the
@@ -13792,7 +13833,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				if (!represented_type.is_set()) {
 					return p_field_type;
 				}
-				return substitute_member_type(p_field_type, union_base_type, nullptr, &represented_type);
+				return substitute_member_type(p_field_type, union_base_type, nullptr, &represented_type, declaration);
 			}
 			case SelfFieldLeg::LITERAL_SELF: {
 				// Rebound to the frame class's own `Self` so an inherited declaration's field and a
@@ -13802,7 +13843,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 					return p_field_type;
 				}
 				FSParser::DataType frame_self = _self_type_parameter_for_class(parser->current_class);
-				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &frame_self);
+				return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &frame_self, declaration);
 			}
 			case SelfFieldLeg::EXACT_DECLARING:
 				break;
@@ -13811,7 +13852,53 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			return _substitute_self_type_parameter_with_bounds(p_field_type);
 		}
 		FSParser::DataType declaring_self = _self_type_for_class(declaring_class);
-		return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &declaring_self);
+		return substitute_member_type(p_field_type, FSParser::DataType(), nullptr, &declaring_self, declaration);
+	};
+
+	// One payload position as the construction's arguments face it: transformed for the spelling, closed
+	// over the application's type arguments, and only then completed, since a recursive generic union
+	// knows its own case set at a position only once the arguments naming it have arrived there.
+	const auto checked_payload_field_type = [&](const StringName &p_case_name, int p_index,
+													const FSParser::DataType &p_specialized_field) -> FSParser::DataType {
+		const FSParser::DataType *open_field = open_payload_field(p_case_name, p_index);
+		if (open_field == nullptr) {
+			return payload_field_type_for_spelling(complete_self_referential_enum_type(p_specialized_field));
+		}
+		return complete_self_referential_enum_type(
+				FSParser::DataType::substitute(payload_field_type_for_spelling(*open_field), type_argument_bindings));
+	};
+
+	// Two alternatives of a union payload field can be written over different owners and still describe
+	// the same type, as `(int, Self) | (int, T)` does once the application binds `T := Self`. Which frame
+	// a `Self` belongs to is provenance, deliberately not part of type identity, so union normalization
+	// keeps exactly one of the two and the other owner's admission would silently disappear -- rejecting
+	// a construction the author's own annotation allows.
+	//
+	// Rather than carry a malformed union with two members that compare equal, which every consumer of a
+	// normalized union would then have to tolerate, the alternatives are asked individually off the
+	// declaration's open schema, where both owners still exist. A value admitted by one alternative is
+	// admitted by the union, so this only ever widens admission, and it runs only after the assembled
+	// field type has already refused the argument.
+	const auto open_union_alternative_admits = [&](const StringName &p_case_name, int p_index,
+													   const FSParser::DataType &p_field_type,
+													   const FSParser::DataType &p_argument_type,
+													   FSParser::ExpressionNode *p_argument) -> bool {
+		const FSParser::DataType *open_field = open_payload_field(p_case_name, p_index);
+		if (open_field == nullptr || open_field->kind != FSParser::DataType::UNION) {
+			return false;
+		}
+		for (const FSParser::DataType &member : open_field->union_members) {
+			// Normalization hoists nullability onto the union, so an alternative standing alone gets it
+			// back before it faces its own null rules.
+			FSParser::DataType alternative = complete_self_referential_enum_type(
+					FSParser::DataType::substitute(payload_field_type_for_spelling(member), type_argument_bindings));
+			alternative.is_nullable = alternative.is_nullable || p_field_type.is_nullable;
+			if (self_parameter_contract_admits_argument_type(alternative, p_argument_type, p_call, p_argument) ||
+					self_parameter_satisfied_by_receiver_identity(alternative, p_argument, p_call)) {
+				return true;
+			}
+		}
+		return false;
 	};
 
 	// The construction checks below read the transformed field types, whose `Self` positions are the
@@ -13826,13 +13913,22 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	if (!p_call->receiver_is_current_self) {
 		for (KeyValue<StringName, FSParser::DataType::EnumCasePayload> &case_payload : case_value_type.enum_case_payloads) {
 			for (int i = 0; i < case_payload.value.field_types.size(); i++) {
-				const FSParser::DataType &payload_field_type = case_payload.value.field_types[i];
-				if (!_datatype_contains_self_type_parameter(payload_field_type)) {
+				const FSParser::DataType *open_field = open_payload_field(case_payload.key, i);
+				// A position the application filled with the caller's `Self` keeps it: lowering erases it
+				// against the constructing frame's own owner script, which is exactly what it denotes.
+				const FSParser::DataType &schema_field = open_field != nullptr
+						? *open_field
+						: case_payload.value.field_types[i];
+				if (!_datatype_contains_self_type_parameter(schema_field)) {
 					continue;
 				}
-				case_payload.value.field_types.write[i] = self_field_leg == SelfFieldLeg::BASE_RECEIVER
-						? _substitute_self_type_parameter_with_bounds(payload_field_type)
-						: payload_field_type_for_spelling(payload_field_type);
+				FSParser::DataType rewritten = self_field_leg == SelfFieldLeg::BASE_RECEIVER
+						? _substitute_self_type_parameter_with_bounds(schema_field)
+						: payload_field_type_for_spelling(schema_field);
+				if (open_field != nullptr) {
+					rewritten = FSParser::DataType::substitute(rewritten, type_argument_bindings);
+				}
+				case_payload.value.field_types.write[i] = rewritten;
 			}
 		}
 	}
@@ -13848,8 +13944,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 
 	bool payload_is_bakeable = true;
 	for (int i = 0; i < expected_count; i++) {
-		const FSParser::DataType field_type =
-				payload_field_type_for_spelling(complete_self_referential_enum_type(payload->field_types[i]));
+		const FSParser::DataType field_type = checked_payload_field_type(case_name, i, payload->field_types[i]);
 		FSParser::ExpressionNode *argument = p_call->arguments[i];
 		// A shorthand in payload position takes its union from the field type, which is only known
 		// here, so it is qualified before the field's own check reads the argument's type. This is what
@@ -13868,7 +13963,8 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				continue;
 			}
 			if (!self_parameter_contract_admits_argument_type(field_type, self_field_argument_type, p_call, argument) &&
-					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
+					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call) &&
+					!open_union_alternative_admits(case_name, i, field_type, self_field_argument_type, argument)) {
 				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument") +
@@ -18328,7 +18424,12 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 		return false;
 	}
 	if (_is_bare_self_value_parameter(p_expected_type)) {
-		return ::call_argument_is_same_receiver(p_call, p_argument);
+		// Only a position the call site resolved as its receiver contract is answerable by identity. A
+		// `Self` that reached the signature some other way -- written by the caller as an explicit type
+		// argument, or captured into a `Callable` where no call site decides a receiver at all -- was
+		// written in the calling frame and is governed by ordinary type equality, which the receiver
+		// expression does not satisfy just by being the receiver.
+		return p_expected_type.is_receiver_self_contract && ::call_argument_is_same_receiver(p_call, p_argument);
 	}
 	// A named tuple is built by its constructor call, never by a literal, so a literal against a named
 	// expectation is not a shape this rule can admit.
