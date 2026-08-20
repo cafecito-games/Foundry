@@ -466,9 +466,47 @@ String FSParser::DataType::declaring_script_path() const {
 			}
 			return String();
 		}
+		case TUPLE:
+		case ENUM:
+			// A named tuple and a class enum both carry their declaring script directly; native and
+			// global declarations leave it empty, which correctly names no file.
+			return script_path;
 		default:
 			return String();
 	}
+}
+
+// Renders the class chain that declares a named tuple, from the nominal identity stamped into
+// `native_type`: the declaring class's fqcn followed by `"." + tuple_name`. An fqcn is the
+// canonicalized declaring path for a head class and `path::Outer::Inner` for a nested one, so the
+// chain is everything after the first `"::"` with the separators rendered as `"."`. A remainder that
+// is empty or is the declaring script itself means the tuple is declared at the script's top level
+// and has no class to name.
+static String _named_tuple_declaring_class_chain(const FSParser::DataType &p_type) {
+	const String native_type = String(p_type.native_type);
+	const String suffix = "." + String(p_type.tuple_name);
+	if (!native_type.ends_with(suffix)) {
+		return String();
+	}
+	const String owner = native_type.substr(0, native_type.length() - suffix.length());
+	if (owner.is_empty()) {
+		return String();
+	}
+	const int separator = owner.find("::");
+	if (separator >= 0) {
+		return owner.substr(separator + 2).replace("::", ".");
+	}
+	if (!p_type.script_path.is_empty() && FoundryScript::is_canonically_equal_paths(owner, p_type.script_path)) {
+		return String();
+	}
+	return owner;
+}
+
+static String _declaring_class_phrase(const String &p_article, const String &p_subject, const String &p_class_chain) {
+	if (p_class_chain.is_empty()) {
+		return vformat("%s %s is declared at the script's top level", p_article, p_subject);
+	}
+	return vformat(R"(%s %s is declared by class "%s")", p_article, p_subject, p_class_chain);
 }
 
 static bool _slot_is_self_type_parameter(const FSParser::DataType &p_type) {
@@ -596,6 +634,21 @@ String FSParser::DataType::same_rendered_name_clause(const DataType &p_first, co
 		}
 		// Both spellings fell back to the same basename (neither file localizes under a resource
 		// root), so a file clause would repeat the colliding name twice and disambiguate nothing.
+	}
+	// Two classes of one script can declare same-named tuples: a named tuple renders its declared
+	// name alone, so nothing in the spelling says which class declared it.
+	if (p_first.kind == TUPLE && p_second.kind == TUPLE && p_first.tuple_name != StringName() &&
+			p_second.tuple_name != StringName() &&
+			(p_first.native_type != p_second.native_type ||
+					!FoundryScript::is_canonically_equal_paths(p_first.script_path, p_second.script_path))) {
+		const String first_chain = _named_tuple_declaring_class_chain(p_first);
+		const String second_chain = _named_tuple_declaring_class_chain(p_second);
+		if (first_chain != second_chain) {
+			return vformat(" %s; %s.", _declaring_class_phrase("The", p_first_subject, first_chain),
+					_declaring_class_phrase("the", p_second_subject, second_chain));
+		}
+		// Both sides name the same declaring class in different files whose references collapsed, so
+		// naming the class would repeat the colliding name twice and disambiguate nothing.
 	}
 	// Same declaration on both sides: the spellings can still collide when they differ only in their
 	// `Self` binding, because a named composite renders its declared name without its slots.
