@@ -313,6 +313,7 @@ static Vector<FSConformanceRegistry::ClassTraitBinding> _collect_class_trait_bin
 				binding.target_native_base = native_base;
 				binding.target_script_ancestor_fqcns = ancestor_keys;
 				binding.trait_name = identity;
+				binding.trait_label = fs_class_or_trait_diagnostic_name(identity_node);
 				binding.trait_type_arguments = arguments;
 				binding.source_file = p_source_file;
 				bindings.push_back(binding);
@@ -538,6 +539,7 @@ void FSAnalyzer::check_trait_uses_against_conformance_chain(FSParser::ClassNode 
 				trait_binding_conflicts_with_script_ancestry(p_class, applied_trait, applied,
 						Vector<FSConformanceRegistry::Conformance>(), message)) {
 			push_error(message, p_class);
+			reported_trait_use_chain_conflicts.insert(p_class->fqcn);
 			return;
 		}
 	}
@@ -1143,6 +1145,36 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 	}
 }
 
+void FSAnalyzer::report_binding_chain_conflicts(const FSConformanceRegistry::RegistrationResult &p_result,
+		const String &p_source_file) {
+	if (p_result.binding_conflicts.is_empty()) {
+		return;
+	}
+	Vector<const FSParser::ClassNode *> declared_classes;
+	_collect_declared_classes(parser->head, declared_classes);
+	for (const FSConformanceRegistry::BindingConflict &conflict : p_result.binding_conflicts) {
+		// A class the `uses` check already reported on has been told about this contradiction once; the
+		// registry's record of it is the same one seen again, not a second one.
+		if (reported_trait_use_chain_conflicts.has(conflict.target_fqcn)) {
+			continue;
+		}
+		const FSParser::ClassNode *binding_class = nullptr;
+		for (const FSParser::ClassNode *declared : declared_classes) {
+			if (declared->fqcn == conflict.target_fqcn) {
+				binding_class = declared;
+				break;
+			}
+		}
+		if (binding_class == nullptr) {
+			continue;
+		}
+		reported_trait_use_chain_conflicts.insert(conflict.target_fqcn);
+		push_error(_chain_conflict_message(conflict.trait_label, conflict.conflicting_target_label,
+						   conflict.conflicting_source_file, p_source_file),
+				binding_class);
+	}
+}
+
 void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	require_completed_analyzer_phase(AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE, AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION);
 
@@ -1162,7 +1194,10 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	const Vector<FSConformanceRegistry::ClassTraitBinding> trait_bindings =
 			_collect_class_trait_bindings(parser->head, source_file);
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
-		registry->try_replace_file_conformances(source_file, Vector<FSConformanceRegistry::Conformance>(), trait_bindings);
+		report_binding_chain_conflicts(
+				registry->try_replace_file_conformances(
+						source_file, Vector<FSConformanceRegistry::Conformance>(), trait_bindings),
+				source_file);
 		return;
 	}
 
@@ -1495,6 +1530,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	// `conformance_index` names.
 	const FSConformanceRegistry::RegistrationResult result =
 			registry->try_replace_file_conformances(source_file, valid_entries, trait_bindings);
+	report_binding_chain_conflicts(result, source_file);
 	for (const FSConformanceRegistry::RegistrationConflict &conflict : result.conflicts) {
 		if (reported_declarations.has(conflict.conformance_index)) {
 			continue;

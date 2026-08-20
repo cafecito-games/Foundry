@@ -320,13 +320,27 @@ bool FSConformanceRegistry::_declaration_witnesses_collide(const Conformance &p_
 	return false;
 }
 
+// Whether a conformance and a class-`uses` binding describe overlapping receivers, which is what makes
+// them have to agree. The one relation both directions of the comparison go through, so the side that
+// happens to be published second can never reach a different verdict than the first would have.
+static bool _conformance_answers_for_binding(const FSConformanceRegistry::Conformance &p_conformance,
+		const FSConformanceRegistry::ClassTraitBinding &p_binding) {
+	if (_is_native_target(p_conformance)) {
+		return _native_ancestry_answers_for(p_binding.target_native_base, StringName(p_conformance.target_fqcn));
+	}
+	if (p_conformance.target_fqcn.is_empty() || p_binding.target_fqcn.is_empty() ||
+			p_conformance.target_fqcn == p_binding.target_fqcn) {
+		return false;
+	}
+	return p_binding.target_script_ancestor_fqcns.has(p_conformance.target_fqcn) ||
+			p_conformance.target_script_ancestor_fqcns.has(p_binding.target_fqcn);
+}
+
 bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Conformance &p_candidate,
 		const String &p_source_file, RegistrationConflict &r_conflict) const {
 	if (p_candidate.trait_name == StringName() || p_candidate.trait_type_arguments.is_empty()) {
 		return false;
 	}
-	const bool candidate_is_native = _is_native_target(p_candidate);
-	const StringName candidate_native_class = candidate_is_native ? StringName(p_candidate.target_fqcn) : StringName();
 
 	// The submitting file's own bindings are excluded: they are what this call is about to replace, and
 	// a contradiction between a file's `extend` and its own class's `uses` is decided in that file's
@@ -336,22 +350,8 @@ bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Confor
 			continue;
 		}
 		for (const ClassTraitBinding &binding : file_entry.value) {
-			if (binding.trait_name != p_candidate.trait_name || binding.trait_type_arguments.is_empty()) {
-				continue;
-			}
-			bool answers_for_same_receivers = false;
-			if (candidate_is_native) {
-				// A class whose chain bottoms out on this engine class, or on a subclass of it, binds the
-				// trait for receivers the candidate also answers for.
-				answers_for_same_receivers =
-						_native_ancestry_answers_for(binding.target_native_base, candidate_native_class);
-			} else if (!p_candidate.target_fqcn.is_empty() && !binding.target_fqcn.is_empty() &&
-					p_candidate.target_fqcn != binding.target_fqcn) {
-				// Two script classes: either may stand above the other on one script chain.
-				answers_for_same_receivers = binding.target_script_ancestor_fqcns.has(p_candidate.target_fqcn) ||
-						p_candidate.target_script_ancestor_fqcns.has(binding.target_fqcn);
-			}
-			if (!answers_for_same_receivers) {
+			if (binding.trait_name != p_candidate.trait_name || binding.trait_type_arguments.is_empty() ||
+					!_conformance_answers_for_binding(p_candidate, binding)) {
 				continue;
 			}
 			if (!FSTypeCompatibility::recorded_arguments_conflict(binding.trait_type_arguments,
@@ -367,6 +367,39 @@ bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Confor
 			r_conflict.conflicting_source_file = binding.source_file;
 			return true;
 		}
+	}
+	return false;
+}
+
+bool FSConformanceRegistry::_binding_conflicts_with_conformance(const ClassTraitBinding &p_binding,
+		const String &p_source_file, const Vector<const Conformance *> &p_view, BindingConflict &r_conflict) const {
+	if (p_binding.trait_name == StringName() || p_binding.trait_type_arguments.is_empty()) {
+		return false;
+	}
+	for (const Conformance *existing : p_view) {
+		// A conformance declared by the binding's own file is compared in that file's analyzer against its
+		// parse tree, where the diagnostic can name both sides precisely.
+		if (existing->trait_name != p_binding.trait_name || existing->source_file == p_source_file ||
+				existing->trait_type_arguments.is_empty()) {
+			continue;
+		}
+		// A conformance reaches the binding's file the way an import does, so one it never loads must not
+		// decide how it may bind a trait.
+		if (!_is_visible(existing->source_file) || !_conformance_answers_for_binding(*existing, p_binding)) {
+			continue;
+		}
+		if (!FSTypeCompatibility::recorded_arguments_conflict(existing->trait_type_arguments,
+					p_binding.trait_type_arguments)) {
+			continue;
+		}
+		r_conflict.target_fqcn = p_binding.target_fqcn;
+		r_conflict.target_label = p_binding.target_label.is_empty() ? p_binding.target_fqcn : p_binding.target_label;
+		r_conflict.trait_name = p_binding.trait_name;
+		r_conflict.trait_label = p_binding.trait_label.is_empty() ? String(p_binding.trait_name) : p_binding.trait_label;
+		r_conflict.conflicting_target_label =
+				existing->target_label.is_empty() ? existing->target_fqcn : existing->target_label;
+		r_conflict.conflicting_source_file = existing->source_file;
+		return true;
 	}
 	return false;
 }
@@ -535,13 +568,27 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 		}
 	}
 
+	// The bindings are published with the conformances, under the same lock, so no reader can observe a
+	// file's `extend` declarations and its classes' `uses` bindings from two different analyses of it.
+	//
+	// They are judged in the same breath, against the store as it stands at this write. Publishing them
+	// unchecked would reintroduce, on the binding side, exactly the check-then-register shape this
+	// operation exists to eliminate: the analyzer's own `uses` check reads the registry earlier in its
+	// run, so a conformance committed by another thread in between would leave both sides of a
+	// contradiction registered and no single-file analysis able to find it afterwards. A binding is
+	// reported but never dropped -- a `uses` clause is source the registry cannot refuse, and discarding
+	// it would leave the chain it binds recorded nowhere.
+	for (const ClassTraitBinding &binding : p_trait_bindings) {
+		BindingConflict binding_conflict;
+		if (_binding_conflicts_with_conformance(binding, p_source_file, view, binding_conflict)) {
+			result.binding_conflicts.push_back(binding_conflict);
+		}
+	}
 	if (accepted.is_empty()) {
 		conformances_by_file.erase(p_source_file);
 	} else {
 		conformances_by_file[p_source_file] = accepted;
 	}
-	// The bindings are published with the conformances, under the same lock, so no reader can observe a
-	// file's `extend` declarations and its classes' `uses` bindings from two different analyses of it.
 	if (p_trait_bindings.is_empty()) {
 		trait_bindings_by_file.erase(p_source_file);
 	} else {

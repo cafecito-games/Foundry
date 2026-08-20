@@ -1238,6 +1238,56 @@ TEST_CASE("[Modules][FoundryScript][Conformance] Script-class conformance reject
 	CHECK_EQ(result.registered_count, 0);
 }
 
+TEST_CASE("[Modules][FoundryScript][Conformance] Conformance published first still contradicts a later binding") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_mirror_dependency.fs";
+	const String declaring_file = "user://ncc_binding_mirror_declaration.fs";
+	const StringName trait_name = "NccBindingMirrorKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	// The mirror of the case above. Analyses run concurrently and each publishes under the registry's
+	// own lock, so the conformance may reach it first; the file publishing the binding is then the only
+	// one that can see both sides, and the contradiction has to be found as its bindings are stored.
+	REQUIRE_EQ(registry->try_replace_file_conformances(declaring_file,
+							   native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT))
+					   .registered_count,
+			1);
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+
+	REQUIRE_EQ(result.binding_conflicts.size(), 1);
+	CHECK_EQ(result.binding_conflicts[0].target_fqcn, dependency_file + "::Holder");
+	CHECK_EQ(result.binding_conflicts[0].trait_name, trait_name);
+	CHECK_EQ(result.binding_conflicts[0].conflicting_source_file, declaring_file);
+
+	// Reported, never arbitrated: the binding is still stored, so the chain it fixes stays recorded and a
+	// third file asking about it is not answered with silence.
+	CHECK_EQ(registry->get_script_trait_binding_records(trait_name).size(), 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A matching binding published after a conformance reports nothing") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_mirror_ok_dependency.fs";
+	const String declaring_file = "user://ncc_binding_mirror_ok_declaration.fs";
+	const StringName trait_name = "NccBindingMirrorOkKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	registry->try_replace_file_conformances(declaring_file,
+			native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::INT));
+
+	CHECK(result.binding_conflicts.is_empty());
+}
+
 TEST_CASE("[Modules][FoundryScript][Conformance] Binding records answer no membership or witness query") {
 	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 	BindingScope scope;

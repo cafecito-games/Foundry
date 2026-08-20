@@ -171,6 +171,10 @@ public:
 		Vector<String> target_script_ancestor_fqcns;
 		// A trait identity from the class's `uses` closure, and the arguments the class binds it to.
 		StringName trait_name;
+		// How that identity should be spelled in a diagnostic. An identity name is fully qualified for a
+		// trait declared without an explicit name, so the readable form is remembered where the parse tree
+		// that has it is at hand.
+		String trait_label;
 		Vector<RecordedTypeArgument> trait_type_arguments;
 		String source_file;
 	};
@@ -278,10 +282,32 @@ public:
 		String conflicting_source_file;
 	};
 
+	// One class-`uses` binding the registry found contradicted by a conformance already registered by a
+	// file this one loads. The binding is still stored: a `uses` clause is source, not a declaration the
+	// registry may refuse, and dropping it would leave the chain it binds recorded nowhere at all, which
+	// is exactly the blindness these records exist to remove.
+	//
+	// This is the mirror of `RegistrationConflict::CHAIN_COHERENCE`. Together they make the verdict
+	// independent of which of the two files reaches the mutex first: whichever side is published second
+	// sees the other and reports. Anchored by the binding class's fully-qualified name rather than by a
+	// `ConformanceNode` index, because a `uses` clause is not a conformance and the diagnostic belongs on
+	// the class that wrote it.
+	struct BindingConflict {
+		String target_fqcn;
+		String target_label;
+		StringName trait_name;
+		String trait_label;
+		String conflicting_target_label;
+		String conflicting_source_file;
+	};
+
 	// The outcome of one atomic validate-and-replace. `registered_count` counts the entries actually
 	// stored, which is the candidate set minus every entry belonging to a rejected declaration.
 	struct RegistrationResult {
 		Vector<RegistrationConflict> conflicts;
+		// Contradictions found for the submitted bindings. Reported, never arbitrated: every binding is
+		// stored regardless of what appears here.
+		Vector<BindingConflict> binding_conflicts;
 		int registered_count = 0;
 	};
 
@@ -353,6 +379,13 @@ private:
 	// another file the candidate may see. Callers must hold `mutex`.
 	bool _candidate_conflicts_with_trait_binding(const Conformance &p_candidate, const String &p_source_file,
 			RegistrationConflict &r_conflict) const;
+
+	// The mirror: the chain-coherence conflict, if any, between one submitted binding and a conformance
+	// already registered by a file the binding's own file may see. `p_view` is the same borrowed set the
+	// candidates are judged against, so a conformance this submission is publishing in the same call is
+	// compared too. Callers must hold `mutex`.
+	bool _binding_conflicts_with_conformance(const ClassTraitBinding &p_binding, const String &p_source_file,
+			const Vector<const Conformance *> &p_view, BindingConflict &r_conflict) const;
 
 	// The witness-name collision, if any, between one candidate declaration and `p_view`. Checked once
 	// per declaration because every entry a declaration emits borrows the same witness map. Callers must
