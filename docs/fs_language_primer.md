@@ -357,8 +357,10 @@ func total[T: int | long](left: T, right: T) -> String:
   are the same type.
 - A union that normalizes to **one** member is that member. `type Meters = float` behaves exactly
   like `float` at compile time and at runtime, numeric width included, and costs nothing.
-- A union with **two or more** members erases at runtime: no wrapper, no tag, no runtime type check,
-  and a `Variant::NIL` property type. This is why the restrictions below exist.
+- A union with **two or more** members erases at runtime: no wrapper, no tag, and a `Variant::NIL`
+  property type. This is why the restrictions below exist.
+- A union slot verifies membership at runtime whenever the static type cannot prove it, so a value
+  that satisfies no alternative is rejected where it is stored instead of escaping into the slot.
 - `Number` is compiler-provided and globally visible. It is exactly the source-spellable numeric
   types: `int`, `uint`, `long`, `ulong`, and `float`. `Number` is a reserved name.
 - A type test narrows a union-typed or union-bounded value to the tested alternative for the rest of

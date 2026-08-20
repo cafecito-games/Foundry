@@ -999,17 +999,19 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			}
 			if (member_result.uses_implicit_conversion &&
 					(p_source.kind != FSParser::DataType::BUILTIN || target_member.builtin_type != p_source.builtin_type)) {
-				// A union slot is untyped at runtime, so no conversion instruction is emitted for it.
-				// An alternative reachable only by changing the value's carrier would therefore hold an
-				// unconverted value and fail its own type test. A width-only conversion is fine: width is
-				// out-of-band metadata and the stored value is unchanged.
+				// A union slot has no carrier of its own, so no conversion instruction is emitted for it:
+				// the store verifies membership and writes the value exactly as it arrived. An alternative
+				// reachable only by changing the value's carrier would therefore hold an unconverted value
+				// and fail its own type test. A width-only conversion is fine: width is out-of-band
+				// metadata and the stored value is unchanged.
 				continue;
 			}
 			result.compatible = true;
 			result.uses_implicit_conversion = member_result.uses_implicit_conversion;
-			// An alternative that only accepts the source under a runtime check keeps that obligation.
-			// The union slot itself emits none, so the caller has to treat the flow as unsafe rather than
-			// read a set membership it never proved: an erased type parameter is the case that matters.
+			// An alternative that only accepts the source under a runtime check keeps that obligation, and
+			// the union store is what discharges it: the compiled store tests the value against the whole
+			// alternative set. A source that satisfies an alternative statically records nothing here, so
+			// the proven flow keeps the plain, unchecked store.
 			result.requires_runtime_check = member_result.requires_runtime_check;
 			return result;
 		}

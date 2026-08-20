@@ -681,7 +681,7 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 	if (error != OK) {
 		return error;
 	}
-	ERR_FAIL_COND_V_MSG(kind > (uint8_t)FSDataType::TYPE_PARAMETER, ERR_INVALID_DATA,
+	ERR_FAIL_COND_V_MSG(kind > (uint8_t)FSDataType::UNION, ERR_INVALID_DATA,
 			"Invalid data type kind in compiled script data.");
 	r_data_type.kind = (FSDataType::Kind)kind;
 	uint32_t builtin_type = 0;

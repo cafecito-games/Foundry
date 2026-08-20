@@ -79,8 +79,8 @@ class FSDataType {
 public:
 	Vector<FSDataType> container_element_types;
 
-	// NOTE: `TYPE_PARAMETER` must remain the last/highest value. The compiled-bytecode loader
-	// (`FSBytecodeLoader::decode_data_type`) validates a deserialized kind with `kind > TYPE_PARAMETER`;
+	// NOTE: `UNION` must remain the last/highest value. The compiled-bytecode loader
+	// (`FSBytecodeLoader::decode_data_type`) validates a deserialized kind with `kind > UNION`;
 	// if a new kind is appended after it, update that upper-bound check to the new last value.
 	enum Kind {
 		VARIANT, // Can be any type.
@@ -92,6 +92,10 @@ public:
 		// around at runtime; `container_element_types` holds the element types, in declaration order.
 		TUPLE,
 		TYPE_PARAMETER, // Generic type parameter, erased before execution.
+		// A set of alternatives. A union has no carrier of its own -- the value is one of the
+		// alternatives, stored exactly as it arrived -- so `container_element_types` holds the
+		// alternatives in the analyzer's canonical order and the membership test is their disjunction.
+		UNION,
 	};
 
 	Kind kind = VARIANT;
@@ -354,6 +358,17 @@ public:
 				// Type parameters are erased before execution; accept any value defensively.
 				return true;
 			} break;
+			case UNION: {
+				// Membership in the set, asked of each alternative through the rules that alternative
+				// would carry standing alone. A union has no carrier, so there is nothing to convert to
+				// and nothing to fall back on: a value either is one of the alternatives or it is not.
+				for (const FSDataType &alternative : container_element_types) {
+					if (alternative.is_type(p_variant, p_allow_implicit_conversion, p_narrowing)) {
+						return true;
+					}
+				}
+				return false;
+			} break;
 		}
 		return false;
 	}
@@ -435,6 +450,12 @@ public:
 		if (is_nullable) {
 			// Core typed containers cannot express "this type or null", so a nullable element type
 			// becomes an untyped element. The analyzer still enforces element types statically.
+			return type;
+		}
+		if (kind == UNION) {
+			// A `ContainerType` transports exactly one type, which a set of alternatives cannot supply,
+			// so a union nested in a typed container leaves that position untyped. The analyzer still
+			// enforces the alternatives statically, and a union *slot* is checked by its own store.
 			return type;
 		}
 		type.builtin_type = builtin_type;
@@ -783,6 +804,14 @@ public:
 		// converts -- tuple elements are invariant and a tuple value is a read-only Array -- so a value
 		// that passes is stored exactly as it arrived.
 		OPCODE_ASSIGN_TYPED_TUPLE,
+		// Store validated against a union slot's alternative set. A union has no carrier of its own, so
+		// the alternatives travel as a compiled descriptor operand and the check is their disjunction --
+		// the same question `is_type()` asks for a parameter or a member of the same type. Nothing is
+		// converted: the value the slot accepts is the value the source had.
+		//
+		// Emitted only where the static types did not already prove membership, which is what
+		// `FSTypeCompatibility::Result::requires_runtime_check` records for the store.
+		OPCODE_ASSIGN_TYPED_UNION,
 		// Call-site validation of one argument of a statically resolved generic call. The callee is
 		// compiled once with its method-scope type parameters erased, so its own argument binding has no
 		// run-time type to check the value against; the caller, which knows the substitution, checks and

@@ -559,6 +559,7 @@ public:
 	virtual void write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_member_index) override;
 	virtual void write_assign_typed_class_parameter(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, bool p_is_type_handle, bool p_is_erased_container) override;
 	virtual void write_assign_typed_tuple(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) override;
+	virtual void write_assign_typed_union(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) override;
 	virtual void write_assign_typed_script_dynamic(const Address &p_target, const Address &p_source, const Address &p_type_source) override;
 	virtual void write_validate_call_argument(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, const StringName &p_callee_name, int p_argument_index) override;
 	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) override;

@@ -440,6 +440,15 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				VERIFY_FAIL_COND(code_ptr[ip + 4] < 0, "negative tuple arity");
 				ip += 5;
 			} break;
+			case FSFunction::OPCODE_ASSIGN_TYPED_UNION: {
+				// Destination, source, and the constant holding the alternative-set descriptor. A union
+				// carries no arity or carrier operand: the whole shape is in the descriptor.
+				VERIFY_FAIL_COND(ip + 4 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_ADDR(ip + 3);
+				ip += 4;
+			} break;
 			case FSFunction::OPCODE_VALIDATE_CALL_ARGUMENT: {
 				// The third operand is an address: the constant holding the substituted type descriptor.
 				// The fourth is a global-name index, bounded like every other name operand, and the fifth

@@ -437,7 +437,13 @@ bool FSProxyInstance::set(const StringName &p_name, const Variant &p_value) {
 	Variant value = p_value;
 	if (type_element) {
 		const FSDataType &data_type = type_element->value;
-		if (!data_type.is_type(value)) {
+		if (data_type.kind == FSDataType::UNION) {
+			// Membership is the whole question for a union slot: it has no carrier, so the
+			// `Variant::construct()` fallback below could only build a `NIL` and reject every value.
+			if (!data_type.is_type(value)) {
+				return false;
+			}
+		} else if (!data_type.is_type(value)) {
 			// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's
 			// widen-then-width order and kept structurally parallel to
 			// `FoundryScript::_coerce_member_write` so the proxy store and a real instance agree on

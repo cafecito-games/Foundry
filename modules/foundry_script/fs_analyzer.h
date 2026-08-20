@@ -494,6 +494,11 @@ private:
 	bool type_parameter_bound_reaches(const FSParser::DataType &p_parameter, const FSParser::DataType &p_other, bool p_allow_implicit_conversion);
 	bool type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion);
 	bool allows_runtime_narrowing(const FSParser::DataType &p_target, const FSParser::DataType &p_source);
+	// Whether a store into a union destination has to verify membership when it runs. The compatibility
+	// answer records that obligation for the pair; this reads it back so the compiled store takes the
+	// checked path. A value whose static type already satisfies an alternative reports false and keeps
+	// the plain, unchecked store.
+	bool union_store_requires_membership_check(const FSParser::DataType &p_target, const FSParser::DataType &p_source) const;
 	String make_type_handle_argument_error(
 			const StringName &p_function,
 			int p_argument_number,

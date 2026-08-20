@@ -565,12 +565,18 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				result.kind = FSDataType::VARIANT;
 			}
 		} break;
-		case FSParser::DataType::UNION:
-			// A multi-member union erases to untyped at runtime: it produces no typed local, no
-			// typed parameter check, and no runtime type test. The normalized member list stays in
-			// the analyzer's rich type metadata, which is where union-aware tooling reads it.
-			result.kind = FSDataType::VARIANT;
-			break;
+		case FSParser::DataType::UNION: {
+			// A union has no carrier of its own, so the alternatives *are* the lowered type: they travel
+			// with the slot in the analyzer's canonical order, which is what lets a parameter, a member,
+			// a return, and an in-body store all ask the same membership question of a value whose
+			// static type never proved it. Nullability was hoisted onto the union during normalization
+			// and is applied by the shared tail below.
+			result.kind = FSDataType::UNION;
+			for (const FSParser::DataType &member : p_datatype.union_members) {
+				result.container_element_types.push_back(
+						_gdtype_from_datatype(member, p_owner, p_handle_metatype, p_preserve_type_parameters));
+			}
+		} break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED: {
 			_set_error("Parser bug (please report): converting unresolved type.", nullptr);
@@ -1269,6 +1275,13 @@ bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_dec
 		return false;
 	}
 	if (!p_declared_type.is_set() || !p_declared_type.is_hard_type()) {
+		return false;
+	}
+	if (p_declared_type.kind == FSParser::DataType::UNION) {
+		// A union slot is validated by its own membership store, which resolves every alternative --
+		// including one naming a class type parameter -- against the receiver through the same descriptor
+		// path. Routing it through the class-parameter store instead would enforce a single alternative
+		// against a value the others admit.
 		return false;
 	}
 	bool is_sound = true;

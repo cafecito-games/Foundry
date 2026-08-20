@@ -611,6 +611,11 @@ bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Varia
 		r_value = fs_canonical_tuple_value(resolved_shape, r_value);
 		return true;
 	}
+	if (p_member.data_type.kind == FSDataType::UNION) {
+		// Membership is the whole question for a union slot: it has no carrier, so the
+		// `Variant::construct()` fallback below could only build a `NIL` and reject every value.
+		return p_member.data_type.is_type(r_value);
+	}
 	if (!p_member.data_type.is_type(r_value)) {
 		// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's
 		// widen-then-width order: the value must be inside the `uint` range to cross carriers at

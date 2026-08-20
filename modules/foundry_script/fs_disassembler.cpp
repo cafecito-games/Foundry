@@ -712,6 +712,16 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_ASSIGN_TYPED_UNION: {
+				text += "assign typed union (";
+				text += DADDR(3);
+				text += ") ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+
+				incr += 4;
+			} break;
 			case OPCODE_VALIDATE_CALL_ARGUMENT: {
 				text += "validate call argument ";
 				text += itos(_code_ptr[ip + 5] + 1);

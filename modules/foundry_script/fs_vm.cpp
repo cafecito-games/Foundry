@@ -644,6 +644,24 @@ static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const 
 		r_type = type;
 		return true;
 	}
+	if (descriptor.get("is_union", false)) {
+		// A union is a set of alternatives with no carrier of its own, so only the alternatives are read
+		// back -- each through this same reader, which is what keeps a `Self`-naming or type-parameter
+		// alternative resolved against the running frame exactly as a tuple element is.
+		type.kind = FSDataType::UNION;
+		type.is_nullable = descriptor.get("is_nullable", false);
+		const Array alternatives = descriptor.get("element_types", Array());
+		for (int i = 0; i < alternatives.size(); i++) {
+			FSDataType alternative;
+			if (!_data_type_from_tuple_descriptor(alternatives[i], p_frame_self, p_receiver_arguments, alternative)) {
+				return false;
+			}
+			type.container_element_types.push_back(alternative);
+		}
+		r_type = type;
+		return true;
+	}
+
 	if (!descriptor.get("is_tuple", false)) {
 		ContainerType container_type;
 		if (!_container_type_from_descriptor(descriptor, p_frame_self, container_type)) {
@@ -728,7 +746,9 @@ static bool _is_plain_tuple_descriptor_constant(const Variant &p_constant) {
 	if (descriptor.is_typed_key()) {
 		return false;
 	}
-	return descriptor.get("is_tuple", false);
+	// A union descriptor is decoded by the same reader and is shape-stable for the same reasons, so it
+	// shares the predecode table rather than paying a descriptor walk on every store.
+	return descriptor.get("is_tuple", false) || descriptor.get("is_union", false);
 }
 
 // Whether every node the descriptor answers from the running frame is fully known for this
@@ -1955,6 +1975,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
 		&&OPCODE_ASSIGN_TYPED_CLASS_PARAMETER,           \
 		&&OPCODE_ASSIGN_TYPED_TUPLE,                     \
+		&&OPCODE_ASSIGN_TYPED_UNION,                     \
 		&&OPCODE_VALIDATE_CALL_ARGUMENT,                 \
 		&&OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,             \
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT,        \
@@ -2235,6 +2256,19 @@ bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType
 		// Validation alone would leave the body holding whatever carrier the caller handed over, which a
 		// parameter -- unlike a local -- performs no store to normalize. See `fs_canonical_tuple_value()`.
 		r_value = fs_canonical_tuple_value(p_type, p_value);
+		return true;
+	}
+	if (p_type.kind == FSDataType::UNION) {
+		// A union has no carrier, so there is nothing to convert to: the value either satisfies one of
+		// the alternatives or it does not. The general path below would ask `Variant::construct()` about
+		// a `NIL` carrier and rescue a value no alternative describes.
+		if (!p_type.is_type(p_value, false)) {
+			r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_err.argument = p_argument_index;
+			r_err.expected = p_type.builtin_type;
+			return false;
+		}
+		r_value = p_value;
 		return true;
 	}
 	if (!p_type.is_type_handle && p_type.kind == FSDataType::NATIVE) {
@@ -4266,6 +4300,52 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				*dst = _canonical_tuple_value(tuple_type, *src, 0);
 
 				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_ASSIGN_TYPED_UNION) {
+				CHECK_SPACE(4);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+				GET_VARIANT_PTR(type_info, 2);
+
+				// The same three-tier descriptor decode the tuple store uses, and for the same reasons: a
+				// set whose alternatives name neither `Self` nor a type parameter was decoded once at
+				// finalization, a receiver-dependent one once per specialization, and anything else here.
+				const FSDataType *predecoded_union_type = _predecoded_tuple_shape(_code_ptr[ip + 3]);
+				const FSDataType *specialized_union_type = predecoded_union_type != nullptr
+						? nullptr
+						: _specialized_tuple_shape(frame_tuple_slot_specialization.ptr(), _code_ptr[ip + 3]);
+
+				FSDataType decoded_union_type;
+				if (predecoded_union_type == nullptr && specialized_union_type == nullptr) {
+					Vector<ProjectedContainerType> receiver_arguments;
+					if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+						p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
+					}
+					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, receiver_arguments, decoded_union_type))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
+				}
+				const FSDataType &union_type = predecoded_union_type != nullptr
+						? *predecoded_union_type
+						: (specialized_union_type != nullptr ? *specialized_union_type : decoded_union_type);
+
+				// Membership, under the store's rule: an alternative reachable only by changing the value's
+				// carrier is not one this slot admits, so nothing is converted and the value is stored
+				// exactly as it arrived. A union has no carrier of its own, so unlike the tuple store there
+				// is no canonical form to normalize into either.
+				if (unlikely(!union_type.is_type(*src))) {
+#ifdef DEBUG_ENABLED
+					err_text = vformat(R"(Cannot store a value of type "%s" in a slot of type "%s": the value is none of the alternatives.)",
+							_get_var_type(src), union_type.get_source_type_name());
+#endif // DEBUG_ENABLED
+					OPCODE_BREAK;
+				}
+				*dst = *src;
+
+				ip += 4;
 			}
 			DISPATCH_OPCODE;
 
