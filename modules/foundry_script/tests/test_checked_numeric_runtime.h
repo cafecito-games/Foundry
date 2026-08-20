@@ -37,6 +37,7 @@
 #include "fs_test_language_lifecycle.h"
 
 #include "core/error/error_macros.h"
+#include "core/variant/container_type_validate.h"
 
 #include "tests/test_macros.h"
 
@@ -412,6 +413,177 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A dynamic member write widen
 	member_value = object->get(SNAME("observed"));
 	CHECK(member_value.get_type() == Variant::INT);
 	CHECK(member_value == Variant(int64_t(4000000001)));
+}
+
+// Resolves a named inner class of a compiled test script.
+static Ref<FoundryScript> checked_numeric_subclass(const Ref<FoundryScript> &p_script, const StringName &p_name) {
+	Ref<FoundryScript> subclass;
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator element = p_script->get_subclasses().find(p_name);
+	if (element) {
+		subclass = element->value;
+	}
+	REQUIRE(subclass.is_valid());
+	return subclass;
+}
+
+// A reified integer type argument, i.e. the `long` in `Box[long]`.
+static Vector<ContainerType> checked_numeric_integer_argument(NumericType p_numeric_type) {
+	ContainerType argument;
+	argument.builtin_type = Variant::INT;
+	argument.numeric_type = p_numeric_type;
+	Vector<ContainerType> arguments;
+	arguments.push_back(argument);
+	return arguments;
+}
+
+static bool checked_numeric_set_member(Object *p_object, const StringName &p_name, const Variant &p_value) {
+	bool valid = false;
+	p_object->set(p_name, p_value, &valid);
+	return valid;
+}
+
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A dynamic write widens uint to long on a reified generic member") {
+	ScopedCheckedNumericLanguage language;
+
+	// Once a type argument is bound, `Box[long].value` describes the same constraint plain
+	// `var value: long` does, so it must accept the same values. Every dynamic write path that
+	// reaches a reified member funnels through one validation point, so the external `set()` leg, the
+	// in-body member store, and the trait-fixed static slot are all pinned here.
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"class Box[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"\tfunc assign_dynamic(v) -> void:\n"
+			"\t\tvalue = v\n"
+			"\n"
+			"trait Slotted[T]:\n"
+			"\tstatic var slot: T\n"
+			"\n"
+			"class Holder:\n"
+			"\tuses Slotted[long]\n");
+
+	Ref<FoundryScript> box = checked_numeric_subclass(script, SNAME("Box"));
+
+	Callable::CallError error;
+	const Variant long_box_value = box->_new_specialized(nullptr, 0, checked_numeric_integer_argument(NumericType::INT64), error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	Object *long_box = long_box_value;
+	REQUIRE(long_box != nullptr);
+
+	// An in-`uint`-range value above `int`'s range widens onto the `INT` carrier, exactly as it does
+	// for a plain `long` member.
+	CHECK(checked_numeric_set_member(long_box, SNAME("value"), Variant(uint64_t(4000000000))));
+	Variant member_value = long_box->get(SNAME("value"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(4000000000)));
+
+	// A `ulong`-magnitude value still requires an explicit cast, and the slot keeps what it held.
+	ERR_PRINT_OFF;
+	CHECK_FALSE(checked_numeric_set_member(long_box, SNAME("value"), Variant(uint64_t(5000000000))));
+	ERR_PRINT_ON;
+	CHECK(long_box->get(SNAME("value")) == Variant(int64_t(4000000000)));
+
+	// The in-body member store resolves the same binding, so it widens the same way.
+	Variant in_body_value = Variant(uint64_t(5));
+	const Variant *in_body_args[1] = { &in_body_value };
+	long_box->callp(SNAME("assign_dynamic"), in_body_args, 1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	member_value = long_box->get(SNAME("value"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(5)));
+
+	// The reified width is asked about the widened value: `Box[int]` takes a small `uint` value and
+	// refuses one above its own range, leaving the slot alone.
+	const Variant int_box_value = box->_new_specialized(nullptr, 0, checked_numeric_integer_argument(NumericType::INT32), error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	Object *int_box = int_box_value;
+	REQUIRE(int_box != nullptr);
+
+	CHECK(checked_numeric_set_member(int_box, SNAME("value"), Variant(uint64_t(5))));
+	member_value = int_box->get(SNAME("value"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(5)));
+	ERR_PRINT_OFF;
+	CHECK_FALSE(checked_numeric_set_member(int_box, SNAME("value"), Variant(uint64_t(3000000000))));
+	ERR_PRINT_ON;
+	CHECK(int_box->get(SNAME("value")) == Variant(int64_t(5)));
+
+	// A static member typed by a trait parameter the implementer fixed carries the same evidence.
+	const Ref<FoundryScript> holder_script = checked_numeric_subclass(script, SNAME("Holder"));
+	const Variant holder_value = instantiate_checked_numeric_script(holder_script);
+	Object *holder = holder_value;
+	REQUIRE(holder != nullptr);
+
+	CHECK(checked_numeric_set_member(holder, SNAME("slot"), Variant(uint64_t(4000000000))));
+	member_value = holder->get(SNAME("slot"));
+	CHECK(member_value.get_type() == Variant::INT);
+	CHECK(member_value == Variant(int64_t(4000000000)));
+	ERR_PRINT_OFF;
+	CHECK_FALSE(checked_numeric_set_member(holder, SNAME("slot"), Variant(uint64_t(5000000000))));
+	ERR_PRINT_ON;
+	CHECK(holder->get(SNAME("slot")) == Variant(int64_t(4000000000)));
+
+	// An unspecialized instance has no evidence to widen against, so its slot stays untyped and keeps
+	// the unsigned carrier it was handed.
+	const Variant plain_box_value = instantiate_checked_numeric_script(box);
+	Object *plain_box = plain_box_value;
+	REQUIRE(plain_box != nullptr);
+
+	CHECK(checked_numeric_set_member(plain_box, SNAME("value"), Variant(uint64_t(4000000000))));
+	member_value = plain_box->get(SNAME("value"));
+	CHECK(member_value.get_type() == Variant::UINT);
+	CHECK(member_value == Variant(uint64_t(4000000000)));
+}
+
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A T-typed local store widens uint to long") {
+	ScopedCheckedNumericLanguage language;
+
+	// A local declared as a class type parameter is validated against the receiver's reified argument
+	// by its own opcode, which shares the member path's validation point and therefore its widening.
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"class Box[T]:\n"
+			"\tfunc store_local(v) -> Variant:\n"
+			"\t\tvar local: T = v\n"
+			"\t\treturn local\n");
+
+	Ref<FoundryScript> box = checked_numeric_subclass(script, SNAME("Box"));
+
+	const auto store_local = [](Object *p_object, const Variant &p_value) {
+		Variant argument = p_value;
+		const Variant *args[1] = { &argument };
+		Callable::CallError call_error;
+		const Variant result = p_object->callp(SNAME("store_local"), args, 1, call_error);
+		REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+		return result;
+	};
+
+	Callable::CallError error;
+	const Variant long_box_value = box->_new_specialized(nullptr, 0, checked_numeric_integer_argument(NumericType::INT64), error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	Object *long_box = long_box_value;
+	REQUIRE(long_box != nullptr);
+
+	Variant stored = store_local(long_box, Variant(uint64_t(4000000000)));
+	CHECK(stored.get_type() == Variant::INT);
+	CHECK(stored == Variant(int64_t(4000000000)));
+
+	const Variant int_box_value = box->_new_specialized(nullptr, 0, checked_numeric_integer_argument(NumericType::INT32), error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	Object *int_box = int_box_value;
+	REQUIRE(int_box != nullptr);
+
+	stored = store_local(int_box, Variant(uint64_t(5)));
+	CHECK(stored.get_type() == Variant::INT);
+	CHECK(stored == Variant(int64_t(5)));
+
+	// Without a reified argument the slot is untyped, so the unsigned carrier survives.
+	const Variant plain_box_value = instantiate_checked_numeric_script(box);
+	Object *plain_box = plain_box_value;
+	REQUIRE(plain_box != nullptr);
+
+	stored = store_local(plain_box, Variant(uint64_t(4000000000)));
+	CHECK(stored.get_type() == Variant::UINT);
+	CHECK(stored == Variant(uint64_t(4000000000)));
 }
 
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic keeps its declared width") {

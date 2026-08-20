@@ -1,0 +1,7 @@
+FS_TEST_OK
+4000000000 true false
+5 true
+4000000000 true
+5 true
+4000000000 true
+reified generic member uint to long widening ok
