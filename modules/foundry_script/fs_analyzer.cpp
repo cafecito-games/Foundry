@@ -17907,9 +17907,20 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 
 // A callable's rest tail is the one signature slot ordinary argument compatibility admits
 // contravariantly: the callee sends values *into* the callback, so a tail that accepts a supertype of
-// the declared element accepts everything the parameter can ever send it. `Self` substitutes to its
-// bound for that question, because every receiver the parameter resolves to is an instance of the
-// bound, and a supertype of the bound therefore accepts every leaf.
+// the declared element accepts everything the parameter can ever send it.
+//
+// Two compatibility questions have to agree, because each one alone admits a case the other refuses.
+//
+// Asked of the element with `Self` substituted to its bound, the answer covers every leaf at once: the
+// tail must accept the bound itself, which rejects a tail narrower than `Self` (a `Leaf` tail cannot
+// take a sibling leaf the receiver may resolve to instead).
+//
+// Asked of the element with `Self` left standing, the answer respects the variance of the position
+// `Self` sits in, because `Self` is a type parameter bounded by the receiver's class: a tail of
+// `Array[Self]` accepts a callback taking `Array[Cell]`, while a tail of `Array[Box[Self]]` does not
+// accept one taking `Array[Box[Cell]]`, since a `Child` receiver reifies `Box[Child]` and a
+// specialization is invariant in its argument. Substituting first would erase that distinction; not
+// substituting at all lets a type parameter narrow to a subtype of its bound.
 //
 // The value positions of a `Self` parameter keep the exact comparison for the reason this contract
 // exists -- a value typed as the bound is not the receiver's leaf -- and so do fixed signature slots,
@@ -17921,13 +17932,13 @@ bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::Dat
 			p_argument_type.method_rest_parameter_type.size() != 1) {
 		return false;
 	}
-	const FSParser::DataType expected_element = _substitute_self_type_parameter_with_bounds(
-			p_expected_type.method_rest_parameter_type[0].get_container_element_type(0));
+	const FSParser::DataType expected_element = p_expected_type.method_rest_parameter_type[0].get_container_element_type(0);
 	const FSParser::DataType supplied_element = p_argument_type.method_rest_parameter_type[0].get_container_element_type(0);
 	if (!expected_element.is_set() || !supplied_element.is_set()) {
 		return false;
 	}
-	return is_type_compatible(supplied_element, expected_element);
+	return is_type_compatible(supplied_element, _substitute_self_type_parameter_with_bounds(expected_element)) &&
+			is_type_compatible(supplied_element, expected_element);
 }
 
 // Answers whether the contract matches at all, and reports the argument shape it matched against so

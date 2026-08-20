@@ -4,7 +4,12 @@
 # is not that subclass. A fixed-arity callable is rejected where the parameter declares a tail it will
 # invoke. A tail the parameter never invokes is admitted instead, but that argument still carries
 # `Self` in its own fixed prefix, so it answers to receiver identity and reaches only the calling
-# frame's own receiver.
+# frame's own receiver. A `Self` nested inside a specialization is invariant there, so widening it to
+# the bound is refused even though widening a bare `Self` element is not.
+class Box[T]:
+	var value: T
+
+
 class Cell:
 	func self_tail(_callback: Callable[[...Array[Self]], void]) -> void:
 		pass
@@ -28,6 +33,13 @@ class Cell:
 	func route_narrow_tail(other: Cell, narrow: Callable[[...Array[Leaf]], void]) -> void:
 		other.self_tail(narrow)
 		self_tail(narrow)
+
+	func self_boxed_tail(_callback: Callable[[...Array[Box[Self]]], void]) -> void:
+		pass
+
+	func route_nested_specialization(other: Cell, boxed: Callable[[...Array[Box[Cell]]], void]) -> void:
+		other.self_boxed_tail(boxed)
+		self_boxed_tail(boxed)
 
 
 class Leaf:
