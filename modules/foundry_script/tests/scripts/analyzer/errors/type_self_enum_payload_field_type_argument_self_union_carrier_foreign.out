@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 22: Invalid argument 1 for enum case "Box.DeclarationFirst": should be "Keeper[(int, Self)]" but is "Keeper[Variant]".
+>> ERROR at line 23: Invalid argument 1 for enum case "Box.DeclarationFirst": should be "Keeper[(int, Self)]" but is "Keeper[(int, Foreign)]".
+>> ERROR at line 24: Invalid argument 1 for enum case "Box.DeclarationFirst": should be "Keeper[(int, Self)]" but is "Keeper[int]".
