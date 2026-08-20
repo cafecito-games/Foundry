@@ -4708,7 +4708,7 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual Callable rest 
 	// Gradual tails must stay indistinguishable from a native untyped vararg: variadic, no rich slot.
 	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) != 0);
 	CHECK_FALSE(type.has_method_rest_parameter_type());
-	CHECK_EQ(type.to_string(), "Callable[[], void]");
+	CHECK_EQ(type.to_string(), "Callable[[...Array], void]");
 }
 
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A non-Array Callable rest type is rejected") {
