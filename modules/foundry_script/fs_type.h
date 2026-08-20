@@ -120,6 +120,12 @@ public:
 
 	static Result check(const FSParser::DataType &p_target, const FSParser::DataType &p_source);
 	static Result check(const FSParser::DataType &p_target, const FSParser::DataType &p_source, const Options &p_options);
+
+	// The alternative a union target admits `p_source` through, decided in the same canonical order and
+	// by the same rules `check()` uses. Asked so that a constant reaching a union can be rewritten onto
+	// the carrier of the very alternative that admitted it, rather than onto one picked independently.
+	static bool selected_union_alternative(const FSParser::DataType &p_target, const FSParser::DataType &p_source,
+			const Options &p_options, FSParser::DataType &r_alternative);
 	static bool is_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false);
 
 	// Whether a statically incompatible assignment from p_wide to p_narrow may still be accepted with

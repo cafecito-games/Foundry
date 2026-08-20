@@ -156,6 +156,64 @@ TEST_CASE("[FoundryScript][UnionMembership] A union accepts the untyped containe
 	CHECK_FALSE(fs_union_accepts(parameter_type, untyped_floats, accepted));
 }
 
+TEST_CASE("[FoundryScript][UnionMembership] A numeric alternative converts the carrier a plain slot converts") {
+	// The alternative owes exactly what its own type owes standing alone, so the conversions a plain
+	// numeric parameter performs at its binding are the conversions the union performs at its own -- and
+	// the ones it refuses are refused here too.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func widen(value: long | String) -> void:\n"
+			"\tprint(value)\n"
+			"\n"
+			"func approximate(value: float | String) -> void:\n"
+			"\tprint(value)\n"
+			"\n"
+			"func take(value: uint | String) -> void:\n"
+			"\tprint(value)\n");
+
+	Variant accepted;
+
+	// The one carrier crossing that needs no proof from the value: every `uint` is a `long`.
+	const FSDataType wide_type = first_parameter_type(script, SNAME("widen"));
+	REQUIRE(fs_union_accepts(wide_type, Variant(uint64_t(4000000000)), accepted));
+	CHECK(accepted.get_type() == Variant::INT);
+	CHECK(accepted.operator int64_t() == 4000000000);
+
+	// A `ulong` magnitude no `long` holds still needs an explicit cast, union or not.
+	CHECK_FALSE(fs_union_accepts(wide_type, Variant(uint64_t(18446744073709551615ULL)), accepted));
+
+	// A `float` alternative converts an integer carrier exactly as a plain `float` parameter does.
+	const FSDataType floating_type = first_parameter_type(script, SNAME("approximate"));
+	REQUIRE(fs_union_accepts(floating_type, Variant(5), accepted));
+	CHECK(accepted.get_type() == Variant::FLOAT);
+	CHECK(accepted.operator double() == 5.0);
+
+	// `Variant::can_convert_strict()` registers no `INT` -> `UINT` entry, so no boundary converts an
+	// `int`-carried value into an unsigned slot: a plain `uint` parameter refuses one and the union
+	// refuses it identically. What makes `take(5)` work is the analyzer, which knows the literal exactly
+	// and bakes it onto the alternative's carrier before the value ever reaches here.
+	const FSDataType unsigned_type = first_parameter_type(script, SNAME("take"));
+	CHECK_FALSE(fs_union_accepts(unsigned_type, Variant(5), accepted));
+	REQUIRE(fs_union_accepts(unsigned_type, Variant(uint64_t(5)), accepted));
+	CHECK(accepted.get_type() == Variant::UINT);
+
+	// The alternative's declared range is re-asked on whatever the slot is about to hold, so a magnitude
+	// `uint` cannot carry is refused here as it is at a plain `uint` binding.
+	CHECK_FALSE(fs_union_accepts(unsigned_type, Variant(uint64_t(5000000000)), accepted));
+}
+
+TEST_CASE("[FoundryScript][UnionMembership] A constant is baked onto the alternative that admits it") {
+	// The analyzer knows the value exactly, so the literal reaches the constant pool already carried as
+	// the alternative carries it and the store has nothing left to prove. A `const` has no store at all,
+	// which is why the rewrite cannot be left to the runtime.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func baked() -> void:\n"
+			"\tvar kept: uint | String = 5\n"
+			"\tprint(kept)\n");
+
+	const Vector<String> lines = disassemble_test_function(script, SNAME("baked"));
+	CHECK(filter_disassembly_lines(lines, "assign typed union").is_empty());
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED && DEBUG_ENABLED

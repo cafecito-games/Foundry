@@ -1140,6 +1140,9 @@ private:
 	// raw generic projection, a source it narrows at run time -- and a refusal only the reduced value
 	// proves are both still reported here, because the position would accept them.
 	ConstantRetypeOutcome update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false, bool p_position_reports_mismatch = false);
+	// The same retyping for a union destination, which has no carrier of its own: the constant is
+	// rewritten onto the carrier of the alternative that admits it.
+	ConstantRetypeOutcome update_const_expression_union_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_position_reports_mismatch);
 	static bool _is_container_literal(const FSParser::ExpressionNode *p_expression);
 	const FSParser::DataType *container_literal_target_type(const FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type);
 	bool container_literal_elements_could_fit(const FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_candidate);

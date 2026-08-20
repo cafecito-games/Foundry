@@ -924,6 +924,72 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 	return check(p_target, p_source, Options());
 }
 
+// Whether the union store can carry the value onto this alternative itself, rather than writing it
+// exactly as it arrived. The store performs the one conversion a plain slot of the alternative's type
+// performs at its own binding: the numeric carrier change, with the alternative's declared width
+// re-checked on the converted value. So exactly the crossings `FSNumericConversion` licenses may
+// change carrier here -- a widening total over the source's range, and a constant whose exact value
+// the alternative is known to hold. A conversion outside that model has no counterpart at the store,
+// and admitting it would leave the slot holding a value that fails the alternative's own type test.
+static bool _union_store_converts_carrier(const FSParser::DataType &p_alternative, const FSParser::DataType &p_source,
+		const FSTypeCompatibility::Options &p_options) {
+	if (!p_options.allow_implicit_conversion ||
+			!FSNumericConversion::is_numeric_builtin(p_alternative) || !FSNumericConversion::is_numeric_builtin(p_source)) {
+		return false;
+	}
+	switch (FSNumericConversion::classify(p_alternative, p_source, p_options.constant_source_value)) {
+		case FSNumericConversion::Conversion::IDENTITY:
+		case FSNumericConversion::Conversion::IMPLICIT_WIDEN:
+		case FSNumericConversion::Conversion::CONSTANT_CHECKED:
+			return true;
+		default:
+			return false;
+	}
+}
+
+// The alternative a union target admits `p_source` through, together with the per-alternative answer
+// that admitted it. Shared by `check()` and `selected_union_alternative()` so nothing can rewrite a
+// constant onto a different alternative than the one acceptance was decided on.
+//
+// Two passes, matching the runtime selection rule in `fs_union_accepts()`: an alternative the source
+// satisfies without converting is preferred over one reached by a conversion, however the two sort in
+// canonical order. Without that, `int | long | float` would carry every integer literal onto `float`
+// simply because `float` sorts first among the alternatives that admit it.
+static bool _select_union_alternative(const FSParser::DataType &p_target, const FSParser::DataType &p_source,
+		const FSTypeCompatibility::Options &p_options, FSParser::DataType &r_alternative,
+		FSTypeCompatibility::Result &r_member_result) {
+	for (int pass = 0; pass < 2; pass++) {
+		const bool converting_pass = pass == 1;
+		for (const FSParser::DataType &member : p_target.union_members) {
+			FSParser::DataType target_member = member;
+			target_member.is_nullable = p_target.is_nullable;
+			const FSTypeCompatibility::Result member_result = FSTypeCompatibility::check(target_member, p_source, p_options);
+			if (!member_result.compatible || member_result.uses_implicit_conversion != converting_pass) {
+				continue;
+			}
+			if (converting_pass && !_union_store_converts_carrier(target_member, p_source, p_options)) {
+				// A union slot has no carrier of its own, so an alternative reachable only by converting the
+				// value is admitted only where the store can perform that conversion. Outside the numeric
+				// model it cannot, and the slot would hold an unconverted value that fails its own type test.
+				continue;
+			}
+			r_alternative = target_member;
+			r_member_result = member_result;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FSTypeCompatibility::selected_union_alternative(const FSParser::DataType &p_target, const FSParser::DataType &p_source,
+		const Options &p_options, FSParser::DataType &r_alternative) {
+	if (p_target.kind != FSParser::DataType::UNION) {
+		return false;
+	}
+	Result member_result;
+	return _select_union_alternative(p_target, p_source, p_options, r_alternative, member_result);
+}
+
 FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType &p_target, const FSParser::DataType &p_source, const Options &p_options) {
 	Result result;
 
@@ -990,31 +1056,20 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 
 	if (p_target.kind == FSParser::DataType::UNION) {
 		// A union target accepts a source that satisfies any one of its alternatives.
-		for (const FSParser::DataType &member : p_target.union_members) {
-			FSParser::DataType target_member = member;
-			target_member.is_nullable = p_target.is_nullable;
-			const Result member_result = check(target_member, p_source, p_options);
-			if (!member_result.compatible) {
-				continue;
-			}
-			if (member_result.uses_implicit_conversion &&
-					(p_source.kind != FSParser::DataType::BUILTIN || target_member.builtin_type != p_source.builtin_type)) {
-				// A union slot has no carrier of its own, so no conversion instruction is emitted for it:
-				// the store verifies membership and writes the value exactly as it arrived. An alternative
-				// reachable only by changing the value's carrier would therefore hold an unconverted value
-				// and fail its own type test. A width-only conversion is fine: width is out-of-band
-				// metadata and the stored value is unchanged.
-				continue;
-			}
-			result.compatible = true;
-			result.uses_implicit_conversion = member_result.uses_implicit_conversion;
-			// An alternative that only accepts the source under a runtime check keeps that obligation, and
-			// the union store is what discharges it: the compiled store tests the value against the whole
-			// alternative set. A source that satisfies an alternative statically records nothing here, so
-			// the proven flow keeps the plain, unchecked store.
-			result.requires_runtime_check = member_result.requires_runtime_check;
+		FSParser::DataType alternative;
+		Result member_result;
+		if (!_select_union_alternative(p_target, p_source, p_options, alternative, member_result)) {
 			return result;
 		}
+		result.compatible = true;
+		result.uses_implicit_conversion = member_result.uses_implicit_conversion;
+		// An alternative that only accepts the source under a runtime check keeps that obligation, and
+		// the union store is what discharges it: the compiled store tests the value against the whole
+		// alternative set. An alternative reached by a conversion carries the same obligation for the
+		// same reason -- it is the store that converts the value onto that alternative's carrier. A
+		// source that satisfies an alternative outright records nothing here, so the proven flow keeps
+		// the plain, unchecked store.
+		result.requires_runtime_check = member_result.requires_runtime_check || member_result.uses_implicit_conversion;
 		return result;
 	}
 
