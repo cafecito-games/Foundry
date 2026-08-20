@@ -6703,11 +6703,9 @@ bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	const NumericType destination_numeric_type = p_type.kind == FSParser::DataType::BUILTIN && p_type.numeric_type != NumericType::NONE
 			? FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type)
 			: NumericType::NONE;
-	// A constant written without a width descriptor carries no width to disagree with, so every
-	// comparison that only looks at the two type descriptions reads as agreement and every diagnostic
-	// that prints them can only say `"int" but is "int"`. Its value still has to fit the destination,
-	// so such a constant is range-checked here rather than waved through to a report that cannot
-	// describe the mistake.
+	// A constant written without a width descriptor carries no width to disagree with, so a comparison
+	// of the two type descriptions reads as agreement and the early-out below would take it unchecked.
+	// Its value still has to fit the destination, so it goes on to the range check instead.
 	const bool checks_unwidthed_constant = p_expression->is_constant &&
 			destination_numeric_type != NumericType::NONE &&
 			expression_type.kind == FSParser::DataType::BUILTIN &&
@@ -6721,11 +6719,21 @@ bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 		return true;
 	}
 
-	// One mistake is reported once. A refused unwidthed constant is described by its value and the
-	// destination's range, because the two type names coincide; every other refusal is left to the
-	// position's own wording when the position has one, and reported generically when it does not.
-	auto report_refusal = [&](const FSParser::DataType &p_reported_type) -> bool {
-		if (checks_unwidthed_constant) {
+	// One mistake is reported once, but only a mistake the position can see may be left to the
+	// position. A refusal the position would also reach by comparing the two declared types is its to
+	// describe, in its own wording. A refusal that only the reduced value proves -- a constant whose
+	// declared type is gradual, or one whose width the two type names cannot express -- is invisible
+	// to a position that compares declared types, so this helper stays the reporter for it.
+	auto report_refusal = [&](const FSParser::DataType &p_reported_type, bool p_refusal_is_visible_to_position) -> bool {
+		// The refused type carries no width descriptor, so it renders under the destination's own name
+		// and no report built from the two names can say anything. The value and the destination's
+		// range describe the refusal instead.
+		const bool names_cannot_describe_refusal = p_expression->is_constant &&
+				destination_numeric_type != NumericType::NONE &&
+				p_reported_type.kind == FSParser::DataType::BUILTIN &&
+				p_reported_type.builtin_type == p_type.builtin_type &&
+				p_reported_type.numeric_type == NumericType::NONE;
+		if (names_cannot_describe_refusal) {
 			Variant range_checked;
 			FSNumericError range_error = FSNumericError::UNSUPPORTED;
 			if (!FSNumericOps::convert(destination_numeric_type, p_expression->reduced_value, range_checked, range_error) &&
@@ -6736,7 +6744,7 @@ bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 				return false;
 			}
 		}
-		if (p_position_reports_mismatch) {
+		if (p_position_reports_mismatch && p_refusal_is_visible_to_position) {
 			return true;
 		}
 		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, p_reported_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
@@ -6748,8 +6756,11 @@ bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	// An int constant may be cast into an int-backed enum, but never into a tagged union.
 	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
 			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
+	// A position only runs its own type comparison for a hard, non-gradual value; a Variant or a soft
+	// type takes its gradual branch, which accepts and at most warns.
+	const bool declared_type_is_checked_by_position = expression_type.is_hard_type() && !expression_type.is_variant();
 	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression, p_expression)) {
-		return report_refusal(expression_type);
+		return report_refusal(expression_type, declared_type_is_checked_by_position);
 	}
 	if (p_type.is_variant() &&
 			expression_type.is_meta_type && expression_type.kind == FSParser::DataType::CLASS &&
@@ -6766,7 +6777,8 @@ bool FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 
 	FSParser::DataType value_type = type_from_variant(p_expression->reduced_value, p_expression);
 	if (expression_type.is_variant() && !is_enum_cast && !is_type_compatible(p_type, value_type, true, p_expression, p_expression)) {
-		return report_refusal(value_type);
+		// Only the reduced value refuses this one; the declared Variant satisfies every position.
+		return report_refusal(value_type, false);
 	}
 
 #ifdef DEBUG_ENABLED

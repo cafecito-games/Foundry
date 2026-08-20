@@ -623,6 +623,18 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] A constant too large for its o
 	CHECK(in_range.parse_error == OK);
 	CHECK_MESSAGE(in_range.first_error().is_empty(), in_range.first_error());
 	check_initializer_type(in_range, "v", Variant::INT, NumericType::INT32);
+
+	// A `Variant` constant satisfies every position by its declared type, so a position could not
+	// refuse it even in principle. Only the reduced value refuses it, and the refusal is still made.
+	const AnalyzedSnippet through_variant(
+			"const BIG: Variant = 5000000000\n"
+			"\n"
+			"func test():\n"
+			"\tvar v: int = BIG\n"
+			"\tprint(v)\n");
+	CHECK(through_variant.parse_error == OK);
+	CHECK(through_variant.first_error().contains(R"(Cannot convert 5000000000 to "int": the value is outside its range)"));
+	CHECK(through_variant.error_count() == 1);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] `uint` now reaches `float`, but a non-constant `ulong` still needs a cast") {
