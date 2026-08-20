@@ -5401,14 +5401,19 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			if (_datatype_contains_self_type_parameter(specified_type)) {
 				const bool value_is_gradual = !initializer_type.is_hard_type();
 				if (value_is_gradual
-								? !self_contract_admits_gradual_value(specified_type)
+								? !self_contract_admits_gradual_value(specified_type, initializer_type)
 								: !self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN, p_assignable->initializer)) {
-					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
+					// An erased destination is refused for the reason ordinary validation gives, which
+					// names the one thing the reader can act on; every other refusal is the contract's.
+					const bool destination_is_erased = value_is_gradual && gradual_destination_is_undecidable(specified_type);
+					push_error(vformat(destination_is_erased
+											   ? R"(Cannot assign a value of type %s to %s "%s" with specified type %s: an erased type parameter has no run-time type to check the value against.)"
+											   : R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
 									   initializer_type.to_string(),
 									   p_kind,
 									   p_assignable->identifier->name,
 									   specified_type.to_string()) +
-									FSParser::DataType::same_rendered_name_clause(initializer_type, "value", specified_type, "specified type"),
+									(destination_is_erased ? String() : FSParser::DataType::same_rendered_name_clause(initializer_type, "value", specified_type, "specified type")),
 							p_assignable->initializer);
 				} else if (value_is_gradual || initializer_type.is_variant()) {
 					// An alternative that names no `Self` admits a value whose static type promises
@@ -6548,12 +6553,15 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 			const bool value_is_gradual = !result.is_hard_type();
 			if (!self_container_literal_validated &&
 					(value_is_gradual
-									? !self_contract_admits_gradual_value(expected_type)
+									? !self_contract_admits_gradual_value(expected_type, result)
 									: !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN, p_return->return_value))) {
-				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
+				const bool destination_is_erased = value_is_gradual && gradual_destination_is_undecidable(compatibility_expected_type);
+				push_error(vformat(destination_is_erased
+										   ? R"(Cannot return value of type "%s" because the function return type is "%s": an erased type parameter has no run-time type to check the value against.)"
+										   : R"(Cannot return value of type "%s" because the function return type is "%s".)",
 								   result.to_string(),
 								   expected_type.to_string()) +
-								FSParser::DataType::same_rendered_name_clause(result, "returned value", expected_type, "return type"),
+								(destination_is_erased ? String() : FSParser::DataType::same_rendered_name_clause(result, "returned value", expected_type, "return type")),
 						p_return);
 			} else if (value_is_gradual || result.is_variant()) {
 				// An alternative that names no `Self` admits a value whose static type promises nothing,
@@ -7617,13 +7625,16 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		if (_datatype_contains_self_type_parameter(assignee_type)) {
 			const bool value_is_gradual = !op_type.is_hard_type();
 			if (value_is_gradual
-							? !self_contract_admits_gradual_value(assignee_type)
+							? !self_contract_admits_gradual_value(assignee_type, op_type)
 							: !self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN, p_assignment->assigned_value)) {
 				mark_node_unsafe(p_assignment);
-				push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
+				const bool destination_is_erased = value_is_gradual && gradual_destination_is_undecidable(assignee_type);
+				push_error(vformat(destination_is_erased
+										   ? R"(Value of type "%s" cannot be assigned to a variable of type "%s": an erased type parameter has no run-time type to check the value against.)"
+										   : R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
 								   assigned_value_type.to_string(),
 								   assignee_type.to_string()) +
-								FSParser::DataType::same_rendered_name_clause(assigned_value_type, "value", assignee_type, "variable's type"),
+								(destination_is_erased ? String() : FSParser::DataType::same_rendered_name_clause(assigned_value_type, "value", assignee_type, "variable's type")),
 						p_assignment->assigned_value);
 			} else if (value_is_gradual || op_type.is_variant()) {
 				// An alternative that names no `Self` admits a value whose static type promises nothing,
@@ -18317,8 +18328,24 @@ bool FSAnalyzer::self_free_union_members_admit_value(
 // annotation had before any alternative mentioned `Self`. When every alternative needs `Self` resolved
 // there is no such answer, and the value is refused exactly as it is for a destination written as
 // `Self` alone.
-bool FSAnalyzer::self_contract_admits_gradual_value(const FSParser::DataType &p_expected_type) const {
+//
+// Booking the crossing is a promise that the run time will check what the analyzer could not, so the
+// two conditions under which ordinary validation refuses to make that promise are refused here too: a
+// mode that forbids an untyped value from reaching a typed slot at all, and an alternative whose own
+// type is erased, which leaves the run time nothing to check the value against. An alternative that
+// cannot make the promise cannot admit the value, so the remaining alternatives are asked instead.
+bool FSAnalyzer::self_contract_admits_gradual_value(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_value_type) const {
 	if (p_expected_type.kind != FSParser::DataType::UNION) {
+		return false;
+	}
+	if (p_value_type.is_variant() && strict_dynamic_checks) {
+		return false;
+	}
+	// Asked of the whole destination, exactly as ordinary validation asks it: a union holding an erased
+	// parameter anywhere is undecidable as a destination, whatever its other alternatives promise.
+	if (gradual_destination_is_undecidable(p_expected_type)) {
 		return false;
 	}
 	for (const FSParser::DataType &member : p_expected_type.union_members) {

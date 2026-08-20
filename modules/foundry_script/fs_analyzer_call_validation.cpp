@@ -1080,8 +1080,11 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 		// An alternative of a union that names no `Self` admits whatever it would admit on its own, and
 		// that includes a value whose static type promises nothing. Nothing was proved about such a value,
 		// so the crossing is reported exactly as ordinary argument validation reports it rather than
-		// passing silently because the parameter happened to mention `Self` somewhere.
-		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
+		// passing silently because the parameter happened to mention `Self` somewhere. A value projected
+		// out of a raw generic receiver is the third such shape: it has a type, but one that names an
+		// erased parameter the call site cannot reify, which ordinary validation reports the same way.
+		if (arg_type.is_variant() || !arg_type.is_hard_type() ||
+				FSAnalyzer::raw_generic_projection_crosses_boundary(par_type, arg_type)) {
 #ifdef DEBUG_ENABLED
 			if (!(par_type.is_hard_type() && par_type.is_variant())) {
 				analyzer->mark_node_unsafe(p_argument);

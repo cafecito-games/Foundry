@@ -220,4 +220,32 @@ class Receiver:
 	CHECK(error_count(every_alternative) > 0);
 }
 
+// The gradual admission books a promise that the run time will check what the analyzer could not.
+// Strict dynamic mode exists to refuse that promise, so a destination mentioning `Self` refuses it
+// there too rather than admitting through an alternative that names none.
+TEST_CASE("[Modules][FoundryScript][SelfContract] Strict dynamic mode refuses a gradual initializer for either union") {
+	const String self_union = R"(
+class Receiver:
+	func drive(source) -> void:
+		var link: int | (int, Self) = source
+		print(link)
+)";
+	const String plain_union = R"(
+class Receiver:
+	func drive(source) -> void:
+		var link: int | String = source
+		print(link)
+)";
+	auto strict_error_count = [](const String &p_source) {
+		FSParser parser;
+		REQUIRE(parser.parse(p_source, "user://test.fs", false) == OK);
+		FSAnalyzer analyzer(&parser);
+		analyzer.set_strict_dynamic_checks(true);
+		analyzer.analyze();
+		return parser.get_errors().size();
+	};
+	CHECK(strict_error_count(plain_union) > 0);
+	CHECK(strict_error_count(self_union) > 0);
+}
+
 } // namespace FSTests
