@@ -6988,8 +6988,12 @@ bool FSAnalyzer::container_literal_elements_could_fit(
 		// Both sides are read as a receiver would resolve them. Leaving `Self` standing on the supplied
 		// side would let it answer as an unreified parameter, which reaches any destination and so tells
 		// the alternatives apart from nothing.
+		//
+		// The element expression is carried in for the reason the admission carries it: a constant is
+		// admitted by the value it holds and not only by the type it was written as, so an alternative
+		// whose element a constant fits is an alternative the literal could have been written for.
 		return is_type_compatible(_substitute_self_type_parameter_with_bounds(p_element_type),
-				_substitute_self_type_parameter_with_bounds(element_type), true);
+				_substitute_self_type_parameter_with_bounds(element_type), true, nullptr, p_element);
 	};
 
 	switch (p_expression->type) {
@@ -18243,6 +18247,16 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 			continue;
 		}
 		if (!element_type.is_hard_type() || !is_type_compatible(expected_element, element_type, true)) {
+			return false;
+		}
+		// Identity admits this literal as the value the position declares, so an element that would have
+		// to change the value's carrier to reach the declared type is not that value. A literal built
+		// against its declaration has already had that element converted by the patcher and reaches here
+		// unchanged; a literal no alternative could be chosen for still holds what was written, and a
+		// union slot emits no conversion for it. A subtype element changes no carrier and still passes.
+		if (expected_element.kind == FSParser::DataType::BUILTIN &&
+				element_type.kind == FSParser::DataType::BUILTIN &&
+				expected_element.builtin_type != element_type.builtin_type) {
 			return false;
 		}
 	}
