@@ -5399,8 +5399,10 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			}
 		} else if (!specified_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(specified_type)) {
-				if (!initializer_type.is_hard_type() ||
-						!self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN)) {
+				const bool value_is_gradual = !initializer_type.is_hard_type();
+				if (value_is_gradual
+								? !self_contract_admits_gradual_value(specified_type)
+								: !self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN, p_assignable->initializer)) {
 					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
 									   initializer_type.to_string(),
 									   p_kind,
@@ -5408,7 +5410,7 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 									   specified_type.to_string()) +
 									FSParser::DataType::same_rendered_name_clause(initializer_type, "value", specified_type, "specified type"),
 							p_assignable->initializer);
-				} else if (initializer_type.is_variant()) {
+				} else if (value_is_gradual || initializer_type.is_variant()) {
 					// An alternative that names no `Self` admits a value whose static type promises
 					// nothing, so the crossing is booked exactly as the arm below books it for a
 					// destination that mentions no `Self` at all. Neither report that arm carries can
@@ -5416,6 +5418,10 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 					// and an erased destination is not a shape the contract admits.
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
+					if (!initializer_type.is_variant() &&
+							!is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer, p_assignable->initializer)) {
+						downgrade_node_type_source(p_assignable->initializer);
+					}
 				}
 			} else if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
 				if (initializer_type.is_variant() && strict_dynamic_checks) {
@@ -6539,20 +6545,27 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 
 	if (has_expected_type && !compatibility_expected_type.is_variant()) {
 		if (preserve_self_contract) {
+			const bool value_is_gradual = !result.is_hard_type();
 			if (!self_container_literal_validated &&
-					(!result.is_hard_type() || !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN))) {
+					(value_is_gradual
+									? !self_contract_admits_gradual_value(expected_type)
+									: !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN, p_return->return_value))) {
 				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
 								   result.to_string(),
 								   expected_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(result, "returned value", expected_type, "return type"),
 						p_return);
-			} else if (result.is_variant()) {
+			} else if (value_is_gradual || result.is_variant()) {
 				// An alternative that names no `Self` admits a value whose static type promises nothing,
 				// so the crossing is booked exactly as the arm below books it for a return type that
 				// mentions no `Self` at all. Neither report that arm carries can arise here: strict
 				// dynamic mode refuses such a value before the contract admits it, and an erased
 				// destination is not a shape the contract admits.
 				mark_node_unsafe(p_return);
+				if (!result.is_variant() &&
+						!is_type_compatible(compatibility_expected_type, result, true, p_return, p_return->return_value)) {
+					downgrade_node_type_source(p_return);
+				}
 			}
 			p_return->set_datatype(result);
 			return;
@@ -7602,23 +7615,27 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		}
 	} else {
 		if (_datatype_contains_self_type_parameter(assignee_type)) {
-			if (!op_type.is_hard_type() ||
-					!self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN)) {
+			const bool value_is_gradual = !op_type.is_hard_type();
+			if (value_is_gradual
+							? !self_contract_admits_gradual_value(assignee_type)
+							: !self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN, p_assignment->assigned_value)) {
 				mark_node_unsafe(p_assignment);
 				push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
 								   assigned_value_type.to_string(),
 								   assignee_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(assigned_value_type, "value", assignee_type, "variable's type"),
 						p_assignment->assigned_value);
-			} else if (op_type.is_variant()) {
+			} else if (value_is_gradual || op_type.is_variant()) {
 				// An alternative that names no `Self` admits a value whose static type promises nothing,
-				// so the crossing is booked exactly as the variant arm below books it for an assignee
-				// that mentions no `Self` at all. Neither report that arm carries can arise here: strict
+				// so the crossing is booked exactly as the arms below book it for an assignee that
+				// mentions no `Self` at all. Neither report those arms carry can arise here: strict
 				// dynamic mode refuses such a value before the contract admits it, and an erased
 				// destination is not a shape the contract admits. An annotated `Self`-bearing assignee is
 				// always hard, so the weak-assignee downgrade below is not this position's case either.
 				mark_node_unsafe(p_assignment);
 				p_assignment->use_conversion_assign = true;
+				downgrades_assigned = downgrades_assigned ||
+						(!assigned_is_variant && !is_type_compatible(assignee_type, op_type, true, p_assignment->assigned_value, p_assignment->assigned_value));
 			}
 		} else if (assignee_is_hard && !assigned_is_hard) {
 			// hard non-variant assignee and weak assigned
@@ -13136,7 +13153,7 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 			if (!argument_type.is_set()) {
 				continue;
 			}
-			if (!self_parameter_contract_admits_argument_type(field_type, argument_type, p_call) &&
+			if (!self_parameter_contract_admits_argument_type(field_type, argument_type, p_call, argument) &&
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
 				push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
 								   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()) +
@@ -13724,7 +13741,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 				payload_is_bakeable = false;
 				continue;
 			}
-			if (!self_parameter_contract_admits_argument_type(field_type, self_field_argument_type, p_call) &&
+			if (!self_parameter_contract_admits_argument_type(field_type, self_field_argument_type, p_call, argument) &&
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
 				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
@@ -18201,7 +18218,7 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 			// The admissions that do not need identity -- `null` for a nullable element, a `final` class's
 			// single binding, a value the analyzer substituted itself -- answer the same question one
 			// nesting level down, so an element consults them before identity is required of it.
-			if (self_parameter_contract_admits_argument_type(expected_element, element_type, p_call)) {
+			if (self_parameter_contract_admits_argument_type(expected_element, element_type, p_call, element)) {
 				continue;
 			}
 			if (!self_parameter_satisfied_by_receiver_identity(expected_element, element, p_call)) {
@@ -18272,7 +18289,8 @@ bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::Dat
 bool FSAnalyzer::self_free_union_members_admit_value(
 		const Vector<FSParser::DataType> &p_members,
 		bool p_nullable,
-		const FSParser::DataType &p_value_type) {
+		const FSParser::DataType &p_value_type,
+		const FSParser::ExpressionNode *p_value_source) {
 	if (p_members.is_empty()) {
 		return false;
 	}
@@ -18281,7 +18299,7 @@ bool FSAnalyzer::self_free_union_members_admit_value(
 		return false;
 	}
 	self_free_union.is_nullable = self_free_union.is_nullable || p_nullable;
-	if (!is_type_compatible(self_free_union, p_value_type, true)) {
+	if (!is_type_compatible(self_free_union, p_value_type, true, nullptr, p_value_source)) {
 		return false;
 	}
 	if (self_free_union.kind == FSParser::DataType::UNION ||
@@ -18290,7 +18308,25 @@ bool FSAnalyzer::self_free_union_members_admit_value(
 			self_free_union.builtin_type == p_value_type.builtin_type) {
 		return true;
 	}
-	return is_type_compatible(self_free_union, p_value_type, false);
+	return is_type_compatible(self_free_union, p_value_type, false, nullptr, p_value_source);
+}
+
+// A value with no static type proves nothing, so no `Self` position can be checked against it. An
+// alternative that names no `Self` is answered by ordinary compatibility, which admits such a value
+// against any destination and books the crossing rather than refusing it -- the answer the whole
+// annotation had before any alternative mentioned `Self`. When every alternative needs `Self` resolved
+// there is no such answer, and the value is refused exactly as it is for a destination written as
+// `Self` alone.
+bool FSAnalyzer::self_contract_admits_gradual_value(const FSParser::DataType &p_expected_type) const {
+	if (p_expected_type.kind != FSParser::DataType::UNION) {
+		return false;
+	}
+	for (const FSParser::DataType &member : p_expected_type.union_members) {
+		if (!_datatype_contains_self_type_parameter(member)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // A type union is a set of alternatives, so a value satisfies it exactly when it satisfies one of
@@ -18304,6 +18340,7 @@ bool FSAnalyzer::self_contract_union_admits_value_type(
 		const FSParser::DataType &p_value_type,
 		SelfContractKind p_kind,
 		const FSParser::CallNode *p_call,
+		const FSParser::ExpressionNode *p_value_source,
 		FSParser::DataType *r_matched_value) {
 	if (p_value_type.kind == FSParser::DataType::UNION) {
 		// A value that is itself a set of alternatives carries no run-time tag, so nothing narrows it at
@@ -18315,7 +18352,7 @@ bool FSAnalyzer::self_contract_union_admits_value_type(
 			FSParser::DataType value_alternative = value_member;
 			value_alternative.is_nullable = p_value_type.is_nullable;
 			if (!self_contract_union_admits_value_type(
-						p_expected_type, value_alternative, p_kind, p_call, nullptr)) {
+						p_expected_type, value_alternative, p_kind, p_call, p_value_source, nullptr)) {
 				return false;
 			}
 		}
@@ -18334,8 +18371,8 @@ bool FSAnalyzer::self_contract_union_admits_value_type(
 		FSParser::DataType alternative = member;
 		alternative.is_nullable = p_expected_type.is_nullable;
 		const bool admitted = p_kind == SelfContractKind::PARAMETER
-				? self_parameter_contract_admits_argument_type(alternative, p_value_type, p_call)
-				: self_contract_admits_value_type(alternative, p_value_type, p_kind, r_matched_value);
+				? self_parameter_contract_admits_argument_type(alternative, p_value_type, p_call, p_value_source)
+				: self_contract_admits_value_type(alternative, p_value_type, p_kind, p_value_source, r_matched_value);
 		if (admitted) {
 			if (r_matched_value != nullptr) {
 				*r_matched_value = p_value_type;
@@ -18343,7 +18380,8 @@ bool FSAnalyzer::self_contract_union_admits_value_type(
 			return true;
 		}
 	}
-	if (!self_free_union_members_admit_value(self_free_members, p_expected_type.is_nullable, p_value_type)) {
+	if (!self_free_union_members_admit_value(
+				self_free_members, p_expected_type.is_nullable, p_value_type, p_value_source)) {
 		return false;
 	}
 	if (r_matched_value != nullptr) {
@@ -18365,11 +18403,13 @@ bool FSAnalyzer::self_contract_admits_value_type(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_value_type,
 		SelfContractKind p_kind,
+		const FSParser::ExpressionNode *p_value_source,
 		FSParser::DataType *r_matched_value) {
 	if (p_expected_type.kind == FSParser::DataType::UNION) {
 		// No call site reaches here, so a parameter position's identity requirement is discharged by the
 		// caller that has one. Every other admission an alternative offers is decided here.
-		return self_contract_union_admits_value_type(p_expected_type, p_value_type, p_kind, nullptr, r_matched_value);
+		return self_contract_union_admits_value_type(
+				p_expected_type, p_value_type, p_kind, nullptr, p_value_source, r_matched_value);
 	}
 	FSParser::DataType matched_value = _self_contract_comparable_callable_argument(p_expected_type, p_value_type);
 	const auto matches_exactly = [&](const FSParser::DataType &p_candidate) {
@@ -18397,22 +18437,23 @@ bool FSAnalyzer::self_contract_admits_value_type(
 bool FSAnalyzer::self_parameter_contract_matched_argument(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type,
+		const FSParser::ExpressionNode *p_argument_source,
 		FSParser::DataType &r_matched_argument) {
 	r_matched_argument = p_argument_type;
 	return self_contract_admits_value_type(
-			p_expected_type, p_argument_type, SelfContractKind::PARAMETER, &r_matched_argument);
+			p_expected_type, p_argument_type, SelfContractKind::PARAMETER, p_argument_source, &r_matched_argument);
 }
 
-bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) {
+bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument_source) {
 	if (p_expected_type.kind == FSParser::DataType::UNION) {
 		// Decomposing here rather than below the match keeps the identity requirement attached to the
 		// alternative that admitted the value: the union itself holds no `Self` position to require
 		// identity of, so asking the question of the whole annotation would answer no for every union.
 		return self_contract_union_admits_value_type(
-				p_expected_type, p_argument_type, SelfContractKind::PARAMETER, p_call, nullptr);
+				p_expected_type, p_argument_type, SelfContractKind::PARAMETER, p_call, p_argument_source, nullptr);
 	}
 	FSParser::DataType argument_type;
-	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type)) {
+	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, p_argument_source, argument_type)) {
 		return false;
 	}
 	// Receiver identity protects the *supplied* value's own `Self`, so it is asked of the type as
@@ -18460,7 +18501,7 @@ String FSAnalyzer::self_parameter_receiver_identity_clause(
 		return String();
 	}
 	FSParser::DataType argument_type;
-	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type) ||
+	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, nullptr, argument_type) ||
 			!_datatype_contains_caller_relative_self(p_argument_type) ||
 			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return String();

@@ -481,11 +481,12 @@ private:
 		RETURN,
 	};
 	bool callable_rest_tail_accepts_expected_element(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type);
-	bool self_free_union_members_admit_value(const Vector<FSParser::DataType> &p_members, bool p_nullable, const FSParser::DataType &p_value_type);
-	bool self_contract_union_admits_value_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_value_type, SelfContractKind p_kind, const FSParser::CallNode *p_call, FSParser::DataType *r_matched_value);
-	bool self_contract_admits_value_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_value_type, SelfContractKind p_kind, FSParser::DataType *r_matched_value = nullptr);
-	bool self_parameter_contract_matched_argument(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, FSParser::DataType &r_matched_argument);
-	bool self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call);
+	bool self_free_union_members_admit_value(const Vector<FSParser::DataType> &p_members, bool p_nullable, const FSParser::DataType &p_value_type, const FSParser::ExpressionNode *p_value_source);
+	bool self_contract_admits_gradual_value(const FSParser::DataType &p_expected_type) const;
+	bool self_contract_union_admits_value_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_value_type, SelfContractKind p_kind, const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_value_source, FSParser::DataType *r_matched_value);
+	bool self_contract_admits_value_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_value_type, SelfContractKind p_kind, const FSParser::ExpressionNode *p_value_source = nullptr, FSParser::DataType *r_matched_value = nullptr);
+	bool self_parameter_contract_matched_argument(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::ExpressionNode *p_argument_source, FSParser::DataType &r_matched_argument);
+	bool self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument_source = nullptr);
 	String self_parameter_receiver_identity_clause(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call, const String &p_expected_subject, const String &p_argument_subject);
 	bool type_parameter_bound_reaches(const FSParser::DataType &p_parameter, const FSParser::DataType &p_other, bool p_allow_implicit_conversion);
 	bool type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion);

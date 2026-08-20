@@ -1069,7 +1069,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 	FSParser::DataType arg_type = p_argument->get_datatype();
 
 	if (analyzer->datatype_contains_self_type_parameter(par_type)) {
-		if (!analyzer->self_parameter_contract_admits_argument_type(par_type, arg_type, p_call) &&
+		if (!analyzer->self_parameter_contract_admits_argument_type(par_type, arg_type, p_call, p_argument) &&
 				!analyzer->self_parameter_satisfied_by_receiver_identity(par_type, p_argument, p_call)) {
 			analyzer->push_error(
 					make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, false, p_argument) +

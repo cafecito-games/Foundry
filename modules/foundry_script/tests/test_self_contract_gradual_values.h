@@ -164,4 +164,60 @@ class Receiver:
 	CHECK(strict_error_count(self_union) > 0);
 }
 
+// A soft value is the other gradual carrier: it has a type, but not one the destination can be checked
+// against. It is admitted and booked wherever an alternative names no `Self`, and refused where every
+// alternative needs `Self` resolved -- which is what a destination written as `Self` alone does.
+TEST_CASE("[Modules][FoundryScript][SelfContract] A soft value is booked unsafe for a Self-bearing union") {
+	const String self_union = R"(
+class Receiver:
+	var counter = 5
+
+	func drive() -> void:
+		var soft = counter
+		var link: int | (int, Self) = soft
+		print(link)
+)";
+	const String plain_union = R"(
+class Receiver:
+	var counter = 5
+
+	func drive() -> void:
+		var soft = counter
+		var link: int | String = soft
+		print(link)
+)";
+	CHECK(self_contract_line_is_unsafe(plain_union, 7));
+	CHECK(self_contract_line_is_unsafe(self_union, 7));
+}
+
+TEST_CASE("[Modules][FoundryScript][SelfContract] A soft value is refused when every alternative names Self") {
+	const String every_alternative = R"(
+class Receiver:
+	var counter = 5
+
+	func drive() -> void:
+		var soft = counter
+		var link: (int, Self) | (String, Self) = soft
+		print(link)
+)";
+	const String bare_self = R"(
+class Receiver:
+	var counter = 5
+
+	func drive() -> void:
+		var soft = counter
+		var link: Self = soft
+		print(link)
+)";
+	auto error_count = [](const String &p_source) {
+		FSParser parser;
+		REQUIRE(parser.parse(p_source, "user://test.fs", false) == OK);
+		FSAnalyzer analyzer(&parser);
+		analyzer.analyze();
+		return parser.get_errors().size();
+	};
+	CHECK(error_count(bare_self) > 0);
+	CHECK(error_count(every_alternative) > 0);
+}
+
 } // namespace FSTests
