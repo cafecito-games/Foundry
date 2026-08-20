@@ -7285,7 +7285,9 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 		}
 		if (actual_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(expected_type)) {
-				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
+				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_type, "element", expected_type, "array's element type"),
+						element_node);
 				return;
 			}
 			if (strict_dynamic_checks && !expected_type.is_variant()) {
@@ -7295,7 +7297,9 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 				return;
 			}
 			if (gradual_destination_is_undecidable(expected_type)) {
-				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]": an erased type parameter has no run-time type to check the value against.)", actual_type.to_string(), expected_type.to_string()), element_node);
+				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]": an erased type parameter has no run-time type to check the value against.)", actual_type.to_string(), expected_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_type, "element", expected_type, "array's element type"),
+						element_node);
 				return;
 			}
 			mark_node_unsafe(element_node);
@@ -7303,11 +7307,15 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 		}
 		if (!actual_type.is_hard_type()) {
 			if (_datatype_contains_self_type_parameter(expected_type)) {
-				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
+				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_type, "element", expected_type, "array's element type"),
+						element_node);
 				return;
 			}
 			if (gradual_destination_is_undecidable(expected_type)) {
-				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]": an erased type parameter has no run-time type to check the value against.)", actual_type.to_string(), expected_type.to_string()), element_node);
+				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]": an erased type parameter has no run-time type to check the value against.)", actual_type.to_string(), expected_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_type, "element", expected_type, "array's element type"),
+						element_node);
 				return;
 			}
 			mark_node_unsafe(element_node);
@@ -7316,7 +7324,9 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 		if (_datatype_contains_self_type_parameter(expected_type)) {
 			const bool valid_self_element = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_type, actual_type) : _datatype_matches_self_return_contract(expected_type, actual_type);
 			if (!valid_self_element) {
-				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
+				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_type, "element", expected_type, "array's element type"),
+						element_node);
 				return;
 			}
 			continue;
@@ -7335,7 +7345,9 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 				mark_node_unsafe(element_node);
 				continue;
 			}
-			push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
+			push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()) +
+							FSParser::DataType::same_rendered_name_clause(actual_type, "element", expected_type, "array's element type"),
+					element_node);
 			return;
 		}
 	}
@@ -7376,7 +7388,9 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 			mark_node_unsafe(key_element_node);
 		} else if (actual_key_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(expected_key_type)) {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_key_type, "key", expected_key_type, "dictionary's key type"),
+						key_element_node);
 				return;
 			}
 			if (strict_dynamic_checks && !expected_key_type.is_variant()) {
@@ -7388,24 +7402,32 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 			if (gradual_destination_is_undecidable(expected_key_type)) {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_key_type, "key", expected_key_type, "dictionary's key type"),
+						key_element_node);
 				return;
 			}
 			mark_node_unsafe(key_element_node);
 		} else if (!actual_key_type.is_hard_type()) {
 			if (_datatype_contains_self_type_parameter(expected_key_type)) {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_key_type, "key", expected_key_type, "dictionary's key type"),
+						key_element_node);
 				return;
 			}
 			if (gradual_destination_is_undecidable(expected_key_type)) {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_key_type, "key", expected_key_type, "dictionary's key type"),
+						key_element_node);
 				return;
 			}
 			mark_node_unsafe(key_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_key_type)) {
 			const bool valid_self_key = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_key_type, actual_key_type) : _datatype_matches_self_return_contract(expected_key_type, actual_key_type);
 			if (!valid_self_key) {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_key_type, "key", expected_key_type, "dictionary's key type"),
+						key_element_node);
 				return;
 			}
 		} else if (!is_type_compatible(expected_key_type, actual_key_type, true, p_dictionary, key_element_node)) {
@@ -7419,7 +7441,9 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 					allows_runtime_narrowing(expected_key_type, actual_key_type)) {
 				mark_node_unsafe(key_element_node);
 			} else {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_key_type, "key", expected_key_type, "dictionary's key type"),
+						key_element_node);
 				return;
 			}
 		}
@@ -7441,7 +7465,9 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 			mark_node_unsafe(value_element_node);
 		} else if (actual_value_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(expected_value_type)) {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_value_type, "value", expected_value_type, "dictionary's value type"),
+						value_element_node);
 				return;
 			}
 			if (strict_dynamic_checks && !expected_value_type.is_variant()) {
@@ -7452,24 +7478,32 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 			if (gradual_destination_is_undecidable(expected_value_type)) {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_value_type, "value", expected_value_type, "dictionary's value type"),
+						value_element_node);
 				return;
 			}
 			mark_node_unsafe(value_element_node);
 		} else if (!actual_value_type.is_hard_type()) {
 			if (_datatype_contains_self_type_parameter(expected_value_type)) {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_value_type, "value", expected_value_type, "dictionary's value type"),
+						value_element_node);
 				return;
 			}
 			if (gradual_destination_is_undecidable(expected_value_type)) {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]": an erased type parameter has no run-time type to check the value against.)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_value_type, "value", expected_value_type, "dictionary's value type"),
+						value_element_node);
 				return;
 			}
 			mark_node_unsafe(value_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_value_type)) {
 			const bool valid_self_value = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_value_type, actual_value_type) : _datatype_matches_self_return_contract(expected_value_type, actual_value_type);
 			if (!valid_self_value) {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_value_type, "value", expected_value_type, "dictionary's value type"),
+						value_element_node);
 				return;
 			}
 		} else if (!is_type_compatible(expected_value_type, actual_value_type, true, p_dictionary, value_element_node)) {
@@ -7483,7 +7517,9 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 					allows_runtime_narrowing(expected_value_type, actual_value_type)) {
 				mark_node_unsafe(value_element_node);
 			} else {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()) +
+								FSParser::DataType::same_rendered_name_clause(actual_value_type, "value", expected_value_type, "dictionary's value type"),
+						value_element_node);
 				return;
 			}
 		}
