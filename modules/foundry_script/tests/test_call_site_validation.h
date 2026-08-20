@@ -126,6 +126,30 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Signal connect arity mis
 	CHECK(analyzer_reports_substring(parser, "signal emits"));
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode keeps its own wording for a constant Variant argument") {
+	// A constant argument is retyped before the call site validates it, and a `Variant` one is refused
+	// there by its reduced value. Strict mode refuses the same argument by its declared type, in words
+	// that name the mode -- so the call site is the reporter and says it once.
+	FSParser parser;
+	const Error error = parser.parse(
+			"const TEXT: Variant = \"hello\"\n"
+			"func take_int(v: int) -> int:\n"
+			"\treturn v\n"
+			"func test() -> void:\n"
+			"\ttake_int(TEXT)\n",
+			"user://strict_constant_variant_argument.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_dynamic_checks(true);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, R"*(Cannot pass Variant value as argument 1 of "take_int()" in strict dynamic mode; expected "int".)*"));
+	CHECK_FALSE(analyzer_reports_substring(parser, R"*(Cannot pass a value of type "Variant" as "int".)*"));
+	CHECK(parser.get_errors().size() == 1);
+}
+
 TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode rejects unresolved Callable method names") {
 	FSParser parser;
 	const Error error = parser.parse(

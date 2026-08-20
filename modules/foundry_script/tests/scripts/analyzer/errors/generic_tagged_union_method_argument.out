@@ -1,3 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 10: Cannot pass a value of type "String" as "int".
 >> ERROR at line 10: Invalid argument for "some()" function: argument 1 should be "int" but is "String".

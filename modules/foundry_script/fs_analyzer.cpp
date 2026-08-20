@@ -5306,8 +5306,10 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			}
 		}
 
+		bool initializer_mismatch_reported = false;
 		if (has_specified_type && p_assignable->initializer->is_constant) {
-			update_const_expression_builtin_type(p_assignable->initializer, specified_type, "assign");
+			initializer_mismatch_reported = update_const_expression_builtin_type(p_assignable->initializer, specified_type, "assign", false, true) !=
+					ConstantRetypeOutcome::PROCEED;
 		}
 		FSParser::DataType initializer_type = p_assignable->initializer->get_datatype();
 
@@ -5340,7 +5342,7 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			} else {
 				type.type_source = FSParser::DataType::INFERRED;
 			}
-		} else if (!specified_type.is_variant()) {
+		} else if (!specified_type.is_variant() && !initializer_mismatch_reported) {
 			if (_datatype_contains_self_type_parameter(specified_type)) {
 				if (!initializer_type.is_hard_type() ||
 						!self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN)) {
@@ -6396,6 +6398,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 	const bool preserve_self_contract = has_expected_type && parser->current_class != nullptr &&
 			parser->current_function != nullptr &&
 			!parser->current_function->is_abstract && _datatype_contains_self_type_parameter(expected_type);
+	bool return_mismatch_reported = false;
 
 	if (p_return->return_value != nullptr) {
 		bool is_void_function = has_expected_type && expected_type.is_hard_type() && expected_type.kind == FSParser::DataType::BUILTIN && expected_type.builtin_type == Variant::NIL;
@@ -6451,7 +6454,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 						parser->get_errors().size() == literal_errors_before;
 			}
 			if (has_expected_type && compatibility_expected_type.is_hard_type() && p_return->return_value->is_constant) {
-				update_const_expression_builtin_type(p_return->return_value, compatibility_expected_type, "return");
+				return_mismatch_reported = update_const_expression_builtin_type(p_return->return_value, compatibility_expected_type, "return", false, true) !=
+						ConstantRetypeOutcome::PROCEED;
 			}
 			if (has_expected_type) {
 				mark_coroutine_handle_capture(p_return->return_value, expected_type);
@@ -6466,7 +6470,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 		result.is_constant = true;
 	}
 
-	if (has_expected_type && !compatibility_expected_type.is_variant()) {
+	if (has_expected_type && !compatibility_expected_type.is_variant() && !return_mismatch_reported) {
 		if (preserve_self_contract) {
 			if (!self_container_literal_validated &&
 					(!result.is_hard_type() || !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN))) {
@@ -6694,43 +6698,103 @@ static bool enum_has_value(const FSParser::DataType p_type, int64_t p_value) {
 }
 #endif // DEBUG_ENABLED
 
-void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast) {
-	if (p_expression->get_datatype() == p_type) {
-		return;
+FSAnalyzer::ConstantRetypeOutcome FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast, bool p_position_reports_mismatch) {
+	FSParser::DataType expression_type = p_expression->get_datatype();
+
+	// The width a numeric destination declares, when it declares one.
+	const NumericType destination_numeric_type = p_type.kind == FSParser::DataType::BUILTIN && p_type.numeric_type != NumericType::NONE
+			? FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type)
+			: NumericType::NONE;
+	// A constant written without a width descriptor carries no width to disagree with, so a comparison
+	// of the two type descriptions reads as agreement and the early-out below would take it unchecked.
+	// Its value still has to fit the destination, so it goes on to the range check instead.
+	const bool checks_unwidthed_constant = p_expression->is_constant &&
+			destination_numeric_type != NumericType::NONE &&
+			expression_type.kind == FSParser::DataType::BUILTIN &&
+			expression_type.builtin_type == p_type.builtin_type &&
+			expression_type.numeric_type == NumericType::NONE;
+
+	if (expression_type == p_type && !checks_unwidthed_constant) {
+		return ConstantRetypeOutcome::PROCEED;
 	}
 	if (p_type.kind != FSParser::DataType::BUILTIN && p_type.kind != FSParser::DataType::ENUM) {
-		return;
+		return ConstantRetypeOutcome::PROCEED;
 	}
 
-	FSParser::DataType expression_type = p_expression->get_datatype();
+	// One mistake is reported once, but only a mistake the position can see may be left to the
+	// position. A refusal the position would also reach by comparing the two declared types is its to
+	// describe, in its own wording. A refusal that only the reduced value proves -- a constant whose
+	// declared type is gradual, or one whose width the two type names cannot express -- is invisible
+	// to a position that compares declared types, so this helper stays the reporter for it.
+	auto report_refusal = [&](const FSParser::DataType &p_reported_type, bool p_refusal_is_visible_to_position) -> ConstantRetypeOutcome {
+		// The refused type carries no width descriptor, so it renders under the destination's own name
+		// and no report built from the two names can say anything. The value and the destination's
+		// range describe the refusal instead.
+		const bool names_cannot_describe_refusal = p_expression->is_constant &&
+				destination_numeric_type != NumericType::NONE &&
+				p_reported_type.kind == FSParser::DataType::BUILTIN &&
+				p_reported_type.builtin_type == p_type.builtin_type &&
+				p_reported_type.numeric_type == NumericType::NONE;
+		if (names_cannot_describe_refusal) {
+			Variant range_checked;
+			FSNumericError range_error = FSNumericError::UNSUPPORTED;
+			if (!FSNumericOps::convert(destination_numeric_type, p_expression->reduced_value, range_checked, range_error) &&
+					range_error != FSNumericError::UNSUPPORTED) {
+				push_error(FSNumericOps::describe_conversion_error(range_error, destination_numeric_type,
+								   p_expression->reduced_value, p_type.to_string_diagnostic()),
+						p_expression);
+				return ConstantRetypeOutcome::REPORTED_BY_VALUE;
+			}
+		}
+		if (p_position_reports_mismatch && p_refusal_is_visible_to_position) {
+			return ConstantRetypeOutcome::PROCEED;
+		}
+		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, p_reported_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
+						FSParser::DataType::same_rendered_name_clause(p_reported_type, "value", p_type, "target type"),
+				p_expression);
+		return ConstantRetypeOutcome::REPORTED_BY_NAME;
+	};
+
 	// An int constant may be cast into an int-backed enum, but never into a tagged union.
 	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
 			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
+	// Strict dynamic checks turn a gradual source into an outright refusal with wording of its own, so
+	// there the position is the reporter for exactly the sources it otherwise only warns about.
+	const bool position_refuses_variant_source = strict_dynamic_checks && expression_type.is_variant() &&
+			!(p_type.is_hard_type() && p_type.is_variant());
+	// Whether a refusal between these two declared types is one the position would reach on its own.
+	// Every reporting position guards its error with the same three admissions, so a source type any
+	// of them admits is one this helper must keep reporting: a gradual carrier takes the branch that
+	// only warns, a raw generic projection takes it too, and a source the destination can narrow at
+	// run time is converted rather than refused -- which is what lets a union stand in for the
+	// alternative it does not hold. A `Self` contract is decided by a comparison of its own.
+	const bool position_refuses_declared_type = position_refuses_variant_source ||
+			(expression_type.is_hard_type() &&
+					!expression_type.is_variant() &&
+					!raw_generic_projection_crosses_boundary(p_type, expression_type) &&
+					!allows_runtime_narrowing(p_type, expression_type) &&
+					!datatype_contains_self_type_parameter(p_type));
 	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression, p_expression)) {
-		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
-						FSParser::DataType::same_rendered_name_clause(expression_type, "value", p_type, "target type"),
-				p_expression);
-		return;
+		return report_refusal(expression_type, position_refuses_declared_type);
 	}
 	if (p_type.is_variant() &&
 			expression_type.is_meta_type && expression_type.kind == FSParser::DataType::CLASS &&
 			!expression_type.type_arguments.is_empty()) {
-		return;
+		return ConstantRetypeOutcome::PROCEED;
 	}
 
 	if (p_type.is_nullable && p_expression->is_constant && p_expression->reduced_value.get_type() == Variant::NIL) {
 		// An explicit null is kept as-is: a nullable target holds null without converting it to the underlying
 		// type. Keyed on the reduced value so a null constant typed as Variant is handled too.
 		p_expression->set_datatype(p_type);
-		return;
+		return ConstantRetypeOutcome::PROCEED;
 	}
 
 	FSParser::DataType value_type = type_from_variant(p_expression->reduced_value, p_expression);
 	if (expression_type.is_variant() && !is_enum_cast && !is_type_compatible(p_type, value_type, true, p_expression, p_expression)) {
-		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, value_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
-						FSParser::DataType::same_rendered_name_clause(value_type, "value", p_type, "target type"),
-				p_expression);
-		return;
+		// Only the reduced value refuses this one; outside strict dynamic checks the declared Variant
+		// satisfies every position, so nothing else would report it.
+		return report_refusal(value_type, position_refuses_variant_source);
 	}
 
 #ifdef DEBUG_ENABLED
@@ -6741,7 +6805,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 
 	if (value_type.builtin_type == p_type.builtin_type) {
 		p_expression->set_datatype(p_type);
-		return;
+		return ConstantRetypeOutcome::PROCEED;
 	}
 
 	Variant converted_to;
@@ -6758,7 +6822,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 		converted = FSNumericOps::convert(conversion_target, p_expression->reduced_value, converted_to, conversion_error);
 		if (!converted && conversion_error != FSNumericError::UNSUPPORTED) {
 			push_error(FSNumericOps::describe_conversion_error(conversion_error, conversion_target, p_expression->reduced_value, p_type.to_string()), p_expression);
-			return;
+			return ConstantRetypeOutcome::REPORTED_BY_VALUE;
 		}
 	}
 	if (!converted) {
@@ -6767,7 +6831,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 		Variant::construct(p_type.builtin_type, converted_to, &converted_from, 1, call_error);
 		if (call_error.error) {
 			push_error(vformat(R"(Failed to convert a value of type "%s" to "%s".)", value_type.to_string(), p_type.to_string()), p_expression);
-			return;
+			return ConstantRetypeOutcome::REPORTED_BY_VALUE;
 		}
 	}
 
@@ -6779,6 +6843,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 
 	p_expression->reduced_value = converted_to;
 	p_expression->set_datatype(p_type);
+	return ConstantRetypeOutcome::PROCEED;
 }
 
 // The literal forms whose elements can be built from a declared type.
@@ -6897,8 +6962,11 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 		resolve_contextual_enum_case(element_node, expected_type);
 		update_container_literal_element_types(element_node, expected_type, p_self_parameter_contract, p_substitute_self_runtime_type);
 		mark_coroutine_handle_capture(element_node, expected_type);
-		if (element_node->is_constant) {
-			update_const_expression_builtin_type(element_node, expected_type, "include");
+		if (element_node->is_constant &&
+				update_const_expression_builtin_type(element_node, expected_type, "include") == ConstantRetypeOutcome::REPORTED_BY_VALUE) {
+			// This element is already described by its value, which the element diagnostic below cannot
+			// do. The remaining elements are still checked.
+			continue;
 		}
 		const FSParser::DataType &actual_type = element_node->get_datatype();
 		if (actual_type.has_no_type()) {
@@ -6985,11 +7053,16 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 		resolve_contextual_enum_case(key_element_node, expected_key_type);
 		update_container_literal_element_types(key_element_node, expected_key_type, p_self_parameter_contract, p_substitute_self_runtime_type);
 		mark_coroutine_handle_capture(key_element_node, expected_key_type);
+		bool key_described_by_value = false;
 		if (key_element_node->is_constant) {
-			update_const_expression_builtin_type(key_element_node, expected_key_type, "include");
+			key_described_by_value = update_const_expression_builtin_type(key_element_node, expected_key_type, "include") ==
+					ConstantRetypeOutcome::REPORTED_BY_VALUE;
 		}
 		const FSParser::DataType &actual_key_type = key_element_node->get_datatype();
-		if (actual_key_type.has_no_type()) {
+		if (key_described_by_value) {
+			// Already described by its value, which the key diagnostic below cannot do. The entry's value
+			// is still checked.
+		} else if (actual_key_type.has_no_type()) {
 			mark_node_unsafe(key_element_node);
 		} else if (actual_key_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(expected_key_type)) {
@@ -7046,11 +7119,15 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 		resolve_contextual_enum_case(value_element_node, expected_value_type);
 		update_container_literal_element_types(value_element_node, expected_value_type, p_self_parameter_contract, p_substitute_self_runtime_type);
 		mark_coroutine_handle_capture(value_element_node, expected_value_type);
+		bool value_described_by_value = false;
 		if (value_element_node->is_constant) {
-			update_const_expression_builtin_type(value_element_node, expected_value_type, "include");
+			value_described_by_value = update_const_expression_builtin_type(value_element_node, expected_value_type, "include") ==
+					ConstantRetypeOutcome::REPORTED_BY_VALUE;
 		}
 		const FSParser::DataType &actual_value_type = value_element_node->get_datatype();
-		if (actual_value_type.has_no_type()) {
+		if (value_described_by_value) {
+			// Already described by its value, which the value diagnostic below cannot do.
+		} else if (actual_value_type.has_no_type()) {
 			mark_node_unsafe(value_element_node);
 		} else if (actual_value_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(expected_value_type)) {
@@ -7282,7 +7359,9 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 	update_container_literal_element_types(p_assignment->assigned_value, assignee_type);
 
 	if (p_assignment->operation == FSParser::AssignmentNode::OP_NONE && assignee_type.is_hard_type() && p_assignment->assigned_value->is_constant) {
-		update_const_expression_builtin_type(p_assignment->assigned_value, assignee_type, "assign");
+		if (update_const_expression_builtin_type(p_assignment->assigned_value, assignee_type, "assign", false, true) != ConstantRetypeOutcome::PROCEED) {
+			return;
+		}
 	}
 
 	FSParser::DataType assigned_value_type = p_assignment->assigned_value->get_datatype();
