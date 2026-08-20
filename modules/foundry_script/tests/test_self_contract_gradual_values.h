@@ -405,4 +405,76 @@ class Receiver:
 	CHECK_FALSE(self_contract_line_is_unsafe(self_element, 7));
 }
 
+// A value typed by a method's own type parameter is erased: the frame never learns what was reified
+// there, so ordinary compatibility admits it against a union only under a run-time check the union
+// slot never emits. Both destinations inherit whatever that rule decides, so the two are required to
+// decide it identically -- a destination naming `Self` may not be laxer than the same union without
+// one, nor stricter.
+TEST_CASE("[Modules][FoundryScript][SelfContract] An erased type-parameter value is booked alike for either union") {
+	SUBCASE("call argument") {
+		const String self_union = R"(
+class Receiver:
+	func take(_value: int | (int, Self)) -> void:
+		pass
+
+	func drive[T](source: T) -> void:
+		take(source)
+)";
+		const String plain_union = R"(
+class Receiver:
+	func take(_value: int | String) -> void:
+		pass
+
+	func drive[T](source: T) -> void:
+		take(source)
+)";
+		CHECK(self_contract_line_is_unsafe(self_union, 7) == self_contract_line_is_unsafe(plain_union, 7));
+	}
+	SUBCASE("initializer") {
+		const String self_union = R"(
+class Receiver:
+	func drive[T](source: T) -> void:
+		var link: int | (int, Self) = source
+		print(link)
+)";
+		const String plain_union = R"(
+class Receiver:
+	func drive[T](source: T) -> void:
+		var link: int | String = source
+		print(link)
+)";
+		CHECK(self_contract_line_is_unsafe(self_union, 4) == self_contract_line_is_unsafe(plain_union, 4));
+	}
+	SUBCASE("return") {
+		const String self_union = R"(
+class Receiver:
+	func make[T](source: T) -> int | (int, Self):
+		return source
+)";
+		const String plain_union = R"(
+class Receiver:
+	func make[T](source: T) -> int | String:
+		return source
+)";
+		CHECK(self_contract_line_is_unsafe(self_union, 4) == self_contract_line_is_unsafe(plain_union, 4));
+	}
+	SUBCASE("assignment") {
+		const String self_union = R"(
+class Receiver:
+	func drive[T](source: T) -> void:
+		var link: int | (int, Self) = 1
+		link = source
+		print(link)
+)";
+		const String plain_union = R"(
+class Receiver:
+	func drive[T](source: T) -> void:
+		var link: int | String = 1
+		link = source
+		print(link)
+)";
+		CHECK(self_contract_line_is_unsafe(self_union, 5) == self_contract_line_is_unsafe(plain_union, 5));
+	}
+}
+
 } // namespace FSTests
