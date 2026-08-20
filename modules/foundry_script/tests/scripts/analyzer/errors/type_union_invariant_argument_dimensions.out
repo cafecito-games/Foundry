@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 30: Invalid argument for "take_async()" function: argument 1 should be "Keeper[AsyncCallable[[int], void] | int]" but is "Keeper[Callable[[int], void] | int]".
+>> ERROR at line 34: Invalid argument for "take_rest()" function: argument 1 should be "Keeper[Callable[[...Array[int]], void] | int]" but is "Keeper[Callable[[...Array[String]], void] | int]".
+>> ERROR at line 38: Invalid argument for "take_return()" function: argument 1 should be "Keeper[Callable[[int], int] | String]" but is "Keeper[Callable[[int], String] | String]".
+>> ERROR at line 42: Invalid argument for "take_nested()" function: argument 1 should be "Keeper[int | Box[int]]" but is "Keeper[int | Box[String]]".
