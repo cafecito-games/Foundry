@@ -1090,17 +1090,30 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 	// Only files that actually declare conformances are raised, so this stays a no-op for the vast
 	// majority of dependencies. `raise_status()` advances a parser's status before running each phase, so
 	// a cycle re-entering the same file returns instead of recursing.
-	// This file's own conformances are checked for coherence against what its dependencies bind, and a
-	// dependency binds a trait through a plain `uses` clause as much as through an `extend`. A class's
+	//
+	// This file's own conformances are also checked for coherence against what its dependencies bind, and
+	// a dependency binds a trait through a plain `uses` clause as much as through an `extend`. A class's
 	// `uses` registers nothing until that file reaches conformance registration, so a dependency that
 	// only binds is raised too — but only on behalf of a file that has an `extend` to judge, so an
 	// ordinary file never pulls its dependencies' interfaces forward for a comparison it will not make.
+	//
+	// Loading composes: a file two hops away is loaded by this one exactly as a direct dependency is, and
+	// binds the chains this file's declarations sit on just the same. For a file with conformances to
+	// judge, the walk therefore follows the whole load closure rather than stopping at a direct
+	// dependency that happens to declare nothing itself. `visited` is what terminates it, since the load
+	// graph may contain cycles.
 	const bool declares_conformances = parser->head != nullptr && !parser->head->conformances.is_empty();
 	const String extension = FSLanguage::get_singleton()->get_extension();
-	for (const String &dependency_path : parser->get_dependencies()) {
-		if (dependency_path.get_extension() != extension || dependency_path == parser->script_path) {
+	List<String> frontier = parser->get_dependencies();
+	HashSet<String> visited;
+	visited.insert(parser->script_path);
+	while (!frontier.is_empty()) {
+		const String dependency_path = frontier.front()->get();
+		frontier.pop_front();
+		if (dependency_path.get_extension() != extension || visited.has(dependency_path)) {
 			continue;
 		}
+		visited.insert(dependency_path);
 		Ref<FSParserRef> dependency_ref;
 		if (dependency_parser_access.raise_depended_parser_for(dependency_path, FSParserRef::PARSED, dependency_ref) != OK) {
 			continue;
@@ -1108,6 +1121,13 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 		const FSParser *dependency_parser = dependency_ref.is_valid() ? dependency_ref->get_parser() : nullptr;
 		if (dependency_parser == nullptr || dependency_parser->head == nullptr) {
 			continue;
+		}
+		if (declares_conformances) {
+			for (const String &nested_path : dependency_parser->get_dependencies()) {
+				if (!visited.has(nested_path)) {
+					frontier.push_back(nested_path);
+				}
+			}
 		}
 		if (dependency_parser->head->conformances.is_empty() &&
 				!(declares_conformances && _declares_argument_bearing_trait_use(dependency_parser->head))) {
