@@ -58,6 +58,15 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names bo
 			String(R"( The value is declared in "res://a/helper.fs"; the specified type is declared in "res://b/helper.fs".)"));
 }
 
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause renders the neutral subject pair of the constant-conversion diagnostics") {
+	// The constant-conversion template ("Cannot %s a value of type ... as ...") serves assign, return,
+	// pass, include and cast, so it contrasts a neutral "value" against a neutral "target type".
+	const FSParser::DataType value = data_type_for_script_path("res://a/helper.fs");
+	const FSParser::DataType target = data_type_for_script_path("res://b/helper.fs");
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(value, "value", target, "target type"),
+			String(R"( The value is declared in "res://a/helper.fs"; the target type is declared in "res://b/helper.fs".)"));
+}
+
 TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent when the rendered names differ") {
 	const FSParser::DataType first = data_type_for_script_path("res://a/helper.fs");
 	const FSParser::DataType second = data_type_for_script_path("res://b/other.fs");
@@ -204,6 +213,17 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names bo
 	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
 	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "value", actual, "specified type"),
 			String(R"( The value is declared by class "Left"; the specified type is declared by class "Right".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause renders the neutral subject pair for a declaring-class collision") {
+	FSParser::DataType value = named_tuple_data_type(StringName("Point"), int_data_type());
+	value.native_type = StringName("res://x.fs::Left.Point");
+	value.script_path = "res://x.fs";
+	FSParser::DataType target = named_tuple_data_type(StringName("Point"), int_data_type());
+	target.native_type = StringName("res://x.fs::Right.Point");
+	target.script_path = "res://x.fs";
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(value, "value", target, "target type"),
+			String(R"( The value is declared by class "Left"; the target type is declared by class "Right".)"));
 }
 
 TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names the script's top level for a head-class tuple") {

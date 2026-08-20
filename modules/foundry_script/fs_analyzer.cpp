@@ -6707,7 +6707,9 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
 			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
 	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression, p_expression)) {
-		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string(), p_type.to_string()), p_expression);
+		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
+						FSParser::DataType::same_rendered_name_clause(expression_type, "value", p_type, "target type"),
+				p_expression);
 		return;
 	}
 	if (p_type.is_variant() &&
@@ -6725,7 +6727,9 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 
 	FSParser::DataType value_type = type_from_variant(p_expression->reduced_value, p_expression);
 	if (expression_type.is_variant() && !is_enum_cast && !is_type_compatible(p_type, value_type, true, p_expression, p_expression)) {
-		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, value_type.to_string(), p_type.to_string()), p_expression);
+		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, value_type.to_string_diagnostic(), p_type.to_string_diagnostic()) +
+						FSParser::DataType::same_rendered_name_clause(value_type, "value", p_type, "target type"),
+				p_expression);
 		return;
 	}
 
