@@ -1213,6 +1213,13 @@ struct FSNameManglerApplication::Transaction::Data {
 				return true;
 			}
 		}
+		for (const FSDataType &alternative : p_type.union_alternatives) {
+			if (data_type_contains_name(
+						alternative, p_name, r_visited_scripts,
+						p_depth + 1)) {
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -3100,6 +3107,12 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 		for (const FSDataType &type_argument : p_type.type_arguments) {
 			if (!validate_data_type_closure(type_argument, p_referring, p_surface,
+						p_roots, r_diagnostics, p_depth + 1)) {
+				return false;
+			}
+		}
+		for (const FSDataType &alternative : p_type.union_alternatives) {
+			if (!validate_data_type_closure(alternative, p_referring, p_surface,
 						p_roots, r_diagnostics, p_depth + 1)) {
 				return false;
 			}

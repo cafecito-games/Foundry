@@ -1126,6 +1126,11 @@ static bool _baked_shape_needs_receiver(const FSDataType &p_type, int p_depth = 
 			return true;
 		}
 	}
+	for (const FSDataType &alternative : p_type.union_alternatives) {
+		if (_baked_shape_needs_receiver(alternative, p_depth + 1)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -1282,6 +1287,9 @@ static void _resolve_baked_self_to_owner(FSDataType &r_type, FoundryScript *p_ow
 	}
 	for (int i = 0; i < r_type.type_arguments.size(); i++) {
 		_resolve_baked_self_to_owner(r_type.type_arguments.write[i], p_owner, p_depth + 1);
+	}
+	for (int i = 0; i < r_type.union_alternatives.size(); i++) {
+		_resolve_baked_self_to_owner(r_type.union_alternatives.write[i], p_owner, p_depth + 1);
 	}
 }
 

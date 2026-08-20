@@ -3,6 +3,10 @@
 # make the guarantee true only at the instant of the store -- an append afterwards would leave the slot
 # holding an Array of the wrong arity, which neither alternative describes. The plain tuple parameter
 # is called on the identical value so the two cannot drift apart.
+abstract class Pairs:
+	abstract func pair() -> (int, int) | String
+
+
 func take_plain(pair: (int, int)) -> Variant:
 	return pair
 
@@ -27,3 +31,14 @@ func test() -> void:
 
 	# The non-tuple alternative is unaffected: a String is stored as it arrived.
 	print("string alternative ", take_union("text"))
+
+	# A proxy's handler return crosses the same boundary and owes the same carrier, so it is pinned
+	# here too: the fast path that hands an already-acceptable value straight back must not skip the
+	# canonicalization for a tuple alternative.
+	var handler_source: Array = [4, 5]
+	var service: Object = create_proxy_dynamic(Pairs, func(_method: StringName, _args: Array) -> Variant:
+		return handler_source)
+	var proxy_slot: Variant = service.call("pair")
+	print("proxy read only ", proxy_slot.is_read_only())
+	handler_source.append(6)
+	print("proxy slot unchanged ", proxy_slot)

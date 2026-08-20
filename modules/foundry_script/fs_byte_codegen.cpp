@@ -278,6 +278,7 @@ static bool _lowered_types_are_identical(const FSDataType &p_left, const FSDataT
 			p_left.type_parameter_index != p_right.type_parameter_index ||
 			p_left.type_parameter_scope != p_right.type_parameter_scope ||
 			p_left.type_arguments.size() != p_right.type_arguments.size() ||
+			p_left.union_alternatives.size() != p_right.union_alternatives.size() ||
 			p_left.container_element_types.size() != p_right.container_element_types.size()) {
 		return false;
 	}
@@ -288,6 +289,11 @@ static bool _lowered_types_are_identical(const FSDataType &p_left, const FSDataT
 	}
 	for (int i = 0; i < p_left.container_element_types.size(); i++) {
 		if (!_lowered_types_are_identical(p_left.container_element_types[i], p_right.container_element_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_left.union_alternatives.size(); i++) {
+		if (!_lowered_types_are_identical(p_left.union_alternatives[i], p_right.union_alternatives[i])) {
 			return false;
 		}
 	}
