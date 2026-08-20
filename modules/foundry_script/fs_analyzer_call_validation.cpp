@@ -319,6 +319,7 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 	FSParser::DataType unresolved_fallback;
 	unresolved_fallback.kind = FSParser::DataType::VARIANT;
 	unresolved_fallback.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	unresolved_fallback.is_unresolved_inference_fallback = true;
 
 	HashMap<StringName, FSParser::DataType> bindings;
 	// Parameters that could not be solved (conflicting or unconstrained); their fallback Variant

@@ -272,8 +272,11 @@ union is taken from that type rather than from the case name. The contexts that 
 - a `match` case pattern and the right-hand side of `is`, where the union comes from the subject
   being matched or tested rather than from an expected type.
 
-Anywhere else the shorthand is an error. An inferred, untyped, or `Variant` target produces
-`Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, ...`; a name
+Anywhere else the shorthand is an error. An inferred or untyped target, which expects no type at
+all, produces `Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target,
+...`, while a target annotated with a type that is not a tagged union — including `Variant` — names
+that type instead: `Contextual shorthand ".Ok" needs an expected tagged-union type, but this
+position expects "Variant"; spell the case with its union, ...`; a name
 the union does not declare produces `Tagged union "Result[int, String]" has no case "Nope".`; and
 using the wrong form for the case produces `Enum case "Result.Ok" carries a payload and must be
 constructed, e.g. ".Ok(...)".` or its payload-less counterpart. The explicit spelling always works
