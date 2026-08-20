@@ -765,30 +765,62 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An unspecialized componen
 	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(bare_array, int_array), ArgumentEvidence::CONFLICT);
 }
 
-TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter-bearing union member degrades to unknown") {
+static FSParser::DataType make_union_of(const FSParser::DataType &p_first, const FSParser::DataType &p_second) {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::UNION;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.union_members.push_back(p_first);
+	type.union_members.push_back(p_second);
+	return type;
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter-bearing union member does not erase its siblings") {
 	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
 
-	// Union members are compared as a whole rather than traversed, so a parameter inside one leaves
-	// the node undecidable. Rejecting there would be stricter than the erasure this replaced along a
-	// dimension the comparison cannot reason about.
-	FSParser::DataType parameter_bearing_union;
-	parameter_bearing_union.kind = FSParser::DataType::UNION;
-	parameter_bearing_union.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-	parameter_bearing_union.union_members.push_back(make_builtin_type(Variant::INT));
-	parameter_bearing_union.union_members.push_back(make_trait_argument_type_parameter(SNAME("U")));
+	// Union members are traversed like any other component, so an unreified parameter is open on its
+	// own member alone. A sibling both sides state concretely still decides the node, which is what
+	// keeps a contradiction in the stated half from being swallowed by the open one.
+	const FSParser::DataType open_union =
+			make_union_of(make_builtin_type(Variant::INT), make_trait_argument_type_parameter(SNAME("U")));
 
-	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(
-					 parameter_bearing_union, make_builtin_type(Variant::INT)),
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(open_union,
+					 make_union_of(make_builtin_type(Variant::STRING), make_builtin_type(Variant::BOOL))),
+			ArgumentEvidence::CONFLICT);
+
+	// The open member on its own only withholds evidence: the stated member agrees, so nothing
+	// contradicts the destination.
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(open_union,
+					 make_union_of(make_builtin_type(Variant::INT), make_builtin_type(Variant::BOOL))),
 			ArgumentEvidence::UNKNOWN);
 
 	// A union of concrete members carries its identity as usual.
-	FSParser::DataType concrete_union;
-	concrete_union.kind = FSParser::DataType::UNION;
-	concrete_union.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-	concrete_union.union_members.push_back(make_builtin_type(Variant::INT));
-	concrete_union.union_members.push_back(make_builtin_type(Variant::STRING));
+	const FSParser::DataType concrete_union =
+			make_union_of(make_builtin_type(Variant::INT), make_builtin_type(Variant::STRING));
 	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(concrete_union, make_builtin_type(Variant::INT)),
 			ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(concrete_union, concrete_union),
+			ArgumentEvidence::MATCH);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] Union identity separates alternatives by callable signature") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	const FSParser::DataType int_handler =
+			make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::NIL);
+	const FSParser::DataType string_handler =
+			make_signature_builtin_type(Variant::CALLABLE, Variant::STRING, Variant::NIL);
+	const FSParser::DataType int_union = make_union_of(int_handler, make_builtin_type(Variant::INT));
+	const FSParser::DataType string_union = make_union_of(string_handler, make_builtin_type(Variant::INT));
+
+	// `DataType::operator==` stops at each alternative's principal type, so the two unions compare
+	// equal there. An invariant position traverses the members instead and tells them apart.
+	CHECK(int_union == string_union);
+	CHECK(FSTypeCompatibility::is_invariant_equal(int_union, int_union));
+	CHECK_FALSE(FSTypeCompatibility::is_invariant_equal(int_union, string_union));
+
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(string_union, int_union), ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(string_union, int_union), ArgumentEvidence::CONFLICT);
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(int_union, int_union), ArgumentEvidence::MATCH);
 }
 
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An open tagged-union payload leaves its arguments comparable") {

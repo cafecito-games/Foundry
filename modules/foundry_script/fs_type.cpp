@@ -1830,6 +1830,7 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			p_a.signature_is_async != p_b.signature_is_async ||
 			p_a.container_element_types.size() != p_b.container_element_types.size() ||
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
+			p_a.union_members.size() != p_b.union_members.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
 			p_a.method_return_type.size() != p_b.method_return_type.size() ||
 			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
@@ -1869,8 +1870,11 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			equal = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path;
 			break;
 		case FSParser::DataType::UNION:
-			// Members are canonically ordered, so identity is positional.
-			equal = p_a.union_members == p_b.union_members;
+			// Members are canonically ordered, so identity is positional. The pairs are traversed with
+			// the component slots below rather than compared in one step, because `operator==` never
+			// looks at a callable's signature and two alternatives that differ only there are not the
+			// same type.
+			equal = true;
 			break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
@@ -1895,6 +1899,11 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			return false;
 		}
 	}
+	for (int i = 0; i < p_a.union_members.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.union_members[i], p_b.union_members[i])) {
+			return false;
+		}
+	}
 	for (int i = 0; i < p_a.method_parameter_types.size(); i++) {
 		if (!_datatype_invariant_equal(p_a.method_parameter_types[i], p_b.method_parameter_types[i])) {
 			return false;
@@ -1911,19 +1920,6 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 		}
 	}
 	return true;
-}
-
-// A union's identity is its whole member vector, compared in one step rather than traversed, so a
-// type parameter inside a member leaves nothing about the node comparable. Rejecting there would be
-// stricter than the whole-position erasure this comparison replaced, along a dimension it cannot
-// reason about, so such a node is unknown as a whole.
-static bool _evidence_union_members_are_open(const FSParser::DataType &p_type) {
-	for (const FSParser::DataType &member : p_type.union_members) {
-		if (_datatype_names_any_type_parameter(member)) {
-			return true;
-		}
-	}
-	return false;
 }
 
 // A tagged union's case payloads are never read by this comparison, so a type parameter inside one is
@@ -1991,9 +1987,6 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 	if (a_is_parameter || (p_b_is_open && b_is_parameter)) {
 		return ArgumentEvidence::UNKNOWN;
 	}
-	if (_evidence_union_members_are_open(p_a) || (p_b_is_open && _evidence_union_members_are_open(p_b))) {
-		return ArgumentEvidence::UNKNOWN;
-	}
 
 	if (p_a.kind != p_b.kind ||
 			p_a.is_nullable != p_b.is_nullable ||
@@ -2033,7 +2026,11 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 			identical = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path;
 			break;
 		case FSParser::DataType::UNION:
-			identical = p_a.union_members == p_b.union_members;
+			// Members are canonically ordered, so identity is positional, and the pairs are traversed
+			// with the component slots below. A member left on an unreified parameter is then open on
+			// its own, like a type parameter anywhere else, so a concrete contradiction in a sibling
+			// member still decides the node instead of being erased along with it.
+			identical = true;
 			break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
@@ -2051,6 +2048,7 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 		&p_a.type_parameter_bound,
 		&p_a.container_element_types,
 		&p_a.type_arguments,
+		&p_a.union_members,
 		&p_a.method_parameter_types,
 		&p_a.method_return_type,
 		&p_a.method_rest_parameter_type,
@@ -2059,11 +2057,12 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 		&p_b.type_parameter_bound,
 		&p_b.container_element_types,
 		&p_b.type_arguments,
+		&p_b.union_members,
 		&p_b.method_parameter_types,
 		&p_b.method_return_type,
 		&p_b.method_rest_parameter_type,
 	};
-	for (int slot = 0; slot < 6; slot++) {
+	for (int slot = 0; slot < 7; slot++) {
 		if (a_slots[slot]->size() != b_slots[slot]->size()) {
 			// A side that declares no components in this slot says nothing about components the other
 			// side leaves on an unreified parameter: the two then differ only where neither carries
