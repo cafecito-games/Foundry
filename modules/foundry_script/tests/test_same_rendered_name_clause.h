@@ -158,7 +158,11 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silen
 	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(first, "parameter", second, "argument"), String());
 }
 
-TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent across same-shaped tuples from different declarations") {
+// Coverage for the declaring-class branch (issue #2414): two classes of one script can declare
+// same-named tuples, which render as the declared name alone; the clause names the declaring class
+// on each side, and stays silent whenever both sides name the same one.
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names both declaring classes across same-shaped tuples from different declarations") {
 	// Two classes can declare same-named, same-shaped tuples; their nominal identities
 	// (class-qualified native_type) differ, and that difference — not a Self binding — is the
 	// actual incompatibility.
@@ -167,23 +171,103 @@ TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silen
 	FSParser::DataType actual = named_tuple_data_type(StringName("Pair"), native_data_type(StringName("Node")));
 	actual.native_type = StringName("Right.Pair");
 	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
-	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"), String());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"),
+			String(R"( The parameter is declared by class "Left"; the argument is declared by class "Right".)"));
 }
 
-TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent across same-named tuples with different layouts") {
-	// Two distinct named tuples can share a displayed name while declaring different fields; pairing
-	// their slots positionally would describe one declaration's field with the other's type.
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names both declaring classes across same-named tuples with different layouts") {
+	// Two distinct named tuples can share a displayed name while declaring different fields; the
+	// declaring class is what tells them apart, and their slots must not be paired positionally.
 	FSParser::DataType expected = named_tuple_data_type(StringName("Pair"), self_type_parameter());
+	expected.native_type = StringName("Left.Pair");
 	FSParser::DataType actual;
 	actual.kind = FSParser::DataType::TUPLE;
 	actual.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 	actual.tuple_name = StringName("Pair");
+	actual.native_type = StringName("Right.Pair");
 	actual.container_element_types.push_back(int_data_type());
 	actual.container_element_types.push_back(native_data_type(StringName("Node")));
 	actual.tuple_field_names.push_back(StringName("count"));
 	actual.tuple_field_names.push_back(StringName("target"));
 	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
-	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"), String());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "parameter", actual, "argument"),
+			String(R"( The parameter is declared by class "Left"; the argument is declared by class "Right".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names both declaring classes for same-named nominal tuples of one script") {
+	FSParser::DataType expected = named_tuple_data_type(StringName("Point"), int_data_type());
+	expected.native_type = StringName("res://x.fs::Left.Point");
+	expected.script_path = "res://x.fs";
+	FSParser::DataType actual = named_tuple_data_type(StringName("Point"), int_data_type());
+	actual.native_type = StringName("res://x.fs::Right.Point");
+	actual.script_path = "res://x.fs";
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "value", actual, "specified type"),
+			String(R"( The value is declared by class "Left"; the specified type is declared by class "Right".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names the script's top level for a head-class tuple") {
+	// A head class's fqcn is its own declaring path, so its tuples have no class name to report; the
+	// nested class on the other side does.
+	FSParser::DataType expected = named_tuple_data_type(StringName("Point"), int_data_type());
+	expected.native_type = StringName("res://x.fs.Point");
+	expected.script_path = "res://x.fs";
+	FSParser::DataType actual = named_tuple_data_type(StringName("Point"), int_data_type());
+	actual.native_type = StringName("res://x.fs::Outer::Inner.Point");
+	actual.script_path = "res://x.fs";
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "value", actual, "specified type"),
+			String(R"( The value is declared at the script's top level; the specified type is declared by class "Outer.Inner".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent for same-named tuples whose declaring class descriptors also collide") {
+	// Two same-basename scripts outside every resource root collapse to one file reference, and both
+	// tuples are declared by a class of the same name, so neither clause can disambiguate.
+	FSParser::DataType expected = named_tuple_data_type(StringName("Point"), int_data_type());
+	expected.native_type = StringName("/x/a/helper.fs::Owner.Point");
+	expected.script_path = "/x/a/helper.fs";
+	FSParser::DataType actual = named_tuple_data_type(StringName("Point"), int_data_type());
+	actual.native_type = StringName("/y/b/helper.fs::Owner.Point");
+	actual.script_path = "/y/b/helper.fs";
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "value", actual, "specified type"), String());
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names both declaring files for same-named tuples in different files") {
+	FSParser::DataType expected = named_tuple_data_type(StringName("Point"), int_data_type());
+	expected.native_type = StringName("res://a/helper.fs.Point");
+	expected.script_path = "res://a/helper.fs";
+	FSParser::DataType actual = named_tuple_data_type(StringName("Point"), int_data_type());
+	actual.native_type = StringName("res://b/helper.fs.Point");
+	actual.script_path = "res://b/helper.fs";
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "value", actual, "specified type"),
+			String(R"( The value is declared in "res://a/helper.fs"; the specified type is declared in "res://b/helper.fs".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause names both declaring files for same-rendered enums in same-named files") {
+	// An enum renders only the basename of its qualified identity, so two same-named files declaring
+	// the same enum name collide; the enum's declaring script is what tells them apart.
+	FSParser::DataType expected;
+	expected.kind = FSParser::DataType::ENUM;
+	expected.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	expected.native_type = StringName("res://a/helper.fs.Result");
+	expected.script_path = "res://a/helper.fs";
+	FSParser::DataType actual = expected;
+	actual.native_type = StringName("res://b/helper.fs.Result");
+	actual.script_path = "res://b/helper.fs";
+	CHECK_EQ(expected.to_string_diagnostic(), actual.to_string_diagnostic());
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(expected, "value", actual, "specified type"),
+			String(R"( The value is declared in "res://a/helper.fs"; the specified type is declared in "res://b/helper.fs".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause is silent for a native enum with no declaring script") {
+	FSParser::DataType first;
+	first.kind = FSParser::DataType::ENUM;
+	first.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	first.native_type = StringName("Node.ProcessMode");
+	const FSParser::DataType second = first;
+	CHECK_EQ(FSParser::DataType::same_rendered_name_clause(first, "value", second, "specified type"), String());
 }
 
 TEST_CASE("[Modules][FoundryScript][DataType] same_rendered_name_clause skips lists whose sizes differ") {
