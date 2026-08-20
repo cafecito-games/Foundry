@@ -1236,15 +1236,23 @@ static bool call_receiver_is_current_self(const FSParser::CallNode *p_call) {
 // therefore only sound when the call runs through the calling frame's own receiver, or when the
 // argument is the receiver expression itself -- the latter answered separately by receiver identity.
 //
-// Only a position the call site resolved as its receiver contract asks that question. A `Self` that
-// reached the signature through a carrier's element type, a class type argument, or an explicit method
-// type argument was written in the calling frame and already denotes the caller's own receiver, so it
-// stays governed by ordinary type equality.
+// Only a position the call site resolved as its receiver contract asks that question, and it asks it
+// wherever the position sits: a `Self` leaf reached through a carrier's element type, a class type
+// argument, or a callable's signature is still the callee frame's receiver, and the argument slot
+// facing it is still the calling frame's.
 //
-// Final `Self` bindings name exactly one class and keep the ordinary substitution rules. Only an
-// anonymous tuple carries the requirement inward, matching the positions receiver identity itself can
-// answer: a typed carrier is checked against its declared element type invariantly and gains no
-// exception here.
+// Final `Self` bindings name exactly one class and keep the ordinary substitution rules. Every other
+// carrier passes the requirement inward to whatever slot holds the `Self` leaf: an array or dictionary
+// element, a tuple element (named or anonymous), a class type argument, and a callable's parameter and
+// return slots. A carrier is invariant in its element type, so a carrier reified against the calling
+// frame's receiver is only interchangeable with the callee's when both frames share that receiver --
+// nothing about the carrier itself can make the two agree.
+//
+// A slot is caller-relative in two shapes: it is written as `Self` (a type parameter the calling frame
+// resolves), or the analyzer substituted it out of a literal and marked the result, which a frame
+// re-binds to its own receiver just the same. Slot vectors are walked pairwise and only when both sides
+// agree on size; a size mismatch means the contract matched through some other admission, which carries
+// no `Self` position to require identity of.
 static bool _self_parameter_contract_match_needs_receiver_identity(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
@@ -1252,18 +1260,43 @@ static bool _self_parameter_contract_match_needs_receiver_identity(
 		return false;
 	}
 	if (_is_bare_self_value_parameter(p_expected_type)) {
-		return p_expected_type.is_receiver_self_contract && _is_self_type_parameter(p_argument_type);
+		return p_expected_type.is_receiver_self_contract &&
+				(_is_self_type_parameter(p_argument_type) || p_argument_type.is_substituted_self);
 	}
-	if (p_expected_type.kind != FSParser::DataType::TUPLE || p_expected_type.tuple_name != StringName() ||
-			p_argument_type.kind != FSParser::DataType::TUPLE || p_argument_type.tuple_name != StringName() ||
-			p_expected_type.container_element_types.size() != p_argument_type.container_element_types.size()) {
-		return false;
+	if (p_expected_type.container_element_types.size() == p_argument_type.container_element_types.size()) {
+		for (int i = 0; i < p_expected_type.container_element_types.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.container_element_types[i],
+						p_argument_type.container_element_types[i])) {
+				return true;
+			}
+		}
 	}
-	for (int i = 0; i < p_expected_type.container_element_types.size(); i++) {
-		if (_self_parameter_contract_match_needs_receiver_identity(
-					p_expected_type.container_element_types[i],
-					p_argument_type.container_element_types[i])) {
-			return true;
+	if (p_expected_type.type_arguments.size() == p_argument_type.type_arguments.size()) {
+		for (int i = 0; i < p_expected_type.type_arguments.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.type_arguments[i],
+						p_argument_type.type_arguments[i])) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_parameter_types.size() == p_argument_type.method_parameter_types.size()) {
+		for (int i = 0; i < p_expected_type.method_parameter_types.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.method_parameter_types[i],
+						p_argument_type.method_parameter_types[i])) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_return_type.size() == p_argument_type.method_return_type.size()) {
+		for (int i = 0; i < p_expected_type.method_return_type.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.method_return_type[i],
+						p_argument_type.method_return_type[i])) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -12690,7 +12723,8 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
 				push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
 								   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()) +
-								FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument"),
+								FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument") +
+								self_parameter_receiver_identity_clause(field_type, argument_type, p_call, "tuple field", "argument"),
 						argument);
 			}
 			continue;
@@ -13261,7 +13295,8 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
 				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
-								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument"),
+								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument") +
+								self_parameter_receiver_identity_clause(field_type, self_field_argument_type, p_call, "payload field", "argument"),
 						argument);
 				payload_is_bakeable = false;
 			}
@@ -17681,6 +17716,11 @@ bool FSAnalyzer::datatype_contains_self_type_parameter(const FSParser::DataType 
 // carrier built against the static class satisfy the leaf; `Array[Self]`, `Dictionary[..., Self]`,
 // `Type[Self]`, and a generic specialization over `Self` stay rejected for an open receiver.
 //
+// A carrier whose element type is itself the calling frame's `Self` is a separate question, answered by
+// the receiver of the call rather than by any element: when the call runs through the calling frame's
+// own receiver the two `Self`s denote the same value, so the carrier reifies to the same leaf the
+// callee resolves. `self_parameter_contract_admits_argument_type` discharges that requirement.
+//
 // Identity has to be provable at the call site, so the argument must be written as a tuple literal
 // whose `Self` positions are the receiver reference itself. A tuple-shaped value arriving through a
 // local, a parameter, or a call result proves nothing about this frame's receiver and is rejected.
@@ -17742,6 +17782,27 @@ bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::Da
 	// With no call node there is no receiver expression to compare against, so the type-level answer
 	// stands rather than turning an argument no receiver can be named for into an error.
 	return p_call == nullptr || call_receiver_is_current_self(p_call);
+}
+
+// The sibling query of `self_parameter_contract_admits_argument_type`: it reports the one rejection
+// reason no rendered type can show. Both sides matched the contract and differ only in the receiver
+// their `Self` positions resolve against, so `same_rendered_name_clause` finds nothing structural to
+// contrast and the diagnostic would otherwise read as a type against itself.
+String FSAnalyzer::self_parameter_receiver_identity_clause(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type,
+		const FSParser::CallNode *p_call,
+		const String &p_expected_subject,
+		const String &p_argument_subject) const {
+	if (!_datatype_matches_self_parameter_contract(p_expected_type, p_argument_type) ||
+			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, p_argument_type)) {
+		return String();
+	}
+	if (p_call == nullptr || call_receiver_is_current_self(p_call)) {
+		return String();
+	}
+	return vformat(R"( The %s's "Self" is resolved against the receiver expression; the %s is relative to the calling frame's receiver.)",
+			p_expected_subject, p_argument_subject);
 }
 
 String FSAnalyzer::make_type_handle_argument_error(
