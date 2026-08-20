@@ -248,4 +248,83 @@ class Receiver:
 	CHECK(strict_error_count(self_union) > 0);
 }
 
+// A value projected out of a raw generic receiver is the third gradual carrier: it has a type, but one
+// naming a parameter the use site never bound, so the destination's declared type is a claim no store
+// validates. Ordinary validation books the line unsafe at each position; a destination mentioning
+// `Self` books it the same way rather than passing silently through an alternative that names none.
+TEST_CASE("[Modules][FoundryScript][SelfContract] A raw generic projection is booked unsafe for a Self-bearing union") {
+	SUBCASE("initializer") {
+		const String self_union = R"(
+class Box[T]:
+	var value: T
+
+
+class Receiver:
+	func drive(raw: Box) -> void:
+		var link: int | (int, Self) = raw.value
+		print(link)
+)";
+		const String plain_union = R"(
+class Box[T]:
+	var value: T
+
+
+class Receiver:
+	func drive(raw: Box) -> void:
+		var link: int | String = raw.value
+		print(link)
+)";
+		CHECK(self_contract_line_is_unsafe(plain_union, 8));
+		CHECK(self_contract_line_is_unsafe(self_union, 8));
+	}
+	SUBCASE("return") {
+		const String self_union = R"(
+class Box[T]:
+	var value: T
+
+
+class Receiver:
+	func make(raw: Box) -> int | (int, Self):
+		return raw.value
+)";
+		const String plain_union = R"(
+class Box[T]:
+	var value: T
+
+
+class Receiver:
+	func make(raw: Box) -> int | String:
+		return raw.value
+)";
+		CHECK(self_contract_line_is_unsafe(plain_union, 8));
+		CHECK(self_contract_line_is_unsafe(self_union, 8));
+	}
+	SUBCASE("assignment") {
+		const String self_union = R"(
+class Box[T]:
+	var value: T
+
+
+class Receiver:
+	func drive(raw: Box) -> void:
+		var link: int | (int, Self) = 1
+		link = raw.value
+		print(link)
+)";
+		const String plain_union = R"(
+class Box[T]:
+	var value: T
+
+
+class Receiver:
+	func drive(raw: Box) -> void:
+		var link: int | String = 1
+		link = raw.value
+		print(link)
+)";
+		CHECK(self_contract_line_is_unsafe(plain_union, 9));
+		CHECK(self_contract_line_is_unsafe(self_union, 9));
+	}
+}
+
 } // namespace FSTests

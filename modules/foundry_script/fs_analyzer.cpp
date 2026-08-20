@@ -5430,6 +5430,11 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 							!is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer, p_assignable->initializer)) {
 						downgrade_node_type_source(p_assignable->initializer);
 					}
+				} else if (raw_generic_projection_crosses_boundary(specified_type, initializer_type)) {
+					// A value out of a receiver that bound nothing carries a type naming a parameter this
+					// site never reified, so the declared type is a claim no store validates. The line is
+					// booked unsafe exactly as the arm below books it for a destination naming no `Self`.
+					mark_node_unsafe(p_assignable->initializer);
 				}
 			} else if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
 				if (initializer_type.is_variant() && strict_dynamic_checks) {
@@ -6579,6 +6584,11 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 						!is_type_compatible(compatibility_expected_type, result, true, p_return, p_return->return_value)) {
 					downgrade_node_type_source(p_return);
 				}
+			} else if (raw_generic_projection_crosses_boundary(compatibility_expected_type, result)) {
+				// A value out of a receiver that bound nothing carries a type naming a parameter this
+				// frame never reified, so the declared return type is a claim nothing validates. The line
+				// is booked unsafe exactly as the arm below books it for a return type naming no `Self`.
+				mark_node_unsafe(p_return);
 			}
 			p_return->set_datatype(result);
 			return;
@@ -7658,6 +7668,12 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 				p_assignment->use_conversion_assign = true;
 				downgrades_assigned = downgrades_assigned ||
 						(!assigned_is_variant && !is_type_compatible(assignee_type, op_type, true, p_assignment->assigned_value, p_assignment->assigned_value));
+			} else if (raw_generic_projection_crosses_boundary(assignee_type, op_type)) {
+				// A value out of a receiver that bound nothing carries a type naming a parameter this
+				// site never reified, so the assignee's declared type is a claim the store never
+				// validates. The line is booked unsafe exactly as the arm below books it for an assignee
+				// naming no `Self`.
+				mark_node_unsafe(p_assignment);
 			}
 		} else if (assignee_is_hard && !assigned_is_hard) {
 			// hard non-variant assignee and weak assigned
