@@ -2250,8 +2250,25 @@ static String fs_return_width_range_error(const Variant &p_value, NumericType p_
 }
 
 bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant &r_value) {
-	if (p_union.is_type(p_value)) {
+	if (p_union.is_nullable && p_value.get_type() == Variant::NIL) {
 		r_value = p_value;
+		return true;
+	}
+	// The alternatives are walked here rather than through the union's own `is_type()` because the
+	// accepting alternative decides what the slot stores, and that answer is not the same for all of
+	// them: a tuple owes a carrier guarantee the others do not.
+	for (const FSDataType &alternative : p_union.union_alternatives) {
+		if (!alternative.is_type(p_value)) {
+			continue;
+		}
+		// A tuple alternative owes exactly the carrier guarantee a tuple slot owes standing alone: the
+		// value is normalized to the canonical read-only, untyped Array instead of keeping whatever the
+		// caller handed over. Keeping the caller's mutable Array would leave the guarantee true only at
+		// the instant of the store -- a later append to the source would leave this slot holding a value
+		// of the wrong arity, which no alternative describes.
+		r_value = alternative.kind == FSDataType::TUPLE
+				? fs_canonical_tuple_value(alternative, p_value)
+				: p_value;
 		return true;
 	}
 	const Variant::Type carrier = p_value.get_type();
