@@ -130,7 +130,7 @@ static String _datatype_signature_type_to_string(const FSParser::DataType &p_typ
 	return p_type.to_string();
 }
 
-static String _method_signature_to_string(const Vector<FSParser::DataType> &p_argument_types, const Vector<FSParser::DataType> &p_rest_parameter_type, const Vector<FSParser::DataType> &p_return_type, bool p_has_return) {
+static String _method_signature_to_string(const Vector<FSParser::DataType> &p_argument_types, const Vector<FSParser::DataType> &p_rest_parameter_type, bool p_is_vararg, const Vector<FSParser::DataType> &p_return_type, bool p_has_return) {
 	Vector<String> argument_types;
 	for (const FSParser::DataType &argument_type : p_argument_types) {
 		argument_types.append(_datatype_signature_type_to_string(argument_type));
@@ -138,6 +138,13 @@ static String _method_signature_to_string(const Vector<FSParser::DataType> &p_ar
 	// A rich rest tail renders as the final `...Array[T]` entry, matching the source spelling.
 	for (const FSParser::DataType &rest_type : p_rest_parameter_type) {
 		argument_types.append("..." + _datatype_signature_type_to_string(rest_type));
+	}
+	// A gradual tail -- and every native or external vararg -- records only the arity bit and leaves the
+	// rich slot empty, so without this the type renders identically to a fixed-arity one. `...Array` is
+	// the surface spelling that re-parses to exactly this type, so it stays valid to write back into
+	// source. A filled rich slot already rendered its element type above and must not print twice.
+	if (p_is_vararg && p_rest_parameter_type.is_empty()) {
+		argument_types.append("...Array");
 	}
 
 	const String arguments = String(", ").join(argument_types);
@@ -303,7 +310,7 @@ String FSParser::DataType::to_string() const {
 			}
 			if (builtin_type == Variant::CALLABLE && has_explicit_method_signature) {
 				const char *callable_name = signature_is_async ? "AsyncCallable" : "Callable";
-				result = vformat("%s%s", callable_name, _method_signature_to_string(method_parameter_types, method_rest_parameter_type, method_return_type, true));
+				result = vformat("%s%s", callable_name, _method_signature_to_string(method_parameter_types, method_rest_parameter_type, (method_info.flags & METHOD_FLAG_VARARG) != 0, method_return_type, true));
 				break;
 			}
 			if (builtin_type == Variant::CALLABLE && signature_is_async) {
@@ -313,7 +320,8 @@ String FSParser::DataType::to_string() const {
 				break;
 			}
 			if (builtin_type == Variant::SIGNAL && has_explicit_method_signature) {
-				result = vformat("Signal%s", _method_signature_to_string(method_parameter_types, Vector<DataType>(), method_return_type, false));
+				// A signal has no variadic spelling to round-trip to, so it renders no rest tail at all.
+				result = vformat("Signal%s", _method_signature_to_string(method_parameter_types, Vector<DataType>(), false, method_return_type, false));
 				break;
 			}
 			if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
