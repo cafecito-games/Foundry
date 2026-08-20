@@ -1212,6 +1212,17 @@ static String _freed_specialization_argument_error(const StringName &p_function_
 			String(p_function_name));
 }
 
+// The same refusal for a specialization that arrives as the *value* a reified check reads its type
+// from, rather than as a construction target. Materializing its freed argument would substitute the
+// native class that argument captured for the script identity it lost, so the check would enforce a
+// type the caller never named. The stale slot is named, because the caller chose which handle to pass.
+[[maybe_unused]] static String _freed_specialization_type_operand_error(const StringName &p_function_name,
+		const String &p_freed_type_argument) {
+	return vformat(
+			R"(Cannot check an assignment in "%s" against a specialized class handle: %s references a script that has been freed.)",
+			String(p_function_name), p_freed_type_argument);
+}
+
 // Returns the fully wrapped `Type[...]` display name for a class-handle-typed slot, ready to use
 // in a diagnostic without any further wrapping by the caller: `ContainerType::get_type_name()`
 // already renders the `Type[...]` wrapper once `is_type_handle` is threaded through the conversion.
@@ -1250,20 +1261,37 @@ static bool _script_type_from_type_info(const Variant &p_type_info, const FrameS
 	return true;
 }
 
+// How a reified type operand resolved.
+enum class ReifiedTypeOperand {
+	// The operand named a class the store can be checked against.
+	RESOLVED,
+	// The operand denotes no class at all. The frame holds no evidence about the slot, which is the
+	// gradual case a store admits rather than an error to report.
+	NO_EVIDENCE,
+	// The operand is a specialization one of whose type-argument scripts has been freed.
+	FREED_TYPE_ARGUMENT,
+};
+
 // The class a live class-handle value denotes, as the type a store checks a value against. A reified
 // type operand carries such a value rather than a compile-time descriptor, and every shape a handle
 // takes -- a bare script resource, a specialized script handle, a native class handle -- answers the
-// same questions, so all of them are decoded here. Returns false when the value denotes no class at
-// all: the frame then holds no evidence about the slot, which is the gradual case a store admits, not
-// an error to report.
-[[maybe_unused]] static bool _reified_type_from_class_handle_value(const Variant &p_handle, Script *&r_script,
-		FSDataType &r_type, Vector<ContainerType> &r_type_arguments) {
+// same questions, so all of them are decoded here.
+//
+// A specialized handle holds its type arguments weakly, and materializing a freed one yields a
+// scriptless slot carrying the class name the freed script captured -- so the check would enforce a
+// substituted native type and admit an instance of some other specialization. That substitution is
+// refused everywhere else it can arise (`FSSpecializedClassHandle::callp("new")`,
+// `OPCODE_CONSTRUCT_SPECIALIZED`, `FSStaticSelfContext::to_data_type()`, bytecode export), so it is
+// refused here too, before anything is materialized. `r_freed_type_argument` names the stale slot.
+[[maybe_unused]] static ReifiedTypeOperand _reified_type_from_class_handle_value(const Variant &p_handle,
+		Script *&r_script, FSDataType &r_type, Vector<ContainerType> &r_type_arguments,
+		String &r_freed_type_argument) {
 	if (p_handle.get_type() != Variant::OBJECT) {
-		return false;
+		return ReifiedTypeOperand::NO_EVIDENCE;
 	}
 	Object *object = p_handle.operator Object *();
 	if (object == nullptr) {
-		return false;
+		return ReifiedTypeOperand::NO_EVIDENCE;
 	}
 
 	ContainerType type;
@@ -1272,6 +1300,12 @@ static bool _script_type_from_type_info(const Variant &p_type_info, const FrameS
 		type.class_name = script->get_instance_base_type();
 		type.script = Ref<Script>(script);
 	} else if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(object)) {
+		if (FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(object)) {
+			if (unlikely(!specialized_handle->is_fully_live())) {
+				r_freed_type_argument = specialized_handle->describe_freed_type_argument();
+				return ReifiedTypeOperand::FREED_TYPE_ARGUMENT;
+			}
+		}
 		const Ref<Script> represented_script = class_handle->get_represented_script();
 		type.class_name = represented_script.is_valid()
 				? represented_script->get_instance_base_type()
@@ -1279,16 +1313,16 @@ static bool _script_type_from_type_info(const Variant &p_type_info, const FrameS
 		type.script = represented_script;
 		class_handle->get_represented_type_arguments(type.type_arguments);
 		if (type.script.is_null() && type.class_name == StringName()) {
-			return false;
+			return ReifiedTypeOperand::NO_EVIDENCE;
 		}
 	} else {
-		return false;
+		return ReifiedTypeOperand::NO_EVIDENCE;
 	}
 
 	r_script = type.script.ptr();
 	r_type_arguments = type.type_arguments;
 	r_type = FSDataType::from_type_handle_container_type(type);
-	return true;
+	return ReifiedTypeOperand::RESOLVED;
 }
 
 // The type operand of a native-lowered type test or cast. A plain operand is the `FSNativeClass`
@@ -3982,8 +4016,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// the gradual case, not a malformed program.
 				bool has_expected_type = true;
 				if (((_code_ptr[ip + 3] & ADDR_TYPE_MASK) >> ADDR_BITS) != ADDR_TYPE_CONSTANT) {
-					has_expected_type = _reified_type_from_class_handle_value(*type, base_type, expected_handle_type,
-							expected_type_arguments);
+					String freed_type_argument;
+					const ReifiedTypeOperand resolution = _reified_type_from_class_handle_value(*type, base_type,
+							expected_handle_type, expected_type_arguments, freed_type_argument);
+					if (unlikely(resolution == ReifiedTypeOperand::FREED_TYPE_ARGUMENT)) {
+						err_text = _freed_specialization_type_operand_error(name, freed_type_argument);
+						OPCODE_BREAK;
+					}
+					has_expected_type = resolution == ReifiedTypeOperand::RESOLVED;
 				} else {
 					if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
 						err_text = _missing_static_self_error(name);
