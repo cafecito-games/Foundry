@@ -1,0 +1,7 @@
+FS_TEST_OK
+plain 7
+identity true
+optional null <null>
+optional other text
+carrier true
+final true

@@ -683,6 +683,9 @@ static void clear_receiver_self_contract(FSParser::DataType &r_type) {
 	for (int i = 0; i < r_type.method_rest_parameter_type.size(); i++) {
 		clear_receiver_self_contract(r_type.method_rest_parameter_type.write[i]);
 	}
+	for (int i = 0; i < r_type.union_members.size(); i++) {
+		clear_receiver_self_contract(r_type.union_members.write[i]);
+	}
 }
 
 bool FSAnalyzer::CallSiteValidationContext::callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type) {

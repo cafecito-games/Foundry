@@ -801,6 +801,16 @@ static bool _datatype_contains_self_type_parameter(const FSParser::DataType &p_t
 			return true;
 		}
 	}
+	// A union alternative is a value position of its own, so `Self` written inside one is as real as
+	// `Self` written alone. Payload schemas are deliberately not walked: a tagged union may name itself,
+	// which makes that edge cyclic, and a payload field's `Self` is enforced where the case is
+	// constructed. A type parameter's bound is left out for a different reason: it spells a constraint
+	// on what may stand there, not a value the position holds.
+	for (const FSParser::DataType &member : p_type.union_members) {
+		if (_datatype_contains_self_type_parameter(member)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -833,6 +843,11 @@ static bool _datatype_contains_caller_relative_self(const FSParser::DataType &p_
 	}
 	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
 		if (_datatype_contains_caller_relative_self(rest_parameter_type)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &member : p_type.union_members) {
+		if (_datatype_contains_caller_relative_self(member)) {
 			return true;
 		}
 	}
@@ -984,6 +999,19 @@ static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSPa
 		result.method_rest_parameter_type.write[i] =
 				_substitute_self_type_parameter_with_bounds(result.method_rest_parameter_type[i], p_mark_substituted_self);
 	}
+	if (result.kind == FSParser::DataType::UNION) {
+		// Substituting `Self` to its bound can make two alternatives equal (`Self | Cell` with `Self`
+		// bound by `Cell`) or introduce a nested union, so the substituted set is re-normalized rather
+		// than written back in place, exactly as `DataType::substitute` does. Normalization hoists
+		// nullability off the alternatives, so the union's own nullability is restored on the result.
+		Vector<FSParser::DataType> substituted_members;
+		for (const FSParser::DataType &member : result.union_members) {
+			substituted_members.push_back(_substitute_self_type_parameter_with_bounds(member, p_mark_substituted_self));
+		}
+		FSParser::DataType substituted_union = FSParser::DataType::make_union(substituted_members);
+		substituted_union.is_nullable = substituted_union.is_nullable || result.is_nullable;
+		return substituted_union;
+	}
 	return result;
 }
 
@@ -1021,6 +1049,16 @@ static bool _datatype_substituted_self_markers_match(const FSParser::DataType &p
 		for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
 			if (!_datatype_substituted_self_markers_match(
 						p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
+				return false;
+			}
+		}
+	}
+	// Union alternatives are stored in a canonical order, so equal-sized sets pair up positionally. The
+	// size is guarded rather than assumed: substitution re-normalizes a union and can collapse two
+	// alternatives into one, which leaves the two sides describing different sets and nothing to pair.
+	if (p_a.union_members.size() == p_b.union_members.size()) {
+		for (int i = 0; i < p_a.union_members.size(); i++) {
+			if (!_datatype_substituted_self_markers_match(p_a.union_members[i], p_b.union_members[i])) {
 				return false;
 			}
 		}
@@ -1078,6 +1116,11 @@ static bool _datatype_self_bindings_are_final(const FSParser::DataType &p_type) 
 	}
 	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
 		if (!_datatype_self_bindings_are_final(rest_parameter_type)) {
+			return false;
+		}
+	}
+	for (const FSParser::DataType &member : p_type.union_members) {
+		if (!_datatype_self_bindings_are_final(member)) {
 			return false;
 		}
 	}
@@ -1412,6 +1455,18 @@ static bool _self_parameter_contract_match_needs_receiver_identity(
 			if (_self_parameter_contract_match_needs_receiver_identity(
 						p_expected_type.method_rest_parameter_type[i],
 						p_argument_type.method_rest_parameter_type[i])) {
+				return true;
+			}
+		}
+	}
+	// Two unions that matched the contract describe the same canonically ordered set, so their
+	// alternatives pair up positionally. A union facing a single value is not this case: that match went
+	// through one alternative, and the decomposition that chose it asks this question of that
+	// alternative alone.
+	if (p_expected_type.union_members.size() == p_argument_type.union_members.size()) {
+		for (int i = 0; i < p_expected_type.union_members.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.union_members[i], p_argument_type.union_members[i])) {
 				return true;
 			}
 		}
@@ -2629,8 +2684,10 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			if (member.kind == FSParser::DataType::TYPE_PARAMETER) {
 				// The parser rejects a bare type parameter spelled directly, because a union of erased
 				// parameters has no static meaning. An alias standing in for one is the same union, so it
-				// is rejected here rather than letting the alias launder the prohibition.
-				push_error(vformat(R"(Type parameter "%s" cannot be a member of a type union.)", member.type_parameter_name), member_node);
+				// is rejected here rather than letting the alias launder the prohibition. The parameter is
+				// named as the author can write it: synthetic `Self` is stored under an internal name that
+				// appears in no source.
+				push_error(vformat(R"(Type parameter "%s" cannot be a member of a type union.)", member.to_string()), member_node);
 				member_failed = true;
 				continue;
 			}
@@ -6787,6 +6844,25 @@ bool FSAnalyzer::_is_container_literal(const FSParser::ExpressionNode *p_express
 			p_expression->type == FSParser::Node::TUPLE_LITERAL;
 }
 
+// Whether the patcher below would descend into this literal for that type, asked ahead of the descent
+// so a union can decide which alternative the literal is written against.
+static bool _container_literal_shape_matches_type(
+		const FSParser::ExpressionNode *p_expression,
+		const FSParser::DataType &p_type) {
+	switch (p_expression->type) {
+		case FSParser::Node::ARRAY:
+			return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::ARRAY &&
+					p_type.has_container_element_type(0);
+		case FSParser::Node::DICTIONARY:
+			return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::DICTIONARY &&
+					p_type.has_container_element_types();
+		case FSParser::Node::TUPLE_LITERAL:
+			return p_type.kind == FSParser::DataType::TUPLE && !p_type.is_meta_type;
+		default:
+			return false;
+	}
+}
+
 // Routes a container literal to the patcher for its own form, given the type the position expects of
 // the whole expression. A literal written where nothing is declared, where the declaration is soft,
 // or where the declared type is a different form is left exactly as it was reduced.
@@ -6796,6 +6872,31 @@ bool FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode
 		bool p_substitute_self_runtime_type) {
 	if (p_expression == nullptr || !p_expected_type.is_set() || !p_expected_type.is_hard_type()) {
 		return false;
+	}
+
+	if (p_expected_type.kind == FSParser::DataType::UNION) {
+		// A `Self`-bearing alternative is only ever satisfied by a literal built against it -- receiver
+		// identity is proved through the literal's own elements -- so descending is what makes that
+		// alternative reachable at all, exactly as the same annotation written alone is. An alternative
+		// naming no `Self` is left alone: the union slot is untyped at run time and ordinary compatibility
+		// already answers the literal as it was reduced. A shape two alternatives could claim is left
+		// alone too, because nothing here says which one the author meant.
+		const FSParser::DataType *self_alternative = nullptr;
+		for (const FSParser::DataType &member : p_expected_type.union_members) {
+			if (!_datatype_contains_self_type_parameter(member) ||
+					!_container_literal_shape_matches_type(p_expression, member)) {
+				continue;
+			}
+			if (self_alternative != nullptr) {
+				return false;
+			}
+			self_alternative = &member;
+		}
+		if (self_alternative == nullptr) {
+			return false;
+		}
+		return update_container_literal_element_types(
+				p_expression, *self_alternative, p_self_parameter_contract, p_substitute_self_runtime_type);
 	}
 
 	switch (p_expression->type) {
@@ -6932,7 +7033,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 			continue;
 		}
 		if (_datatype_contains_self_type_parameter(expected_type)) {
-			const bool valid_self_element = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_type, actual_type) : _datatype_matches_self_return_contract(expected_type, actual_type);
+			const bool valid_self_element = self_contract_admits_container_element(expected_type, actual_type, p_self_parameter_contract);
 			if (!valid_self_element) {
 				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
 				return;
@@ -7016,7 +7117,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 			}
 			mark_node_unsafe(key_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_key_type)) {
-			const bool valid_self_key = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_key_type, actual_key_type) : _datatype_matches_self_return_contract(expected_key_type, actual_key_type);
+			const bool valid_self_key = self_contract_admits_container_element(expected_key_type, actual_key_type, p_self_parameter_contract);
 			if (!valid_self_key) {
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
 				return;
@@ -7076,7 +7177,7 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 			}
 			mark_node_unsafe(value_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_value_type)) {
-			const bool valid_self_value = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_value_type, actual_value_type) : _datatype_matches_self_return_contract(expected_value_type, actual_value_type);
+			const bool valid_self_value = self_contract_admits_container_element(expected_value_type, actual_value_type, p_self_parameter_contract);
 			if (!valid_self_value) {
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
 				return;
@@ -17884,6 +17985,22 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 	if (p_call == nullptr || p_argument == nullptr) {
 		return false;
 	}
+	if (p_expected_type.kind == FSParser::DataType::UNION) {
+		// An alternative is a value position of its own, so identity is proved against it exactly as it
+		// would be proved against the same annotation written alone. Alternatives naming no `Self` have
+		// no identity to prove and are admitted by the contract check instead.
+		for (const FSParser::DataType &member : p_expected_type.union_members) {
+			if (!_datatype_contains_self_type_parameter(member)) {
+				continue;
+			}
+			FSParser::DataType alternative = member;
+			alternative.is_nullable = p_expected_type.is_nullable;
+			if (self_parameter_satisfied_by_receiver_identity(alternative, p_argument, p_call)) {
+				return true;
+			}
+		}
+		return false;
+	}
 	if (_is_bare_self_value_parameter(p_expected_type)) {
 		return ::call_argument_is_same_receiver(p_call, p_argument);
 	}
@@ -17964,6 +18081,92 @@ bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::Dat
 			is_type_compatible(supplied_element, expected_element);
 }
 
+// The alternatives of a union that name no `Self` are answered by the rule the whole annotation was
+// answered by before any alternative mentioned one: ordinary compatibility against the set they form.
+// Asking the set rather than each alternative in turn keeps the union's own admission rules -- notably
+// that an alternative reachable only by changing the value's carrier is not reachable at all, because
+// a union slot emits no conversion.
+bool FSAnalyzer::self_free_union_members_admit_value(
+		const Vector<FSParser::DataType> &p_members,
+		bool p_nullable,
+		const FSParser::DataType &p_value_type) {
+	if (p_members.is_empty()) {
+		return false;
+	}
+	FSParser::DataType self_free_union = FSParser::DataType::make_union(p_members);
+	if (!self_free_union.is_set()) {
+		return false;
+	}
+	self_free_union.is_nullable = self_free_union.is_nullable || p_nullable;
+	return is_type_compatible(self_free_union, p_value_type, true);
+}
+
+// A type union is a set of alternatives, so a value satisfies it exactly when it satisfies one of
+// them -- and each alternative is answered by the rules it would carry standing alone. An alternative
+// naming `Self` therefore keeps the whole receiver contract, identity included when the position is a
+// call parameter and the call site is known; the union around it neither loosens nor tightens it.
+// Normalization hoists nullability onto the union, so it is put back on each alternative before that
+// alternative faces its own null rules, exactly as the union branch of ordinary compatibility does.
+bool FSAnalyzer::self_contract_union_admits_value_type(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_value_type,
+		SelfContractKind p_kind,
+		const FSParser::CallNode *p_call,
+		FSParser::DataType *r_matched_value) {
+	Vector<FSParser::DataType> self_free_members;
+	for (const FSParser::DataType &member : p_expected_type.union_members) {
+		if (!_datatype_contains_self_type_parameter(member)) {
+			self_free_members.push_back(member);
+			continue;
+		}
+		FSParser::DataType alternative = member;
+		alternative.is_nullable = p_expected_type.is_nullable;
+		const bool admitted = p_kind == SelfContractKind::PARAMETER
+				? self_parameter_contract_admits_argument_type(alternative, p_value_type, p_call)
+				: self_contract_admits_value_type(alternative, p_value_type, p_kind, r_matched_value);
+		if (admitted) {
+			if (r_matched_value != nullptr) {
+				*r_matched_value = p_value_type;
+			}
+			return true;
+		}
+	}
+	if (!self_free_union_members_admit_value(self_free_members, p_expected_type.is_nullable, p_value_type)) {
+		return false;
+	}
+	if (r_matched_value != nullptr) {
+		*r_matched_value = p_value_type;
+	}
+	return true;
+}
+
+// A container element type may itself be a union, and the element position is invariant: an
+// alternative that names no `Self` is answered by ordinary compatibility here rather than by the
+// value-flow admission a parameter or return position uses, which reconciles callable arity and tails.
+bool FSAnalyzer::self_contract_admits_container_element(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_actual_type,
+		bool p_self_parameter_contract) {
+	if (p_expected_type.kind == FSParser::DataType::UNION) {
+		Vector<FSParser::DataType> self_free_members;
+		for (const FSParser::DataType &member : p_expected_type.union_members) {
+			if (!_datatype_contains_self_type_parameter(member)) {
+				self_free_members.push_back(member);
+				continue;
+			}
+			FSParser::DataType alternative = member;
+			alternative.is_nullable = p_expected_type.is_nullable;
+			if (self_contract_admits_container_element(alternative, p_actual_type, p_self_parameter_contract)) {
+				return true;
+			}
+		}
+		return self_free_union_members_admit_value(self_free_members, p_expected_type.is_nullable, p_actual_type);
+	}
+	return p_self_parameter_contract
+			? _datatype_matches_self_parameter_contract(p_expected_type, p_actual_type)
+			: _datatype_matches_self_return_contract(p_expected_type, p_actual_type);
+}
+
 // The single admission point for a value flowing into a `Self`-bearing destination, whether that
 // destination is a parameter, a declared variable, or a return type. Callable arity substitution and
 // the contravariant tail are settled identically for all of them -- they describe what a callable
@@ -17978,6 +18181,11 @@ bool FSAnalyzer::self_contract_admits_value_type(
 		const FSParser::DataType &p_value_type,
 		SelfContractKind p_kind,
 		FSParser::DataType *r_matched_value) {
+	if (p_expected_type.kind == FSParser::DataType::UNION) {
+		// No call site reaches here, so a parameter position's identity requirement is discharged by the
+		// caller that has one. Every other admission an alternative offers is decided here.
+		return self_contract_union_admits_value_type(p_expected_type, p_value_type, p_kind, nullptr, r_matched_value);
+	}
 	FSParser::DataType matched_value = _self_contract_comparable_callable_argument(p_expected_type, p_value_type);
 	const auto matches_exactly = [&](const FSParser::DataType &p_candidate) {
 		return p_kind == SelfContractKind::PARAMETER
@@ -18011,6 +18219,13 @@ bool FSAnalyzer::self_parameter_contract_matched_argument(
 }
 
 bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) {
+	if (p_expected_type.kind == FSParser::DataType::UNION) {
+		// Decomposing here rather than below the match keeps the identity requirement attached to the
+		// alternative that admitted the value: the union itself holds no `Self` position to require
+		// identity of, so asking the question of the whole annotation would answer no for every union.
+		return self_contract_union_admits_value_type(
+				p_expected_type, p_argument_type, SelfContractKind::PARAMETER, p_call, nullptr);
+	}
 	FSParser::DataType argument_type;
 	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type)) {
 		return false;
@@ -18042,6 +18257,23 @@ String FSAnalyzer::self_parameter_receiver_identity_clause(
 		const FSParser::CallNode *p_call,
 		const String &p_expected_subject,
 		const String &p_argument_subject) {
+	if (p_expected_type.kind == FSParser::DataType::UNION) {
+		// The rejection belongs to whichever alternative the value matched, so the clause is asked of the
+		// alternatives rather than of the set: the union carries no `Self` position of its own.
+		for (const FSParser::DataType &member : p_expected_type.union_members) {
+			if (!_datatype_contains_self_type_parameter(member)) {
+				continue;
+			}
+			FSParser::DataType alternative = member;
+			alternative.is_nullable = p_expected_type.is_nullable;
+			const String clause = self_parameter_receiver_identity_clause(
+					alternative, p_argument_type, p_call, p_expected_subject, p_argument_subject);
+			if (!clause.is_empty()) {
+				return clause;
+			}
+		}
+		return String();
+	}
 	FSParser::DataType argument_type;
 	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type) ||
 			!_datatype_contains_caller_relative_self(p_argument_type) ||
