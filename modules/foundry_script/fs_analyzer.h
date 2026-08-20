@@ -487,6 +487,9 @@ private:
 	bool self_contract_admits_value_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_value_type, SelfContractKind p_kind, const FSParser::ExpressionNode *p_value_source = nullptr, FSParser::DataType *r_matched_value = nullptr);
 	bool self_parameter_contract_matched_argument(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::ExpressionNode *p_argument_source, FSParser::DataType &r_matched_argument);
 	bool self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument_source = nullptr);
+	// Names the innermost composite slot of a rejected argument that matched the `Self` contract but
+	// requires receiver identity, so the reason survives a sibling slot's ordinary mismatch.
+	bool self_parameter_receiver_identity_slot(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, String &r_slot_label);
 	String self_parameter_receiver_identity_clause(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call, const String &p_expected_subject, const String &p_argument_subject);
 	bool type_parameter_bound_reaches(const FSParser::DataType &p_parameter, const FSParser::DataType &p_other, bool p_allow_implicit_conversion);
 	bool type_parameter_source_reaches_target(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion);
@@ -1246,6 +1249,9 @@ public:
 	static FSParser::DataType test_complete_self_referential_enum_type(const FSParser::DataType &p_type) {
 		return complete_self_referential_enum_type(p_type);
 	}
+	// Exposes the receiver-contract stamp so its idempotence over a `Self`-typed receiver can be
+	// asserted directly instead of inferred from a fixture.
+	static FSParser::DataType test_self_type_parameter_from_bound(const FSParser::DataType &p_bound);
 	static FSParserRef::Status test_get_depended_parser_status(const FSAnalyzer *p_analyzer, const String &p_path);
 	static Ref<FSParserRef> test_get_depended_parser_ref(const FSAnalyzer *p_analyzer, const String &p_path);
 	static int test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer);
