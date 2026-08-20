@@ -741,6 +741,22 @@ static bool _validate_write_against_projected_type(ProjectedContainerType p_expe
 		expected.outer.is_type_handle = true;
 	}
 
+	// The design-6.1 `uint` -> `long` widening on the reified path. Once erasure has happened,
+	// `Box[long].value` describes the same constraint `var value: long` does, so it must accept the
+	// same values. The widen runs before validation so the reified width
+	// (`ContainerType::numeric_type`) is asked about the widened value, keeping the widen-then-width
+	// order plain members use: `Box[int]` admits a small `uint` and still refuses one above `int`'s
+	// range. The branch is terminal for an unsigned-carrier source by construction -- a value the
+	// `uint` range does not contain falls through unchanged into the rejection below, whose only
+	// rescue is the deliberately unregistered `Variant::can_convert_strict(UINT, INT)`, so
+	// `ulong` -> `long` keeps requiring an explicit cast.
+	if (!p_is_type_handle && expected.outer.builtin_type == Variant::INT && r_value.get_type() == Variant::UINT) {
+		Variant widened;
+		if (fs_try_widen_uint_to_long(r_value, widened)) {
+			r_value = widened;
+		}
+	}
+
 	String erasure_error;
 	FoundryScript::erase_specialized_class_handles_for_container_type(expected.to_container_type(), r_value, &erasure_error);
 	if (!erasure_error.is_empty()) {
