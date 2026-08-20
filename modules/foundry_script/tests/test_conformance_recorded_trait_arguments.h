@@ -742,12 +742,19 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A store through a degrade
 	ContainerType int_argument;
 	int_argument.builtin_type = Variant::INT;
 
-	// A destination that only contradicts the freed position has nothing to contradict: that position
-	// carries no evidence at all, exactly like one the declaration left open.
+	// A store rejects only on evidence. The freed position carries none -- exactly like one the
+	// declaration left open -- so a destination that contradicts only there is accepted.
 	CHECK(FSDataType::trait_specialization_matches({ string_argument, int_argument },
-			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), true));
-	// The live `int` sibling survived the degradation and still rejects.
+			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), false));
+	// The live `int` sibling survived the degradation and still rejects, which is the whole point of
+	// degrading per position instead of dropping the vector.
 	CHECK_FALSE(FSDataType::trait_specialization_matches({ string_argument, string_argument },
+			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), false));
+
+	// The narrowing rule is unchanged and stays stricter: `is Trait[...]` demands positive evidence at
+	// every position, and a degraded one has none, so it refuses even the otherwise agreeing
+	// destination. A freed argument therefore never widens a specialized test.
+	CHECK_FALSE(FSDataType::trait_specialization_matches({ string_argument, int_argument },
 			Ref<Script>(), fixture.trait_name, nullptr, Variant(7), true));
 }
 
