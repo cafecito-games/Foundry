@@ -13685,11 +13685,13 @@ bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode 
 	return true;
 }
 
-// Upper bound on the alternatives one open payload position is decomposed into. The decomposition is
-// a cross product over every union the position carries, so a schema nesting several of them could
-// multiply out without bound; past this many alternatives the position keeps the answer the assembled
-// field type already gave, which only ever refuses more.
-static constexpr int MAX_OPEN_SCHEMA_ALTERNATIVES = 64;
+// Upper bound on the combinations one carrier's slots may be expanded into. Expanding a union a
+// carrier holds multiplies the alternatives of every slot together, which is the only growth here that
+// is not linear in what the author wrote, so that is the only growth this bounds. Enumerating the
+// members of a union directly is linear and deliberately unbounded: a payload union is decomposed
+// however many alternatives it declares. A slot whose expansion would pass the bound is left
+// un-decomposed instead, which yields the type the assembled field already stands for.
+static constexpr int MAX_OPEN_SCHEMA_CARRIER_COMBINATIONS = 64;
 
 // True when p_type is a union, or reaches one through a carrier that can legally hold one. A typed
 // container refuses a union element type and a generic tagged union refuses a union type argument, so
@@ -13725,47 +13727,40 @@ static bool open_schema_carries_union(const FSParser::DataType &p_type) {
 // split -- which is exactly the collapse this decomposition exists to survive, and no widening of what
 // the position accepts. Unnamed tuple elements are erased structural positions and keep the broader
 // decomposition.
-//
-// Returns false when the cross product exceeds `MAX_OPEN_SCHEMA_ALTERNATIVES`, leaving r_alternatives
-// unusable; the caller then asks nothing further.
 template <typename TUnionCollapsesUnderApplication>
-static bool collect_open_schema_alternatives(const FSParser::DataType &p_type, bool p_invariant,
+static void collect_open_schema_alternatives(const FSParser::DataType &p_type, bool p_invariant,
 		const TUnionCollapsesUnderApplication &p_union_collapses, Vector<FSParser::DataType> &r_alternatives) {
 	if (p_type.kind == FSParser::DataType::UNION) {
 		if (p_invariant && !p_union_collapses(p_type.union_members)) {
 			r_alternatives.push_back(p_type);
-			return true;
+			return;
 		}
 		for (const FSParser::DataType &member : p_type.union_members) {
 			Vector<FSParser::DataType> member_alternatives;
-			if (!::collect_open_schema_alternatives(member, p_invariant, p_union_collapses, member_alternatives)) {
-				return false;
-			}
+			::collect_open_schema_alternatives(member, p_invariant, p_union_collapses, member_alternatives);
 			for (FSParser::DataType &member_alternative : member_alternatives) {
 				// Normalization hoists nullability onto the union, so an alternative standing alone gets it
 				// back before it faces its own null rules.
 				member_alternative.is_nullable = member_alternative.is_nullable || p_type.is_nullable;
 				r_alternatives.push_back(member_alternative);
 			}
-			if (r_alternatives.size() > MAX_OPEN_SCHEMA_ALTERNATIVES) {
-				return false;
-			}
 		}
-		return true;
+		return;
 	}
 
 	Vector<FSParser::DataType> alternatives;
 	alternatives.push_back(p_type);
-	const auto fill_slot = [&](int p_slot, const FSParser::DataType &p_slot_type, bool p_is_element) -> bool {
+	const auto fill_slot = [&](int p_slot, const FSParser::DataType &p_slot_type, bool p_is_element) {
 		if (!::open_schema_carries_union(p_slot_type)) {
-			return true;
+			return;
 		}
 		Vector<FSParser::DataType> slot_alternatives;
-		if (!::collect_open_schema_alternatives(p_slot_type, p_invariant || !p_is_element, p_union_collapses, slot_alternatives)) {
-			return false;
-		}
-		if (alternatives.size() * slot_alternatives.size() > MAX_OPEN_SCHEMA_ALTERNATIVES) {
-			return false;
+		::collect_open_schema_alternatives(p_slot_type, p_invariant || !p_is_element, p_union_collapses, slot_alternatives);
+		if (alternatives.size() * slot_alternatives.size() > MAX_OPEN_SCHEMA_CARRIER_COMBINATIONS) {
+			// Leaving the slot alone keeps the carrier's other slots decomposed and costs only the
+			// alternatives this one would have contributed, where failing outright would drop the whole
+			// position back to the answer the assembled field type already gave.
+			return;
 		}
 		Vector<FSParser::DataType> combined;
 		for (const FSParser::DataType &carrier : alternatives) {
@@ -13780,23 +13775,17 @@ static bool collect_open_schema_alternatives(const FSParser::DataType &p_type, b
 			}
 		}
 		alternatives = combined;
-		return true;
 	};
 
 	if (p_type.is_tuple() && p_type.tuple_name == StringName()) {
 		for (int i = 0; i < p_type.container_element_types.size(); i++) {
-			if (!fill_slot(i, p_type.container_element_types[i], true)) {
-				return false;
-			}
+			fill_slot(i, p_type.container_element_types[i], true);
 		}
 	}
 	for (int i = 0; i < p_type.type_arguments.size(); i++) {
-		if (!fill_slot(i, p_type.type_arguments[i], false)) {
-			return false;
-		}
+		fill_slot(i, p_type.type_arguments[i], false);
 	}
 	r_alternatives.append_array(alternatives);
-	return r_alternatives.size() <= MAX_OPEN_SCHEMA_ALTERNATIVES;
 }
 
 void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type) {
@@ -14056,9 +14045,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			return false;
 		}
 		Vector<FSParser::DataType> open_alternatives;
-		if (!::collect_open_schema_alternatives(*open_field, false, open_union_members_collapse, open_alternatives)) {
-			return false;
-		}
+		::collect_open_schema_alternatives(*open_field, false, open_union_members_collapse, open_alternatives);
 		for (const FSParser::DataType &open_alternative : open_alternatives) {
 			FSParser::DataType alternative = complete_self_referential_enum_type(
 					FSParser::DataType::substitute(payload_field_type_for_spelling(open_alternative), type_argument_bindings));
