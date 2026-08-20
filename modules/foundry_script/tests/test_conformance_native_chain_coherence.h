@@ -1032,4 +1032,384 @@ func test() -> void:
 	CHECK(fixture.error_messages.is_empty());
 }
 
+// A class that applies a generic trait through its own `uses` clause registers no conformance: it
+// declares no external membership and supplies no witnesses. It still fixes that trait's arguments for
+// every receiver on its chain, so a declaration in another file that binds the same identity
+// differently is the same contradiction two conformances would be — and the only file that can see
+// both sides is the one that loads the other.
+//
+// These cases drive the registry directly, because the asymmetry they are about is a property of what
+// one file may know about another rather than of any single parse tree.
+namespace TraitBindingRecords {
+
+// Whatever a case registers is dropped again: the registry is a process-global singleton.
+class BindingScope {
+	Vector<String> source_files;
+
+public:
+	void track(const String &p_source_file) {
+		if (!source_files.has(p_source_file)) {
+			source_files.push_back(p_source_file);
+		}
+	}
+
+	~BindingScope() {
+		for (const String &source_file : source_files) {
+			FSConformanceRegistry::get_singleton()->clear_file(source_file);
+		}
+	}
+};
+
+static Vector<FSConformanceRegistry::RecordedTypeArgument> builtin_arguments(Variant::Type p_type) {
+	FSConformanceRegistry::RecordedTypeArgument argument;
+	argument.kind = FSConformanceRegistry::RecordedTypeArgument::BUILTIN;
+	argument.builtin_type = p_type;
+	Vector<FSConformanceRegistry::RecordedTypeArgument> arguments;
+	arguments.push_back(argument);
+	return arguments;
+}
+
+// One class's `uses` binding, as its declaring file publishes it: the class belongs to a script file,
+// and its chain bottoms out at `p_native_base`.
+static Vector<FSConformanceRegistry::ClassTraitBinding> class_binding(const String &p_source_file,
+		const String &p_target_fqcn, const StringName &p_native_base, const StringName &p_trait_name,
+		Variant::Type p_argument, const Vector<String> &p_script_ancestors = Vector<String>()) {
+	FSConformanceRegistry::ClassTraitBinding binding;
+	binding.target_fqcn = p_target_fqcn;
+	binding.target_label = p_target_fqcn.get_file();
+	binding.target_native_base = p_native_base;
+	binding.target_script_ancestor_fqcns = p_script_ancestors;
+	binding.trait_name = p_trait_name;
+	binding.trait_type_arguments = builtin_arguments(p_argument);
+	binding.source_file = p_source_file;
+	Vector<FSConformanceRegistry::ClassTraitBinding> bindings;
+	bindings.push_back(binding);
+	return bindings;
+}
+
+static Vector<FSConformanceRegistry::Conformance> native_conformance(const String &p_source_file,
+		const StringName &p_native_class, const StringName &p_trait_name, Variant::Type p_argument) {
+	FSConformanceRegistry::Conformance conformance;
+	conformance.target_keys.push_back(String(p_native_class));
+	conformance.target_fqcn = String(p_native_class);
+	conformance.target_label = String(p_native_class);
+	conformance.trait_name = p_trait_name;
+	conformance.trait_type_arguments = builtin_arguments(p_argument);
+	conformance.source_file = p_source_file;
+	conformance.conformance_index = 0;
+	Vector<FSConformanceRegistry::Conformance> candidates;
+	candidates.push_back(conformance);
+	return candidates;
+}
+
+static Vector<FSConformanceRegistry::Conformance> script_conformance(const String &p_source_file,
+		const String &p_target_fqcn, const String &p_target_script_path, const StringName &p_native_base,
+		const StringName &p_trait_name, Variant::Type p_argument) {
+	FSConformanceRegistry::Conformance conformance;
+	conformance.target_keys.push_back(p_target_fqcn);
+	conformance.target_fqcn = p_target_fqcn;
+	conformance.target_script_path = p_target_script_path;
+	conformance.target_label = p_target_fqcn.get_file();
+	conformance.target_native_base = p_native_base;
+	conformance.trait_name = p_trait_name;
+	conformance.trait_type_arguments = builtin_arguments(p_argument);
+	conformance.source_file = p_source_file;
+	conformance.conformance_index = 0;
+	Vector<FSConformanceRegistry::Conformance> candidates;
+	candidates.push_back(conformance);
+	return candidates;
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Engine declaration rejects a loaded dependency's class-uses binding") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_dependency.fs";
+	const String declaring_file = "user://ncc_binding_declaration.fs";
+	const StringName trait_name = "NccBindingKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			declaring_file, native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
+
+	REQUIRE_EQ(result.conflicts.size(), 1);
+	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
+	CHECK_EQ(result.conflicts[0].conflicting_source_file, dependency_file);
+	CHECK_EQ(result.conflicts[0].trait_name, trait_name);
+	CHECK_EQ(result.registered_count, 0);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Dependency class-uses binding registered before the engine declaration still rejects") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_order_dependency.fs";
+	const String declaring_file = "user://ncc_binding_order_declaration.fs";
+	const StringName trait_name = "NccBindingOrderKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	// The declaration is analyzed first, while the dependency's binding is not published yet, so nothing
+	// contradicts it. Publishing the binding and re-analyzing the declaring file — which is what loading
+	// the dependency amounts to — must reach the same verdict as the other order.
+	REQUIRE_EQ(registry->try_replace_file_conformances(declaring_file,
+							   native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT))
+					   .registered_count,
+			1);
+
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			declaring_file, native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
+
+	REQUIRE_EQ(result.conflicts.size(), 1);
+	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
+	CHECK_EQ(result.registered_count, 0);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Matching class-uses binding accepted") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_match_dependency.fs";
+	const String declaring_file = "user://ncc_binding_match_declaration.fs";
+	const StringName trait_name = "NccBindingMatchKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::INT));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			declaring_file, native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
+
+	CHECK(result.conflicts.is_empty());
+	CHECK_EQ(result.registered_count, 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Binding records are dropped when the declaring file re-registers empty") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_drop_dependency.fs";
+	const String declaring_file = "user://ncc_binding_drop_declaration.fs";
+	const StringName trait_name = "NccBindingDropKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+	REQUIRE_EQ(registry->get_script_trait_binding_records(trait_name).size(), 1);
+
+	// The dependency no longer binds anything, so what it used to bind must stop deciding other files.
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>());
+	CHECK(registry->get_script_trait_binding_records(trait_name).is_empty());
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			declaring_file, native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
+
+	CHECK(result.conflicts.is_empty());
+	CHECK_EQ(result.registered_count, 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Script-class conformance rejects a loaded dependency descendant's class-uses binding") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String base_file = "user://ncc_binding_script_base.fs";
+	const String dependency_file = "user://ncc_binding_script_dependency.fs";
+	const String declaring_file = "user://ncc_binding_script_declaration.fs";
+	const String base_fqcn = "NccBindingScriptBase";
+	const StringName trait_name = "NccBindingScriptKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	Vector<String> ancestors;
+	ancestors.push_back(base_fqcn);
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING, ancestors));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(declaring_file,
+			script_conformance(declaring_file, base_fqcn, base_file, "RefCounted", trait_name, Variant::INT));
+
+	REQUIRE_EQ(result.conflicts.size(), 1);
+	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
+	CHECK_EQ(result.conflicts[0].conflicting_source_file, dependency_file);
+	CHECK_EQ(result.registered_count, 0);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Conformance published first still contradicts a later binding") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_mirror_dependency.fs";
+	const String declaring_file = "user://ncc_binding_mirror_declaration.fs";
+	const StringName trait_name = "NccBindingMirrorKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	// The mirror of the case above. Analyses run concurrently and each publishes under the registry's
+	// own lock, so the conformance may reach it first; the file publishing the binding is then the only
+	// one that can see both sides, and the contradiction has to be found as its bindings are stored.
+	REQUIRE_EQ(registry->try_replace_file_conformances(declaring_file,
+							   native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT))
+					   .registered_count,
+			1);
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+
+	REQUIRE_EQ(result.binding_conflicts.size(), 1);
+	CHECK_EQ(result.binding_conflicts[0].target_fqcn, dependency_file + "::Holder");
+	CHECK_EQ(result.binding_conflicts[0].trait_name, trait_name);
+	CHECK_EQ(result.binding_conflicts[0].conflicting_source_file, declaring_file);
+
+	// Reported, never arbitrated: the binding is still stored, so the chain it fixes stays recorded and a
+	// third file asking about it is not answered with silence.
+	CHECK_EQ(registry->get_script_trait_binding_records(trait_name).size(), 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A matching binding published after a conformance reports nothing") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_mirror_ok_dependency.fs";
+	const String declaring_file = "user://ncc_binding_mirror_ok_declaration.fs";
+	const StringName trait_name = "NccBindingMirrorOkKeeper";
+	scope.track(dependency_file);
+	scope.track(declaring_file);
+
+	registry->try_replace_file_conformances(declaring_file,
+			native_conformance(declaring_file, "RefCounted", trait_name, Variant::INT));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, dependency_file + "::Holder", "RefCounted", trait_name, Variant::INT));
+
+	CHECK(result.binding_conflicts.is_empty());
+}
+
+// A file's own view of the registry: it sees itself and whatever it loads, and nothing else. The real
+// analyzer installs the same shape, which is what makes the visibility relation directional.
+class LoadsOnlyVisibility : public FSConformanceRegistry::Visibility {
+	HashSet<String> visible;
+
+public:
+	explicit LoadsOnlyVisibility(const Vector<String> &p_visible) {
+		for (const String &file : p_visible) {
+			visible.insert(file);
+		}
+	}
+
+	bool can_see(const String &p_source_file) const override {
+		return visible.has(p_source_file);
+	}
+};
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A loaded file's binding contradicts the loader's conformance published first") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	// The loader declares the conformance; the file it loads declares the binding. The edge runs one way
+	// only, which is what makes the second publisher unable to see the first.
+	const String loader_file = "user://ncc_binding_edge_loader.fs";
+	const String loaded_file = "user://ncc_binding_edge_loaded.fs";
+	const StringName trait_name = "NccBindingEdgeKeeper";
+	scope.track(loader_file);
+	scope.track(loaded_file);
+
+	Vector<String> loader_sees;
+	loader_sees.push_back(loader_file);
+	loader_sees.push_back(loaded_file);
+	HashSet<String> loader_loads;
+	loader_loads.insert(loaded_file);
+
+	{
+		// The loader publishes first, while the loaded file's binding does not exist yet, so it has
+		// nothing to find. This is the ordering a concurrent analysis of the two files produces when the
+		// loader's dependency raising returns early on a parser another thread is still working through.
+		const LoadsOnlyVisibility loader_visibility(loader_sees);
+		const FSConformanceRegistry::ScopedVisibility scoped(&loader_visibility);
+		REQUIRE_EQ(registry->try_replace_file_conformances(loader_file,
+								   native_conformance(loader_file, "RefCounted", trait_name, Variant::INT),
+								   Vector<FSConformanceRegistry::ClassTraitBinding>(), loader_loads)
+						   .registered_count,
+				1);
+	}
+
+	Vector<String> loaded_sees;
+	loaded_sees.push_back(loaded_file);
+	const LoadsOnlyVisibility loaded_visibility(loaded_sees);
+	const FSConformanceRegistry::ScopedVisibility scoped(&loaded_visibility);
+
+	// The loaded file cannot see the loader at all. The comparison is licensed by the loader's own load
+	// edge, recorded when it published, so the contradiction is still found.
+	CHECK_FALSE(registry->has_conformance("RefCounted", trait_name));
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			loaded_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(loaded_file, loaded_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+
+	REQUIRE_EQ(result.binding_conflicts.size(), 1);
+	CHECK_EQ(result.binding_conflicts[0].conflicting_source_file, loader_file);
+	CHECK_EQ(result.binding_conflicts[0].trait_name, trait_name);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] A conformance with no load edge either way stays uncompared") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String unrelated_file = "user://ncc_binding_noedge_unrelated.fs";
+	const String binding_file = "user://ncc_binding_noedge_binding.fs";
+	const StringName trait_name = "NccBindingNoEdgeKeeper";
+	scope.track(unrelated_file);
+	scope.track(binding_file);
+
+	{
+		// The conformance's file loads something, but not the file that binds the trait.
+		HashSet<String> unrelated_loads;
+		unrelated_loads.insert("user://ncc_binding_noedge_other.fs");
+		registry->try_replace_file_conformances(unrelated_file,
+				native_conformance(unrelated_file, "RefCounted", trait_name, Variant::INT),
+				Vector<FSConformanceRegistry::ClassTraitBinding>(), unrelated_loads);
+	}
+
+	Vector<String> binding_sees;
+	binding_sees.push_back(binding_file);
+	const LoadsOnlyVisibility binding_visibility(binding_sees);
+	const FSConformanceRegistry::ScopedVisibility scoped(&binding_visibility);
+
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			binding_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(binding_file, binding_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+
+	// Neither file loads the other, so no single declaration site composes them. That incoherence belongs
+	// to whatever file loads them both, and is deliberately not decided here.
+	CHECK(result.binding_conflicts.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] Binding records answer no membership or witness query") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	const String dependency_file = "user://ncc_binding_opaque_dependency.fs";
+	const StringName trait_name = "NccBindingOpaqueKeeper";
+	const String target_fqcn = dependency_file + "::Holder";
+	scope.track(dependency_file);
+
+	registry->try_replace_file_conformances(dependency_file, Vector<FSConformanceRegistry::Conformance>(),
+			class_binding(dependency_file, target_fqcn, "RefCounted", trait_name, Variant::STRING));
+
+	// A `uses` clause is the class's own membership, not an external conformance. The registry answers
+	// only the coherence question about it; every query the type system and the runtime ask stays empty,
+	// so nothing dispatches through a witness that was never declared.
+	CHECK_FALSE(registry->has_conformance(target_fqcn, trait_name));
+	CHECK_FALSE(registry->native_class_conforms("RefCounted", trait_name));
+	CHECK(registry->get_conformance_source(target_fqcn, trait_name).is_empty());
+	CHECK(registry->get_witnesses(target_fqcn, trait_name).is_empty());
+	CHECK(registry->get_file_conformances(dependency_file).is_empty());
+	CHECK(registry->get_script_conformance_records(trait_name).is_empty());
+	Vector<FSConformanceRegistry::RecordedTypeArgument> arguments;
+	CHECK_FALSE(registry->get_recorded_trait_arguments(target_fqcn, trait_name, arguments));
+	CHECK(registry->find_witness_function(target_fqcn, "make") == nullptr);
+}
+
+} // namespace TraitBindingRecords
+
 } // namespace FSNativeChainCoherenceTests

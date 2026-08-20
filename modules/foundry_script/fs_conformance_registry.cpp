@@ -320,6 +320,107 @@ bool FSConformanceRegistry::_declaration_witnesses_collide(const Conformance &p_
 	return false;
 }
 
+// Whether a conformance and a class-`uses` binding describe overlapping receivers, which is what makes
+// them have to agree. The one relation both directions of the comparison go through, so the side that
+// happens to be published second can never reach a different verdict than the first would have.
+static bool _conformance_answers_for_binding(const FSConformanceRegistry::Conformance &p_conformance,
+		const FSConformanceRegistry::ClassTraitBinding &p_binding) {
+	if (_is_native_target(p_conformance)) {
+		return _native_ancestry_answers_for(p_binding.target_native_base, StringName(p_conformance.target_fqcn));
+	}
+	if (p_conformance.target_fqcn.is_empty() || p_binding.target_fqcn.is_empty() ||
+			p_conformance.target_fqcn == p_binding.target_fqcn) {
+		return false;
+	}
+	return p_binding.target_script_ancestor_fqcns.has(p_conformance.target_fqcn) ||
+			p_conformance.target_script_ancestor_fqcns.has(p_binding.target_fqcn);
+}
+
+bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Conformance &p_candidate,
+		const String &p_source_file, RegistrationConflict &r_conflict) const {
+	if (p_candidate.trait_name == StringName() || p_candidate.trait_type_arguments.is_empty()) {
+		return false;
+	}
+
+	// The submitting file's own bindings are excluded: they are what this call is about to replace, and
+	// a contradiction between a file's `extend` and its own class's `uses` is decided in that file's
+	// analyzer, against its parse tree, where the diagnostic can name both sides.
+	for (const KeyValue<String, Vector<ClassTraitBinding>> &file_entry : trait_bindings_by_file) {
+		if (file_entry.key == p_source_file || !_is_visible(file_entry.key)) {
+			continue;
+		}
+		for (const ClassTraitBinding &binding : file_entry.value) {
+			if (binding.trait_name != p_candidate.trait_name || binding.trait_type_arguments.is_empty() ||
+					!_conformance_answers_for_binding(p_candidate, binding)) {
+				continue;
+			}
+			if (!FSTypeCompatibility::recorded_arguments_conflict(binding.trait_type_arguments,
+						p_candidate.trait_type_arguments)) {
+				continue;
+			}
+			r_conflict.kind = RegistrationConflict::CHAIN_COHERENCE;
+			r_conflict.conformance_index = p_candidate.conformance_index;
+			r_conflict.target_label = p_candidate.target_label;
+			r_conflict.trait_name = p_candidate.trait_name;
+			r_conflict.conflicting_target_label =
+					binding.target_label.is_empty() ? binding.target_fqcn : binding.target_label;
+			r_conflict.conflicting_source_file = binding.source_file;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FSConformanceRegistry::_file_loads(const String &p_loader, const String &p_loaded) const {
+	if (p_loader.is_empty() || p_loaded.is_empty()) {
+		return false;
+	}
+	const HashSet<String> *loaded = loaded_files_by_file.getptr(p_loader);
+	return loaded != nullptr && loaded->has(p_loaded);
+}
+
+bool FSConformanceRegistry::_binding_conflicts_with_conformance(const ClassTraitBinding &p_binding,
+		const String &p_source_file, const Vector<const Conformance *> &p_view, BindingConflict &r_conflict) const {
+	if (p_binding.trait_name == StringName() || p_binding.trait_type_arguments.is_empty()) {
+		return false;
+	}
+	for (const Conformance *existing : p_view) {
+		// A conformance declared by the binding's own file is compared in that file's analyzer against its
+		// parse tree, where the diagnostic can name both sides precisely.
+		if (existing->trait_name != p_binding.trait_name || existing->source_file == p_source_file ||
+				existing->trait_type_arguments.is_empty()) {
+			continue;
+		}
+		// A conformance and a binding may be compared when a load edge joins their files, whichever way it
+		// runs. `_is_visible` answers only for the direction this thread has -- the file being analyzed and
+		// what it loads -- so the other direction is read from the edge the conformance's own file
+		// recorded. Without it the verdict would depend on which side reached the mutex first: the file
+		// that loads the other may well have published before the other's declaration existed, and it
+		// never looks again.
+		//
+		// Two files with no edge either way stay uncompared, which is the composition case that belongs to
+		// whichever file loads them both.
+		const bool joined_by_a_load_edge =
+				_is_visible(existing->source_file) || _file_loads(existing->source_file, p_source_file);
+		if (!joined_by_a_load_edge || !_conformance_answers_for_binding(*existing, p_binding)) {
+			continue;
+		}
+		if (!FSTypeCompatibility::recorded_arguments_conflict(existing->trait_type_arguments,
+					p_binding.trait_type_arguments)) {
+			continue;
+		}
+		r_conflict.target_fqcn = p_binding.target_fqcn;
+		r_conflict.target_label = p_binding.target_label.is_empty() ? p_binding.target_fqcn : p_binding.target_label;
+		r_conflict.trait_name = p_binding.trait_name;
+		r_conflict.trait_label = p_binding.trait_label.is_empty() ? String(p_binding.trait_name) : p_binding.trait_label;
+		r_conflict.conflicting_target_label =
+				existing->target_label.is_empty() ? existing->target_fqcn : existing->target_label;
+		r_conflict.conflicting_source_file = existing->source_file;
+		return true;
+	}
+	return false;
+}
+
 bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate, const String &p_source_file,
 		const Vector<const Conformance *> &p_view, RegistrationConflict &r_conflict) const {
 	if (p_candidate.trait_name == StringName()) {
@@ -379,6 +480,12 @@ bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate,
 			r_conflict.conflicting_source_file = existing->source_file;
 			return true;
 		}
+
+		// A class's own `uses` clause registers no conformance, so what it binds is recorded separately;
+		// it constrains a chain the same way a conformance on that chain does.
+		if (_candidate_conflicts_with_trait_binding(p_candidate, p_source_file, r_conflict)) {
+			return true;
+		}
 	}
 
 	// Duplicate membership. Matching is on the candidate's exact fully-qualified name against the other
@@ -404,7 +511,8 @@ bool FSConformanceRegistry::_candidate_conflicts(const Conformance &p_candidate,
 }
 
 FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_file_conformances(
-		const String &p_source_file, const Vector<Conformance> &p_candidates) {
+		const String &p_source_file, const Vector<Conformance> &p_candidates,
+		const Vector<ClassTraitBinding> &p_trait_bindings, const HashSet<String> &p_loaded_files) {
 	RegistrationResult result;
 
 	MutexLock lock(mutex);
@@ -477,10 +585,40 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 		}
 	}
 
+	// The load edges this file resolved are published with its conformances: they are what lets another
+	// file, judging its own bindings later, tell that one of these conformances was licensed to be
+	// compared against it.
+	if (p_loaded_files.is_empty()) {
+		loaded_files_by_file.erase(p_source_file);
+	} else {
+		loaded_files_by_file[p_source_file] = p_loaded_files;
+	}
+
+	// The bindings are published with the conformances, under the same lock, so no reader can observe a
+	// file's `extend` declarations and its classes' `uses` bindings from two different analyses of it.
+	//
+	// They are judged in the same breath, against the store as it stands at this write. Publishing them
+	// unchecked would reintroduce, on the binding side, exactly the check-then-register shape this
+	// operation exists to eliminate: the analyzer's own `uses` check reads the registry earlier in its
+	// run, so a conformance committed by another thread in between would leave both sides of a
+	// contradiction registered and no single-file analysis able to find it afterwards. A binding is
+	// reported but never dropped -- a `uses` clause is source the registry cannot refuse, and discarding
+	// it would leave the chain it binds recorded nowhere.
+	for (const ClassTraitBinding &binding : p_trait_bindings) {
+		BindingConflict binding_conflict;
+		if (_binding_conflicts_with_conformance(binding, p_source_file, view, binding_conflict)) {
+			result.binding_conflicts.push_back(binding_conflict);
+		}
+	}
 	if (accepted.is_empty()) {
 		conformances_by_file.erase(p_source_file);
 	} else {
 		conformances_by_file[p_source_file] = accepted;
+	}
+	if (p_trait_bindings.is_empty()) {
+		trait_bindings_by_file.erase(p_source_file);
+	} else {
+		trait_bindings_by_file[p_source_file] = p_trait_bindings;
 	}
 	_rebuild_index();
 
@@ -490,6 +628,8 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 
 void FSConformanceRegistry::clear_file(const String &p_source_file) {
 	MutexLock lock(mutex);
+	trait_bindings_by_file.erase(p_source_file);
+	loaded_files_by_file.erase(p_source_file);
 	if (conformances_by_file.erase(p_source_file)) {
 		_rebuild_index();
 	}
@@ -630,6 +770,8 @@ FSFunction *FSConformanceRegistry::find_native_trait_witness_function(const Stri
 void FSConformanceRegistry::clear() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
+	trait_bindings_by_file.clear();
+	loaded_files_by_file.clear();
 	index.clear();
 	runtime_by_file.clear();
 	runtime_index.clear();
@@ -639,6 +781,8 @@ void FSConformanceRegistry::clear() {
 void FSConformanceRegistry::clear_declarations() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
+	trait_bindings_by_file.clear();
+	loaded_files_by_file.clear();
 	index.clear();
 }
 
@@ -973,6 +1117,27 @@ Vector<FSConformanceRegistry::ScriptConformanceRecord> FSConformanceRegistry::ge
 			record.source_file = conformance.source_file;
 			record.trait_type_arguments = conformance.trait_type_arguments;
 			records.push_back(record);
+		}
+	}
+	return records;
+}
+
+Vector<FSConformanceRegistry::ClassTraitBinding> FSConformanceRegistry::get_script_trait_binding_records(
+		const StringName &p_trait_name, bool p_visible_only, const String &p_excluded_source_file) const {
+	Vector<ClassTraitBinding> records;
+	if (p_trait_name == StringName()) {
+		return records;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<ClassTraitBinding>> &file_entry : trait_bindings_by_file) {
+		if (file_entry.key == p_excluded_source_file || (p_visible_only && !_is_visible(file_entry.key))) {
+			continue;
+		}
+		for (const ClassTraitBinding &binding : file_entry.value) {
+			if (binding.trait_name != p_trait_name || binding.trait_type_arguments.is_empty()) {
+				continue;
+			}
+			records.push_back(binding);
 		}
 	}
 	return records;

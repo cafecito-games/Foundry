@@ -275,6 +275,54 @@ static void _collect_declared_classes(const FSParser::ClassNode *p_class, Vector
 	}
 }
 
+// Every class-`uses` binding one file fixes, flattened the way the registry records it so another file
+// can be judged against it without re-loading this file's parse tree.
+//
+// Only a binding that actually supplied arguments is recorded: an empty argument list proves nothing
+// about the trait's parameters, and recording it would state a constraint the source never made. A
+// trait's whole implied identity closure is walked, because a class that binds a subtrait binds every
+// supertrait identity that subtrait forwards to.
+static Vector<FSConformanceRegistry::ClassTraitBinding> _collect_class_trait_bindings(
+		const FSParser::ClassNode *p_head, const String &p_source_file) {
+	Vector<FSConformanceRegistry::ClassTraitBinding> bindings;
+	Vector<const FSParser::ClassNode *> declared_classes;
+	_collect_declared_classes(p_head, declared_classes);
+	for (const FSParser::ClassNode *declared : declared_classes) {
+		if (declared->is_trait || declared->is_native_conformance_shim || declared->is_builtin_conformance_shim ||
+				!declared->resolved_trait_uses || declared->fqcn.is_empty() || declared->resolved_traits.is_empty()) {
+			continue;
+		}
+		const StringName native_base = _terminal_native_class(declared);
+		const Vector<String> ancestor_keys = _script_ancestor_keys(declared);
+		HashSet<StringName> recorded_identities;
+		for (const FSParser::ClassNode *applied_trait : declared->resolved_traits) {
+			for (const FSParser::ClassNode *identity_node : fs_trait_identity_closure_nodes(applied_trait)) {
+				const StringName identity = fs_trait_identity_name(identity_node);
+				if (identity == StringName() || recorded_identities.has(identity)) {
+					continue;
+				}
+				const Vector<FSConformanceRegistry::RecordedTypeArgument> arguments =
+						_recorded_class_trait_arguments(declared, identity_node);
+				if (arguments.is_empty()) {
+					continue;
+				}
+				recorded_identities.insert(identity);
+				FSConformanceRegistry::ClassTraitBinding binding;
+				binding.target_fqcn = declared->fqcn;
+				binding.target_label = fs_class_or_trait_diagnostic_name(declared);
+				binding.target_native_base = native_base;
+				binding.target_script_ancestor_fqcns = ancestor_keys;
+				binding.trait_name = identity;
+				binding.trait_label = fs_class_or_trait_diagnostic_name(identity_node);
+				binding.trait_type_arguments = arguments;
+				binding.source_file = p_source_file;
+				bindings.push_back(binding);
+			}
+		}
+	}
+	return bindings;
+}
+
 bool FSAnalyzer::trait_binding_conflicts_with_native_ancestry(const FSParser::ClassNode *p_class,
 		const FSParser::ClassNode *p_identity_trait,
 		const Vector<FSConformanceRegistry::RecordedTypeArgument> &p_applied,
@@ -390,6 +438,19 @@ bool FSAnalyzer::trait_binding_conflicts_with_script_ancestry(const FSParser::Cl
 		}
 	}
 
+	// A class in a loaded file binds the trait for its own chain through its `uses` clause the same way a
+	// conformance on that chain would, and registers no conformance to be found above.
+	for (const FSConformanceRegistry::ClassTraitBinding &binding :
+			FSConformanceRegistry::get_singleton()->get_script_trait_binding_records(identity, true, source_file)) {
+		if (!answers_for_same_receivers(binding.target_fqcn, binding.target_script_ancestor_fqcns)) {
+			continue;
+		}
+		if (FSTypeCompatibility::recorded_arguments_conflict(binding.trait_type_arguments, p_applied)) {
+			r_message = _chain_conflict_message(trait_label, binding.target_label, binding.source_file, source_file);
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -448,6 +509,20 @@ bool FSAnalyzer::native_conformance_conflicts_with_script_chain(const StringName
 		}
 	}
 
+	// A class in a loaded file whose chain bottoms out on this engine class, or on a subclass of it, binds
+	// the trait for receivers this declaration also answers for. Its `uses` clause registers no
+	// conformance, so the binding is read from the records the declaring file published for it.
+	for (const FSConformanceRegistry::ClassTraitBinding &binding :
+			FSConformanceRegistry::get_singleton()->get_script_trait_binding_records(identity, true, source_file)) {
+		if (!_native_ancestry_answers_for(binding.target_native_base, p_native_class)) {
+			continue;
+		}
+		if (FSTypeCompatibility::recorded_arguments_conflict(binding.trait_type_arguments, p_applied)) {
+			r_message = _chain_conflict_message(trait_label, binding.target_label, binding.source_file, source_file);
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -464,6 +539,7 @@ void FSAnalyzer::check_trait_uses_against_conformance_chain(FSParser::ClassNode 
 				trait_binding_conflicts_with_script_ancestry(p_class, applied_trait, applied,
 						Vector<FSConformanceRegistry::Conformance>(), message)) {
 			push_error(message, p_class);
+			reported_trait_use_chain_conflicts.insert(p_class->fqcn);
 			return;
 		}
 	}
@@ -984,6 +1060,34 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 	return valid;
 }
 
+// Whether a parsed file declares a class that applies any trait, anywhere in its class tree.
+//
+// Deliberately coarser than what `_collect_class_trait_bindings()` ends up recording. This runs on a
+// merely parsed tree, where no `uses` clause has been resolved yet, so the trait a clause names — and
+// with it the identity closure the binding is actually read off — is not known. A clause that writes no
+// type arguments of its own still binds a generic trait whenever the trait it names specializes one
+// (`trait IntKeeper uses Keeper[int]`), and that specialization is only visible after resolution.
+//
+// Answering "declares a `uses` at all" is the smallest question that can be answered here and can never
+// be narrower than what collection records, so the prescan cannot skip a file whose bindings would have
+// mattered. Over-answering only raises a file whose recorded bindings then turn out to be empty, which
+// costs an interface resolution and states nothing.
+static bool _declares_class_trait_use(const FSParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	// Only a class binds a trait for receivers; a trait declaration has none of its own.
+	if (!p_class->is_trait && !p_class->used_traits.is_empty()) {
+		return true;
+	}
+	for (const FSParser::ClassNode::Member &member : p_class->members) {
+		if (member.type == FSParser::ClassNode::Member::CLASS && _declares_class_trait_use(member.m_class)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void FSAnalyzer::raise_declared_conformance_dependencies() {
 	// A conformance takes effect when its declaring file is loaded, and `preload`/`extends` load a file
 	// for the whole script, not from the statement they appear on. Registration used to happen as a side
@@ -994,20 +1098,82 @@ void FSAnalyzer::raise_declared_conformance_dependencies() {
 	// Only files that actually declare conformances are raised, so this stays a no-op for the vast
 	// majority of dependencies. `raise_status()` advances a parser's status before running each phase, so
 	// a cycle re-entering the same file returns instead of recursing.
+	//
+	// This file's own conformances are also checked for coherence against what its dependencies bind, and
+	// a dependency binds a trait through a plain `uses` clause as much as through an `extend`. A class's
+	// `uses` registers nothing until that file reaches conformance registration, so a dependency that
+	// only binds is raised too — but only on behalf of a file that has an `extend` to judge, so an
+	// ordinary file never pulls its dependencies' interfaces forward for a comparison it will not make.
+	//
+	// Loading composes: a file two hops away is loaded by this one exactly as a direct dependency is, and
+	// binds the chains this file's declarations sit on just the same. For a file with conformances to
+	// judge, the walk therefore follows the whole load closure rather than stopping at a direct
+	// dependency that happens to declare nothing itself. `visited` is what terminates it, since the load
+	// graph may contain cycles.
+	const bool declares_conformances = parser->head != nullptr && !parser->head->conformances.is_empty();
 	const String extension = FSLanguage::get_singleton()->get_extension();
-	for (const String &dependency_path : parser->get_dependencies()) {
-		if (dependency_path.get_extension() != extension || dependency_path == parser->script_path) {
+	List<String> frontier = parser->get_dependencies();
+	HashSet<String> visited;
+	visited.insert(parser->script_path);
+	loaded_dependency_closure.clear();
+	while (!frontier.is_empty()) {
+		const String dependency_path = frontier.front()->get();
+		frontier.pop_front();
+		if (dependency_path.get_extension() != extension || visited.has(dependency_path)) {
 			continue;
 		}
+		visited.insert(dependency_path);
+		loaded_dependency_closure.insert(dependency_path);
 		Ref<FSParserRef> dependency_ref;
 		if (dependency_parser_access.raise_depended_parser_for(dependency_path, FSParserRef::PARSED, dependency_ref) != OK) {
 			continue;
 		}
 		const FSParser *dependency_parser = dependency_ref.is_valid() ? dependency_ref->get_parser() : nullptr;
-		if (dependency_parser == nullptr || dependency_parser->head == nullptr || dependency_parser->head->conformances.is_empty()) {
+		if (dependency_parser == nullptr || dependency_parser->head == nullptr) {
+			continue;
+		}
+		if (declares_conformances) {
+			for (const String &nested_path : dependency_parser->get_dependencies()) {
+				if (!visited.has(nested_path)) {
+					frontier.push_back(nested_path);
+				}
+			}
+		}
+		if (dependency_parser->head->conformances.is_empty() &&
+				!(declares_conformances && _declares_class_trait_use(dependency_parser->head))) {
 			continue;
 		}
 		dependency_parser_access.raise_parser_to_status(dependency_ref, FSParserRef::INTERFACE_SOLVED);
+	}
+}
+
+void FSAnalyzer::report_binding_chain_conflicts(const FSConformanceRegistry::RegistrationResult &p_result,
+		const String &p_source_file) {
+	if (p_result.binding_conflicts.is_empty()) {
+		return;
+	}
+	Vector<const FSParser::ClassNode *> declared_classes;
+	_collect_declared_classes(parser->head, declared_classes);
+	for (const FSConformanceRegistry::BindingConflict &conflict : p_result.binding_conflicts) {
+		// A class the `uses` check already reported on has been told about this contradiction once; the
+		// registry's record of it is the same one seen again, not a second one.
+		if (reported_trait_use_chain_conflicts.has(conflict.target_fqcn)) {
+			continue;
+		}
+		const FSParser::ClassNode *binding_class = nullptr;
+		for (const FSParser::ClassNode *declared : declared_classes) {
+			if (declared->fqcn == conflict.target_fqcn) {
+				binding_class = declared;
+				break;
+			}
+		}
+		if (binding_class == nullptr) {
+			continue;
+		}
+		reported_trait_use_chain_conflicts.insert(conflict.target_fqcn);
+		push_error(_chain_conflict_message(conflict.trait_label, conflict.conflicting_target_label,
+						   conflict.conflicting_source_file, p_source_file),
+				binding_class);
 	}
 }
 
@@ -1024,8 +1190,16 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	// write. The checks below run against a registry that still holds this file's previous entries, so
 	// each of them drops `source_file` from what it compares against.
 	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	// What this file's classes bind through their own `uses` clauses. Published with the conformances, in
+	// the same atomic replacement, so a file that declares only `uses` still constrains the chains it
+	// binds — a file that declares no conformance at all is exactly the case the registry could not see.
+	const Vector<FSConformanceRegistry::ClassTraitBinding> trait_bindings =
+			_collect_class_trait_bindings(parser->head, source_file);
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
-		registry->try_replace_file_conformances(source_file, Vector<FSConformanceRegistry::Conformance>());
+		report_binding_chain_conflicts(
+				registry->try_replace_file_conformances(
+						source_file, Vector<FSConformanceRegistry::Conformance>(), trait_bindings),
+				source_file);
 		return;
 	}
 
@@ -1357,7 +1531,9 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	// already released and each rejection anchored back to the `ConformanceNode` its
 	// `conformance_index` names.
 	const FSConformanceRegistry::RegistrationResult result =
-			registry->try_replace_file_conformances(source_file, valid_entries);
+			registry->try_replace_file_conformances(source_file, valid_entries, trait_bindings,
+					loaded_dependency_closure);
+	report_binding_chain_conflicts(result, source_file);
 	for (const FSConformanceRegistry::RegistrationConflict &conflict : result.conflicts) {
 		if (reported_declarations.has(conflict.conformance_index)) {
 			continue;

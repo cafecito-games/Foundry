@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Trait "SccdKeeper" is already applied with different type arguments by the conformance for "RefCounted" in "res://analyzer/errors/sccd_chain_extend.notest.fs"; conformances on one inheritance chain must apply it with the same type arguments.

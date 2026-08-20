@@ -823,6 +823,23 @@ private:
 	// conformance declared in another file only becomes visible after this file's imports are loaded.
 	void check_trait_uses_against_conformance_chain(FSParser::ClassNode *p_class);
 
+	// Classes `check_trait_uses_against_conformance_chain()` already reported a chain conflict for. The
+	// registry re-decides the same rule authoritatively when this file's bindings are published, and one
+	// of its records naming a class reported here is the same contradiction seen twice, not a second one.
+	HashSet<String> reported_trait_use_chain_conflicts;
+
+	// The files this one loads, as `raise_declared_conformance_dependencies()` walked them. Published
+	// with this file's conformances so another file, judging its own bindings later, can still see the
+	// load edge that licenses comparing them -- an edge its own directional visibility cannot show it.
+	HashSet<String> loaded_dependency_closure;
+
+	// Reports the contradictions the registry found for this file's class-`uses` bindings when it
+	// published them. The verdict is the registry's, decided under its lock against the store as it
+	// stood at the write, so it catches a conformance that landed after this file's own `uses` check
+	// read the registry — the window a concurrent analysis of another file opens.
+	void report_binding_chain_conflicts(const FSConformanceRegistry::RegistrationResult &p_result,
+			const String &p_source_file);
+
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	// Reports every `uses` entry recorded as naming a generic trait without type arguments, walking
