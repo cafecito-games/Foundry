@@ -1873,7 +1873,10 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			// Members are canonically ordered, so identity is positional. The pairs are traversed with
 			// the component slots below rather than compared in one step, because `operator==` never
 			// looks at a callable's signature and two alternatives that differ only there are not the
-			// same type.
+			// same type. Unlike the tri-state comparison, an unreified parameter inside a member does
+			// not destabilize the pairing here: this asks for member-for-member identity down to a
+			// parameter's own name and declaration site, so two vectors that could ever be equal
+			// contain the same spellings and therefore sort into the same order.
 			equal = true;
 			break;
 		case FSParser::DataType::RESOLVING:
@@ -1959,6 +1962,67 @@ static FSTypeCompatibility::ArgumentEvidence _combine_evidence(FSTypeCompatibili
 	return FSTypeCompatibility::ArgumentEvidence::MATCH;
 }
 
+static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FSParser::DataType &p_a,
+		const FSParser::DataType &p_b, bool p_b_is_open, int p_depth);
+
+// Union members are canonically ordered by `make_union()`, so identity is positional -- but only once
+// every member is reified. A member left on an unreified type parameter sorts by its parameter's
+// spelling, and substituting it can move it anywhere in the vector, so pairing by index would invent
+// a contradiction between members that substitution could still reconcile: `Array[U] | Array[int]`
+// sorts before its `Array[int]` sibling, yet at `U == long` the union is exactly
+// `Array[int] | Array[long]`. When either side carries an open member the vectors are therefore
+// compared as sets instead: only a member that contradicts every member on the other side rules out
+// all pairings, and anything short of that leaves the node open rather than rejected.
+static FSTypeCompatibility::ArgumentEvidence _compare_union_members_evidence(
+		const Vector<FSParser::DataType> &p_a_members, const Vector<FSParser::DataType> &p_b_members,
+		bool p_b_is_open, int p_depth) {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+	const bool a_is_open = _slot_names_any_type_parameter(p_a_members);
+	const bool b_is_open = p_b_is_open && _slot_names_any_type_parameter(p_b_members);
+
+	if (p_a_members.size() != p_b_members.size()) {
+		// An open member can be substituted with a sibling's type and dedup away, so the member counts
+		// only contradict each other when both vectors are fully reified.
+		return (a_is_open || b_is_open) ? ArgumentEvidence::UNKNOWN : ArgumentEvidence::CONFLICT;
+	}
+
+	if (!a_is_open && !b_is_open) {
+		ArgumentEvidence evidence = ArgumentEvidence::MATCH;
+		for (int i = 0; i < p_a_members.size(); i++) {
+			evidence = _combine_evidence(evidence,
+					_compare_datatype_evidence(p_a_members[i], p_b_members[i], p_b_is_open, p_depth + 1));
+			if (evidence == ArgumentEvidence::CONFLICT) {
+				return evidence;
+			}
+		}
+		return evidence;
+	}
+
+	for (int i = 0; i < p_a_members.size(); i++) {
+		bool conflicts_with_every_member = true;
+		for (int j = 0; j < p_b_members.size() && conflicts_with_every_member; j++) {
+			conflicts_with_every_member =
+					_compare_datatype_evidence(p_a_members[i], p_b_members[j], p_b_is_open, p_depth + 1) ==
+					ArgumentEvidence::CONFLICT;
+		}
+		if (conflicts_with_every_member) {
+			return ArgumentEvidence::CONFLICT;
+		}
+	}
+	for (int j = 0; j < p_b_members.size(); j++) {
+		bool conflicts_with_every_member = true;
+		for (int i = 0; i < p_a_members.size() && conflicts_with_every_member; i++) {
+			conflicts_with_every_member =
+					_compare_datatype_evidence(p_a_members[i], p_b_members[j], p_b_is_open, p_depth + 1) ==
+					ArgumentEvidence::CONFLICT;
+		}
+		if (conflicts_with_every_member) {
+			return ArgumentEvidence::CONFLICT;
+		}
+	}
+	return ArgumentEvidence::UNKNOWN;
+}
+
 // The tri-state twin of `_datatype_invariant_equal()`: the same shallow gate and per-kind identity,
 // the same recursion, but a node that names a type parameter reports no evidence for its own subtree
 // instead of erasing the whole position. `p_b_is_open` says whether the second side may report
@@ -2026,10 +2090,10 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 			identical = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path;
 			break;
 		case FSParser::DataType::UNION:
-			// Members are canonically ordered, so identity is positional, and the pairs are traversed
-			// with the component slots below. A member left on an unreified parameter is then open on
-			// its own, like a type parameter anywhere else, so a concrete contradiction in a sibling
-			// member still decides the node instead of being erased along with it.
+			// Members are traversed by `_compare_union_members_evidence()` below rather than compared in
+			// one step, so a member left on an unreified parameter is open on its own, like a type
+			// parameter anywhere else, and a concrete contradiction in a sibling member still decides
+			// the node instead of being erased along with it.
 			identical = true;
 			break;
 		case FSParser::DataType::RESOLVING:
@@ -2044,11 +2108,17 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 	if (_evidence_enum_payloads_are_open(p_a) || (p_b_is_open && _evidence_enum_payloads_are_open(p_b))) {
 		evidence = ArgumentEvidence::UNKNOWN;
 	}
+	if (p_a.kind == FSParser::DataType::UNION) {
+		evidence = _combine_evidence(evidence,
+				_compare_union_members_evidence(p_a.union_members, p_b.union_members, p_b_is_open, p_depth));
+		if (evidence == ArgumentEvidence::CONFLICT) {
+			return evidence;
+		}
+	}
 	const Vector<FSParser::DataType> *a_slots[] = {
 		&p_a.type_parameter_bound,
 		&p_a.container_element_types,
 		&p_a.type_arguments,
-		&p_a.union_members,
 		&p_a.method_parameter_types,
 		&p_a.method_return_type,
 		&p_a.method_rest_parameter_type,
@@ -2057,12 +2127,11 @@ static FSTypeCompatibility::ArgumentEvidence _compare_datatype_evidence(const FS
 		&p_b.type_parameter_bound,
 		&p_b.container_element_types,
 		&p_b.type_arguments,
-		&p_b.union_members,
 		&p_b.method_parameter_types,
 		&p_b.method_return_type,
 		&p_b.method_rest_parameter_type,
 	};
-	for (int slot = 0; slot < 7; slot++) {
+	for (int slot = 0; slot < 6; slot++) {
 		if (a_slots[slot]->size() != b_slots[slot]->size()) {
 			// A side that declares no components in this slot says nothing about components the other
 			// side leaves on an unreified parameter: the two then differ only where neither carries

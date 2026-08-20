@@ -802,6 +802,46 @@ TEST_CASE("[Modules][FoundryScript][TypeCompatibility] A parameter-bearing union
 			ArgumentEvidence::MATCH);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypeCompatibility] An open union member does not pin its siblings to a position") {
+	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
+
+	auto array_of = [](const FSParser::DataType &p_element) {
+		FSParser::DataType array = make_builtin_type(Variant::ARRAY);
+		array.set_container_element_type(0, p_element);
+		return array;
+	};
+	auto integer_of = [](NumericType p_numeric_type) {
+		FSParser::DataType integer = make_builtin_type(Variant::INT);
+		integer.numeric_type = p_numeric_type;
+		return integer;
+	};
+
+	// `make_union()` orders members by their rendered spelling, so `Array[U]` sorts ahead of its
+	// `Array[int]` sibling while `Array[long]` sorts behind it. Substituting `U == long` turns the
+	// first union into the second exactly, so pairing the vectors by index would report a
+	// contradiction between `Array[int]` and `Array[long]` that no instantiation ever produces.
+	const FSParser::DataType open_union = make_union_of(
+			array_of(make_trait_argument_type_parameter(SNAME("U"))), array_of(integer_of(NumericType::INT32)));
+	const FSParser::DataType widened_union =
+			make_union_of(array_of(integer_of(NumericType::INT32)), array_of(integer_of(NumericType::INT64)));
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(open_union, widened_union), ArgumentEvidence::UNKNOWN);
+	CHECK_EQ(FSTypeCompatibility::compare_open_arguments(open_union, widened_union), ArgumentEvidence::UNKNOWN);
+
+	// The open member only buys the pairing freedom it needs: a member that contradicts every
+	// alternative on the other side cannot be reconciled by any substitution and still decides the node.
+	const FSParser::DataType unreconcilable_union = make_union_of(
+			array_of(make_builtin_type(Variant::STRING)), array_of(make_trait_argument_type_parameter(SNAME("U"))));
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(unreconcilable_union, widened_union),
+			ArgumentEvidence::CONFLICT);
+
+	// Two fully reified vectors have nothing left to substitute, so they keep their positional
+	// identity and a divergent alternative is a contradiction as before.
+	const FSParser::DataType reified_union =
+			make_union_of(array_of(make_builtin_type(Variant::STRING)), array_of(integer_of(NumericType::INT32)));
+	CHECK_EQ(FSTypeCompatibility::compare_projected_argument(reified_union, widened_union),
+			ArgumentEvidence::CONFLICT);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypeCompatibility] Union identity separates alternatives by callable signature") {
 	using ArgumentEvidence = FSTypeCompatibility::ArgumentEvidence;
 
