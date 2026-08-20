@@ -1253,6 +1253,10 @@ static bool call_receiver_is_current_self(const FSParser::CallNode *p_call) {
 // re-binds to its own receiver just the same. Slot vectors are walked pairwise and only when both sides
 // agree on size; a size mismatch means the contract matched through some other admission, which carries
 // no `Self` position to require identity of.
+//
+// `clear_receiver_self_contract()` in fs_analyzer_call_validation.cpp strips the contract from a
+// signature captured into a `Callable`, where no call site can decide identity. It has to reach every
+// slot walked here; the two are structural mirrors and have to be extended together.
 static bool _self_parameter_contract_match_needs_receiver_identity(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
