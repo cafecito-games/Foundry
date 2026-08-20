@@ -804,6 +804,41 @@ static bool _datatype_contains_self_type_parameter(const FSParser::DataType &p_t
 	return false;
 }
 
+// The two shapes the identity gate reads as caller-relative at a leaf: a `Self` type parameter the
+// calling frame resolves, and a descriptor the analyzer substituted out of `Self` and marked. Asked of
+// a supplied type, this answers whether it carries any position receiver identity exists to protect.
+static bool _datatype_contains_caller_relative_self(const FSParser::DataType &p_type) {
+	if (_is_self_type_parameter(p_type) || p_type.is_substituted_self) {
+		return true;
+	}
+	for (const FSParser::DataType &element : p_type.container_element_types) {
+		if (_datatype_contains_caller_relative_self(element)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &argument : p_type.type_arguments) {
+		if (_datatype_contains_caller_relative_self(argument)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &parameter_type : p_type.method_parameter_types) {
+		if (_datatype_contains_caller_relative_self(parameter_type)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &return_type : p_type.method_return_type) {
+		if (_datatype_contains_caller_relative_self(return_type)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
+		if (_datatype_contains_caller_relative_self(rest_parameter_type)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _datatype_container_element_contains_self_type_parameter(const FSParser::DataType &p_type) {
 	for (const FSParser::DataType &element : p_type.container_element_types) {
 		if (_datatype_contains_self_type_parameter(element)) {
@@ -17871,11 +17906,18 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 }
 
 bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) const {
-	// The identity gate reads the same rewritten argument the contract matched, so a callable whose
-	// tail was settled by arity substitution still answers for the `Self` positions that tail carries.
 	const FSParser::DataType argument_type = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
 	if (!_datatype_matches_self_parameter_contract_exact(p_expected_type, argument_type)) {
 		return false;
+	}
+	// Receiver identity protects the *supplied* value's own `Self`, so it is asked of the type as
+	// written rather than as rewritten. Filling a gradual tail from the expectation copies that
+	// expectation's receiver-relative `Self` into a value that never had one: such a callback binds no
+	// receiver anywhere and takes whatever any frame's tail sends it, so no receiver can disagree with
+	// it. A supplied type that does carry `Self` keeps the requirement, and the rewrite that drops a
+	// tail only ever removes positions, so neither rewrite can manufacture the requirement.
+	if (!_datatype_contains_caller_relative_self(p_argument_type)) {
+		return true;
 	}
 	if (!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return true;
@@ -17897,6 +17939,7 @@ String FSAnalyzer::self_parameter_receiver_identity_clause(
 		const String &p_argument_subject) const {
 	const FSParser::DataType argument_type = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
 	if (!_datatype_matches_self_parameter_contract_exact(p_expected_type, argument_type) ||
+			!_datatype_contains_caller_relative_self(p_argument_type) ||
 			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return String();
 	}
