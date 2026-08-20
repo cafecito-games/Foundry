@@ -947,6 +947,9 @@ static FSParser::DataType _resolve_type_parameter_bound_chain(const FSParser::Da
 
 static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
+static const FSParser::DataType *_container_literal_target_type(
+		const FSParser::ExpressionNode *p_expression,
+		const FSParser::DataType &p_expected_type);
 static FSParser::DataType type_handle_represented_type(const FSParser::DataType &p_type);
 static bool _type_handle_source_is_handle(const FSParser::DataType &p_type);
 
@@ -6487,10 +6490,16 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 		} else {
 			const FSParser::DataType &literal_expected_type = preserve_self_contract ? expected_type : compatibility_expected_type;
 			const int literal_errors_before = parser->get_errors().size();
-			if (_is_container_literal(p_return->return_value) && has_expected_type &&
-					literal_expected_type.has_container_element_types()) {
+			// A union names its container slots on the alternative the literal is written for, not on
+			// itself, so the alternative is resolved before its element types are read. The patcher
+			// resolves it again from the same rule, which keeps the two answers from drifting.
+			const FSParser::DataType *literal_target_type = _is_container_literal(p_return->return_value)
+					? _container_literal_target_type(p_return->return_value, literal_expected_type)
+					: nullptr;
+			if (literal_target_type != nullptr && has_expected_type &&
+					literal_target_type->has_container_element_types()) {
 				bool contains_self_element = false;
-				for (const FSParser::DataType &element_type : literal_expected_type.container_element_types) {
+				for (const FSParser::DataType &element_type : literal_target_type->container_element_types) {
 					contains_self_element = contains_self_element || _datatype_contains_self_type_parameter(element_type);
 				}
 				const bool substitute_self_runtime_type = preserve_self_contract &&
@@ -6863,6 +6872,34 @@ static bool _container_literal_shape_matches_type(
 	}
 }
 
+// The type a container literal is built against at a position expecting `p_expected_type`, or nothing
+// when the literal is to be left exactly as it was reduced.
+//
+// A union is a set of alternatives, so the literal is built against the one alternative whose shape it
+// is written in. A shape two alternatives could claim names none of them: patching commits the literal
+// to one alternative and reports against it, which would turn a literal the other alternative accepts
+// into an error the union check never gets to answer. Every position that types a literal against a
+// declaration shares this rule, so a parameter and a return position cannot disagree about which
+// alternative a literal was written for.
+static const FSParser::DataType *_container_literal_target_type(
+		const FSParser::ExpressionNode *p_expression,
+		const FSParser::DataType &p_expected_type) {
+	if (p_expected_type.kind != FSParser::DataType::UNION) {
+		return &p_expected_type;
+	}
+	const FSParser::DataType *alternative = nullptr;
+	for (const FSParser::DataType &member : p_expected_type.union_members) {
+		if (!_container_literal_shape_matches_type(p_expression, member)) {
+			continue;
+		}
+		if (alternative != nullptr) {
+			return nullptr;
+		}
+		alternative = &member;
+	}
+	return alternative;
+}
+
 // Routes a container literal to the patcher for its own form, given the type the position expects of
 // the whole expression. A literal written where nothing is declared, where the declaration is soft,
 // or where the declared type is a different form is left exactly as it was reduced.
@@ -6877,26 +6914,13 @@ bool FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode
 	if (p_expected_type.kind == FSParser::DataType::UNION) {
 		// A `Self`-bearing alternative is only ever satisfied by a literal built against it -- receiver
 		// identity is proved through the literal's own elements -- so descending is what makes that
-		// alternative reachable at all, exactly as the same annotation written alone is. An alternative
-		// naming no `Self` is left alone: the union slot is untyped at run time and ordinary compatibility
-		// already answers the literal as it was reduced. A shape two alternatives could claim is left
-		// alone too, because nothing here says which one the author meant.
-		const FSParser::DataType *self_alternative = nullptr;
-		for (const FSParser::DataType &member : p_expected_type.union_members) {
-			if (!_datatype_contains_self_type_parameter(member) ||
-					!_container_literal_shape_matches_type(p_expression, member)) {
-				continue;
-			}
-			if (self_alternative != nullptr) {
-				return false;
-			}
-			self_alternative = &member;
-		}
-		if (self_alternative == nullptr) {
+		// alternative reachable at all, exactly as the same annotation written alone is.
+		const FSParser::DataType *alternative = _container_literal_target_type(p_expression, p_expected_type);
+		if (alternative == nullptr) {
 			return false;
 		}
 		return update_container_literal_element_types(
-				p_expression, *self_alternative, p_self_parameter_contract, p_substitute_self_runtime_type);
+				p_expression, *alternative, p_self_parameter_contract, p_substitute_self_runtime_type);
 	}
 
 	switch (p_expression->type) {
@@ -18113,6 +18137,26 @@ bool FSAnalyzer::self_contract_union_admits_value_type(
 		SelfContractKind p_kind,
 		const FSParser::CallNode *p_call,
 		FSParser::DataType *r_matched_value) {
+	if (p_value_type.kind == FSParser::DataType::UNION) {
+		// A value that is itself a set of alternatives carries no run-time tag, so nothing narrows it at
+		// the boundary: it reaches the destination only when every alternative it may hold does. That is
+		// the direction ordinary union compatibility takes, and the `Self` rules ride along per
+		// alternative -- an alternative naming `Self` still has to be admitted by a destination
+		// alternative that names it too, receiver identity included.
+		for (const FSParser::DataType &value_member : p_value_type.union_members) {
+			FSParser::DataType value_alternative = value_member;
+			value_alternative.is_nullable = p_value_type.is_nullable;
+			if (!self_contract_union_admits_value_type(
+						p_expected_type, value_alternative, p_kind, p_call, nullptr)) {
+				return false;
+			}
+		}
+		if (r_matched_value != nullptr) {
+			*r_matched_value = p_value_type;
+		}
+		return true;
+	}
+
 	Vector<FSParser::DataType> self_free_members;
 	for (const FSParser::DataType &member : p_expected_type.union_members) {
 		if (!_datatype_contains_self_type_parameter(member)) {
@@ -18147,7 +18191,9 @@ bool FSAnalyzer::self_contract_admits_container_element(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_actual_type,
 		bool p_self_parameter_contract) {
-	if (p_expected_type.kind == FSParser::DataType::UNION) {
+	// An element position is invariant, so a value that is itself a union has to be the same set rather
+	// than a subset of it; the leaf comparison below answers that directly.
+	if (p_expected_type.kind == FSParser::DataType::UNION && p_actual_type.kind != FSParser::DataType::UNION) {
 		Vector<FSParser::DataType> self_free_members;
 		for (const FSParser::DataType &member : p_expected_type.union_members) {
 			if (!_datatype_contains_self_type_parameter(member)) {
