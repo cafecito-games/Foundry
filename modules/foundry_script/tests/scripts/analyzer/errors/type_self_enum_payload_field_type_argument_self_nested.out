@@ -1,3 +1,3 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 13: Invalid argument 1 for enum case "Box.Pack": should be "(Self, Self)" but is "(Receiver, Self)".
+>> ERROR at line 13: Invalid argument 1 for enum case "Box.Pack": should be "(Self, Self)" but is "(Receiver, Self)". The payload field's "Self" at element 2 is resolved against the receiver expression; the argument is relative to the calling frame's receiver.
 >> ERROR at line 15: Invalid argument 1 for enum case "Box.Only": should be "(int, Self)" but is "(int, Receiver)".

@@ -1,6 +1,6 @@
 FS_TEST_ANALYZER_ERROR
 >> ERROR at line 15: Invalid argument 1 for enum case "Box.DeclarationFirst": should be "(int, Self)" but is "int".
 >> ERROR at line 16: Invalid argument 1 for enum case "Box.DeclarationFirst": should be "(int, Self)" but is "(int, Foreign)".
->> ERROR at line 17: Invalid argument 1 for enum case "Box.ArgumentFirst": should be "(int, Self)" but is "(String, Self)".
+>> ERROR at line 17: Invalid argument 1 for enum case "Box.ArgumentFirst": should be "(int, Self)" but is "(String, Self)". The payload field's "Self" at element 2 is resolved against the receiver expression; the argument is relative to the calling frame's receiver.
 >> ERROR at line 17: Cannot include a value of type "String" as "int".
 >> ERROR at line 18: Invalid argument 1 for enum case "Box.ArgumentFirst": should be "(int, Self)" but is "(int, Foreign)".
