@@ -1353,36 +1353,117 @@ TEST_CASE("[Modules][FoundryScript][Conformance] A loaded file's binding contrad
 	CHECK_EQ(result.binding_conflicts[0].trait_name, trait_name);
 }
 
+TEST_CASE("[Modules][FoundryScript][Conformance] A loader's binding contradicts a loaded file's conformance published second") {
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	BindingScope scope;
+	// The reverse of the case above: the file that loads is the one declaring only `uses`, and the file
+	// it loads declares the contradicting conformance. The edge still runs one way only, so the second
+	// publisher again cannot see the first.
+	const String loader_file = "user://ncc_binding_edge_binding_loader.fs";
+	const String loaded_file = "user://ncc_binding_edge_conformance_loaded.fs";
+	const StringName trait_name = "NccBindingEdgeLoaderKeeper";
+	scope.track(loader_file);
+	scope.track(loaded_file);
+
+	Vector<String> loader_sees;
+	loader_sees.push_back(loader_file);
+	loader_sees.push_back(loaded_file);
+	HashSet<String> loader_loads;
+	loader_loads.insert(loaded_file);
+
+	{
+		// The loader publishes its binding first, while the loaded file's conformance does not exist yet,
+		// so it has nothing to find. Its load closure is published with the binding, which is the only
+		// record of the edge either side will ever have.
+		const LoadsOnlyVisibility loader_visibility(loader_sees);
+		const FSConformanceRegistry::ScopedVisibility scoped(&loader_visibility);
+		const FSConformanceRegistry::RegistrationResult loader_result = registry->try_replace_file_conformances(
+				loader_file, Vector<FSConformanceRegistry::Conformance>(),
+				class_binding(loader_file, loader_file + "::Holder", "RefCounted", trait_name, Variant::STRING),
+				loader_loads);
+		CHECK(loader_result.binding_conflicts.is_empty());
+	}
+
+	Vector<String> loaded_sees;
+	loaded_sees.push_back(loaded_file);
+	const LoadsOnlyVisibility loaded_visibility(loaded_sees);
+	const FSConformanceRegistry::ScopedVisibility scoped(&loaded_visibility);
+
+	// The loaded file cannot see the loader at all. The comparison is licensed by the loader's own load
+	// edge, recorded when its binding published, so the contradiction is still found.
+	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+			loaded_file, native_conformance(loaded_file, "RefCounted", trait_name, Variant::INT));
+
+	REQUIRE_OR_RETURN(result.conflicts.size() == 1);
+	CHECK_EQ(result.conflicts[0].kind, FSConformanceRegistry::RegistrationConflict::CHAIN_COHERENCE);
+	CHECK_EQ(result.conflicts[0].conflicting_source_file, loader_file);
+	CHECK_EQ(result.conflicts[0].trait_name, trait_name);
+	CHECK_EQ(result.registered_count, 0);
+}
+
 TEST_CASE("[Modules][FoundryScript][Conformance] A conformance with no load edge either way stays uncompared") {
 	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 	BindingScope scope;
 	const String unrelated_file = "user://ncc_binding_noedge_unrelated.fs";
 	const String binding_file = "user://ncc_binding_noedge_binding.fs";
+	const String other_file = "user://ncc_binding_noedge_other.fs";
 	const StringName trait_name = "NccBindingNoEdgeKeeper";
 	scope.track(unrelated_file);
 	scope.track(binding_file);
 
+	Vector<String> binding_sees;
+	binding_sees.push_back(binding_file);
+	Vector<String> unrelated_sees;
+	unrelated_sees.push_back(unrelated_file);
+
 	{
 		// The conformance's file loads something, but not the file that binds the trait.
 		HashSet<String> unrelated_loads;
-		unrelated_loads.insert("user://ncc_binding_noedge_other.fs");
+		unrelated_loads.insert(other_file);
 		registry->try_replace_file_conformances(unrelated_file,
 				native_conformance(unrelated_file, "RefCounted", trait_name, Variant::INT),
 				Vector<FSConformanceRegistry::ClassTraitBinding>(), unrelated_loads);
 	}
 
-	Vector<String> binding_sees;
-	binding_sees.push_back(binding_file);
-	const LoadsOnlyVisibility binding_visibility(binding_sees);
-	const FSConformanceRegistry::ScopedVisibility scoped(&binding_visibility);
+	{
+		const LoadsOnlyVisibility binding_visibility(binding_sees);
+		const FSConformanceRegistry::ScopedVisibility scoped(&binding_visibility);
 
-	const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
-			binding_file, Vector<FSConformanceRegistry::Conformance>(),
-			class_binding(binding_file, binding_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
+		const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+				binding_file, Vector<FSConformanceRegistry::Conformance>(),
+				class_binding(binding_file, binding_file + "::Holder", "RefCounted", trait_name, Variant::STRING));
 
-	// Neither file loads the other, so no single declaration site composes them. That incoherence belongs
-	// to whatever file loads them both, and is deliberately not decided here.
-	CHECK(result.binding_conflicts.is_empty());
+		// Neither file loads the other, so no single declaration site composes them. That incoherence
+		// belongs to whatever file loads them both, and is deliberately not decided here.
+		CHECK(result.binding_conflicts.is_empty());
+	}
+
+	// The same pair in the other publication order. Both sides now record their load closures, so the
+	// verdict has to come from the absent edge rather than from which one happened to publish first.
+	{
+		HashSet<String> binding_loads;
+		binding_loads.insert(other_file);
+		const LoadsOnlyVisibility binding_visibility(binding_sees);
+		const FSConformanceRegistry::ScopedVisibility scoped(&binding_visibility);
+		const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+				binding_file, Vector<FSConformanceRegistry::Conformance>(),
+				class_binding(binding_file, binding_file + "::Holder", "RefCounted", trait_name, Variant::STRING),
+				binding_loads);
+		CHECK(result.binding_conflicts.is_empty());
+	}
+
+	{
+		HashSet<String> unrelated_loads;
+		unrelated_loads.insert(other_file);
+		const LoadsOnlyVisibility unrelated_visibility(unrelated_sees);
+		const FSConformanceRegistry::ScopedVisibility scoped(&unrelated_visibility);
+		const FSConformanceRegistry::RegistrationResult result = registry->try_replace_file_conformances(
+				unrelated_file, native_conformance(unrelated_file, "RefCounted", trait_name, Variant::INT),
+				Vector<FSConformanceRegistry::ClassTraitBinding>(), unrelated_loads);
+
+		CHECK(result.conflicts.is_empty());
+		CHECK_EQ(result.registered_count, 1);
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] Binding records answer no membership or witness query") {

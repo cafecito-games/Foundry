@@ -345,8 +345,18 @@ bool FSConformanceRegistry::_candidate_conflicts_with_trait_binding(const Confor
 	// The submitting file's own bindings are excluded: they are what this call is about to replace, and
 	// a contradiction between a file's `extend` and its own class's `uses` is decided in that file's
 	// analyzer, against its parse tree, where the diagnostic can name both sides.
+	//
+	// A binding and a conformance may be compared when a load edge joins their files, whichever way it
+	// runs, spelled the same way as `_binding_conflicts_with_conformance`. `_is_visible` answers only for
+	// the direction this thread has -- the file being analyzed and what it loads -- so the other
+	// direction is read from the edge the binding's own file recorded when it published.
 	for (const KeyValue<String, Vector<ClassTraitBinding>> &file_entry : trait_bindings_by_file) {
-		if (file_entry.key == p_source_file || !_is_visible(file_entry.key)) {
+		if (file_entry.key == p_source_file) {
+			continue;
+		}
+		const bool joined_by_a_load_edge =
+				_is_visible(file_entry.key) || _file_loads(file_entry.key, p_source_file);
+		if (!joined_by_a_load_edge) {
 			continue;
 		}
 		for (const ClassTraitBinding &binding : file_entry.value) {
@@ -585,10 +595,12 @@ FSConformanceRegistry::RegistrationResult FSConformanceRegistry::try_replace_fil
 		}
 	}
 
-	// The load edges this file resolved are published with its conformances: they are what lets another
-	// file, judging its own bindings later, tell that one of these conformances was licensed to be
-	// compared against it.
-	if (p_loaded_files.is_empty()) {
+	// The load edges this file resolved are published with what it declares: they are what lets the file
+	// at the other end of an edge, judging its own declarations later, tell that these were licensed to
+	// be compared against it. Both the conformance side and the binding side read them, so a file that
+	// publishes either records its edges -- and a file that publishes neither has nothing to license and
+	// stays out of the store.
+	if (p_loaded_files.is_empty() || (accepted.is_empty() && p_trait_bindings.is_empty())) {
 		loaded_files_by_file.erase(p_source_file);
 	} else {
 		loaded_files_by_file[p_source_file] = p_loaded_files;

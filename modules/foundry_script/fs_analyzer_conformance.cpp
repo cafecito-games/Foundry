@@ -1196,9 +1196,12 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	const Vector<FSConformanceRegistry::ClassTraitBinding> trait_bindings =
 			_collect_class_trait_bindings(parser->head, source_file);
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
+		// The load closure is published here too: a file that declares only `uses` is still one end of the
+		// edge that licenses comparing its bindings against another file's conformance, and it is the only
+		// side that can record that edge.
 		report_binding_chain_conflicts(
-				registry->try_replace_file_conformances(
-						source_file, Vector<FSConformanceRegistry::Conformance>(), trait_bindings),
+				registry->try_replace_file_conformances(source_file,
+						Vector<FSConformanceRegistry::Conformance>(), trait_bindings, loaded_dependency_closure),
 				source_file);
 		return;
 	}
