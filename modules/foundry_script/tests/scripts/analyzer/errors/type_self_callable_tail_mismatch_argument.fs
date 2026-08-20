@@ -1,19 +1,27 @@
-# The `Self` contract decides a callable argument by structural identity, so the variadic tail is part
-# of that structure: a tail whose element type differs from the parameter's is rejected through any
-# receiver, exactly as a mismatched fixed parameter is. Variadicity itself counts too, because a
-# gradual tail records only the arity bit and no element type.
+# The `Self` contract decides a callable argument by structural identity, so a tail the parameter
+# declares is part of what the argument must supply: a tail whose element type differs is rejected, and
+# so is a fixed-arity callable where the parameter declares a tail it will invoke. A tail the parameter
+# never invokes is admitted instead, but the `Self` in its fixed prefix still answers to receiver
+# identity, so that relaxation reaches only the calling frame's own receiver.
 class Cell:
 	func self_tail(_callback: Callable[[...Array[Self]], void]) -> void:
+		pass
+
+	func self_tail_declared(_callback: Callable[[Self, ...Array], void]) -> void:
 		pass
 
 	func self_fixed(_callback: Callable[[Self], void]) -> void:
 		pass
 
-	func route(other: Cell, wrong: Callable[[...Array[String]], void], extra: Callable[[Self, ...Array], void]) -> void:
+	func route(other: Cell, wrong: Callable[[...Array[String]], void], fixed: Callable[[Self], void]) -> void:
 		other.self_tail(wrong)
 		self_tail(wrong)
-		other.self_fixed(extra)
-		self_fixed(extra)
+		other.self_tail_declared(fixed)
+		self_tail_declared(fixed)
+
+	func route_relaxed(other: Cell, variadic: Callable[[Self, ...Array], void]) -> void:
+		other.self_fixed(variadic)
+		self_fixed(variadic)
 
 
 func test() -> void:

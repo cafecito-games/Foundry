@@ -1098,9 +1098,33 @@ static bool _datatype_matches_self_return_contract(
 	return false;
 }
 
+// A callable supplied for a fixed-arity parameter may accept more than the parameter promises to send:
+// the parameter's static type permits exactly its fixed arity, so a tail beyond that is never invoked
+// and its element type cannot be observed. A variadic *expectation* is the unsound direction and keeps
+// the exact comparison, as does a tail both sides declare.
+//
+// Only this position substitutes. A callable reached through a carrier element or a class type argument
+// sits in an invariant slot, where the supplied type has to be the declared one rather than one that
+// merely accepts every call it would receive, so the relaxation deliberately does not enter the
+// recursive identity walk.
+static bool _callable_argument_relaxes_to_fixed_expectation(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type) {
+	return p_expected_type.has_method_signature && p_argument_type.has_method_signature &&
+			(p_expected_type.method_info.flags & METHOD_FLAG_VARARG) == 0 &&
+			(p_argument_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
+}
+
 static bool _datatype_matches_self_parameter_contract(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
+	if (_callable_argument_relaxes_to_fixed_expectation(p_expected_type, p_argument_type)) {
+		// The normalized argument is no longer variadic, so this re-entry cannot relax again.
+		FSParser::DataType fixed_argument = p_argument_type;
+		fixed_argument.method_info.flags &= ~METHOD_FLAG_VARARG;
+		fixed_argument.clear_method_rest_parameter_type();
+		return _datatype_matches_self_parameter_contract(p_expected_type, fixed_argument);
+	}
 	if (_datatype_strict_identity_equal(p_expected_type, p_argument_type)) {
 		return true;
 	}
