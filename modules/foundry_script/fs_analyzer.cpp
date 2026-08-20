@@ -13718,13 +13718,27 @@ static bool open_schema_carries_union(const FSParser::DataType &p_type) {
 // carriers is what keeps two alternatives that differ only in which frame their `Self` belongs to
 // separable one level down, where substitution would otherwise normalize them into one.
 //
+// A specialization's type argument is matched invariantly, so everything beneath one is a single type
+// rather than a choice: `Keeper[String | (int, Self)]` does not admit `Keeper[String]`, and splitting a
+// union there would distribute it over an invariant constructor. `p_invariant` marks that region, and
+// inside it only a union whose members all denote the same type once the application binds them may be
+// split -- which is exactly the collapse this decomposition exists to survive, and no widening of what
+// the position accepts. Unnamed tuple elements are erased structural positions and keep the broader
+// decomposition.
+//
 // Returns false when the cross product exceeds `MAX_OPEN_SCHEMA_ALTERNATIVES`, leaving r_alternatives
 // unusable; the caller then asks nothing further.
-static bool collect_open_schema_alternatives(const FSParser::DataType &p_type, Vector<FSParser::DataType> &r_alternatives) {
+template <typename TUnionCollapsesUnderApplication>
+static bool collect_open_schema_alternatives(const FSParser::DataType &p_type, bool p_invariant,
+		const TUnionCollapsesUnderApplication &p_union_collapses, Vector<FSParser::DataType> &r_alternatives) {
 	if (p_type.kind == FSParser::DataType::UNION) {
+		if (p_invariant && !p_union_collapses(p_type.union_members)) {
+			r_alternatives.push_back(p_type);
+			return true;
+		}
 		for (const FSParser::DataType &member : p_type.union_members) {
 			Vector<FSParser::DataType> member_alternatives;
-			if (!::collect_open_schema_alternatives(member, member_alternatives)) {
+			if (!::collect_open_schema_alternatives(member, p_invariant, p_union_collapses, member_alternatives)) {
 				return false;
 			}
 			for (FSParser::DataType &member_alternative : member_alternatives) {
@@ -13747,7 +13761,7 @@ static bool collect_open_schema_alternatives(const FSParser::DataType &p_type, V
 			return true;
 		}
 		Vector<FSParser::DataType> slot_alternatives;
-		if (!::collect_open_schema_alternatives(p_slot_type, slot_alternatives)) {
+		if (!::collect_open_schema_alternatives(p_slot_type, p_invariant || !p_is_element, p_union_collapses, slot_alternatives)) {
 			return false;
 		}
 		if (alternatives.size() * slot_alternatives.size() > MAX_OPEN_SCHEMA_ALTERNATIVES) {
@@ -14012,6 +14026,27 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	//
 	// The same collapse happens to a union the schema carries one or more carriers deep, so the
 	// decomposition follows the carriers instead of stopping at the field's own type.
+	//
+	// Two members denote the same type once the application binds them exactly when they differ in
+	// nothing but which frame their `Self` belongs to, provenance being no part of type identity. That
+	// is the only split an invariant position -- a specialization's type argument -- may be decomposed
+	// on, since any other split would narrow the position to one alternative of a type argument the
+	// declaration matches whole.
+	const auto open_union_members_collapse = [&](const Vector<FSParser::DataType> &p_members) -> bool {
+		if (p_members.size() < 2) {
+			return true;
+		}
+		const FSParser::DataType applied_first = FSParser::DataType::substitute(
+				payload_field_type_for_spelling(p_members[0]), type_argument_bindings);
+		for (int i = 1; i < p_members.size(); i++) {
+			const FSParser::DataType applied_member = FSParser::DataType::substitute(
+					payload_field_type_for_spelling(p_members[i]), type_argument_bindings);
+			if (applied_member != applied_first) {
+				return false;
+			}
+		}
+		return true;
+	};
 	const auto open_schema_alternative_admits = [&](const StringName &p_case_name, int p_index,
 														const FSParser::DataType &p_field_type,
 														const FSParser::DataType &p_argument_type,
@@ -14021,7 +14056,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			return false;
 		}
 		Vector<FSParser::DataType> open_alternatives;
-		if (!::collect_open_schema_alternatives(*open_field, open_alternatives)) {
+		if (!::collect_open_schema_alternatives(*open_field, false, open_union_members_collapse, open_alternatives)) {
 			return false;
 		}
 		for (const FSParser::DataType &open_alternative : open_alternatives) {
