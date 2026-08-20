@@ -673,7 +673,8 @@ private:
 			const FSParser::DataType &p_member_type,
 			const FSParser::DataType &p_base,
 			const FSParser::FunctionNode *p_shadowing_method = nullptr,
-			const FSParser::DataType *p_self_type = nullptr);
+			const FSParser::DataType *p_self_type = nullptr,
+			const FSParser::EnumNode *p_shadowing_enum = nullptr);
 	// True when p_type is a value projected out of a raw generic receiver and still denotes one of the
 	// parameters that receiver never bound. Nothing decides such a value: the parameter is erased at
 	// run time and no argument states what it holds, so every typed boundary it crosses is exactly as
