@@ -1075,6 +1075,19 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 					make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, false, p_argument) +
 							analyzer->self_parameter_receiver_identity_clause(par_type, arg_type, p_call, "parameter", "argument"),
 					p_argument);
+			return;
+		}
+		// An alternative of a union that names no `Self` admits whatever it would admit on its own, and
+		// that includes a value whose static type promises nothing. Nothing was proved about such a value,
+		// so the crossing is reported exactly as ordinary argument validation reports it rather than
+		// passing silently because the parameter happened to mention `Self` somewhere.
+		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
+#ifdef DEBUG_ENABLED
+			if (!(par_type.is_hard_type() && par_type.is_variant())) {
+				analyzer->mark_node_unsafe(p_argument);
+				analyzer->parser->push_warning(p_argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(p_argument_number), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
+			}
+#endif // DEBUG_ENABLED
 		}
 		return;
 	}

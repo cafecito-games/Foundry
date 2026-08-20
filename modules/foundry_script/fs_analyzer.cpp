@@ -947,9 +947,6 @@ static FSParser::DataType _resolve_type_parameter_bound_chain(const FSParser::Da
 
 static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
-static const FSParser::DataType *_container_literal_target_type(
-		const FSParser::ExpressionNode *p_expression,
-		const FSParser::DataType &p_expected_type);
 static FSParser::DataType type_handle_represented_type(const FSParser::DataType &p_type);
 static bool _type_handle_source_is_handle(const FSParser::DataType &p_type);
 
@@ -6494,7 +6491,7 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 			// itself, so the alternative is resolved before its element types are read. The patcher
 			// resolves it again from the same rule, which keeps the two answers from drifting.
 			const FSParser::DataType *literal_target_type = _is_container_literal(p_return->return_value)
-					? _container_literal_target_type(p_return->return_value, literal_expected_type)
+					? container_literal_target_type(p_return->return_value, literal_expected_type)
 					: nullptr;
 			if (literal_target_type != nullptr && has_expected_type &&
 					literal_target_type->has_container_element_types()) {
@@ -6884,23 +6881,125 @@ static bool _container_literal_shape_matches_type(
 // so `Array | Array[Self]` leaves an array literal alone rather than forcing it through the typed
 // alternative. Every position that types a literal against a declaration shares this rule, so a
 // parameter and a return position cannot disagree about which alternative a literal was written for.
-static const FSParser::DataType *_container_literal_target_type(
+// An alternative that names no `Self` is answered as it was reduced, so leaving the literal alone
+// costs nothing there. When every alternative claiming the form needs `Self` resolved, none of them can
+// answer an unpatched literal at all, and leaving it alone would reject a literal one of them accepts.
+// The alternative whose elements the literal could stand in is then chosen -- a choice made from the
+// elements as they were reduced, patching nothing and reporting nothing. More than one taker names
+// none of them, and the literal is left alone again.
+const FSParser::DataType *FSAnalyzer::container_literal_target_type(
 		const FSParser::ExpressionNode *p_expression,
 		const FSParser::DataType &p_expected_type) {
 	if (p_expected_type.kind != FSParser::DataType::UNION) {
 		return &p_expected_type;
 	}
 	const FSParser::DataType *alternative = nullptr;
+	bool claimed_more_than_once = false;
+	bool every_claimant_names_self = true;
 	for (const FSParser::DataType &member : p_expected_type.union_members) {
 		if (!_container_literal_shape_matches_type(p_expression, member)) {
 			continue;
 		}
-		if (alternative != nullptr) {
+		claimed_more_than_once = claimed_more_than_once || alternative != nullptr;
+		if (alternative == nullptr) {
+			alternative = &member;
+		}
+		every_claimant_names_self = every_claimant_names_self && _datatype_contains_self_type_parameter(member);
+	}
+	if (!claimed_more_than_once || !every_claimant_names_self) {
+		return claimed_more_than_once ? nullptr : alternative;
+	}
+
+	const FSParser::DataType *taker = nullptr;
+	for (const FSParser::DataType &member : p_expected_type.union_members) {
+		if (!_container_literal_shape_matches_type(p_expression, member) ||
+				!container_literal_elements_could_fit(p_expression, member)) {
+			continue;
+		}
+		if (taker != nullptr) {
 			return nullptr;
 		}
-		alternative = &member;
+		taker = &member;
 	}
-	return alternative;
+	return taker;
+}
+
+// Whether the literal's elements, as they were reduced, could stand in this candidate. This only
+// decides which alternative a literal was written for; the patcher that follows is what types the
+// elements and reports on them, so nothing here patches or reports.
+//
+// `Self` is answered against its bound, which is what every leaf a receiver can resolve to has in
+// common. The exact receiver rules belong to the contract that runs afterwards: applying them here
+// would reject a literal for the frame it was written in rather than choose between alternatives. An
+// element that promises nothing statically distinguishes no alternative and is left to the patcher.
+bool FSAnalyzer::container_literal_elements_could_fit(
+		const FSParser::ExpressionNode *p_expression,
+		const FSParser::DataType &p_candidate) {
+	const auto element_could_fit = [&](const FSParser::ExpressionNode *p_element,
+										   const FSParser::DataType &p_element_type) {
+		if (p_element == nullptr || !p_element_type.is_set() || !p_element_type.is_hard_type() ||
+				p_element_type.is_variant() || p_element_type.kind == FSParser::DataType::UNION) {
+			return true;
+		}
+		if (_is_container_literal(p_element)) {
+			return _container_literal_shape_matches_type(p_element, p_element_type) &&
+					container_literal_elements_could_fit(p_element, p_element_type);
+		}
+		const FSParser::DataType element_type = p_element->get_datatype();
+		if (!element_type.is_set() || !element_type.is_hard_type() || element_type.is_variant()) {
+			return true;
+		}
+		// Both sides are read as a receiver would resolve them. Leaving `Self` standing on the supplied
+		// side would let it answer as an unreified parameter, which reaches any destination and so tells
+		// the alternatives apart from nothing.
+		return is_type_compatible(_substitute_self_type_parameter_with_bounds(p_element_type),
+				_substitute_self_type_parameter_with_bounds(element_type), true);
+	};
+
+	switch (p_expression->type) {
+		case FSParser::Node::ARRAY: {
+			if (!p_candidate.has_container_element_type(0)) {
+				return true;
+			}
+			const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_expression);
+			const FSParser::DataType &element_type = p_candidate.get_container_element_type(0);
+			for (int i = 0; i < array->elements.size(); i++) {
+				if (!element_could_fit(array->elements[i], element_type)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		case FSParser::Node::DICTIONARY: {
+			if (!p_candidate.has_container_element_types()) {
+				return true;
+			}
+			const FSParser::DictionaryNode *dictionary = static_cast<const FSParser::DictionaryNode *>(p_expression);
+			const FSParser::DataType key_type = p_candidate.get_container_element_type_or_variant(0);
+			const FSParser::DataType value_type = p_candidate.get_container_element_type_or_variant(1);
+			for (int i = 0; i < dictionary->elements.size(); i++) {
+				if (!element_could_fit(dictionary->elements[i].key, key_type) ||
+						!element_could_fit(dictionary->elements[i].value, value_type)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			if (literal->elements.size() != p_candidate.container_element_types.size()) {
+				return false;
+			}
+			for (int i = 0; i < literal->elements.size(); i++) {
+				if (!element_could_fit(literal->elements[i], p_candidate.container_element_types[i])) {
+					return false;
+				}
+			}
+			return true;
+		}
+		default:
+			return false;
+	}
 }
 
 // Routes a container literal to the patcher for its own form, given the type the position expects of
@@ -6918,7 +7017,7 @@ bool FSAnalyzer::update_container_literal_element_types(FSParser::ExpressionNode
 		// A `Self`-bearing alternative is only ever satisfied by a literal built against it -- receiver
 		// identity is proved through the literal's own elements -- so descending is what makes that
 		// alternative reachable at all, exactly as the same annotation written alone is.
-		const FSParser::DataType *alternative = _container_literal_target_type(p_expression, p_expected_type);
+		const FSParser::DataType *alternative = container_literal_target_type(p_expression, p_expected_type);
 		if (alternative == nullptr) {
 			return false;
 		}

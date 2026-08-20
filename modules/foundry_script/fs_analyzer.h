@@ -1090,6 +1090,8 @@ private:
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, bool &r_valid, const FSParser::Node *p_source);
 	void update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
 	static bool _is_container_literal(const FSParser::ExpressionNode *p_expression);
+	const FSParser::DataType *container_literal_target_type(const FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type);
+	bool container_literal_elements_could_fit(const FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_candidate);
 	// Pushes a declared type into a container literal written where that type is expected. Every
 	// position that knows what it is building — a declaration, an assignment, a return, a cast, a call
 	// argument, a `for` list, a tuple or case field, and a nested element of any of those — routes
