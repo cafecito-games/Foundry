@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 14: Invalid argument for "accept()" function: argument 1 should be "Box[Self]" but is "Box[Self]". The parameter's "Self" is resolved against the receiver expression; the argument is relative to the calling frame's receiver.

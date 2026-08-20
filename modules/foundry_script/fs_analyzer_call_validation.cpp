@@ -659,10 +659,29 @@ FSParser::ArrayNode *FSAnalyzer::CallSiteValidationContext::array_literal_argume
 // against whatever target the callable holds, which no argument at that site can be compared with. The
 // member-reference producer (`value.method`) builds the same signature without the provenance, so
 // clearing it here keeps two producers of one static callable type interchangeable.
+//
+// The walk must reach every slot `_self_parameter_contract_match_needs_receiver_identity()` reads, or a
+// `Self` buried in a class type argument or a nested callable signature keeps a contract the call site
+// can no longer decide and rejects an argument that matches it exactly. The two walks are structural
+// mirrors and have to be extended together.
 static void clear_receiver_self_contract(FSParser::DataType &r_type) {
 	r_type.is_receiver_self_contract = false;
 	for (int i = 0; i < r_type.container_element_types.size(); i++) {
 		clear_receiver_self_contract(r_type.container_element_types.write[i]);
+	}
+	for (int i = 0; i < r_type.type_arguments.size(); i++) {
+		FSParser::DataType type_argument = r_type.type_arguments[i];
+		clear_receiver_self_contract(type_argument);
+		r_type.set_type_argument(i, type_argument);
+	}
+	for (int i = 0; i < r_type.method_parameter_types.size(); i++) {
+		clear_receiver_self_contract(r_type.method_parameter_types.write[i]);
+	}
+	for (int i = 0; i < r_type.method_return_type.size(); i++) {
+		clear_receiver_self_contract(r_type.method_return_type.write[i]);
+	}
+	for (int i = 0; i < r_type.method_rest_parameter_type.size(); i++) {
+		clear_receiver_self_contract(r_type.method_rest_parameter_type.write[i]);
 	}
 }
 
@@ -1049,7 +1068,10 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 	if (analyzer->datatype_contains_self_type_parameter(par_type)) {
 		if (!analyzer->self_parameter_contract_admits_argument_type(par_type, arg_type, p_call) &&
 				!analyzer->self_parameter_satisfied_by_receiver_identity(par_type, p_argument, p_call)) {
-			analyzer->push_error(make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, false, p_argument), p_argument);
+			analyzer->push_error(
+					make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, false, p_argument) +
+							analyzer->self_parameter_receiver_identity_clause(par_type, arg_type, p_call, "parameter", "argument"),
+					p_argument);
 		}
 		return;
 	}

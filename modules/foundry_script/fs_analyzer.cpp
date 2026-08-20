@@ -796,6 +796,46 @@ static bool _datatype_contains_self_type_parameter(const FSParser::DataType &p_t
 			return true;
 		}
 	}
+	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
+		if (_datatype_contains_self_type_parameter(rest_parameter_type)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The two shapes the identity gate reads as caller-relative at a leaf: a `Self` type parameter the
+// calling frame resolves, and a descriptor the analyzer substituted out of `Self` and marked. Asked of
+// a supplied type, this answers whether it carries any position receiver identity exists to protect.
+static bool _datatype_contains_caller_relative_self(const FSParser::DataType &p_type) {
+	if (_is_self_type_parameter(p_type) || p_type.is_substituted_self) {
+		return true;
+	}
+	for (const FSParser::DataType &element : p_type.container_element_types) {
+		if (_datatype_contains_caller_relative_self(element)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &argument : p_type.type_arguments) {
+		if (_datatype_contains_caller_relative_self(argument)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &parameter_type : p_type.method_parameter_types) {
+		if (_datatype_contains_caller_relative_self(parameter_type)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &return_type : p_type.method_return_type) {
+		if (_datatype_contains_caller_relative_self(return_type)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
+		if (_datatype_contains_caller_relative_self(rest_parameter_type)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -940,6 +980,10 @@ static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSPa
 	for (int i = 0; i < result.method_return_type.size(); i++) {
 		result.method_return_type.write[i] = _substitute_self_type_parameter_with_bounds(result.method_return_type[i], p_mark_substituted_self);
 	}
+	for (int i = 0; i < result.method_rest_parameter_type.size(); i++) {
+		result.method_rest_parameter_type.write[i] =
+				_substitute_self_type_parameter_with_bounds(result.method_rest_parameter_type[i], p_mark_substituted_self);
+	}
 	return result;
 }
 
@@ -968,6 +1012,17 @@ static bool _datatype_substituted_self_markers_match(const FSParser::DataType &p
 	for (int i = 0; i < p_a.method_return_type.size(); i++) {
 		if (!_datatype_substituted_self_markers_match(p_a.method_return_type[i], p_b.method_return_type[i])) {
 			return false;
+		}
+	}
+	// The rest tail is guarded rather than assumed equal in size: nothing produces a marked tail today,
+	// so this walk is a consistency measure and must not depend on the gating comparison to keep it in
+	// range.
+	if (p_a.method_rest_parameter_type.size() == p_b.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+			if (!_datatype_substituted_self_markers_match(
+						p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
+				return false;
+			}
 		}
 	}
 	return true;
@@ -1018,6 +1073,11 @@ static bool _datatype_self_bindings_are_final(const FSParser::DataType &p_type) 
 	}
 	for (const FSParser::DataType &return_type : p_type.method_return_type) {
 		if (!_datatype_self_bindings_are_final(return_type)) {
+			return false;
+		}
+	}
+	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
+		if (!_datatype_self_bindings_are_final(rest_parameter_type)) {
 			return false;
 		}
 	}
@@ -1073,7 +1133,44 @@ static bool _datatype_matches_self_return_contract(
 	return false;
 }
 
-static bool _datatype_matches_self_parameter_contract(
+// Rewrites a callable argument into the shape the parameter position compares against, so the exact
+// comparison below decides sameness while arity substitution is settled here. Two rewrites apply, both
+// contravariant and both matching what ordinary argument compatibility has always admitted:
+//
+//   - A fixed-arity parameter never invokes a tail, because its static type permits exactly its fixed
+//     arity, so a variadic argument drops its tail rather than being rejected for having one.
+//   - A gradual tail (`...Array`) accepts every trailing argument, so it satisfies whatever tail the
+//     parameter declares. Variadicity lives in the flags while a narrowed tail also fills the rest
+//     slot, so the gradual argument takes on the declared tail instead of failing a slot count.
+//
+// The unsound directions keep the exact comparison: a variadic parameter is not satisfied by a
+// fixed-arity argument, and two declared tails must agree on their element type. Only this position
+// substitutes -- a callable reached through a carrier element or a class type argument sits in an
+// invariant slot, where the supplied type has to be the declared one rather than one that merely
+// accepts every call it would receive -- so the rewrite deliberately does not enter the recursive
+// identity walk. The result is idempotent, which is what lets the identity gate reuse it.
+static FSParser::DataType _self_contract_comparable_callable_argument(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type) {
+	if (!p_expected_type.has_method_signature || !p_argument_type.has_method_signature ||
+			(p_argument_type.method_info.flags & METHOD_FLAG_VARARG) == 0) {
+		return p_argument_type;
+	}
+	if ((p_expected_type.method_info.flags & METHOD_FLAG_VARARG) == 0) {
+		FSParser::DataType result = p_argument_type;
+		result.method_info.flags &= ~METHOD_FLAG_VARARG;
+		result.clear_method_rest_parameter_type();
+		return result;
+	}
+	if (p_expected_type.method_rest_parameter_type.size() == 1 && p_argument_type.method_rest_parameter_type.is_empty()) {
+		FSParser::DataType result = p_argument_type;
+		result.set_method_rest_parameter_type(p_expected_type.method_rest_parameter_type[0]);
+		return result;
+	}
+	return p_argument_type;
+}
+
+static bool _datatype_matches_self_parameter_contract_exact(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
 	if (_datatype_strict_identity_equal(p_expected_type, p_argument_type)) {
@@ -1120,6 +1217,13 @@ static bool _datatype_matches_self_parameter_contract(
 		return _datatype_strict_identity_equal(non_nullable_expected, p_argument_type);
 	}
 	return false;
+}
+
+static bool _datatype_matches_self_parameter_contract(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type) {
+	return _datatype_matches_self_parameter_contract_exact(
+			p_expected_type, _self_contract_comparable_callable_argument(p_expected_type, p_argument_type));
 }
 
 static String identifier_name_from_expression(const FSParser::ExpressionNode *p_expression) {
@@ -1236,15 +1340,27 @@ static bool call_receiver_is_current_self(const FSParser::CallNode *p_call) {
 // therefore only sound when the call runs through the calling frame's own receiver, or when the
 // argument is the receiver expression itself -- the latter answered separately by receiver identity.
 //
-// Only a position the call site resolved as its receiver contract asks that question. A `Self` that
-// reached the signature through a carrier's element type, a class type argument, or an explicit method
-// type argument was written in the calling frame and already denotes the caller's own receiver, so it
-// stays governed by ordinary type equality.
+// Only a position the call site resolved as its receiver contract asks that question, and it asks it
+// wherever the position sits: a `Self` leaf reached through a carrier's element type, a class type
+// argument, or a callable's signature is still the callee frame's receiver, and the argument slot
+// facing it is still the calling frame's.
 //
-// Final `Self` bindings name exactly one class and keep the ordinary substitution rules. Only an
-// anonymous tuple carries the requirement inward, matching the positions receiver identity itself can
-// answer: a typed carrier is checked against its declared element type invariantly and gains no
-// exception here.
+// Final `Self` bindings name exactly one class and keep the ordinary substitution rules. Every other
+// carrier passes the requirement inward to whatever slot holds the `Self` leaf: an array or dictionary
+// element, a tuple element (named or anonymous), a class type argument, and a callable's parameter and
+// return slots. A carrier is invariant in its element type, so a carrier reified against the calling
+// frame's receiver is only interchangeable with the callee's when both frames share that receiver --
+// nothing about the carrier itself can make the two agree.
+//
+// A slot is caller-relative in two shapes: it is written as `Self` (a type parameter the calling frame
+// resolves), or the analyzer substituted it out of a literal and marked the result, which a frame
+// re-binds to its own receiver just the same. Slot vectors are walked pairwise and only when both sides
+// agree on size; a size mismatch means the contract matched through some other admission, which carries
+// no `Self` position to require identity of.
+//
+// `clear_receiver_self_contract()` in fs_analyzer_call_validation.cpp strips the contract from a
+// signature captured into a `Callable`, where no call site can decide identity. It has to reach every
+// slot walked here; the two are structural mirrors and have to be extended together.
 static bool _self_parameter_contract_match_needs_receiver_identity(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
@@ -1252,18 +1368,52 @@ static bool _self_parameter_contract_match_needs_receiver_identity(
 		return false;
 	}
 	if (_is_bare_self_value_parameter(p_expected_type)) {
-		return p_expected_type.is_receiver_self_contract && _is_self_type_parameter(p_argument_type);
+		return p_expected_type.is_receiver_self_contract &&
+				(_is_self_type_parameter(p_argument_type) || p_argument_type.is_substituted_self);
 	}
-	if (p_expected_type.kind != FSParser::DataType::TUPLE || p_expected_type.tuple_name != StringName() ||
-			p_argument_type.kind != FSParser::DataType::TUPLE || p_argument_type.tuple_name != StringName() ||
-			p_expected_type.container_element_types.size() != p_argument_type.container_element_types.size()) {
-		return false;
+	if (p_expected_type.container_element_types.size() == p_argument_type.container_element_types.size()) {
+		for (int i = 0; i < p_expected_type.container_element_types.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.container_element_types[i],
+						p_argument_type.container_element_types[i])) {
+				return true;
+			}
+		}
 	}
-	for (int i = 0; i < p_expected_type.container_element_types.size(); i++) {
-		if (_self_parameter_contract_match_needs_receiver_identity(
-					p_expected_type.container_element_types[i],
-					p_argument_type.container_element_types[i])) {
-			return true;
+	if (p_expected_type.type_arguments.size() == p_argument_type.type_arguments.size()) {
+		for (int i = 0; i < p_expected_type.type_arguments.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.type_arguments[i],
+						p_argument_type.type_arguments[i])) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_parameter_types.size() == p_argument_type.method_parameter_types.size()) {
+		for (int i = 0; i < p_expected_type.method_parameter_types.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.method_parameter_types[i],
+						p_argument_type.method_parameter_types[i])) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_return_type.size() == p_argument_type.method_return_type.size()) {
+		for (int i = 0; i < p_expected_type.method_return_type.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.method_return_type[i],
+						p_argument_type.method_return_type[i])) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_rest_parameter_type.size() == p_argument_type.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_expected_type.method_rest_parameter_type.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.method_rest_parameter_type[i],
+						p_argument_type.method_rest_parameter_type[i])) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -5192,7 +5342,8 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			}
 		} else if (!specified_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(specified_type)) {
-				if (!initializer_type.is_hard_type() || !_datatype_matches_self_return_contract(specified_type, initializer_type)) {
+				if (!initializer_type.is_hard_type() ||
+						!self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN)) {
 					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
 									   initializer_type.to_string(),
 									   p_kind,
@@ -6317,7 +6468,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 
 	if (has_expected_type && !compatibility_expected_type.is_variant()) {
 		if (preserve_self_contract) {
-			if (!self_container_literal_validated && (!result.is_hard_type() || !_datatype_matches_self_return_contract(expected_type, result))) {
+			if (!self_container_literal_validated &&
+					(!result.is_hard_type() || !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN))) {
 				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
 								   result.to_string(),
 								   expected_type.to_string()) +
@@ -7208,7 +7360,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		}
 	} else {
 		if (_datatype_contains_self_type_parameter(assignee_type)) {
-			if (!op_type.is_hard_type() || !_datatype_matches_self_return_contract(assignee_type, op_type)) {
+			if (!op_type.is_hard_type() ||
+					!self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN)) {
 				mark_node_unsafe(p_assignment);
 				push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
 								   assigned_value_type.to_string(),
@@ -9955,7 +10108,14 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
 			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
 			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
+		return false;
+	}
+	// A gradual variadic Callable records its tail only in the method flags (`method_rest_parameter_type`
+	// stays empty), so variadicity has to be compared separately or `Callable[[Self], void]` would match
+	// `Callable[[Self, ...Array], void]`.
+	if ((p_a.method_info.flags & METHOD_FLAG_VARARG) != (p_b.method_info.flags & METHOD_FLAG_VARARG)) {
 		return false;
 	}
 
@@ -9965,7 +10125,11 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 			equal = true;
 			break;
 		case FSParser::DataType::BUILTIN:
-			equal = p_a.builtin_type == p_b.builtin_type;
+			// The carrier alone does not identify a fixed-width numeric: `int` and `long` share it, as do
+			// `uint` and `ulong`. Ordinary compatibility separates them through `numeric_types_agree()`,
+			// which also reconciles a width reconstructed from a boundary, so identity asks the same
+			// question rather than a raw comparison that would treat a rebuilt width as a different type.
+			equal = p_a.builtin_type == p_b.builtin_type && numeric_types_agree(p_a.numeric_type, p_b.numeric_type);
 			break;
 		case FSParser::DataType::NATIVE:
 		case FSParser::DataType::ENUM:
@@ -10022,6 +10186,15 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 	}
 	for (int i = 0; i < p_a.method_return_type.size(); i++) {
 		if (!_datatype_strict_identity_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	// A typed variadic Callable carries its tail element type here, so `Callable[[...Array[Self]], void]`
+	// must not match `Callable[[...Array[String]], void]`. The `Self` contract path decides a
+	// tail-bearing signature entirely through this comparison, so an unchecked tail would admit a
+	// callback the callee then invokes with the wrong element type.
+	for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+		if (!_datatype_strict_identity_equal(p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
 			return false;
 		}
 	}
@@ -12690,7 +12863,8 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
 				push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
 								   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()) +
-								FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument"),
+								FSParser::DataType::same_rendered_name_clause(field_type, "tuple field's type", argument_type, "argument") +
+								self_parameter_receiver_identity_clause(field_type, argument_type, p_call, "tuple field", "argument"),
 						argument);
 			}
 			continue;
@@ -13277,7 +13451,8 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 					!self_parameter_satisfied_by_receiver_identity(field_type, argument, p_call)) {
 				push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 								   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), self_field_argument_type.to_string()) +
-								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument"),
+								FSParser::DataType::same_rendered_name_clause(field_type, "payload field's type", self_field_argument_type, "argument") +
+								self_parameter_receiver_identity_clause(field_type, self_field_argument_type, p_call, "payload field", "argument"),
 						argument);
 				payload_is_bakeable = false;
 			}
@@ -17697,6 +17872,11 @@ bool FSAnalyzer::datatype_contains_self_type_parameter(const FSParser::DataType 
 // carrier built against the static class satisfy the leaf; `Array[Self]`, `Dictionary[..., Self]`,
 // `Type[Self]`, and a generic specialization over `Self` stay rejected for an open receiver.
 //
+// A carrier whose element type is itself the calling frame's `Self` is a separate question, answered by
+// the receiver of the call rather than by any element: when the call runs through the calling frame's
+// own receiver the two `Self`s denote the same value, so the carrier reifies to the same leaf the
+// callee resolves. `self_parameter_contract_admits_argument_type` discharges that requirement.
+//
 // Identity has to be provable at the call site, so the argument must be written as a tuple literal
 // whose `Self` positions are the receiver reference itself. A tuple-shaped value arriving through a
 // local, a parameter, or a call result proves nothing about this frame's receiver and is rejected.
@@ -17748,16 +17928,131 @@ bool FSAnalyzer::self_parameter_satisfied_by_receiver_identity(const FSParser::D
 	return true;
 }
 
-bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) const {
-	if (!_datatype_matches_self_parameter_contract(p_expected_type, p_argument_type)) {
+// A callable's rest tail is the one signature slot ordinary argument compatibility admits
+// contravariantly: the callee sends values *into* the callback, so a tail that accepts a supertype of
+// the declared element accepts everything the parameter can ever send it.
+//
+// Two compatibility questions have to agree, because each one alone admits a case the other refuses.
+//
+// Asked of the element with `Self` substituted to its bound, the answer covers every leaf at once: the
+// tail must accept the bound itself, which rejects a tail narrower than `Self` (a `Leaf` tail cannot
+// take a sibling leaf the receiver may resolve to instead).
+//
+// Asked of the element with `Self` left standing, the answer respects the variance of the position
+// `Self` sits in, because `Self` is a type parameter bounded by the receiver's class: a tail of
+// `Array[Self]` accepts a callback taking `Array[Cell]`, while a tail of `Array[Box[Self]]` does not
+// accept one taking `Array[Box[Cell]]`, since a `Child` receiver reifies `Box[Child]` and a
+// specialization is invariant in its argument. Substituting first would erase that distinction; not
+// substituting at all lets a type parameter narrow to a subtype of its bound.
+//
+// The value positions of a `Self` parameter keep the exact comparison for the reason this contract
+// exists -- a value typed as the bound is not the receiver's leaf -- and so do fixed signature slots,
+// which ordinary compatibility leaves invariant. Direction is what separates them: a value flows into
+// a `Self` position, while a tail receives from one.
+bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) {
+	if (!p_expected_type.has_method_signature || !p_argument_type.has_method_signature ||
+			p_expected_type.method_rest_parameter_type.size() != 1 ||
+			p_argument_type.method_rest_parameter_type.size() != 1) {
 		return false;
 	}
-	if (!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, p_argument_type)) {
+	const FSParser::DataType expected_element = p_expected_type.method_rest_parameter_type[0].get_container_element_type(0);
+	const FSParser::DataType supplied_element = p_argument_type.method_rest_parameter_type[0].get_container_element_type(0);
+	if (!expected_element.is_set() || !supplied_element.is_set()) {
+		return false;
+	}
+	return is_type_compatible(supplied_element, _substitute_self_type_parameter_with_bounds(expected_element)) &&
+			is_type_compatible(supplied_element, expected_element);
+}
+
+// The single admission point for a value flowing into a `Self`-bearing destination, whether that
+// destination is a parameter, a declared variable, or a return type. Callable arity substitution and
+// the contravariant tail are settled identically for all of them -- they describe what a callable
+// accepts, not what `Self` denotes -- and only the final exact comparison differs. Routing every
+// consumer through here is what keeps a fix to one of them from leaving the others behind.
+//
+// Receiver identity is deliberately not asked here: it compares the argument against a call's receiver
+// expression, and an initializer, an assignment, or a return has no receiver to compare with. The call
+// sites that do have one apply it around this answer.
+bool FSAnalyzer::self_contract_admits_value_type(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_value_type,
+		SelfContractKind p_kind,
+		FSParser::DataType *r_matched_value) {
+	FSParser::DataType matched_value = _self_contract_comparable_callable_argument(p_expected_type, p_value_type);
+	const auto matches_exactly = [&](const FSParser::DataType &p_candidate) {
+		return p_kind == SelfContractKind::PARAMETER
+				? _datatype_matches_self_parameter_contract_exact(p_expected_type, p_candidate)
+				: _datatype_matches_self_return_contract(p_expected_type, p_candidate);
+	};
+	if (!matches_exactly(matched_value)) {
+		if (!callable_rest_tail_accepts_expected_element(p_expected_type, matched_value)) {
+			return false;
+		}
+		matched_value.set_method_rest_parameter_type(p_expected_type.method_rest_parameter_type[0]);
+		if (!matches_exactly(matched_value)) {
+			return false;
+		}
+	}
+	if (r_matched_value != nullptr) {
+		*r_matched_value = matched_value;
+	}
+	return true;
+}
+
+// Answers whether the contract matches at all, and reports the argument shape it matched against so
+// the receiver-identity gate and the diagnostic clause read the same comparison this did.
+bool FSAnalyzer::self_parameter_contract_matched_argument(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type,
+		FSParser::DataType &r_matched_argument) {
+	r_matched_argument = p_argument_type;
+	return self_contract_admits_value_type(
+			p_expected_type, p_argument_type, SelfContractKind::PARAMETER, &r_matched_argument);
+}
+
+bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) {
+	FSParser::DataType argument_type;
+	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type)) {
+		return false;
+	}
+	// Receiver identity protects the *supplied* value's own `Self`, so it is asked of the type as
+	// written rather than as rewritten. Filling a gradual tail from the expectation copies that
+	// expectation's receiver-relative `Self` into a value that never had one: such a callback binds no
+	// receiver anywhere and takes whatever any frame's tail sends it, so no receiver can disagree with
+	// it. A supplied type that does carry `Self` keeps the requirement, and the rewrite that drops a
+	// tail only ever removes positions, so neither rewrite can manufacture the requirement.
+	if (!_datatype_contains_caller_relative_self(p_argument_type)) {
+		return true;
+	}
+	if (!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
 		return true;
 	}
 	// With no call node there is no receiver expression to compare against, so the type-level answer
 	// stands rather than turning an argument no receiver can be named for into an error.
 	return p_call == nullptr || call_receiver_is_current_self(p_call);
+}
+
+// The sibling query of `self_parameter_contract_admits_argument_type`: it reports the one rejection
+// reason no rendered type can show. Both sides matched the contract and differ only in the receiver
+// their `Self` positions resolve against, so `same_rendered_name_clause` finds nothing structural to
+// contrast and the diagnostic would otherwise read as a type against itself.
+String FSAnalyzer::self_parameter_receiver_identity_clause(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type,
+		const FSParser::CallNode *p_call,
+		const String &p_expected_subject,
+		const String &p_argument_subject) {
+	FSParser::DataType argument_type;
+	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, argument_type) ||
+			!_datatype_contains_caller_relative_self(p_argument_type) ||
+			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
+		return String();
+	}
+	if (p_call == nullptr || call_receiver_is_current_self(p_call)) {
+		return String();
+	}
+	return vformat(R"( The %s's "Self" is resolved against the receiver expression; the %s is relative to the calling frame's receiver.)",
+			p_expected_subject, p_argument_subject);
 }
 
 String FSAnalyzer::make_type_handle_argument_error(
