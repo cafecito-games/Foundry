@@ -448,6 +448,11 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (FSDataType &type_argument : r_type.type_arguments) {
 			rewrite_data_type(type_argument);
 		}
+		// A union alternative can name a trait or a script just as a container element can, and it is the
+		// only place that identity survives -- a union's own slot carries no class at all.
+		for (FSDataType &alternative : r_type.union_alternatives) {
+			rewrite_data_type(alternative);
+		}
 	}
 
 	void rewrite_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding) const {

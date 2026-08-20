@@ -5429,6 +5429,13 @@ void FSCompiler::_substitute_binding_type_parameters(FSDataType &r_type, const V
 		_substitute_binding_type_parameters(
 				r_type.type_arguments.write[i], p_base_specialization, p_owner, false, p_depth + 1);
 	}
+	// A union alternative is a type position like any other, so a class parameter inside one is
+	// substituted through this `extends` step as well. Nullability is never expressible below a union:
+	// the parser hoists it onto the union itself, so no alternative carries one.
+	for (int i = 0; i < r_type.union_alternatives.size(); i++) {
+		_substitute_binding_type_parameters(
+				r_type.union_alternatives.write[i], p_base_specialization, p_owner, false, p_depth + 1);
+	}
 }
 
 void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner) {
