@@ -10125,7 +10125,11 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 			equal = true;
 			break;
 		case FSParser::DataType::BUILTIN:
-			equal = p_a.builtin_type == p_b.builtin_type;
+			// The carrier alone does not identify a fixed-width numeric: `int` and `long` share it, as do
+			// `uint` and `ulong`. Ordinary compatibility separates them through `numeric_types_agree()`,
+			// which also reconciles a width reconstructed from a boundary, so identity asks the same
+			// question rather than a raw comparison that would treat a rebuilt width as a different type.
+			equal = p_a.builtin_type == p_b.builtin_type && numeric_types_agree(p_a.numeric_type, p_b.numeric_type);
 			break;
 		case FSParser::DataType::NATIVE:
 		case FSParser::DataType::ENUM:
