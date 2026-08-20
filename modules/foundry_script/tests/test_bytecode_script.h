@@ -252,24 +252,21 @@ public:
 	}
 };
 
-class BytecodeConformanceRegistryRestore {
+// Drops everything a fixture registered for its source file when the scope ends. The registry is
+// process-global and its coherence check refuses a second witness for a method already witnessed on
+// the same target, so a fixture that leaves its conformances behind breaks whichever later test case
+// declares the same method — most visibly on builtin targets such as `int`. This mirrors how
+// production tears a script's conformances down on reload.
+class BytecodeConformanceRegistryScope {
 	String source;
-	Vector<FSConformanceRegistry::Conformance> parse_entries;
-	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
 
 public:
-	explicit BytecodeConformanceRegistryRestore(const String &p_source) :
-			source(p_source),
-			parse_entries(FSConformanceRegistry::get_singleton()
-							->get_file_conformances(p_source)),
-			runtime_entries(FSConformanceRegistry::get_singleton()
-							->get_runtime_witnesses(p_source)) {}
+	explicit BytecodeConformanceRegistryScope(const String &p_source) :
+			source(p_source) {}
 
-	~BytecodeConformanceRegistryRestore() {
-		FSConformanceRegistry::get_singleton()->register_file_conformances(
-				source, parse_entries);
-		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(
-				source, runtime_entries);
+	~BytecodeConformanceRegistryScope() {
+		FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source);
+		FSConformanceRegistry::get_singleton()->clear_file(source);
 	}
 };
 
@@ -1067,7 +1064,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges surv
 			"\treturn 1\n");
 	const String consumer_path = original->get_script_path();
 	const String gadget_key = original->get_subclasses().find(SNAME("Gadget"))->value->get_fully_qualified_name();
-	BytecodeConformanceRegistryRestore registry_restore(consumer_path);
+	BytecodeConformanceRegistryScope registry_scope(consumer_path);
 	TestFSBytecodeScriptAccessor::add_namespace_conformance_script(original, conformance_library);
 
 	FSBytecodeExporter exporter;
@@ -1173,7 +1170,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 		pingable_trait,
 		right_ping_trait,
 	};
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 	const Vector<FSConformanceRegistry::RuntimeConformance>
 			compiled_conformances =
 					FSConformanceRegistry::get_singleton()
@@ -1299,7 +1296,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A partially open conformance argument
 		return;
 	}
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const auto check_recorded_vector = [](const Vector<FSConformanceRegistry::RuntimeConformance> &p_conformances) {
 		REQUIRE_EQ(p_conformances.size(), 1);
@@ -1356,7 +1353,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] An explicit Variant conformance argum
 		return;
 	}
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const auto check_recorded_vector = [](const Vector<FSConformanceRegistry::RuntimeConformance> &p_conformances) {
 		REQUIRE_EQ(p_conformances.size(), 1);
@@ -1414,7 +1411,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A freed conformance argument travels 
 		return;
 	}
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	Vector<FSConformanceRegistry::RuntimeConformance> conformances =
 			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(script_path);
@@ -1498,7 +1495,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A composite conformance argument keep
 		return;
 	}
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const auto check_recorded_vector = [](const Vector<FSConformanceRegistry::RuntimeConformance> &p_conformances) {
 		REQUIRE_EQ(p_conformances.size(), 1);
@@ -1618,7 +1615,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Marker conformances survive compiled-
 			original->get_subclasses().find(SNAME("Marker"))->value;
 	const String target_key = original_target->get_fully_qualified_name();
 	const StringName marker_trait = original_marker->get_trait_type_name();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const Vector<FSConformanceRegistry::RuntimeConformance>
 			compiled_conformances =
@@ -1697,7 +1694,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Marker conformances retain external t
 			"\tpass\n",
 			external_path));
 	const String declaring_path = declaring->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(declaring_path);
+	BytecodeConformanceRegistryScope registry_scope(declaring_path);
 
 	const Vector<FSConformanceRegistry::RuntimeConformance>
 			compiled_conformances =
@@ -1768,7 +1765,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Native and builtin conformance stand-
 			original_pingable->get_trait_type_name();
 	const StringName native_pingable_trait =
 			original_native_pingable->get_trait_type_name();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 	const Vector<FSConformanceRegistry::RuntimeConformance>
 			compiled_conformances =
 					FSConformanceRegistry::get_singleton()
@@ -1881,7 +1878,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance trait arguments survive c
 			"\treturn native_value.fetch()\n");
 	REQUIRE(original->is_valid());
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const StringName store_trait =
 			original->get_subclasses().find(SNAME("Store"))->value->get_trait_type_name();
@@ -1939,6 +1936,32 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance trait arguments survive c
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 20);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] The conformance registry scope clears builtin witnesses it covered") {
+	// The registry is process-global and its coherence check refuses a second witness for a builtin
+	// method, so a fixture that extends `int` must leave nothing behind: any later test declaring the
+	// same method on `int` would fail to compile purely because of the order the cases ran in.
+	StringName scoped_trait;
+	{
+		const Ref<FoundryScript> original = compile_bytecode_test_source(
+				"trait ScopedBuiltinStore[T]:\n"
+				"\tabstract func scoped_builtin_fetch() -> T\n"
+				"\n"
+				"extend int uses ScopedBuiltinStore[String]:\n"
+				"\tfunc scoped_builtin_fetch() -> String:\n"
+				"\t\treturn \"scoped\"\n");
+		REQUIRE(original->is_valid());
+		BytecodeConformanceRegistryScope registry_scope(original->get_script_path());
+
+		scoped_trait = original->get_subclasses()
+							   .find(SNAME("ScopedBuiltinStore"))
+							   ->value->get_trait_type_name();
+		REQUIRE(FSConformanceRegistry::get_singleton()->has_conformance("int", scoped_trait));
+	}
+
+	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance("int", scoped_trait));
+	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance("int", scoped_trait, true));
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] A native witness returning a generic over Self exports") {
 	// The stand-in ClassNode a native conformance analyzes through is never registered as a real
 	// class, so it has no serializable Foundry Script identity. Lowered as an ordinary class it would
@@ -1958,7 +1981,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A native witness returning a generic 
 	const Ref<FoundryScript> original_wrapping =
 			original->get_subclasses().find(SNAME("Wrapping"))->value;
 	const StringName wrapping_trait = original_wrapping->get_trait_type_name();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	// Asserted on both the compiled and the restored witness: the `Self` argument is a native type
 	// naming the conformance target, and carries no script reference to encode.
@@ -2042,7 +2065,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A witness keeps the declaring file's 
 			"func run() -> String:\n"
 			"\treturn RefCounted.boxed().marker()\n");
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator box_element =
 			original->get_subclasses().find(SNAME("Box"));
@@ -2127,7 +2150,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness binds Self inside a
 			"\tstatic func packed() -> Crate[Self]:\n"
 			"\t\treturn Crate[Self].new()\n");
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate_element =
 			original->get_subclasses().find(SNAME("Crate"));
@@ -2175,7 +2198,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness reifies Self on the
 			"func run() -> Crate[int]:\n"
 			"\treturn int.reified_packed(7)\n");
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	// The instance the witness built carries exactly one reified argument, and it is the builtin
 	// conformance target rather than a widened Variant or the declaring script's base.
@@ -2251,7 +2274,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A witness binds an inherited inner cl
 			"\tvar tagged: Taggable = TargetOuter.Derived.new()\n"
 			"\treturn tagged.make_token()\n");
 	const String script_path = original->get_script_path();
-	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	BytecodeConformanceRegistryScope registry_scope(script_path);
 
 	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator base_outer =
 			original->get_subclasses().find(SNAME("BaseOuter"));
@@ -3712,7 +3735,7 @@ TEST_CASE("[FoundryScript][BytecodeScript][StaticSelf] Loaded bytecode is source
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source_path);
 	// Snapshot the intentionally empty state, not the just-compiled witnesses: the source graph is
 	// destroyed below, so restoring its entries would resurrect dangling script/function pointers.
-	BytecodeConformanceRegistryRestore registry_restore(source_path);
+	BytecodeConformanceRegistryScope registry_scope(source_path);
 	FSCache::remove_script(source_path);
 	source->clear();
 	source.unref();
