@@ -438,9 +438,9 @@ bool FSProxyInstance::set(const StringName &p_name, const Variant &p_value) {
 	if (type_element) {
 		const FSDataType &data_type = type_element->value;
 		if (data_type.kind == FSDataType::UNION) {
-			// Membership is the whole question for a union slot: it has no carrier, so the
-			// `Variant::construct()` fallback below could only build a `NIL` and reject every value.
-			if (!data_type.is_type(value)) {
+			// Membership, through the one relation every union boundary asks. The `Variant::construct()`
+			// fallback below could only build a `NIL` for the carrier a union does not have.
+			if (!fs_union_accepts(data_type, value, value)) {
 				return false;
 			}
 		} else if (!data_type.is_type(value)) {

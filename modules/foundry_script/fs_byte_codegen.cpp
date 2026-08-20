@@ -342,9 +342,15 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 		descriptor["is_tuple"] = true;
 	}
 	if (p_type.kind == FSDataType::UNION) {
-		// A union carries no `builtin_type` of its own, so the alternatives recorded below would read
-		// back as the element list of an untyped node. The marker is what keeps the set recoverable.
+		// A union carries no `builtin_type` of its own, and its alternatives are not the parts of one
+		// value, so they travel under their own key rather than as the node's element list. Both are what
+		// keep the set recoverable and keep it from reading back as a typed container.
 		descriptor["is_union"] = true;
+		Array alternatives;
+		for (const FSDataType &alternative : p_type.union_alternatives) {
+			alternatives.push_back(make_container_type_descriptor(alternative));
+		}
+		descriptor["union_alternatives"] = alternatives;
 	}
 	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
 		// A type parameter has no runtime type of its own, so the node records which parameter of the
@@ -384,11 +390,8 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 		// a nullable tuple element keeps its identity. A typed Array/Dictionary element cannot: the
 		// container-type decoder has no representation for "this type or null" and would read a
 		// nullable element back as a plain typed element, so it is erased here instead.
-		// A union alternative is a type in its own right rather than a container element, so it keeps its
-		// full identity here for the same reason a tuple element does.
-		const bool keeps_declared_identity = p_type.kind == FSDataType::TUPLE || p_type.kind == FSDataType::UNION;
 		element_types.push_back(make_container_type_descriptor(
-				keeps_declared_identity ? element_type : _runtime_container_element_type(element_type)));
+				p_type.kind == FSDataType::TUPLE ? element_type : _runtime_container_element_type(element_type)));
 	}
 	descriptor["element_types"] = element_types;
 

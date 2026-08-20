@@ -806,6 +806,21 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 		}
 		r_data_type.type_arguments.push_back(type_argument);
 	}
+	uint32_t union_alternative_count = 0;
+	error = _read_bounded_u32(p_stream, union_alternative_count, "union alternative count in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
+	ERR_FAIL_COND_V_MSG((int64_t)union_alternative_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated data type in compiled script data.");
+	for (uint32_t i = 0; i < union_alternative_count; i++) {
+		FSDataType alternative;
+		error = decode_data_type(p_stream, alternative, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+		r_data_type.union_alternatives.push_back(alternative);
+	}
 	return OK;
 }
 

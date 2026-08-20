@@ -80,20 +80,24 @@ TEST_CASE("[FoundryScript][UnionMembership] An unproven union store carries the 
 	}
 }
 
+static FSDataType first_parameter_type(const Ref<FoundryScript> &p_script, const StringName &p_function_name) {
+	const HashMap<StringName, FSFunction *> &functions = p_script->get_member_functions();
+	const HashMap<StringName, FSFunction *>::ConstIterator function = functions.find(p_function_name);
+	REQUIRE(function != functions.end());
+	REQUIRE(function->value != nullptr);
+	REQUIRE(function->value->get_argument_count() > 0);
+	return function->value->get_argument_type(0);
+}
+
 TEST_CASE("[FoundryScript][UnionMembership] A union parameter is checked like any other typed parameter") {
 	Ref<FoundryScript> script = compile_bytecode_test_source(
 			"func take(value: int | String) -> String:\n"
 			"\treturn str(value)\n");
 
-	const HashMap<StringName, FSFunction *> &functions = script->get_member_functions();
-	const HashMap<StringName, FSFunction *>::ConstIterator function = functions.find(SNAME("take"));
-	REQUIRE(function != functions.end());
-	REQUIRE(function->value != nullptr);
-
-	const FSDataType parameter_type = function->value->get_argument_type(0);
+	const FSDataType parameter_type = first_parameter_type(script, SNAME("take"));
 	CHECK(parameter_type.kind == FSDataType::UNION);
 	CHECK(parameter_type.has_type());
-	REQUIRE(parameter_type.container_element_types.size() == 2);
+	REQUIRE(parameter_type.union_alternatives.size() == 2);
 	// The alternatives reach the runtime in the analyzer's canonical order, which is also the order the
 	// diagnostic names them in.
 	CHECK(parameter_type.get_source_type_name() == "String | int");
@@ -102,6 +106,54 @@ TEST_CASE("[FoundryScript][UnionMembership] A union parameter is checked like an
 	CHECK(parameter_type.is_type(Variant("five")));
 	CHECK_FALSE(parameter_type.is_type(Variant(5.0)));
 	CHECK_FALSE(parameter_type.is_type(Variant(Array())));
+}
+
+TEST_CASE("[FoundryScript][UnionMembership] A union is an unconstrained node outside its own check") {
+	// The alternatives are not the parts of one value, so they must not reach the consumers that read
+	// container elements as such: specialization evidence, binding projection, and typed-container
+	// metadata all treat an element list as the contents of one value. A union that carried its
+	// alternatives there described a typed container nothing could satisfy, and rejected a
+	// trait-conformant value whose conformance named the very same union.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func take(value: Array[int] | Array[String]) -> void:\n"
+			"\tprint(value)\n");
+
+	const FSDataType parameter_type = first_parameter_type(script, SNAME("take"));
+	REQUIRE(parameter_type.kind == FSDataType::UNION);
+	CHECK(parameter_type.union_alternatives.size() == 2);
+	CHECK(parameter_type.container_element_types.is_empty());
+
+	const ContainerType projected = parameter_type.to_container_type();
+	CHECK(projected.builtin_type == Variant::NIL);
+	CHECK(projected.element_types.is_empty());
+}
+
+TEST_CASE("[FoundryScript][UnionMembership] A union accepts the untyped container a plain typed slot accepts") {
+	// A non-union `Array[int]` parameter retypes an untyped literal at its binding, so a union holding
+	// that same alternative has to accept the identical value or the union slot is stricter than the
+	// alternative standing alone.
+	Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func take(value: Array[int] | Array[String]) -> void:\n"
+			"\tprint(value)\n");
+
+	const FSDataType parameter_type = first_parameter_type(script, SNAME("take"));
+
+	Array untyped_integers;
+	untyped_integers.push_back(1);
+	Variant accepted;
+	REQUIRE(fs_union_accepts(parameter_type, untyped_integers, accepted));
+	CHECK(Array(accepted).is_typed());
+	CHECK(parameter_type.is_type(accepted));
+
+	Array untyped_strings;
+	untyped_strings.push_back("one");
+	REQUIRE(fs_union_accepts(parameter_type, untyped_strings, accepted));
+	CHECK(parameter_type.is_type(accepted));
+
+	// Contents no alternative describes stay rejected, and nothing is built on the way there.
+	Array untyped_floats;
+	untyped_floats.push_back(1.5);
+	CHECK_FALSE(fs_union_accepts(parameter_type, untyped_floats, accepted));
 }
 
 } // namespace FSTests

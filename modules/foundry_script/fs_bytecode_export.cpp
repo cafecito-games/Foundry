@@ -391,6 +391,13 @@ Error FSBytecodeExporter::encode_data_type(StreamPeerBuffer *r_stream, const FSD
 			return error;
 		}
 	}
+	r_stream->put_u32((uint32_t)p_data_type.union_alternatives.size());
+	for (const FSDataType &alternative : p_data_type.union_alternatives) {
+		const Error error = encode_data_type(r_stream, alternative, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
 	return OK;
 }
 

@@ -499,6 +499,10 @@ private:
 	// checked path. A value whose static type already satisfies an alternative reports false and keeps
 	// the plain, unchecked store.
 	bool union_store_requires_membership_check(const FSParser::DataType &p_target, const FSParser::DataType &p_source) const;
+	// Whether a union destination admits a value whose static type proves no alternative, on the promise
+	// that the store checks membership when it runs. Asked at every value-flow position after the
+	// receiver contract has had its say, so it only ever adds an admission.
+	bool union_destination_admits_unproven_value(const FSParser::DataType &p_target, const FSParser::DataType &p_source) const;
 	String make_type_handle_argument_error(
 			const StringName &p_function,
 			int p_argument_number,

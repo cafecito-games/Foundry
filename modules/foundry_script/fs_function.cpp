@@ -390,11 +390,11 @@ String FSDataType::get_source_type_name() const {
 			// A nullable union hangs its `?` off the first alternative for the same reason, which is why
 			// this branch returns instead of taking the shared suffix below.
 			String alternatives;
-			for (int i = 0; i < container_element_types.size(); i++) {
+			for (int i = 0; i < union_alternatives.size(); i++) {
 				if (i > 0) {
 					alternatives += " | ";
 				}
-				alternatives += container_element_types[i].get_source_type_name();
+				alternatives += union_alternatives[i].get_source_type_name();
 				if (i == 0 && is_nullable) {
 					alternatives += "?";
 				}
@@ -843,6 +843,13 @@ bool FSStaticSelfContext::resolve_self(const FSDataType &p_type, const FSStaticS
 			return false;
 		}
 		resolved.type_arguments.write[i] = argument_type;
+	}
+	for (int i = 0; i < resolved.union_alternatives.size(); i++) {
+		FSDataType alternative_type;
+		if (!resolve_self(resolved.union_alternatives[i], p_context, alternative_type)) {
+			return false;
+		}
+		resolved.union_alternatives.write[i] = alternative_type;
 	}
 	r_resolved = resolved;
 	return true;

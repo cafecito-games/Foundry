@@ -1208,6 +1208,12 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				result.compatible = element_result.compatible;
 				result.requires_runtime_check = result.requires_runtime_check || element_result.requires_runtime_check;
 				result.uses_implicit_conversion = result.uses_implicit_conversion || element_result.uses_implicit_conversion;
+			} else if (p_target.has_container_element_type(0)) {
+				// A typed container reached from an untyped one. The carriers agree and nothing about the
+				// contents was proved, so the obligation belongs to the store -- which is what retypes the
+				// value into the declared element type. Recorded exactly as it is for a declared signature
+				// reached from a bare `Callable` above.
+				result.requires_runtime_check = true;
 			}
 		}
 		if (result.compatible && p_target.builtin_type == Variant::DICTIONARY && p_source.builtin_type == Variant::DICTIONARY) {
@@ -1225,6 +1231,10 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				result.compatible = value_result.compatible;
 				result.requires_runtime_check = result.requires_runtime_check || value_result.requires_runtime_check;
 				result.uses_implicit_conversion = result.uses_implicit_conversion || value_result.uses_implicit_conversion;
+			}
+			if (result.compatible && p_target.has_container_element_types() && !p_source.has_container_element_types()) {
+				// The untyped-source case the Array branch above records the same way.
+				result.requires_runtime_check = true;
 			}
 		}
 		return result;

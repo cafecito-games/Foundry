@@ -5433,9 +5433,10 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 				// `Variant` is a hard type, but it promises no more about the value than a weak one does,
 				// so both carriers face the same questions here.
 				const bool value_is_gradual = initializer_type.is_variant() || !initializer_type.is_hard_type();
-				if (value_is_gradual
-								? !self_contract_admits_gradual_value(specified_type, initializer_type)
-								: !self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN, p_assignable->initializer)) {
+				if ((value_is_gradual
+									? !self_contract_admits_gradual_value(specified_type, initializer_type)
+									: !self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN, p_assignable->initializer)) &&
+						!union_destination_admits_unproven_value(specified_type, initializer_type)) {
 					// An erased destination is refused for the reason ordinary validation gives, which
 					// names the one thing the reader can act on; every other refusal is the contract's.
 					const bool destination_is_erased = value_is_gradual && gradual_destination_is_undecidable(specified_type);
@@ -6602,7 +6603,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 			if (!self_container_literal_validated &&
 					(value_is_gradual
 									? !self_contract_admits_gradual_value(expected_type, result)
-									: !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN, p_return->return_value))) {
+									: !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN, p_return->return_value)) &&
+					!union_destination_admits_unproven_value(expected_type, result)) {
 				const bool destination_is_erased = value_is_gradual && gradual_destination_is_undecidable(compatibility_expected_type);
 				push_error(vformat(destination_is_erased
 										   ? R"(Cannot return value of type "%s" because the function return type is "%s": an erased type parameter has no run-time type to check the value against.)"
@@ -7798,9 +7800,10 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 			// The condition ordinary validation routes into its own gradual arm with; an annotated
 			// `Variant` promises no more about the value than a weak type does.
 			const bool value_is_gradual = op_type.is_variant() || !op_type.is_hard_type();
-			if (value_is_gradual
-							? !self_contract_admits_gradual_value(assignee_type, op_type)
-							: !self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN, p_assignment->assigned_value)) {
+			if ((value_is_gradual
+								? !self_contract_admits_gradual_value(assignee_type, op_type)
+								: !self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN, p_assignment->assigned_value)) &&
+					!union_destination_admits_unproven_value(assignee_type, op_type)) {
 				mark_node_unsafe(p_assignment);
 				const bool destination_is_erased = value_is_gradual && gradual_destination_is_undecidable(assignee_type);
 				push_error(vformat(destination_is_erased
@@ -18300,6 +18303,47 @@ bool FSAnalyzer::union_store_requires_membership_check(const FSParser::DataType 
 	options.receiver_is_available = !static_context;
 	const FSTypeCompatibility::Result result = FSTypeCompatibility::check(p_target, p_source, options);
 	return result.compatible && result.requires_runtime_check;
+}
+
+// A value whose static type says nothing about which alternative it holds. Exactly three source shapes
+// reach a union that way and none of them could ever have been checked against an alternative
+// statically: an untyped or soft value, an erased type parameter (untyped at run time in the same
+// way), and an untyped container, whose carrier is known and whose contents are not. A value that does
+// carry a static type is a different question and stays with the rules that compare types.
+static bool _value_proves_no_union_alternative(const FSParser::DataType &p_value_type) {
+	if (!p_value_type.is_set() || p_value_type.is_variant() || !p_value_type.is_hard_type()) {
+		return true;
+	}
+	if (p_value_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+		return true;
+	}
+	return p_value_type.kind == FSParser::DataType::BUILTIN &&
+			(p_value_type.builtin_type == Variant::ARRAY || p_value_type.builtin_type == Variant::DICTIONARY) &&
+			!p_value_type.has_container_element_types();
+}
+
+// The one answer every union destination gives a value nothing was proved about, so an argument, a
+// declared local, an assignment, and a return all admit the same values. The admission is a promise
+// that the store checks membership when it runs, so the two conditions under which no such promise can
+// be made are refused: a mode that forbids an untyped value from reaching a typed slot at all, and a
+// destination whose own type is erased, which leaves the run time nothing to check the value against.
+//
+// Whether the check is actually owed is `FSTypeCompatibility`'s answer, not a second opinion: a value
+// an alternative already satisfies statically is not "unproven" and never reaches here.
+bool FSAnalyzer::union_destination_admits_unproven_value(const FSParser::DataType &p_target, const FSParser::DataType &p_source) const {
+	if (p_target.kind != FSParser::DataType::UNION) {
+		return false;
+	}
+	if (p_source.is_variant() && strict_dynamic_checks) {
+		return false;
+	}
+	if (gradual_destination_is_undecidable(p_target)) {
+		return false;
+	}
+	if (!_value_proves_no_union_alternative(p_source)) {
+		return false;
+	}
+	return union_store_requires_membership_check(p_target, p_source);
 }
 
 bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node, const FSParser::ExpressionNode *p_constant_source) {

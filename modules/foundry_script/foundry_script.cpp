@@ -612,9 +612,10 @@ bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Varia
 		return true;
 	}
 	if (p_member.data_type.kind == FSDataType::UNION) {
-		// Membership is the whole question for a union slot: it has no carrier, so the
-		// `Variant::construct()` fallback below could only build a `NIL` and reject every value.
-		return p_member.data_type.is_type(r_value);
+		// Membership, through the one relation every union boundary asks, so a reflective write and an
+		// in-body store of the same member accept exactly the same values. The `Variant::construct()`
+		// fallback below could only build a `NIL` for the carrier a union does not have.
+		return fs_union_accepts(p_member.data_type, r_value, r_value);
 	}
 	if (!p_member.data_type.is_type(r_value)) {
 		// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's

@@ -93,8 +93,8 @@ public:
 		TUPLE,
 		TYPE_PARAMETER, // Generic type parameter, erased before execution.
 		// A set of alternatives. A union has no carrier of its own -- the value is one of the
-		// alternatives, stored exactly as it arrived -- so `container_element_types` holds the
-		// alternatives in the analyzer's canonical order and the membership test is their disjunction.
+		// alternatives, stored exactly as it arrived -- so `union_alternatives` holds them in the
+		// analyzer's canonical order and the membership test is their disjunction.
 		UNION,
 	};
 
@@ -131,6 +131,13 @@ public:
 
 	// Type arguments of a specialized type handle, e.g. the `int` in `Box[int]`. Empty for unspecialized types.
 	Vector<FSDataType> type_arguments;
+
+	// Alternatives of a `UNION`, in the analyzer's canonical order. Deliberately a field of its own
+	// rather than a reuse of `container_element_types`: every consumer that walks container elements --
+	// specialization evidence, binding projection, typed-container metadata -- reads them as parts of
+	// one value, which alternatives are not. A union therefore stays an unconstrained node everywhere
+	// except the membership test, exactly as its fully erased lowering did.
+	Vector<FSDataType> union_alternatives;
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
@@ -362,7 +369,7 @@ public:
 				// Membership in the set, asked of each alternative through the rules that alternative
 				// would carry standing alone. A union has no carrier, so there is nothing to convert to
 				// and nothing to fall back on: a value either is one of the alternatives or it is not.
-				for (const FSDataType &alternative : container_element_types) {
+				for (const FSDataType &alternative : union_alternatives) {
 					if (alternative.is_type(p_variant, p_allow_implicit_conversion, p_narrowing)) {
 						return true;
 					}
@@ -414,6 +421,11 @@ public:
 				return true;
 			}
 		}
+		for (const FSDataType &alternative : union_alternatives) {
+			if (alternative.references_self_type()) {
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -450,12 +462,6 @@ public:
 		if (is_nullable) {
 			// Core typed containers cannot express "this type or null", so a nullable element type
 			// becomes an untyped element. The analyzer still enforces element types statically.
-			return type;
-		}
-		if (kind == UNION) {
-			// A `ContainerType` transports exactly one type, which a set of alternatives cannot supply,
-			// so a union nested in a typed container leaves that position untyped. The analyzer still
-			// enforces the alternatives statically, and a union *slot* is checked by its own store.
 			return type;
 		}
 		type.builtin_type = builtin_type;
@@ -499,7 +505,8 @@ public:
 				type_parameter_name == p_other.type_parameter_name &&
 				type_parameter_scope == p_other.type_parameter_scope &&
 				type_parameter_index == p_other.type_parameter_index &&
-				type_arguments == p_other.type_arguments;
+				type_arguments == p_other.type_arguments &&
+				union_alternatives == p_other.union_alternatives;
 	}
 
 	bool operator!=(const FSDataType &p_other) const {
@@ -523,6 +530,7 @@ public:
 		type_parameter_index = p_other.type_parameter_index;
 		type_parameter_scope = p_other.type_parameter_scope;
 		type_arguments = p_other.type_arguments;
+		union_alternatives = p_other.union_alternatives;
 	}
 
 	FSDataType(const FSDataType &p_other) {
@@ -541,6 +549,21 @@ public:
 // untyped carrier, and a value that kept the caller's mutable Array would break that promise as soon
 // as the caller wrote to it again. Defined beside the store in `fs_vm.cpp`, whose rule it is.
 Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value);
+
+// Whether `p_value` is one of `p_union`'s alternatives, yielding the value the slot stores.
+//
+// Membership answers almost every case, and the value is then stored exactly as it arrived: a union
+// has no carrier, so there is nothing to convert to. The single normalization is the one a *non-union*
+// typed-container slot already performs -- an untyped Array or Dictionary whose contents all satisfy an
+// alternative's declared element types is retyped into that alternative -- because without it
+// `Array[int] | Array[String]` would reject the very literal a plain `Array[int]` parameter accepts,
+// which is the parity this check exists to restore. Alternatives are tried in the analyzer's canonical
+// order, so an untyped literal several alternatives could claim lands in the first that admits it.
+//
+// Every boundary into a union slot answers through this: the in-body store, the parameter binding, the
+// reflective member write, and the proxy write. Defined beside the store in `fs_vm.cpp`, whose rule it
+// is.
+bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant &r_value);
 
 #ifdef DEBUG_ENABLED
 // The single sentence a rejected tuple store reports, wherever the store was reached from. The

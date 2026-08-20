@@ -573,8 +573,12 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			// and is applied by the shared tail below.
 			result.kind = FSDataType::UNION;
 			for (const FSParser::DataType &member : p_datatype.union_members) {
-				result.container_element_types.push_back(
-						_gdtype_from_datatype(member, p_owner, p_handle_metatype, p_preserve_type_parameters));
+				// A tuple alternative keeps its shape rather than taking the slot lowering, which erases
+				// every tuple to a bare Array: the membership test asks the structural question an `is`
+				// test asks, so it needs the same shape an `is` test is compiled against.
+				result.union_alternatives.push_back(member.kind == FSParser::DataType::TUPLE
+								? _gdtype_tuple_test_type_from_datatype(member, p_owner, p_preserve_type_parameters)
+								: _gdtype_from_datatype(member, p_owner, p_handle_metatype, p_preserve_type_parameters));
 			}
 		} break;
 		case FSParser::DataType::RESOLVING:
