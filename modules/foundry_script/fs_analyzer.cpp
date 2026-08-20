@@ -5408,6 +5408,14 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 									   specified_type.to_string()) +
 									FSParser::DataType::same_rendered_name_clause(initializer_type, "value", specified_type, "specified type"),
 							p_assignable->initializer);
+				} else if (initializer_type.is_variant()) {
+					// An alternative that names no `Self` admits a value whose static type promises
+					// nothing, so the crossing is booked exactly as the arm below books it for a
+					// destination that mentions no `Self` at all. Neither report that arm carries can
+					// arise here: strict dynamic mode refuses such a value before the contract admits it,
+					// and an erased destination is not a shape the contract admits.
+					mark_node_unsafe(p_assignable->initializer);
+					p_assignable->use_conversion_assign = true;
 				}
 			} else if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
 				if (initializer_type.is_variant() && strict_dynamic_checks) {
@@ -6538,6 +6546,13 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 								   expected_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(result, "returned value", expected_type, "return type"),
 						p_return);
+			} else if (result.is_variant()) {
+				// An alternative that names no `Self` admits a value whose static type promises nothing,
+				// so the crossing is booked exactly as the arm below books it for a return type that
+				// mentions no `Self` at all. Neither report that arm carries can arise here: strict
+				// dynamic mode refuses such a value before the contract admits it, and an erased
+				// destination is not a shape the contract admits.
+				mark_node_unsafe(p_return);
 			}
 			p_return->set_datatype(result);
 			return;
@@ -7595,6 +7610,15 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 								   assignee_type.to_string()) +
 								FSParser::DataType::same_rendered_name_clause(assigned_value_type, "value", assignee_type, "variable's type"),
 						p_assignment->assigned_value);
+			} else if (op_type.is_variant()) {
+				// An alternative that names no `Self` admits a value whose static type promises nothing,
+				// so the crossing is booked exactly as the variant arm below books it for an assignee
+				// that mentions no `Self` at all. Neither report that arm carries can arise here: strict
+				// dynamic mode refuses such a value before the contract admits it, and an erased
+				// destination is not a shape the contract admits. An annotated `Self`-bearing assignee is
+				// always hard, so the weak-assignee downgrade below is not this position's case either.
+				mark_node_unsafe(p_assignment);
+				p_assignment->use_conversion_assign = true;
 			}
 		} else if (assignee_is_hard && !assigned_is_hard) {
 			// hard non-variant assignee and weak assigned
