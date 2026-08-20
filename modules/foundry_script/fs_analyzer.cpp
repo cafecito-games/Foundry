@@ -755,6 +755,11 @@ static bool _is_bare_self_value_parameter(const FSParser::DataType &p_type) {
 	return _is_self_type_parameter(p_type) && !p_type.is_type_handle_annotation;
 }
 
+// A receiver already typed as the frame's `@Self` *is* that `Self`, so stamping a contract from it
+// reuses its binding instead of making `Self` its own bound. Nesting would leave the parameter
+// carrying `@Self bound by (@Self bound by C)` while every `Self` a caller can write carries
+// `@Self bound by C`, and no argument would ever match: the wrap has to be idempotent so the
+// `self.`-qualified spellings type-check exactly like their unqualified ones.
 static FSParser::DataType _self_type_parameter_from_bound(const FSParser::DataType &p_bound) {
 	FSParser::DataType self_type;
 	self_type.kind = FSParser::DataType::TYPE_PARAMETER;
@@ -762,6 +767,12 @@ static FSParser::DataType _self_type_parameter_from_bound(const FSParser::DataTy
 	self_type.type_parameter_name = SNAME("@Self");
 	self_type.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_CLASS;
 	self_type.type_parameter_index = -1;
+	if (_is_bare_self_value_parameter(p_bound)) {
+		if (!p_bound.type_parameter_bound.is_empty()) {
+			self_type.type_parameter_bound.push_back(p_bound.type_parameter_bound[0]);
+		}
+		return self_type;
+	}
 	if (p_bound.is_set() && !p_bound.is_variant()) {
 		self_type.type_parameter_bound.push_back(p_bound);
 	}
@@ -771,6 +782,12 @@ static FSParser::DataType _self_type_parameter_from_bound(const FSParser::DataTy
 static FSParser::DataType _self_type_parameter_for_class(FSParser::ClassNode *p_class) {
 	return _self_type_parameter_from_bound(_self_type_for_class(p_class));
 }
+
+#ifdef TESTS_ENABLED
+FSParser::DataType FSAnalyzer::test_self_type_parameter_from_bound(const FSParser::DataType &p_bound) {
+	return _self_type_parameter_from_bound(p_bound);
+}
+#endif // TESTS_ENABLED
 
 static bool _datatype_contains_self_type_parameter(const FSParser::DataType &p_type) {
 	if (_is_self_type_parameter(p_type)) {
@@ -18746,6 +18763,102 @@ bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::Da
 	return p_call == nullptr || call_receiver_is_current_self(p_call);
 }
 
+// Reader-facing name of one composite slot, used to say where inside a rejected argument the
+// receiver-relative `Self` lives.
+static String _self_receiver_identity_element_label(const FSParser::DataType &p_type, int p_index) {
+	if (p_type.is_tuple()) {
+		if (p_index < p_type.tuple_field_names.size() && p_type.tuple_field_names[p_index] != StringName()) {
+			return vformat(R"(element "%s")", p_type.tuple_field_names[p_index]);
+		}
+		return vformat("element %d", p_index + 1);
+	}
+	if (p_type.container_element_types.size() > 1) {
+		return vformat("element type %d", p_index + 1);
+	}
+	return "the element type";
+}
+
+// Locates the `Self` reason inside an argument the whole-type match already rejected. A sibling slot
+// with an ordinary mismatch fails the whole-type comparison, which would otherwise leave the
+// receiver-relative slot unexplained: fix the sibling and the call fails again for a reason never
+// stated. The walked slots mirror `_self_parameter_contract_match_needs_receiver_identity`.
+bool FSAnalyzer::self_parameter_receiver_identity_slot(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_argument_type,
+		String &r_slot_label) {
+	const auto slot_requires_receiver_identity = [&](const FSParser::DataType &p_expected_slot,
+														 const FSParser::DataType &p_argument_slot) {
+		FSParser::DataType matched;
+		return _datatype_contains_caller_relative_self(p_argument_slot) &&
+				self_parameter_contract_matched_argument(p_expected_slot, p_argument_slot, nullptr, matched) &&
+				_self_parameter_contract_match_needs_receiver_identity(p_expected_slot, matched);
+	};
+	const auto descend = [&](const FSParser::DataType &p_expected_slot, const FSParser::DataType &p_argument_slot,
+								 const String &p_label) {
+		if (slot_requires_receiver_identity(p_expected_slot, p_argument_slot)) {
+			r_slot_label = p_label;
+			return true;
+		}
+		String inner_label;
+		if (self_parameter_receiver_identity_slot(p_expected_slot, p_argument_slot, inner_label)) {
+			r_slot_label = inner_label + " of " + p_label;
+			return true;
+		}
+		return false;
+	};
+	// Slot vectors pair up only when both sides agree on size; a size mismatch means the two shapes
+	// share no slot the requirement could be attributed to.
+	if (p_expected_type.container_element_types.size() == p_argument_type.container_element_types.size()) {
+		for (int i = 0; i < p_expected_type.container_element_types.size(); i++) {
+			if (descend(p_expected_type.container_element_types[i], p_argument_type.container_element_types[i],
+						_self_receiver_identity_element_label(p_expected_type, i))) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.type_arguments.size() == p_argument_type.type_arguments.size()) {
+		for (int i = 0; i < p_expected_type.type_arguments.size(); i++) {
+			if (descend(p_expected_type.type_arguments[i], p_argument_type.type_arguments[i],
+						vformat("type argument %d", i + 1))) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_parameter_types.size() == p_argument_type.method_parameter_types.size()) {
+		for (int i = 0; i < p_expected_type.method_parameter_types.size(); i++) {
+			if (descend(p_expected_type.method_parameter_types[i], p_argument_type.method_parameter_types[i],
+						vformat("callable parameter %d", i + 1))) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_return_type.size() == p_argument_type.method_return_type.size()) {
+		for (int i = 0; i < p_expected_type.method_return_type.size(); i++) {
+			if (descend(p_expected_type.method_return_type[i], p_argument_type.method_return_type[i],
+						"the callable return type")) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_rest_parameter_type.size() == p_argument_type.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_expected_type.method_rest_parameter_type.size(); i++) {
+			if (descend(p_expected_type.method_rest_parameter_type[i], p_argument_type.method_rest_parameter_type[i],
+						"the callable rest parameter")) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.union_members.size() == p_argument_type.union_members.size()) {
+		for (int i = 0; i < p_expected_type.union_members.size(); i++) {
+			if (descend(p_expected_type.union_members[i], p_argument_type.union_members[i],
+						vformat("alternative %d", i + 1))) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 // The sibling query of `self_parameter_contract_admits_argument_type`: it reports the one rejection
 // reason no rendered type can show. Both sides matched the contract and differ only in the receiver
 // their `Self` positions resolve against, so `same_rendered_name_clause` finds nothing structural to
@@ -18774,16 +18887,22 @@ String FSAnalyzer::self_parameter_receiver_identity_clause(
 		return String();
 	}
 	FSParser::DataType argument_type;
+	String slot_label;
 	if (!self_parameter_contract_matched_argument(p_expected_type, p_argument_type, nullptr, argument_type) ||
 			!_datatype_contains_caller_relative_self(p_argument_type) ||
 			!_self_parameter_contract_match_needs_receiver_identity(p_expected_type, argument_type)) {
-		return String();
+		// The whole type did not match, which an ordinary mismatch in any one slot is enough to cause.
+		// The `Self` reason may still live in a sibling slot, and it is named so it is not lost behind
+		// the mismatch that masked it.
+		if (!self_parameter_receiver_identity_slot(p_expected_type, p_argument_type, slot_label)) {
+			return String();
+		}
 	}
 	if (p_call == nullptr || call_receiver_is_current_self(p_call)) {
 		return String();
 	}
-	return vformat(R"( The %s's "Self" is resolved against the receiver expression; the %s is relative to the calling frame's receiver.)",
-			p_expected_subject, p_argument_subject);
+	return vformat(R"( The %s's "Self"%s is resolved against the receiver expression; the %s is relative to the calling frame's receiver.)",
+			p_expected_subject, slot_label.is_empty() ? String() : " at " + slot_label, p_argument_subject);
 }
 
 String FSAnalyzer::make_type_handle_argument_error(
