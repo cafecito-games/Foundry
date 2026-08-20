@@ -796,6 +796,11 @@ static bool _datatype_contains_self_type_parameter(const FSParser::DataType &p_t
 			return true;
 		}
 	}
+	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
+		if (_datatype_contains_self_type_parameter(rest_parameter_type)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -940,6 +945,10 @@ static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSPa
 	for (int i = 0; i < result.method_return_type.size(); i++) {
 		result.method_return_type.write[i] = _substitute_self_type_parameter_with_bounds(result.method_return_type[i], p_mark_substituted_self);
 	}
+	for (int i = 0; i < result.method_rest_parameter_type.size(); i++) {
+		result.method_rest_parameter_type.write[i] =
+				_substitute_self_type_parameter_with_bounds(result.method_rest_parameter_type[i], p_mark_substituted_self);
+	}
 	return result;
 }
 
@@ -1018,6 +1027,11 @@ static bool _datatype_self_bindings_are_final(const FSParser::DataType &p_type) 
 	}
 	for (const FSParser::DataType &return_type : p_type.method_return_type) {
 		if (!_datatype_self_bindings_are_final(return_type)) {
+			return false;
+		}
+	}
+	for (const FSParser::DataType &rest_parameter_type : p_type.method_rest_parameter_type) {
+		if (!_datatype_self_bindings_are_final(rest_parameter_type)) {
 			return false;
 		}
 	}
@@ -1299,6 +1313,15 @@ static bool _self_parameter_contract_match_needs_receiver_identity(
 			if (_self_parameter_contract_match_needs_receiver_identity(
 						p_expected_type.method_return_type[i],
 						p_argument_type.method_return_type[i])) {
+				return true;
+			}
+		}
+	}
+	if (p_expected_type.method_rest_parameter_type.size() == p_argument_type.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_expected_type.method_rest_parameter_type.size(); i++) {
+			if (_self_parameter_contract_match_needs_receiver_identity(
+						p_expected_type.method_rest_parameter_type[i],
+						p_argument_type.method_rest_parameter_type[i])) {
 				return true;
 			}
 		}
