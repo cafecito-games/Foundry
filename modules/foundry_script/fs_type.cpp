@@ -999,17 +999,19 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			}
 			if (member_result.uses_implicit_conversion &&
 					(p_source.kind != FSParser::DataType::BUILTIN || target_member.builtin_type != p_source.builtin_type)) {
-				// A union slot is untyped at runtime, so no conversion instruction is emitted for it.
-				// An alternative reachable only by changing the value's carrier would therefore hold an
-				// unconverted value and fail its own type test. A width-only conversion is fine: width is
-				// out-of-band metadata and the stored value is unchanged.
+				// A union slot has no carrier of its own, so no conversion instruction is emitted for it:
+				// the store verifies membership and writes the value exactly as it arrived. An alternative
+				// reachable only by changing the value's carrier would therefore hold an unconverted value
+				// and fail its own type test. A width-only conversion is fine: width is out-of-band
+				// metadata and the stored value is unchanged.
 				continue;
 			}
 			result.compatible = true;
 			result.uses_implicit_conversion = member_result.uses_implicit_conversion;
-			// An alternative that only accepts the source under a runtime check keeps that obligation.
-			// The union slot itself emits none, so the caller has to treat the flow as unsafe rather than
-			// read a set membership it never proved: an erased type parameter is the case that matters.
+			// An alternative that only accepts the source under a runtime check keeps that obligation, and
+			// the union store is what discharges it: the compiled store tests the value against the whole
+			// alternative set. A source that satisfies an alternative statically records nothing here, so
+			// the proven flow keeps the plain, unchecked store.
 			result.requires_runtime_check = member_result.requires_runtime_check;
 			return result;
 		}
@@ -1206,6 +1208,12 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				result.compatible = element_result.compatible;
 				result.requires_runtime_check = result.requires_runtime_check || element_result.requires_runtime_check;
 				result.uses_implicit_conversion = result.uses_implicit_conversion || element_result.uses_implicit_conversion;
+			} else if (p_target.has_container_element_type(0)) {
+				// A typed container reached from an untyped one. The carriers agree and nothing about the
+				// contents was proved, so the obligation belongs to the store -- which is what retypes the
+				// value into the declared element type. Recorded exactly as it is for a declared signature
+				// reached from a bare `Callable` above.
+				result.requires_runtime_check = true;
 			}
 		}
 		if (result.compatible && p_target.builtin_type == Variant::DICTIONARY && p_source.builtin_type == Variant::DICTIONARY) {
@@ -1223,6 +1231,10 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				result.compatible = value_result.compatible;
 				result.requires_runtime_check = result.requires_runtime_check || value_result.requires_runtime_check;
 				result.uses_implicit_conversion = result.uses_implicit_conversion || value_result.uses_implicit_conversion;
+			}
+			if (result.compatible && p_target.has_container_element_types() && !p_source.has_container_element_types()) {
+				// The untyped-source case the Array branch above records the same way.
+				result.requires_runtime_check = true;
 			}
 		}
 		return result;

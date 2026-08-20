@@ -448,6 +448,11 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (FSDataType &type_argument : r_type.type_arguments) {
 			rewrite_data_type(type_argument);
 		}
+		// A union alternative can name a trait or a script just as a container element can, and it is the
+		// only place that identity survives -- a union's own slot carries no class at all.
+		for (FSDataType &alternative : r_type.union_alternatives) {
+			rewrite_data_type(alternative);
+		}
 	}
 
 	void rewrite_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding) const {
@@ -1204,6 +1209,13 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const FSDataType &type_argument : p_type.type_arguments) {
 			if (data_type_contains_name(
 						type_argument, p_name, r_visited_scripts,
+						p_depth + 1)) {
+				return true;
+			}
+		}
+		for (const FSDataType &alternative : p_type.union_alternatives) {
+			if (data_type_contains_name(
+						alternative, p_name, r_visited_scripts,
 						p_depth + 1)) {
 				return true;
 			}
@@ -3095,6 +3107,12 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 		for (const FSDataType &type_argument : p_type.type_arguments) {
 			if (!validate_data_type_closure(type_argument, p_referring, p_surface,
+						p_roots, r_diagnostics, p_depth + 1)) {
+				return false;
+			}
+		}
+		for (const FSDataType &alternative : p_type.union_alternatives) {
+			if (!validate_data_type_closure(alternative, p_referring, p_surface,
 						p_roots, r_diagnostics, p_depth + 1)) {
 				return false;
 			}

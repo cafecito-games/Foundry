@@ -1,0 +1,2 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/type_union_membership_erased_type_parameter.fs:13 on launder(): Invalid type in function 'take' in base 'RefCounted (type_union_membership_erased_type_parameter.fs)'. Argument 1 has type "Box", but the parameter requires "String | int".

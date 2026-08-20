@@ -79,8 +79,8 @@ class FSDataType {
 public:
 	Vector<FSDataType> container_element_types;
 
-	// NOTE: `TYPE_PARAMETER` must remain the last/highest value. The compiled-bytecode loader
-	// (`FSBytecodeLoader::decode_data_type`) validates a deserialized kind with `kind > TYPE_PARAMETER`;
+	// NOTE: `UNION` must remain the last/highest value. The compiled-bytecode loader
+	// (`FSBytecodeLoader::decode_data_type`) validates a deserialized kind with `kind > UNION`;
 	// if a new kind is appended after it, update that upper-bound check to the new last value.
 	enum Kind {
 		VARIANT, // Can be any type.
@@ -92,6 +92,10 @@ public:
 		// around at runtime; `container_element_types` holds the element types, in declaration order.
 		TUPLE,
 		TYPE_PARAMETER, // Generic type parameter, erased before execution.
+		// A set of alternatives. A union has no carrier of its own -- the value is one of the
+		// alternatives, stored exactly as it arrived -- so `union_alternatives` holds them in the
+		// analyzer's canonical order and the membership test is their disjunction.
+		UNION,
 	};
 
 	Kind kind = VARIANT;
@@ -127,6 +131,13 @@ public:
 
 	// Type arguments of a specialized type handle, e.g. the `int` in `Box[int]`. Empty for unspecialized types.
 	Vector<FSDataType> type_arguments;
+
+	// Alternatives of a `UNION`, in the analyzer's canonical order. Deliberately a field of its own
+	// rather than a reuse of `container_element_types`: every consumer that walks container elements --
+	// specialization evidence, binding projection, typed-container metadata -- reads them as parts of
+	// one value, which alternatives are not. A union therefore stays an unconstrained node everywhere
+	// except the membership test, exactly as its fully erased lowering did.
+	Vector<FSDataType> union_alternatives;
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
@@ -354,6 +365,17 @@ public:
 				// Type parameters are erased before execution; accept any value defensively.
 				return true;
 			} break;
+			case UNION: {
+				// Membership in the set, asked of each alternative through the rules that alternative
+				// would carry standing alone. A union has no carrier, so there is nothing to convert to
+				// and nothing to fall back on: a value either is one of the alternatives or it is not.
+				for (const FSDataType &alternative : union_alternatives) {
+					if (alternative.is_type(p_variant, p_allow_implicit_conversion, p_narrowing)) {
+						return true;
+					}
+				}
+				return false;
+			} break;
 		}
 		return false;
 	}
@@ -396,6 +418,11 @@ public:
 		}
 		for (const FSDataType &element_type : container_element_types) {
 			if (element_type.references_self_type()) {
+				return true;
+			}
+		}
+		for (const FSDataType &alternative : union_alternatives) {
+			if (alternative.references_self_type()) {
 				return true;
 			}
 		}
@@ -478,7 +505,8 @@ public:
 				type_parameter_name == p_other.type_parameter_name &&
 				type_parameter_scope == p_other.type_parameter_scope &&
 				type_parameter_index == p_other.type_parameter_index &&
-				type_arguments == p_other.type_arguments;
+				type_arguments == p_other.type_arguments &&
+				union_alternatives == p_other.union_alternatives;
 	}
 
 	bool operator!=(const FSDataType &p_other) const {
@@ -502,6 +530,7 @@ public:
 		type_parameter_index = p_other.type_parameter_index;
 		type_parameter_scope = p_other.type_parameter_scope;
 		type_arguments = p_other.type_arguments;
+		union_alternatives = p_other.union_alternatives;
 	}
 
 	FSDataType(const FSDataType &p_other) {
@@ -520,6 +549,27 @@ public:
 // untyped carrier, and a value that kept the caller's mutable Array would break that promise as soon
 // as the caller wrote to it again. Defined beside the store in `fs_vm.cpp`, whose rule it is.
 Variant fs_canonical_tuple_value(const FSDataType &p_shape, const Variant &p_value);
+
+// Whether `p_value` is one of `p_union`'s alternatives, yielding the value the slot stores.
+//
+// Membership answers almost every case, and the value is then stored exactly as it arrived: a union
+// has no carrier, so there is nothing to convert to. The single normalization is the one a *non-union*
+// typed-container slot already performs -- an untyped Array or Dictionary whose contents all satisfy an
+// alternative's declared element types is retyped into that alternative -- because without it
+// `Array[int] | Array[String]` would reject the very literal a plain `Array[int]` parameter accepts,
+// which is the parity this check exists to restore.
+//
+// Selection rule, when more than one alternative could claim the value: the first alternative in
+// canonical order that the value ALREADY satisfies wins, and only if none does is the first
+// alternative in canonical order that admits it BY RETYPING chosen. An exact match is preferred over a
+// converting one for the reason the non-union binding beside this one already gives -- a conversion
+// copies, so binding a value to a type it already has is both cheaper and less surprising than
+// rewriting its representation to reach an alternative that merely sorts earlier.
+//
+// Every boundary into a union slot answers through this: the in-body store, the parameter binding, the
+// reflective member write, and the proxy write. Defined beside the store in `fs_vm.cpp`, whose rule it
+// is.
+bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant &r_value);
 
 #ifdef DEBUG_ENABLED
 // The single sentence a rejected tuple store reports, wherever the store was reached from. The
@@ -783,6 +833,14 @@ public:
 		// converts -- tuple elements are invariant and a tuple value is a read-only Array -- so a value
 		// that passes is stored exactly as it arrived.
 		OPCODE_ASSIGN_TYPED_TUPLE,
+		// Store validated against a union slot's alternative set. A union has no carrier of its own, so
+		// the alternatives travel as a compiled descriptor operand and the check is their disjunction --
+		// the same question `is_type()` asks for a parameter or a member of the same type. Nothing is
+		// converted: the value the slot accepts is the value the source had.
+		//
+		// Emitted only where the static types did not already prove membership, which is what
+		// `FSTypeCompatibility::Result::requires_runtime_check` records for the store.
+		OPCODE_ASSIGN_TYPED_UNION,
 		// Call-site validation of one argument of a statically resolved generic call. The callee is
 		// compiled once with its method-scope type parameters erased, so its own argument binding has no
 		// run-time type to check the value against; the caller, which knows the substitution, checks and

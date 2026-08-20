@@ -1,7 +1,7 @@
-# A value with no static type proves nothing, so no `Self` position can be checked against it. An
-# alternative that names no `Self` is answered by ordinary compatibility, which admits such a value and
-# books the crossing rather than refusing it -- the answer the whole annotation had before any
-# alternative mentioned `Self`. A declared variable, an assignment target, and a return type all agree.
+# A value with no static type proves nothing, so the crossing is booked rather than proved: the union
+# slot verifies membership when the store runs. A declared variable, an assignment target, and a
+# return type all agree, and so does a union whose every alternative names `Self`
+# (`type_self_union_gradual_value_without_alternative.fs`).
 class Receiver:
 	var counter = 5
 

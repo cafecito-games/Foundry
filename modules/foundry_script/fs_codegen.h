@@ -144,6 +144,12 @@ public:
 	// `is` test. Nothing is converted: tuple elements are invariant and the value keeps the read-only
 	// Array identity its value semantics depend on.
 	virtual void write_assign_typed_tuple(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) = 0;
+	// Store into a slot declared as a union, verifying at run time that the value is one of the
+	// alternatives. A union has no carrier, so `p_expected_type` is the `UNION` shape itself and the
+	// check is the disjunction of its alternatives. Nothing is converted: an alternative reachable only
+	// by changing the value's carrier is not an alternative the slot admits, which is the rule the
+	// analyzer already applies, so the value the slot accepts is the value the source had.
+	virtual void write_assign_typed_union(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) = 0;
 	// Store validated against a class named by a runtime value rather than by the declaration: the type to
 	// check is read from `p_type_source`, which holds a live class handle. This is what a method-scope type
 	// parameter -- erased to Variant, so nameable by no constant -- is checked against when the frame does

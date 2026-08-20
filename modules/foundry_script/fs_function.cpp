@@ -384,6 +384,23 @@ String FSDataType::get_source_type_name() const {
 			}
 			name = "(" + elements + ")";
 		} break;
+		case UNION: {
+			// The alternatives in the canonical order the analyzer normalized them into, so a runtime
+			// diagnostic names the union exactly as the source and the analyzer's own messages spell it.
+			// A nullable union hangs its `?` off the first alternative for the same reason, which is why
+			// this branch returns instead of taking the shared suffix below.
+			String alternatives;
+			for (int i = 0; i < union_alternatives.size(); i++) {
+				if (i > 0) {
+					alternatives += " | ";
+				}
+				alternatives += union_alternatives[i].get_source_type_name();
+				if (i == 0 && is_nullable) {
+					alternatives += "?";
+				}
+			}
+			return alternatives.is_empty() ? String("Variant") : alternatives;
+		}
 		case BUILTIN: {
 			if (builtin_type == Variant::NIL) {
 				// `void` is the only declaration that lowers to the NIL builtin; the grammar allows the
@@ -826,6 +843,13 @@ bool FSStaticSelfContext::resolve_self(const FSDataType &p_type, const FSStaticS
 			return false;
 		}
 		resolved.type_arguments.write[i] = argument_type;
+	}
+	for (int i = 0; i < resolved.union_alternatives.size(); i++) {
+		FSDataType alternative_type;
+		if (!resolve_self(resolved.union_alternatives[i], p_context, alternative_type)) {
+			return false;
+		}
+		resolved.union_alternatives.write[i] = alternative_type;
 	}
 	r_resolved = resolved;
 	return true;

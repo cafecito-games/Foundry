@@ -1,0 +1,5 @@
+FS_TEST_OK
+proxy retyped [1, 2]
+plain retyped [1, 2]
+proxy direct alternative text
+plain direct alternative text

@@ -47,6 +47,15 @@ static void _pin_script_type_refs(FSDataType &p_type) {
 	for (int i = 0; i < p_type.container_element_types.size(); i++) {
 		_pin_script_type_refs(p_type.container_element_types.write[i]);
 	}
+	// A specialized handle's arguments and a union's alternatives name scripts the same way an element
+	// does, and a snapshot that left either unpinned would dangle on exactly the reload this pinning
+	// exists to survive.
+	for (int i = 0; i < p_type.type_arguments.size(); i++) {
+		_pin_script_type_refs(p_type.type_arguments.write[i]);
+	}
+	for (int i = 0; i < p_type.union_alternatives.size(); i++) {
+		_pin_script_type_refs(p_type.union_alternatives.write[i]);
+	}
 }
 
 // The zero value of a declared FoundryScript type: typed containers get a correctly
@@ -164,6 +173,21 @@ Variant FSProxyInstance::_coerce_handler_return(const FSDataType &p_return_type,
 	// Untyped / `Variant` return: pass the handler's value through unchanged.
 	if (!p_return_type.has_type()) {
 		return p_value;
+	}
+
+	if (p_return_type.kind == FSDataType::UNION) {
+		// Membership, through the one relation every union boundary asks, so a proxy return accepts
+		// exactly what a plain union-returning function accepts -- the untyped-container retyping and a
+		// tuple alternative's canonical read-only carrier included. Asked *before* the exact-type fast
+		// path below, which hands the caller's value straight back: a mutable Array that structurally
+		// satisfies a tuple alternative would otherwise skip the canonicalization and leave the slot
+		// aliasing a value the caller can still grow. A value no alternative describes falls into the
+		// shared mismatch tail: the widening and conversion branches are both keyed on `BUILTIN` and
+		// could only ask `Variant::construct()` about the `NIL` carrier a union does not have.
+		Variant accepted;
+		if (fs_union_accepts(p_return_type, p_value, accepted)) {
+			return accepted;
+		}
 	}
 
 	// Already an acceptable value for the declared type (covers exact builtins,
@@ -437,7 +461,13 @@ bool FSProxyInstance::set(const StringName &p_name, const Variant &p_value) {
 	Variant value = p_value;
 	if (type_element) {
 		const FSDataType &data_type = type_element->value;
-		if (!data_type.is_type(value)) {
+		if (data_type.kind == FSDataType::UNION) {
+			// Membership, through the one relation every union boundary asks. The `Variant::construct()`
+			// fallback below could only build a `NIL` for the carrier a union does not have.
+			if (!fs_union_accepts(data_type, value, value)) {
+				return false;
+			}
+		} else if (!data_type.is_type(value)) {
 			// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's
 			// widen-then-width order and kept structurally parallel to
 			// `FoundryScript::_coerce_member_write` so the proxy store and a real instance agree on

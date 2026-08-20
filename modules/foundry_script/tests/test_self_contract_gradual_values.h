@@ -77,7 +77,11 @@ class Receiver:
 	CHECK(strict_error_count(self_union) > 0);
 }
 
-TEST_CASE("[Modules][FoundryScript][SelfContract] A soft value is refused when every alternative names Self") {
+// A union slot verifies membership when it runs, and that check resolves a `Self` alternative against
+// the running receiver, so a union whose every alternative names `Self` can book the same promise a
+// union with a `Self`-free alternative books. A destination written as `Self` alone is a different
+// question -- it is not a union and has no alternative set -- and keeps refusing the value.
+TEST_CASE("[Modules][FoundryScript][SelfContract] A soft value is admitted when every alternative names Self") {
 	const String every_alternative = R"(
 class Receiver:
 	var counter = 5
@@ -85,6 +89,15 @@ class Receiver:
 	func drive() -> void:
 		var soft = counter
 		var link: (int, Self) | (String, Self) = soft
+		print(link)
+)";
+	const String some_alternative = R"(
+class Receiver:
+	var counter = 5
+
+	func drive() -> void:
+		var soft = counter
+		var link: int | (int, Self) = soft
 		print(link)
 )";
 	const String bare_self = R"(
@@ -104,7 +117,8 @@ class Receiver:
 		return parser.get_errors().size();
 	};
 	CHECK(error_count(bare_self) > 0);
-	CHECK(error_count(every_alternative) > 0);
+	CHECK(error_count(some_alternative) == 0);
+	CHECK(error_count(every_alternative) == 0);
 }
 
 // The gradual admission books a promise that the run time will check what the analyzer could not.

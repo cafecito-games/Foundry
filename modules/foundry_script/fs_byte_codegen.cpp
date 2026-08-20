@@ -278,6 +278,7 @@ static bool _lowered_types_are_identical(const FSDataType &p_left, const FSDataT
 			p_left.type_parameter_index != p_right.type_parameter_index ||
 			p_left.type_parameter_scope != p_right.type_parameter_scope ||
 			p_left.type_arguments.size() != p_right.type_arguments.size() ||
+			p_left.union_alternatives.size() != p_right.union_alternatives.size() ||
 			p_left.container_element_types.size() != p_right.container_element_types.size()) {
 		return false;
 	}
@@ -288,6 +289,11 @@ static bool _lowered_types_are_identical(const FSDataType &p_left, const FSDataT
 	}
 	for (int i = 0; i < p_left.container_element_types.size(); i++) {
 		if (!_lowered_types_are_identical(p_left.container_element_types[i], p_right.container_element_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_left.union_alternatives.size(); i++) {
+		if (!_lowered_types_are_identical(p_left.union_alternatives[i], p_right.union_alternatives[i])) {
 			return false;
 		}
 	}
@@ -340,6 +346,17 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 		// A tuple erases to a plain Array, so `builtin_type` alone would read back as a typed array
 		// of the first element type. The marker keeps the tuple shape recoverable for `is` tests.
 		descriptor["is_tuple"] = true;
+	}
+	if (p_type.kind == FSDataType::UNION) {
+		// A union carries no `builtin_type` of its own, and its alternatives are not the parts of one
+		// value, so they travel under their own key rather than as the node's element list. Both are what
+		// keep the set recoverable and keep it from reading back as a typed container.
+		descriptor["is_union"] = true;
+		Array alternatives;
+		for (const FSDataType &alternative : p_type.union_alternatives) {
+			alternatives.push_back(make_container_type_descriptor(alternative));
+		}
+		descriptor["union_alternatives"] = alternatives;
 	}
 	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
 		// A type parameter has no runtime type of its own, so the node records which parameter of the
@@ -400,6 +417,11 @@ int FSByteCodeGenerator::get_container_type_pos(const FSDataType &p_type) {
 	// `script_type` fallback below carries no marker, so the frame could not tell the position apart
 	// from one the author spelled out as the class the declaration was lowered against.
 	if (p_type.references_self_type()) {
+		return get_constant_pos(make_container_type_descriptor(p_type));
+	}
+	// A union is a set of alternatives, which the bare `script_type` fallback below (a single class)
+	// cannot express in any form.
+	if (p_type.kind == FSDataType::UNION) {
 		return get_constant_pos(make_container_type_descriptor(p_type));
 	}
 	if ((p_type.builtin_type == Variant::ARRAY || p_type.builtin_type == Variant::DICTIONARY) && p_type.has_container_element_types()) {
@@ -1522,6 +1544,13 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 			append(idx);
 			append(p_target.type.is_type_handle);
 		} break;
+		case FSDataType::UNION: {
+			// The conversion path is where a store whose membership the static types did not prove
+			// lands, so this is where the slot verifies it. There is nothing to convert to: a union has
+			// no carrier, and an alternative reachable only by changing the value's carrier is one the
+			// analyzer already refused.
+			write_assign_typed_union(p_target, p_source, p_target.type);
+		} break;
 		case FSDataType::VARIANT: {
 			// Converting into an untyped slot (including a generic parameter erased to Variant) is an
 			// identity assignment, so emit a plain assign instead of the bug-catcher below.
@@ -1652,6 +1681,16 @@ void FSByteCodeGenerator::write_assign_typed_tuple(const Address &p_target, cons
 	// express either.
 	append(get_constant_pos(make_container_type_descriptor(p_expected_type)) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 	append(p_expected_type.container_element_types.size());
+}
+
+void FSByteCodeGenerator::write_assign_typed_union(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) {
+	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_UNION);
+	append(p_target);
+	append(p_source);
+	// Always the full descriptor: a union is a set, which the compact `script_type` constant the other
+	// typed stores fall back to cannot express at all, and its alternatives can be any shape the
+	// language spells -- including one that names `Self` and is resolved against the running receiver.
+	append(get_constant_pos(make_container_type_descriptor(p_expected_type)) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 }
 
 void FSByteCodeGenerator::write_assign_typed_script_dynamic(const Address &p_target, const Address &p_source, const Address &p_type_source) {
@@ -2767,6 +2806,20 @@ void FSByteCodeGenerator::write_newline(int p_line) {
 }
 
 void FSByteCodeGenerator::write_return(const Address &p_return_value) {
+	if (function->return_type.kind == FSDataType::UNION) {
+		// The return slot verifies membership here rather than at whatever the caller happens to consume
+		// the result as -- a `Variant` binding at the call site would otherwise check nothing at all.
+		// There is no `OPCODE_RETURN_TYPED_*` form for a set of alternatives and there needs to be none:
+		// the value is checked into a scratch slot and the plain return hands that slot back. Answered
+		// before the ladder below so every caller of `write_return()` -- a body return, a lambda, an
+		// accessor -- reaches the same check.
+		const Address checked = Address(Address::TEMPORARY, add_temporary(function->return_type), function->return_type);
+		write_assign_typed_union(checked, p_return_value, function->return_type);
+		append_opcode(FSFunction::OPCODE_RETURN);
+		append(checked);
+		pop_temporary();
+		return;
+	}
 	if (!function->return_type.has_type() || p_return_value.type.has_type()) {
 		// Either the function is untyped or the return value is also typed.
 

@@ -591,6 +591,12 @@ static FSDataType _resolve_tuple_shape_type_parameters(const FSDataType &p_shape
 		resolved.type_arguments.write[i] =
 				_resolve_tuple_shape_type_parameters(resolved.type_arguments[i], p_leaf_type_arguments, p_depth + 1);
 	}
+	// A union nested inside a tuple element (`(int | String, int)`) carries its alternatives here, and
+	// a parameter named inside one resolves against the receiver exactly as an element does.
+	for (int i = 0; i < resolved.union_alternatives.size(); i++) {
+		resolved.union_alternatives.write[i] =
+				_resolve_tuple_shape_type_parameters(resolved.union_alternatives[i], p_leaf_type_arguments, p_depth + 1);
+	}
 	return resolved;
 }
 
@@ -610,6 +616,12 @@ bool FoundryScript::_coerce_member_write(const MemberInfo &p_member, const Varia
 		}
 		r_value = fs_canonical_tuple_value(resolved_shape, r_value);
 		return true;
+	}
+	if (p_member.data_type.kind == FSDataType::UNION) {
+		// Membership, through the one relation every union boundary asks, so a reflective write and an
+		// in-body store of the same member accept exactly the same values. The `Variant::construct()`
+		// fallback below could only build a `NIL` for the carrier a union does not have.
+		return fs_union_accepts(p_member.data_type, r_value, r_value);
 	}
 	if (!p_member.data_type.is_type(r_value)) {
 		// The design-6.1 `uint` -> `long` widening, mirroring OPCODE_ASSIGN_TYPED_BUILTIN's
@@ -687,6 +699,10 @@ static ProjectedContainerType _project_binding_data_type(const FSDataType &p_typ
 	for (const FSDataType &type_argument : p_type.type_arguments) {
 		projected.type_arguments.push_back(_project_binding_data_type(type_argument, p_leaf_type_arguments, p_depth + 1));
 	}
+	// `union_alternatives` is deliberately not walked. Evidence describes the parts of one value, and a
+	// union's alternatives are not parts: projecting them would state that the value is a container of
+	// them all, which no value satisfies -- it is what rejected a conformant argument whose conformance
+	// named the very same union. A union projects as an unconstrained node instead.
 
 	for (const ProjectedContainerType &child : projected.element_types) {
 		if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {

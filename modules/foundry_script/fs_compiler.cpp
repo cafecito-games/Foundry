@@ -565,12 +565,22 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				result.kind = FSDataType::VARIANT;
 			}
 		} break;
-		case FSParser::DataType::UNION:
-			// A multi-member union erases to untyped at runtime: it produces no typed local, no
-			// typed parameter check, and no runtime type test. The normalized member list stays in
-			// the analyzer's rich type metadata, which is where union-aware tooling reads it.
-			result.kind = FSDataType::VARIANT;
-			break;
+		case FSParser::DataType::UNION: {
+			// A union has no carrier of its own, so the alternatives *are* the lowered type: they travel
+			// with the slot in the analyzer's canonical order, which is what lets a parameter, a member,
+			// a return, and an in-body store all ask the same membership question of a value whose
+			// static type never proved it. Nullability was hoisted onto the union during normalization
+			// and is applied by the shared tail below.
+			result.kind = FSDataType::UNION;
+			for (const FSParser::DataType &member : p_datatype.union_members) {
+				// A tuple alternative keeps its shape rather than taking the slot lowering, which erases
+				// every tuple to a bare Array: the membership test asks the structural question an `is`
+				// test asks, so it needs the same shape an `is` test is compiled against.
+				result.union_alternatives.push_back(member.kind == FSParser::DataType::TUPLE
+								? _gdtype_tuple_test_type_from_datatype(member, p_owner, p_preserve_type_parameters)
+								: _gdtype_from_datatype(member, p_owner, p_handle_metatype, p_preserve_type_parameters));
+			}
+		} break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED: {
 			_set_error("Parser bug (please report): converting unresolved type.", nullptr);
@@ -677,6 +687,12 @@ static void _rebind_self_data_type(FSDataType &p_type, FoundryScript *p_owner) {
 	for (FSDataType &argument_type : p_type.type_arguments) {
 		_rebind_self_data_type(argument_type, p_owner);
 	}
+	// A union alternative is a value position like any other, so a `Self` inside one is rebound to the
+	// inheriting class too. Without this an inherited `int | Self` member would keep validating
+	// reflective writes against the class that declared it and accept a sibling subclass's instance.
+	for (FSDataType &alternative : p_type.union_alternatives) {
+		_rebind_self_data_type(alternative, p_owner);
+	}
 }
 
 void FSCompiler::_collect_class_scope_scripts(FoundryScript *p_script, LocalVector<FoundryScript *> &r_scripts,
@@ -770,6 +786,22 @@ static bool _is_erased_container_call_to_typed_dictionary(const FSParser::Expres
 			p_target_type.has_container_element_types();
 }
 
+// The single engine class a lowered type pins a value to, or an empty name when it pins none.
+//
+// Callers reach here having established only that the type is neither `VARIANT` nor `BUILTIN`, which
+// used to imply "carries a script or a native class". A union breaks that implication: it names a set
+// rather than one class, so it carries neither, and dereferencing its absent script is a crash. A type
+// parameter preserved for a reified binding is the same shape.
+static StringName _static_class_name_of(const FSDataType &p_type) {
+	if (p_type.native_type != StringName()) {
+		return p_type.native_type;
+	}
+	if (p_type.kind == FSDataType::NATIVE) {
+		return p_type.native_type;
+	}
+	return p_type.script_type != nullptr ? p_type.script_type->get_instance_base_type() : StringName();
+}
+
 static bool _is_exact_type(const PropertyInfo &p_par_type, const FSDataType &p_arg_type) {
 	if (!p_arg_type.has_type()) {
 		return false;
@@ -781,11 +813,12 @@ static bool _is_exact_type(const PropertyInfo &p_par_type, const FSDataType &p_a
 		if (p_arg_type.kind == FSDataType::BUILTIN) {
 			return false;
 		}
-		StringName class_name;
-		if (p_arg_type.kind == FSDataType::NATIVE) {
-			class_name = p_arg_type.native_type;
-		} else {
-			class_name = p_arg_type.native_type == StringName() ? p_arg_type.script_type->get_instance_base_type() : p_arg_type.native_type;
+		const StringName class_name = _static_class_name_of(p_arg_type);
+		if (class_name == StringName()) {
+			// The argument's type names no one class, so it cannot prove the parameter's. A union is the
+			// shape that reaches here: the value is one of its alternatives and the call site does not
+			// know which, so the validated fast path is not available.
+			return false;
 		}
 		return p_par_type.class_name == class_name || ClassDB::is_parent_class(class_name, p_par_type.class_name);
 	} else {
@@ -872,11 +905,13 @@ struct FSCallLoweringPlan {
 // The `MethodBind` behind `receiver.method(...)`, or null when the receiver's static type does not
 // pin one down and the call has to go through dynamic dispatch.
 static MethodBind *_receiver_method_bind(const FSCodeGenerator::Address &p_receiver, const StringName &p_function_name) {
-	StringName class_name;
-	if (p_receiver.type.kind == FSDataType::NATIVE) {
-		class_name = p_receiver.type.native_type;
-	} else {
-		class_name = p_receiver.type.native_type == StringName() ? p_receiver.type.script_type->get_instance_base_type() : p_receiver.type.native_type;
+	const StringName class_name = _static_class_name_of(p_receiver.type);
+	if (class_name == StringName()) {
+		// A receiver whose static type names no one class pins no method down, so the call goes through
+		// dynamic dispatch. A union-typed slot is that shape: a narrowed value keeps the slot's declared
+		// type in its address, so `local.length()` on an `int | String` local arrives here even though
+		// the analyzer resolved the method against the narrowed alternative.
+		return nullptr;
 	}
 	if (FSAnalyzer::class_exists(class_name) && ClassDB::has_method(class_name, p_function_name)) {
 		return ClassDB::get_method(class_name, p_function_name);
@@ -1091,6 +1126,11 @@ static bool _baked_shape_needs_receiver(const FSDataType &p_type, int p_depth = 
 			return true;
 		}
 	}
+	for (const FSDataType &alternative : p_type.union_alternatives) {
+		if (_baked_shape_needs_receiver(alternative, p_depth + 1)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -1248,6 +1288,9 @@ static void _resolve_baked_self_to_owner(FSDataType &r_type, FoundryScript *p_ow
 	for (int i = 0; i < r_type.type_arguments.size(); i++) {
 		_resolve_baked_self_to_owner(r_type.type_arguments.write[i], p_owner, p_depth + 1);
 	}
+	for (int i = 0; i < r_type.union_alternatives.size(); i++) {
+		_resolve_baked_self_to_owner(r_type.union_alternatives.write[i], p_owner, p_depth + 1);
+	}
 }
 
 // Whether a function-body slot (a local, a later assignment, or a return) has to be validated against
@@ -1269,6 +1312,13 @@ bool FSCompiler::_slot_needs_receiver_validation(const FSParser::DataType &p_dec
 		return false;
 	}
 	if (!p_declared_type.is_set() || !p_declared_type.is_hard_type()) {
+		return false;
+	}
+	if (p_declared_type.kind == FSParser::DataType::UNION) {
+		// A union slot is validated by its own membership store, which resolves every alternative --
+		// including one naming a class type parameter -- against the receiver through the same descriptor
+		// path. Routing it through the class-parameter store instead would enforce a single alternative
+		// against a value the others admit.
 		return false;
 	}
 	bool is_sound = true;
@@ -5386,6 +5436,13 @@ void FSCompiler::_substitute_binding_type_parameters(FSDataType &r_type, const V
 	for (int i = 0; i < r_type.type_arguments.size(); i++) {
 		_substitute_binding_type_parameters(
 				r_type.type_arguments.write[i], p_base_specialization, p_owner, false, p_depth + 1);
+	}
+	// A union alternative is a type position like any other, so a class parameter inside one is
+	// substituted through this `extends` step as well. Nullability is never expressible below a union:
+	// the parser hoists it onto the union itself, so no alternative carries one.
+	for (int i = 0; i < r_type.union_alternatives.size(); i++) {
+		_substitute_binding_type_parameters(
+				r_type.union_alternatives.write[i], p_base_specialization, p_owner, false, p_depth + 1);
 	}
 }
 
