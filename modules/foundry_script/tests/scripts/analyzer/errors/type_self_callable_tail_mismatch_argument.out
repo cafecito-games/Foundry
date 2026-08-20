@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[String]], void]".
+>> ERROR at line 14: Invalid argument for "self_tail()" function: argument 1 should be "Callable[[...Array[Self]], void]" but is "Callable[[...Array[String]], void]".
+>> ERROR at line 15: Invalid argument for "self_fixed()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]".
+>> ERROR at line 16: Invalid argument for "self_fixed()" function: argument 1 should be "Callable[[Self], void]" but is "Callable[[Self], void]".

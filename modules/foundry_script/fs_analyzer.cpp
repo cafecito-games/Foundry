@@ -979,6 +979,17 @@ static bool _datatype_substituted_self_markers_match(const FSParser::DataType &p
 			return false;
 		}
 	}
+	// The rest tail is guarded rather than assumed equal in size: nothing produces a marked tail today,
+	// so this walk is a consistency measure and must not depend on the gating comparison to keep it in
+	// range.
+	if (p_a.method_rest_parameter_type.size() == p_b.method_rest_parameter_type.size()) {
+		for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+			if (!_datatype_substituted_self_markers_match(
+						p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
+				return false;
+			}
+		}
+	}
 	return true;
 }
 
@@ -10015,7 +10026,14 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
 			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
 			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
+		return false;
+	}
+	// A gradual variadic Callable records its tail only in the method flags (`method_rest_parameter_type`
+	// stays empty), so variadicity has to be compared separately or `Callable[[Self], void]` would match
+	// `Callable[[Self, ...Array], void]`.
+	if ((p_a.method_info.flags & METHOD_FLAG_VARARG) != (p_b.method_info.flags & METHOD_FLAG_VARARG)) {
 		return false;
 	}
 
@@ -10082,6 +10100,15 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 	}
 	for (int i = 0; i < p_a.method_return_type.size(); i++) {
 		if (!_datatype_strict_identity_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	// A typed variadic Callable carries its tail element type here, so `Callable[[...Array[Self]], void]`
+	// must not match `Callable[[...Array[String]], void]`. The `Self` contract path decides a
+	// tail-bearing signature entirely through this comparison, so an unchecked tail would admit a
+	// callback the callee then invokes with the wrong element type.
+	for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+		if (!_datatype_strict_identity_equal(p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
 			return false;
 		}
 	}
