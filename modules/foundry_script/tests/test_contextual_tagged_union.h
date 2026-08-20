@@ -464,6 +464,19 @@ TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A position that suppl
 			String(R"*(Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, e.g. "var x: Result[int, String] = .Ok(...)".)*"));
 }
 
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A position expecting a concrete type names it") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tvar counter: int = .Ok(1)\n"
+			"\tprint(counter)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	CHECK_NE(fixture.analyze_error, OK);
+
+	REQUIRE_FALSE(fixture.parser.get_errors().is_empty());
+	CHECK_EQ(fixture.parser.get_errors().front()->get().message,
+			String(R"*(Contextual shorthand ".Ok" needs an expected tagged-union type, but this position expects "int"; spell the case with its union, e.g. "Result[int, String].Ok(...)".)*"));
+}
+
 TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A target that names no union rejects the shorthand") {
 	ContextualCaseFixture fixture(RESULT_DECLARATION +
 			"func run() -> void:\n"

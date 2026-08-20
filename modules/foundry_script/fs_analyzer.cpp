@@ -12916,8 +12916,22 @@ bool FSAnalyzer::resolve_contextual_enum_case(FSParser::ExpressionNode *p_expres
 
 	FSParser::DataType enum_meta_type;
 	if (!tagged_union_metatype_from_expected_type(p_expected_type, p_expression, enum_meta_type)) {
-		const String annotated_example = vformat(R"(var x: Result[int, String] = .%s%s)",
-				case_name, call != nullptr ? "(...)" : "");
+		const String case_suffix = call != nullptr ? "(...)" : "";
+		// A position that expects a concrete type is already annotated, so telling the user to annotate
+		// the target is misleading there: what the position expects is what rules the shorthand out.
+		// A position with no expected type at all keeps the annotation suggestion, which is exactly
+		// right for it.
+		const bool expected_type_is_nameable = p_expected_type.is_set() && !p_expected_type.has_no_type() &&
+				p_expected_type.is_hard_type();
+		if (expected_type_is_nameable) {
+			const String qualified_example = vformat(R"(Result[int, String].%s%s)", case_name, case_suffix);
+			push_error(vformat(R"*(Contextual shorthand ".%s" needs an expected tagged-union type, but this position expects "%s"; spell the case with its union, e.g. "%s".)*",
+							   case_name, p_expected_type.to_string_diagnostic(), qualified_example),
+					p_expression);
+			p_expression->set_datatype(unqualified_type);
+			return true;
+		}
+		const String annotated_example = vformat(R"(var x: Result[int, String] = .%s%s)", case_name, case_suffix);
 		push_error(vformat(R"*(Contextual shorthand ".%s" needs an expected tagged-union type; annotate the target, e.g. "%s".)*",
 						   case_name, annotated_example),
 				p_expression);
