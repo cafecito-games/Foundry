@@ -43,6 +43,8 @@ if not env["foundry_script_frontend"]:
             "from the command line."
         )
         Exit(255)
+    # The test corpus is written on this invariant: test translation units use front-end-only
+    # declarations unguarded.
     if env["tests"]:
         print(
             "Error: foundry_script_frontend=no is incompatible with tests=yes. "
