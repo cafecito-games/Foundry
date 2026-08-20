@@ -474,7 +474,14 @@ private:
 
 	bool datatype_contains_self_type_parameter(const FSParser::DataType &p_type) const;
 	bool self_parameter_satisfied_by_receiver_identity(const FSParser::DataType &p_expected_type, const FSParser::ExpressionNode *p_argument, const FSParser::CallNode *p_call);
+	// Which exact comparison a `Self` destination settles on once callable arity and tail have been
+	// reconciled. Everything before that step is shared, so the two contracts cannot drift apart.
+	enum class SelfContractKind {
+		PARAMETER,
+		RETURN,
+	};
 	bool callable_rest_tail_accepts_expected_element(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type);
+	bool self_contract_admits_value_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_value_type, SelfContractKind p_kind, FSParser::DataType *r_matched_value = nullptr);
 	bool self_parameter_contract_matched_argument(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, FSParser::DataType &r_matched_argument);
 	bool self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call);
 	String self_parameter_receiver_identity_clause(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call, const String &p_expected_subject, const String &p_argument_subject);

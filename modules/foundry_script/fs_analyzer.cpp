@@ -5342,7 +5342,8 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 			}
 		} else if (!specified_type.is_variant()) {
 			if (_datatype_contains_self_type_parameter(specified_type)) {
-				if (!initializer_type.is_hard_type() || !_datatype_matches_self_return_contract(specified_type, initializer_type)) {
+				if (!initializer_type.is_hard_type() ||
+						!self_contract_admits_value_type(specified_type, initializer_type, SelfContractKind::RETURN)) {
 					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
 									   initializer_type.to_string(),
 									   p_kind,
@@ -6467,7 +6468,8 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 
 	if (has_expected_type && !compatibility_expected_type.is_variant()) {
 		if (preserve_self_contract) {
-			if (!self_container_literal_validated && (!result.is_hard_type() || !_datatype_matches_self_return_contract(expected_type, result))) {
+			if (!self_container_literal_validated &&
+					(!result.is_hard_type() || !self_contract_admits_value_type(expected_type, result, SelfContractKind::RETURN))) {
 				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
 								   result.to_string(),
 								   expected_type.to_string()) +
@@ -7358,7 +7360,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		}
 	} else {
 		if (_datatype_contains_self_type_parameter(assignee_type)) {
-			if (!op_type.is_hard_type() || !_datatype_matches_self_return_contract(assignee_type, op_type)) {
+			if (!op_type.is_hard_type() ||
+					!self_contract_admits_value_type(assignee_type, op_type, SelfContractKind::RETURN)) {
 				mark_node_unsafe(p_assignment);
 				push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
 								   assigned_value_type.to_string(),
@@ -17941,21 +17944,50 @@ bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::Dat
 			is_type_compatible(supplied_element, expected_element);
 }
 
+// The single admission point for a value flowing into a `Self`-bearing destination, whether that
+// destination is a parameter, a declared variable, or a return type. Callable arity substitution and
+// the contravariant tail are settled identically for all of them -- they describe what a callable
+// accepts, not what `Self` denotes -- and only the final exact comparison differs. Routing every
+// consumer through here is what keeps a fix to one of them from leaving the others behind.
+//
+// Receiver identity is deliberately not asked here: it compares the argument against a call's receiver
+// expression, and an initializer, an assignment, or a return has no receiver to compare with. The call
+// sites that do have one apply it around this answer.
+bool FSAnalyzer::self_contract_admits_value_type(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_value_type,
+		SelfContractKind p_kind,
+		FSParser::DataType *r_matched_value) {
+	FSParser::DataType matched_value = _self_contract_comparable_callable_argument(p_expected_type, p_value_type);
+	const auto matches_exactly = [&](const FSParser::DataType &p_candidate) {
+		return p_kind == SelfContractKind::PARAMETER
+				? _datatype_matches_self_parameter_contract_exact(p_expected_type, p_candidate)
+				: _datatype_matches_self_return_contract(p_expected_type, p_candidate);
+	};
+	if (!matches_exactly(matched_value)) {
+		if (!callable_rest_tail_accepts_expected_element(p_expected_type, matched_value)) {
+			return false;
+		}
+		matched_value.set_method_rest_parameter_type(p_expected_type.method_rest_parameter_type[0]);
+		if (!matches_exactly(matched_value)) {
+			return false;
+		}
+	}
+	if (r_matched_value != nullptr) {
+		*r_matched_value = matched_value;
+	}
+	return true;
+}
+
 // Answers whether the contract matches at all, and reports the argument shape it matched against so
 // the receiver-identity gate and the diagnostic clause read the same comparison this did.
 bool FSAnalyzer::self_parameter_contract_matched_argument(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type,
 		FSParser::DataType &r_matched_argument) {
-	r_matched_argument = _self_contract_comparable_callable_argument(p_expected_type, p_argument_type);
-	if (_datatype_matches_self_parameter_contract_exact(p_expected_type, r_matched_argument)) {
-		return true;
-	}
-	if (!callable_rest_tail_accepts_expected_element(p_expected_type, r_matched_argument)) {
-		return false;
-	}
-	r_matched_argument.set_method_rest_parameter_type(p_expected_type.method_rest_parameter_type[0]);
-	return _datatype_matches_self_parameter_contract_exact(p_expected_type, r_matched_argument);
+	r_matched_argument = p_argument_type;
+	return self_contract_admits_value_type(
+			p_expected_type, p_argument_type, SelfContractKind::PARAMETER, &r_matched_argument);
 }
 
 bool FSAnalyzer::self_parameter_contract_admits_argument_type(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type, const FSParser::CallNode *p_call) {
