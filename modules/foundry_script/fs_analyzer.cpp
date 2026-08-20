@@ -10222,6 +10222,17 @@ static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser:
 			return false;
 		}
 	}
+	// A union's alternatives are types in their own right. The equality above compared the member
+	// vectors, but only as far as each alternative's kind and carrier, which leaves two callable
+	// alternatives with different signatures reading as one type.
+	if (p_a.union_members.size() != p_b.union_members.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_a.union_members.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.union_members[i], p_b.union_members[i])) {
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -10276,8 +10287,11 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 					p_a.tuple_field_names == p_b.tuple_field_names;
 			break;
 		case FSParser::DataType::UNION:
-			// Members are canonically ordered, so identity is positional.
-			equal = p_a.union_members == p_b.union_members;
+			// Members are canonically ordered, so identity is positional. Only the arity is settled here:
+			// the alternatives themselves are walked below with this same comparison, because the member
+			// vector's own equality stops at each alternative's kind and carrier, where two callable
+			// alternatives with different signatures read as one type.
+			equal = p_a.union_members.size() == p_b.union_members.size();
 			break;
 		case FSParser::DataType::TYPE_PARAMETER:
 			equal = p_a.type_parameter_name == p_b.type_parameter_name &&
@@ -10323,6 +10337,18 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 	// callback the callee then invokes with the wrong element type.
 	for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
 		if (!_datatype_strict_identity_equal(p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
+			return false;
+		}
+	}
+	// A union's alternatives are types in their own right, so they are compared as such rather than
+	// through the member vector's own equality, which cannot separate two callable alternatives by their
+	// signatures or two specializations by their arguments. Arity was settled above; a type that is not
+	// a union holds no alternatives on either side, so this walk is empty for it.
+	if (p_a.union_members.size() != p_b.union_members.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_a.union_members.size(); i++) {
+		if (!_datatype_strict_identity_equal(p_a.union_members[i], p_b.union_members[i])) {
 			return false;
 		}
 	}
