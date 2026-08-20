@@ -84,6 +84,44 @@ static FSParser::DataType union_test_type_parameter(const StringName &p_name) {
 	return type;
 }
 
+static FSParser::DataType union_test_tuple(const Vector<FSParser::DataType> &p_elements) {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::TUPLE;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	for (const FSParser::DataType &element : p_elements) {
+		type.set_container_element_type(type.container_element_types.size(), element);
+	}
+	return type;
+}
+
+// True when no union anywhere in p_type holds two members that compare equal. A normalized union is
+// a set, so a duplicate member is a malformed type every consumer would have to tolerate.
+static bool union_members_are_distinct(const FSParser::DataType &p_type) {
+	for (int i = 0; i < p_type.union_members.size(); i++) {
+		for (int j = i + 1; j < p_type.union_members.size(); j++) {
+			if (p_type.union_members[i] == p_type.union_members[j]) {
+				return false;
+			}
+		}
+	}
+	for (const FSParser::DataType &member : p_type.union_members) {
+		if (!union_members_are_distinct(member)) {
+			return false;
+		}
+	}
+	for (const FSParser::DataType &element : p_type.container_element_types) {
+		if (!union_members_are_distinct(element)) {
+			return false;
+		}
+	}
+	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
+		if (!union_members_are_distinct(type_argument)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 TEST_CASE("[Modules][FoundryScript][TypeUnion] Alias declarations parse at file and class scope") {
 	FSParser parser;
 	const Error error = parser.parse(
@@ -386,6 +424,46 @@ TEST_CASE("[Modules][FoundryScript][TypeUnion] Substitution rewrites and renorma
 	CHECK_FALSE(collapsed.is_union());
 	CHECK(collapsed.kind == FSParser::DataType::BUILTIN);
 	CHECK(collapsed.builtin_type == Variant::FLOAT);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A nested alternative that gains a `Self` twin collapses rather than duplicating") {
+	FSParser::DataType receiver_self = union_test_type_parameter("@Self");
+	// Which frame a `Self` belongs to is provenance, so the two alternatives below are written over
+	// different owners yet compare equal once the application binds the parameter to `Self`.
+	receiver_self.is_receiver_self_contract = true;
+
+	Vector<FSParser::DataType> declaration_alternative;
+	declaration_alternative.push_back(union_test_builtin(Variant::INT));
+	declaration_alternative.push_back(receiver_self);
+	Vector<FSParser::DataType> argument_alternative;
+	argument_alternative.push_back(union_test_builtin(Variant::INT));
+	argument_alternative.push_back(union_test_type_parameter("T"));
+
+	Vector<FSParser::DataType> members;
+	members.push_back(union_test_tuple(declaration_alternative));
+	members.push_back(union_test_tuple(argument_alternative));
+	Vector<FSParser::DataType> carrier_elements;
+	carrier_elements.push_back(FSParser::DataType::make_union(members));
+	carrier_elements.push_back(union_test_builtin(Variant::INT));
+	const FSParser::DataType open_field = union_test_tuple(carrier_elements);
+	REQUIRE(open_field.get_container_element_type(0).is_union());
+	REQUIRE(open_field.get_container_element_type(0).union_members.size() == 2);
+
+	HashMap<StringName, FSParser::DataType> bindings;
+	bindings["T"] = union_test_type_parameter("@Self");
+	const FSParser::DataType assembled = FSParser::DataType::substitute(open_field, bindings);
+
+	// Normalization collapses the pair into the single type they both denote. The outcome that must
+	// never occur is the other one: a union left holding two members that compare equal, which renders
+	// as an alternative spelled twice and which every consumer of a normalized union would have to
+	// tolerate. Admission of the owner the collapse drops is restored at the construction gate, off the
+	// declaration's open schema, not by loosening what a normalized union is.
+	REQUIRE(assembled.is_tuple());
+	REQUIRE(assembled.get_container_element_type_count() == 2);
+	CHECK_FALSE(assembled.get_container_element_type(0).is_union());
+	CHECK(assembled.get_container_element_type(0).union_members.is_empty());
+	CHECK(assembled.to_string() == "((int, Self), int)");
+	CHECK(union_members_are_distinct(assembled));
 }
 
 TEST_CASE("[Modules][FoundryScript][TypeUnion] A concrete source satisfies a union target through one member") {
