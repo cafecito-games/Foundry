@@ -6853,20 +6853,22 @@ bool FSAnalyzer::_is_container_literal(const FSParser::ExpressionNode *p_express
 			p_expression->type == FSParser::Node::TUPLE_LITERAL;
 }
 
-// Whether the patcher below would descend into this literal for that type, asked ahead of the descent
-// so a union can decide which alternative the literal is written against.
+// Whether a literal of this form could have been written for that type: the outer form only, without
+// regard to whether the type also pins its elements. A raw container claims the form as much as a
+// typed one does -- it accepts the literal as written -- so it counts when a union asks how many of its
+// alternatives a literal could have been meant for. A named tuple claims nothing: it is built by its
+// constructor, never by a literal.
 static bool _container_literal_shape_matches_type(
 		const FSParser::ExpressionNode *p_expression,
 		const FSParser::DataType &p_type) {
 	switch (p_expression->type) {
 		case FSParser::Node::ARRAY:
-			return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::ARRAY &&
-					p_type.has_container_element_type(0);
+			return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::ARRAY;
 		case FSParser::Node::DICTIONARY:
-			return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::DICTIONARY &&
-					p_type.has_container_element_types();
+			return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::DICTIONARY;
 		case FSParser::Node::TUPLE_LITERAL:
-			return p_type.kind == FSParser::DataType::TUPLE && !p_type.is_meta_type;
+			return p_type.kind == FSParser::DataType::TUPLE && !p_type.is_meta_type &&
+					p_type.tuple_name == StringName();
 		default:
 			return false;
 	}
@@ -6875,12 +6877,13 @@ static bool _container_literal_shape_matches_type(
 // The type a container literal is built against at a position expecting `p_expected_type`, or nothing
 // when the literal is to be left exactly as it was reduced.
 //
-// A union is a set of alternatives, so the literal is built against the one alternative whose shape it
-// is written in. A shape two alternatives could claim names none of them: patching commits the literal
+// A union is a set of alternatives, so the literal is built against the one alternative whose form it
+// is written in. A form two alternatives could claim names none of them: patching commits the literal
 // to one alternative and reports against it, which would turn a literal the other alternative accepts
-// into an error the union check never gets to answer. Every position that types a literal against a
-// declaration shares this rule, so a parameter and a return position cannot disagree about which
-// alternative a literal was written for.
+// into an error the union check never gets to answer. A raw container alternative claims the form too,
+// so `Array | Array[Self]` leaves an array literal alone rather than forcing it through the typed
+// alternative. Every position that types a literal against a declaration shares this rule, so a
+// parameter and a return position cannot disagree about which alternative a literal was written for.
 static const FSParser::DataType *_container_literal_target_type(
 		const FSParser::ExpressionNode *p_expression,
 		const FSParser::DataType &p_expected_type) {
@@ -18107,9 +18110,16 @@ bool FSAnalyzer::callable_rest_tail_accepts_expected_element(const FSParser::Dat
 
 // The alternatives of a union that name no `Self` are answered by the rule the whole annotation was
 // answered by before any alternative mentioned one: ordinary compatibility against the set they form.
-// Asking the set rather than each alternative in turn keeps the union's own admission rules -- notably
-// that an alternative reachable only by changing the value's carrier is not reachable at all, because
-// a union slot emits no conversion.
+// Asking the set rather than each alternative in turn keeps the union's own admission rules.
+//
+// One of those rules survives the set only while it is still a set. `make_union()` hands back a lone
+// remaining alternative as itself, because a single alternative is that type rather than a set, and
+// ordinary compatibility then answers it as a declared slot of its own type -- which may convert the
+// value on the way in. The destination here is still one untyped union slot, which emits no conversion
+// instruction, so an alternative reachable only by changing the value's carrier would hold an
+// unconverted value and fail its own type test. That rule is therefore restated for the collapsed case,
+// with the same width-only exemption the union branch of ordinary compatibility grants: width is
+// out-of-band metadata and leaves the stored value unchanged.
 bool FSAnalyzer::self_free_union_members_admit_value(
 		const Vector<FSParser::DataType> &p_members,
 		bool p_nullable,
@@ -18122,7 +18132,16 @@ bool FSAnalyzer::self_free_union_members_admit_value(
 		return false;
 	}
 	self_free_union.is_nullable = self_free_union.is_nullable || p_nullable;
-	return is_type_compatible(self_free_union, p_value_type, true);
+	if (!is_type_compatible(self_free_union, p_value_type, true)) {
+		return false;
+	}
+	if (self_free_union.kind == FSParser::DataType::UNION ||
+			self_free_union.kind != FSParser::DataType::BUILTIN ||
+			p_value_type.kind != FSParser::DataType::BUILTIN ||
+			self_free_union.builtin_type == p_value_type.builtin_type) {
+		return true;
+	}
+	return is_type_compatible(self_free_union, p_value_type, false);
 }
 
 // A type union is a set of alternatives, so a value satisfies it exactly when it satisfies one of
