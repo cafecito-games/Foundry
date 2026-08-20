@@ -895,6 +895,15 @@ public:
 		// whose callee syntax is a subscript rather than a plain identifier or attribute access. A
 		// `Self` parameter position then denotes the same value as the caller's `Self`.
 		bool receiver_is_current_self = false;
+		// Set by the analyzer on an enum-case construction spelled through a class-handle receiver
+		// whose represented type is a type parameter (`handle.Message.Attach(...)` with
+		// `handle: Type[T]`). A payload field the spelling substitutes to that parameter erases to
+		// Variant at runtime, so the static schema keeps no class the argument's store could check --
+		// but the handle value the frame received is exactly that class. The compiler evaluates this
+		// expression once and checks every such argument against it, which is what makes the handle
+		// spelling as strong at runtime as the concrete one.
+		const ExpressionNode *enum_case_receiver_handle = nullptr;
+		DataType enum_case_reified_parameter;
 		// Set by the analyzer when this coroutine call's result is captured into a statically
 		// `Coroutine[T]`-typed slot (a `Coroutine[T]` variable/parameter/return, or a
 		// `Coroutine[T]` container element). Holding the live `FSFunctionState` handle to

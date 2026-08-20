@@ -1181,6 +1181,22 @@ static const FSParser::ClassNode *_constant_flattening_class(const FSParser::Cla
 // settled onto a concrete class needs no receiver reasoning and must keep its ordinary conversion.
 // Deliberately separate from `_datatype_contains_erased_type_parameter()`, whose `@Self` exclusion is
 // about container-element lowering and must keep answering `false` there.
+// Whether a type *is* the given type parameter, not merely one that mentions it. Identity is the
+// parameter's scope and ordinal position within it, plus the name, which is what distinguishes two
+// parameters of the same method. A nullable or class-handle spelling denotes something other than an
+// instance of the parameter, so neither counts as the parameter itself.
+static bool _datatype_is_type_parameter_identity(const FSParser::DataType &p_datatype, const FSParser::DataType &p_parameter) {
+	if (p_datatype.kind != FSParser::DataType::TYPE_PARAMETER || p_parameter.kind != FSParser::DataType::TYPE_PARAMETER) {
+		return false;
+	}
+	if (p_datatype.is_nullable || p_datatype.is_type_handle_annotation || p_datatype.is_meta_type) {
+		return false;
+	}
+	return p_datatype.type_parameter_name == p_parameter.type_parameter_name &&
+			p_datatype.type_parameter_scope == p_parameter.type_parameter_scope &&
+			p_datatype.type_parameter_index == p_parameter.type_parameter_index;
+}
+
 static bool _datatype_references_self(const FSParser::DataType &p_datatype, int p_depth = 0) {
 	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
 		return true;
@@ -1920,6 +1936,24 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				int case_temporaries_to_pop = 0;
 				FSCodeGenerator::Address case_result = codegen.add_temporary(_gdtype_from_datatype(case_datatype, codegen.script));
 				values.push_back(codegen.add_constant(call->enum_case_tag));
+
+				// A class-handle spelling whose represented type is a type parameter (`handle: Type[T]`)
+				// leaves every payload field the spelling substitutes to that parameter erased to Variant,
+				// so the conversion below finds no type and the argument would enter the payload
+				// unchecked. The handle value is the reification, so it is evaluated once -- ahead of the
+				// arguments, the order the call is written in -- and those fields are checked against it.
+				FSCodeGenerator::Address reified_handle;
+				const bool has_reified_handle = call->enum_case_receiver_handle != nullptr;
+				if (has_reified_handle) {
+					reified_handle = _parse_expression(codegen, r_error, call->enum_case_receiver_handle);
+					if (r_error) {
+						return FSCodeGenerator::Address();
+					}
+					if (reified_handle.mode == FSCodeGenerator::Address::TEMPORARY) {
+						case_temporaries_to_pop++;
+					}
+				}
+
 				for (int i = 0; i < call->arguments.size(); i++) {
 					FSCodeGenerator::Address value = _parse_expression(codegen, r_error, call->arguments[i]);
 					if (r_error) {
@@ -1939,6 +1973,15 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						case_temporaries_to_pop++;
 						gen->write_assign_with_conversion(converted, value);
 						value = converted;
+					} else if (has_reified_handle &&
+							_datatype_is_type_parameter_identity(payload->field_types[i], call->enum_case_reified_parameter)) {
+						// Only the receiver handle's own parameter: it is the one the frame holds evidence
+						// for. A field typed by an unrelated method parameter keeps the erasure every other
+						// method-generic slot has.
+						FSCodeGenerator::Address checked = codegen.add_temporary();
+						case_temporaries_to_pop++;
+						gen->write_assign_typed_script_dynamic(checked, value, reified_handle);
+						value = checked;
 					}
 					values.push_back(value);
 				}

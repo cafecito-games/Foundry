@@ -144,6 +144,11 @@ public:
 	// `is` test. Nothing is converted: tuple elements are invariant and the value keeps the read-only
 	// Array identity its value semantics depend on.
 	virtual void write_assign_typed_tuple(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type) = 0;
+	// Store validated against a class named by a runtime value rather than by the declaration: the type to
+	// check is read from `p_type_source`, which holds a live class handle. This is what a method-scope type
+	// parameter -- erased to Variant, so nameable by no constant -- is checked against when the frame does
+	// hold the handle that reified it.
+	virtual void write_assign_typed_script_dynamic(const Address &p_target, const Address &p_source, const Address &p_type_source) = 0;
 	// Retype a runtime-erased (untyped) array — the result of a generic method returning `Array[T]` —
 	// into the concrete typed array of the target, converting each element.
 	// Validates and converts one argument of a statically resolved generic call against the type the

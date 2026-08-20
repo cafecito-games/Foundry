@@ -1654,6 +1654,19 @@ void FSByteCodeGenerator::write_assign_typed_tuple(const Address &p_target, cons
 	append(p_expected_type.container_element_types.size());
 }
 
+void FSByteCodeGenerator::write_assign_typed_script_dynamic(const Address &p_target, const Address &p_source, const Address &p_type_source) {
+	// The same opcode the concrete spelling emits, with its type operand pointing at a register instead
+	// of a constant: the operand is read as a plain Variant either way, and the address encoding already
+	// says which it is, so no new opcode and no operand-layout change is needed. The value form is never
+	// a class handle *slot*, only a value whose class the source has to be an instance of, so the
+	// type-handle flag is always clear.
+	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
+	append(p_target);
+	append(p_source);
+	append(p_type_source);
+	append(0);
+}
+
 void FSByteCodeGenerator::write_validate_call_argument(const Address &p_target, const Address &p_source, const FSDataType &p_expected_type, const StringName &p_callee_name, int p_argument_index) {
 	append_opcode(FSFunction::OPCODE_VALIDATE_CALL_ARGUMENT);
 	append(p_target);

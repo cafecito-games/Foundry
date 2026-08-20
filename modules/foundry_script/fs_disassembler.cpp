@@ -745,10 +745,14 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				incr += 5;
 			} break;
 			case OPCODE_ASSIGN_TYPED_SCRIPT: {
-				const Variant type_info = get_constant(_code_ptr[ip + 3] & ADDR_MASK);
-
 				text += "assign typed script (";
-				text += _get_script_type_name_from_type_info(type_info);
+				if (((_code_ptr[ip + 3] & ADDR_TYPE_MASK) >> ADDR_BITS) == ADDR_TYPE_CONSTANT) {
+					text += _get_script_type_name_from_type_info(get_constant(_code_ptr[ip + 3] & ADDR_MASK));
+				} else {
+					// A reified operand names its class only at runtime, so the address is what there is
+					// to render.
+					text += DADDR(3);
+				}
 				text += ") ";
 				text += DADDR(1);
 				text += " = ";
