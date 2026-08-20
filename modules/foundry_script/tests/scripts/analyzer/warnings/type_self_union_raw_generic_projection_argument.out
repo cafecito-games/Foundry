@@ -1,0 +1,3 @@
+FS_TEST_OK
+~~ WARNING at line 16: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take()" requires the subtype "int | (int, Self)" but the supertype "T" was provided.
+~~ WARNING at line 17: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take_plain()" requires the subtype "String | int" but the supertype "T" was provided.

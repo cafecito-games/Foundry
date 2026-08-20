@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 4: Type parameter "Self" cannot be a member of a type union.

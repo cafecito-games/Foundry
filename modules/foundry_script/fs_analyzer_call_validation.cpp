@@ -683,6 +683,9 @@ static void clear_receiver_self_contract(FSParser::DataType &r_type) {
 	for (int i = 0; i < r_type.method_rest_parameter_type.size(); i++) {
 		clear_receiver_self_contract(r_type.method_rest_parameter_type.write[i]);
 	}
+	for (int i = 0; i < r_type.union_members.size(); i++) {
+		clear_receiver_self_contract(r_type.union_members.write[i]);
+	}
 }
 
 bool FSAnalyzer::CallSiteValidationContext::callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type) {
@@ -1068,12 +1071,28 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 	FSParser::DataType arg_type = p_argument->get_datatype();
 
 	if (analyzer->datatype_contains_self_type_parameter(par_type)) {
-		if (!analyzer->self_parameter_contract_admits_argument_type(par_type, arg_type, p_call) &&
+		if (!analyzer->self_parameter_contract_admits_argument_type(par_type, arg_type, p_call, p_argument) &&
 				!analyzer->self_parameter_satisfied_by_receiver_identity(par_type, p_argument, p_call)) {
 			analyzer->push_error(
 					make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, false, p_argument) +
 							analyzer->self_parameter_receiver_identity_clause(par_type, arg_type, p_call, "parameter", "argument"),
 					p_argument);
+			return;
+		}
+		// An alternative of a union that names no `Self` admits whatever it would admit on its own, and
+		// that includes a value whose static type promises nothing. Nothing was proved about such a value,
+		// so the crossing is reported exactly as ordinary argument validation reports it rather than
+		// passing silently because the parameter happened to mention `Self` somewhere. A value projected
+		// out of a raw generic receiver is the third such shape: it has a type, but one that names an
+		// erased parameter the call site cannot reify, which ordinary validation reports the same way.
+		if (arg_type.is_variant() || !arg_type.is_hard_type() ||
+				FSAnalyzer::raw_generic_projection_crosses_boundary(par_type, arg_type)) {
+#ifdef DEBUG_ENABLED
+			if (!(par_type.is_hard_type() && par_type.is_variant())) {
+				analyzer->mark_node_unsafe(p_argument);
+				analyzer->parser->push_warning(p_argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(p_argument_number), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
+			}
+#endif // DEBUG_ENABLED
 		}
 		return;
 	}
