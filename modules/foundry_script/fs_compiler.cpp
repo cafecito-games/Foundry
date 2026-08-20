@@ -1949,8 +1949,16 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					if (r_error) {
 						return FSCodeGenerator::Address();
 					}
-					if (reified_handle.mode == FSCodeGenerator::Address::TEMPORARY) {
-						case_temporaries_to_pop++;
+					case_temporaries_to_pop++;
+					if (reified_handle.mode != FSCodeGenerator::Address::TEMPORARY) {
+						// Any address other than a fresh temporary names storage rather than a value: a member,
+						// local, parameter or class slot is read again when the check runs, and that is after the
+						// arguments have run and possibly reassigned it. Evaluating the receiver first only means
+						// something if its *value* is what the check uses, so the handle is snapshotted before the
+						// argument loop. A temporary is already private to this expression and needs no copy.
+						FSCodeGenerator::Address snapshot = codegen.add_temporary(reified_handle.type);
+						gen->write_assign(snapshot, reified_handle);
+						reified_handle = snapshot;
 					}
 				}
 
