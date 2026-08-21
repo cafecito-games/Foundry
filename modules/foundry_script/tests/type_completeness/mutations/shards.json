@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "shards": [
+    {
+      "shard_id": "union_core",
+      "recipes": [
+        "union_membership_drops_last_alternative"
+      ],
+      "budget_seconds": 1800
+    }
+  ]
+}

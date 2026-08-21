@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "uint_long_argument_binding",
+  "source": {
+    "kind": "issue",
+    "number": 2395,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2395",
+    "title": "Statically accepted uint -> long widening fails at the concrete runtime argument binding"
+  },
+  "fix": {
+    "pull_request": 2398,
+    "commit": "98e767cee46825115fc507f7941e2d2719a2823a"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/runtime/errors/uint_to_long_argument_out_of_range.fs",
+    "probe": "`take(u)` with `u: uint = 5` into `value: long` prints 5 on both corpus passes."
+  },
+  "mapping": {
+    "family": "numeric_widening_boundary"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "The escape class is a carrier widening at a runtime binding; it belongs to a numeric-widening family that has no adapter yet.",
+  "deferral": {
+    "family": "numeric_widening_boundary",
+    "reason": "adapter_not_registered"
+  }
+}

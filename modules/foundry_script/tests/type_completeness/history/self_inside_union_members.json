@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "self_inside_union_members",
+  "source": {
+    "kind": "issue",
+    "number": 2419,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2419",
+    "title": "Shared Self predicates never traverse union_members, so Self inside a type union escapes the receiver gate"
+  },
+  "fix": {
+    "pull_request": 2446,
+    "commit": "a8605577a15065c2cabf4dfc2faafe53215b2392"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/analyzer/errors/type_self_union_carrier_parameter_foreign_array.fs",
+    "probe": "A foreign receiver's value can no longer enter a `Self`-bearing union parameter."
+  },
+  "mapping": {
+    "family": "self_receiver_gate"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "The escape is in the Self receiver gate's traversal, not in union destination membership.",
+  "deferral": {
+    "family": "self_receiver_gate",
+    "reason": "adapter_not_registered"
+  }
+}

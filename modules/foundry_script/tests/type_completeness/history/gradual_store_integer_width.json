@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "gradual_store_integer_width",
+  "source": {
+    "kind": "issue",
+    "number": 2397,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2397",
+    "title": "Gradual stores ignore the destination's declared integer width"
+  },
+  "fix": {
+    "pull_request": 2401,
+    "commit": "417034fd81b69a450f3ae086971cc797ad7c0bdc"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/runtime/errors/gradual_assign_int_width_out_of_range.fs",
+    "probe": "`var i: int = v` with v a Variant 5000000000 is rejected at the store with the declared int range named."
+  },
+  "mapping": {
+    "family": "numeric_width_boundary"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "Width enforcement at gradual stores is a numeric-width family concern, not a union-membership one; it is seeded once that family has an adapter.",
+  "deferral": {
+    "family": "numeric_width_boundary",
+    "reason": "adapter_not_registered"
+  }
+}

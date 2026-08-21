@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "uint_long_dynamic_write",
+  "source": {
+    "kind": "issue",
+    "number": 2402,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2402",
+    "title": "Dynamic write and proxy-return paths cannot widen uint to long"
+  },
+  "fix": {
+    "pull_request": 2417,
+    "commit": "1acc17e8a229f7d2a8aad916705003f3f2c372b7"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/test_proxy.h",
+    "probe": "`h.set(\"m\", u)` with a Variant-carried uint 4000000000 into `var m: long` stores an INT carrier (`true 4000000000`)."
+  },
+  "mapping": {
+    "family": "numeric_widening_boundary"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "Same widening rule as uint_long_argument_binding, observed at the reflective write and proxy return boundaries.",
+  "deferral": {
+    "family": "numeric_widening_boundary",
+    "reason": "adapter_not_registered"
+  }
+}

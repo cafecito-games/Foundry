@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "recipe_id": "recipe_malformed_empty_detectors",
+  "description": "Fixture recipe with one full-coordinate detector.",
+  "escape_class": "skip_runtime_boundary_check",
+  "expected_detectors": []
+}

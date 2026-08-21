@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "item_id": "union_constant_type_test",
+  "source": {
+    "kind": "issue",
+    "number": 2470,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2470",
+    "title": "An is test against a union-typed constant is refused for every alternative"
+  },
+  "fix": null,
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "still_failing",
+    "evidence_path": "modules/foundry_script/tests/type_completeness/history/evidence/union_constant_type_test.fs",
+    "probe": "`const C: int | String = 5` then `C is int` is an analyzer error (`Expression is of type \"String | int\" so it can't be of type \"int\"`)."
+  },
+  "mapping": {
+    "family": "type_test_narrowing"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "A narrowing `is` test is not a destination store; it belongs to a type-test family.",
+  "deferral": {
+    "family": "type_test_narrowing",
+    "reason": "adapter_not_registered"
+  }
+}

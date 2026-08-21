@@ -1,0 +1,95 @@
+name: Type Completeness Nightly
+
+# Scheduled mutation campaigns over the Foundry Script type-completeness matrix. Each shard of
+# modules/foundry_script/tests/type_completeness/mutations/shards.json applies its recipes in a
+# disposable worktree, builds once, runs the family, and publishes a terminal mutation result.
+# Never enabled on pull_request: the recipes mutate production code and exist to prove the oracle,
+# not to gate a change.
+
+on:
+  schedule:
+    # Daily, after the weekly sanitizer slot on Sundays has started.
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: Parallel build jobs per shard
+        required: false
+        default: "4"
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}|${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  MUTATION_CATALOG: modules/foundry_script/tests/type_completeness/mutations
+  RULES_CATALOG: modules/foundry_script/tests/type_completeness
+  BUILD_JOBS: ${{ github.event.inputs.jobs || '4' }}
+
+jobs:
+  mutation-shard:
+    name: Mutation shard ${{ matrix.shard_id }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_id: union_core
+            recipes: union_membership_drops_last_alternative
+            budget_seconds: 1800
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ccache pkg-config libx11-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu1-mesa-dev libasound2-dev libpulse-dev libudev-dev libxi-dev libxrandr-dev libwayland-dev
+          python3 -m pip install scons
+
+      - name: Validate the mutation catalog
+        run: python3 -m scripts.type_completeness.mutation validate --catalog "$MUTATION_CATALOG" --rules "$RULES_CATALOG"
+
+      - name: Run the shard's recipes
+        env:
+          SHARD_ID: ${{ matrix.shard_id }}
+          RECIPES: ${{ matrix.recipes }}
+          BUDGET_SECONDS: ${{ matrix.budget_seconds }}
+        run: |
+          set -u
+          export FOUNDRY_TEST_SCRATCH="$RUNNER_TEMP/type_completeness_scratch"
+          mkdir -p "$FOUNDRY_TEST_SCRATCH" results
+          worst=0
+          for recipe in $(echo "$RECIPES" | tr ',' ' '); do
+            python3 -m scripts.type_completeness.mutation run \
+              --recipe "$recipe" --shard "$SHARD_ID" \
+              --catalog "$MUTATION_CATALOG" --rules "$RULES_CATALOG" \
+              --repository "$GITHUB_WORKSPACE" --scratch "$FOUNDRY_TEST_SCRATCH" \
+              --output "results/$recipe" --jobs "$BUILD_JOBS" --budget-seconds "$BUDGET_SECONDS"
+            code=$?
+            if [ "$code" -gt "$worst" ]; then worst=$code; fi
+          done
+          exit "$worst"
+
+      - name: Summarize the shard
+        if: always()
+        run: python3 -m scripts.type_completeness.mutation summarize --results results --output results/summary.json
+
+      - name: Upload mutation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: type-completeness-mutation-${{ matrix.shard_id }}-${{ github.run_id }}
+          path: results
+          retention-days: 14
+          overwrite: true
