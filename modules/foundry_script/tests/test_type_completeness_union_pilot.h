@@ -642,12 +642,17 @@ static void select_union_pilot_pair(const FSCompletenessResolution &p_resolution
 	REQUIRE_FALSE(union_pilot_mutated_pair_bytecode_id.is_empty());
 }
 
-static String stage_union_pilot_completeness_catalog(TemporaryProjectTree &p_tree) {
-	const String staged_root = p_tree.root.path_join("catalog");
+static String stage_union_pilot_completeness_catalog_at(
+		TemporaryProjectTree &p_tree, const String &p_relative_root) {
+	const String staged_root = p_tree.root.path_join(p_relative_root);
 	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	REQUIRE(filesystem.is_valid());
 	REQUIRE_EQ(filesystem->copy_dir(type_completeness_union_pilot_root, staged_root), OK);
 	return staged_root;
+}
+
+static String stage_union_pilot_completeness_catalog(TemporaryProjectTree &p_tree) {
+	return stage_union_pilot_completeness_catalog_at(p_tree, "catalog");
 }
 
 static String union_pilot_finding_record(const String &p_finding_id, const String &p_case_id,
@@ -1189,6 +1194,101 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(FileAccess::get_file_as_string(report_path), "catalog sentinel\n");
 		CHECK_EQ(FileAccess::get_file_as_string(manifest_path), manifest_before);
 		CHECK_FALSE(DirAccess::dir_exists_absolute(tree.root.path_join("report-artifacts")));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects a catalog at the artifact root") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_catalog_equals_artifacts_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog_at(tree, "report-artifacts");
+		const String catalog_path = catalog_root.path_join("dimensions/core.json");
+		const String catalog_before = FileAccess::get_file_as_string(catalog_path);
+		const PackedStringArray entries_before = union_pilot_directory_entries(catalog_root);
+		const String report_path = tree.root.path_join("report.json");
+		tree.write_file("report.json", "prior report sentinel\n");
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(report_path), "prior report sentinel\n");
+		CHECK_EQ(FileAccess::get_file_as_string(catalog_path), catalog_before);
+		CHECK_EQ(union_pilot_directory_entries(catalog_root), entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects a catalog inside the artifact root") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_catalog_inside_artifacts_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String artifact_root = tree.root.path_join("report-artifacts");
+		const String catalog_root =
+				stage_union_pilot_completeness_catalog_at(tree, "report-artifacts/catalog");
+		const String catalog_path = catalog_root.path_join("dimensions/core.json");
+		const String catalog_before = FileAccess::get_file_as_string(catalog_path);
+		const PackedStringArray artifact_entries_before = union_pilot_directory_entries(artifact_root);
+		const PackedStringArray catalog_entries_before = union_pilot_directory_entries(catalog_root);
+		const String report_path = tree.root.path_join("report.json");
+		tree.write_file("report.json", "prior report sentinel\n");
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(report_path), "prior report sentinel\n");
+		CHECK_EQ(FileAccess::get_file_as_string(catalog_path), catalog_before);
+		CHECK_EQ(union_pilot_directory_entries(artifact_root), artifact_entries_before);
+		CHECK_EQ(union_pilot_directory_entries(catalog_root), catalog_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects an artifact root inside its catalog") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_artifacts_inside_catalog_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		const String catalog_path = catalog_root.path_join("dimensions/core.json");
+		const String catalog_before = FileAccess::get_file_as_string(catalog_path);
+		const String report_path = catalog_root.path_join("report.json");
+		tree.write_file("catalog/report.json", "prior report sentinel\n");
+		const PackedStringArray entries_before = union_pilot_directory_entries(catalog_root);
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = catalog_root;
+		options.report_path = report_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(report_path), "prior report sentinel\n");
+		CHECK_EQ(FileAccess::get_file_as_string(catalog_path), catalog_before);
+		CHECK_EQ(union_pilot_directory_entries(catalog_root), entries_before);
+		CHECK_FALSE(DirAccess::dir_exists_absolute(catalog_root.path_join("report-artifacts")));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects a report path through an outside symlink") {

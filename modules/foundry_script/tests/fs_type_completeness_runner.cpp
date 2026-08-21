@@ -493,7 +493,7 @@ static Error validate_permanent_test_path(const String &p_path) {
 	return OK;
 }
 
-static String canonicalize_existing_ledger_path(const String &p_path) {
+static String canonicalize_existing_input_path(const String &p_path) {
 #ifdef UNIX_ENABLED
 	char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
 	if (resolved == nullptr) {
@@ -538,7 +538,7 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 		return open_error == OK ? ERR_CANT_OPEN : open_error;
 	}
 	const String lexical_directory = directory->get_current_dir().replace("\\", "/").simplify_path();
-	const String canonical_directory = canonicalize_existing_ledger_path(lexical_directory);
+	const String canonical_directory = canonicalize_existing_input_path(lexical_directory);
 	if (canonical_directory.is_empty() || canonical_directory != lexical_directory) {
 		return ERR_UNAUTHORIZED;
 	}
@@ -581,7 +581,7 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	};
 	HashSet<String> finding_ids;
 	for (const String &file_path : files) {
-		const String canonical_file_path = canonicalize_existing_ledger_path(file_path);
+		const String canonical_file_path = canonicalize_existing_input_path(file_path);
 		if (filesystem->is_link(file_path) || canonical_file_path.is_empty() ||
 				canonical_file_path != file_path || canonical_file_path.get_base_dir() != canonical_directory ||
 				!TemporaryProjectTree::is_strict_descendant(canonical_directory, canonical_file_path)) {
@@ -688,6 +688,36 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	return OK;
 }
 
+static Error canonicalize_owned_future_path(const String &p_canonical_root,
+		const String &p_target, String &r_canonical_target) {
+	r_canonical_target.clear();
+	if (p_target.simplify_path() != p_target ||
+			!TemporaryProjectTree::is_strict_descendant(p_canonical_root, p_target)) {
+		return ERR_UNAUTHORIZED;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_UNAVAILABLE;
+	}
+	String existing_ancestor = p_target;
+	while (!filesystem->file_exists(existing_ancestor) && !filesystem->dir_exists(existing_ancestor)) {
+		const String parent = existing_ancestor.get_base_dir();
+		if (parent.is_empty() || parent == existing_ancestor ||
+				(parent != p_canonical_root &&
+						!TemporaryProjectTree::is_strict_descendant(p_canonical_root, parent))) {
+			return ERR_UNAUTHORIZED;
+		}
+		existing_ancestor = parent;
+	}
+	const String canonical_ancestor = canonicalize_existing_input_path(existing_ancestor);
+	if (filesystem->is_link(existing_ancestor) || canonical_ancestor.is_empty() ||
+			canonical_ancestor != existing_ancestor) {
+		return ERR_UNAUTHORIZED;
+	}
+	r_canonical_target = (canonical_ancestor + p_target.substr(existing_ancestor.length())).simplify_path();
+	return r_canonical_target == p_target ? OK : ERR_UNAUTHORIZED;
+}
+
 static Error validate_owned_report_path(const String &p_canonical_scratch_root,
 		const String &p_catalog_root, const String &p_report_path) {
 	if (p_report_path.simplify_path() != p_report_path ||
@@ -708,8 +738,19 @@ static Error validate_owned_report_path(const String &p_canonical_scratch_root,
 	}
 	const String lexical_catalog_root =
 			catalog_directory->get_current_dir().replace("\\", "/").simplify_path();
-	const String canonical_catalog_root = canonicalize_existing_ledger_path(lexical_catalog_root);
+	const String canonical_catalog_root = canonicalize_existing_input_path(lexical_catalog_root);
 	if (canonical_catalog_root.is_empty() || canonical_catalog_root != lexical_catalog_root) {
+		return ERR_UNAUTHORIZED;
+	}
+	String canonical_artifact_root;
+	const Error artifact_root_error = canonicalize_owned_future_path(
+			p_canonical_scratch_root, artifact_root, canonical_artifact_root);
+	if (artifact_root_error != OK) {
+		return artifact_root_error;
+	}
+	if (canonical_catalog_root == canonical_artifact_root ||
+			TemporaryProjectTree::is_strict_descendant(canonical_artifact_root, canonical_catalog_root) ||
+			TemporaryProjectTree::is_strict_descendant(canonical_catalog_root, canonical_artifact_root)) {
 		return ERR_UNAUTHORIZED;
 	}
 	if (p_report_path == canonical_catalog_root ||
