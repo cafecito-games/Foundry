@@ -60,7 +60,9 @@ While the bot path is unavailable, a human follows the same contract:
 5. Run `reconcile` until it reports `merged`. Manual records carry `"origin": "manual"` and otherwise have the
    same fields, deadline, reconciliation, and blocking semantics as automated ones.
 
-`propose` accepts `--case-id` more than once. For a finding the ledger filed under a historical case ID that
+`propose` only files proposals for `new`, `worsened`, and `unchanged` artifacts; every other status has no
+branch failure to file and exits 2 with a message. Deserializing a comparison validates each artifact's shape
+against its status. `propose` accepts `--case-id` more than once. For a finding the ledger filed under a historical case ID that
 migrations now resolve to several cases, the historical entry is re-proposed verbatim unless every resolved
 child is listed in the same run, in which case one record per child is written (named by the runner's ID
 formula) and the provisional records carry `migrated_from`, `resolved_case_ids`, and `proposed_case_ids`. The

@@ -379,6 +379,20 @@ class ReportLoadingTests(unittest.TestCase):
             with self.assertRaises(report.ReportError, msg=repr(manifest)):
                 report.capability_slice_for_family(manifest, "f")
 
+    def test_orphan_finding_is_a_report_error(self) -> None:
+        with self.assertRaises(report.ReportError):
+            report.load_report(_report([_case("a", passed=False)], findings=[_finding("ghost", "destination")]))
+
+    def test_finding_on_a_passed_case_is_contradictory(self) -> None:
+        # The runner marks a case failed whenever a finding targets it (fs_type_completeness_runner.cpp:1614-1619).
+        with self.assertRaises(report.ReportError):
+            report.load_report(_report([_case("a", passed=True)], findings=[_finding("a", "destination")]))
+
+    def test_every_category_value_loads(self) -> None:
+        for category in report.Category:
+            loaded = report.load_report(_report([_case("a", passed=False, category=category.value)]))
+            self.assertEqual(loaded.case("a").category, category)
+
     def test_default_category_is_product_finding_until_runner_emits_categories(self) -> None:
         loaded = report.load_report(_report([_case("b", passed=False)]))
         self.assertEqual(loaded.case("b").category, report.Category.PRODUCT_FINDING)
@@ -1109,6 +1123,144 @@ class ReconciliationTests(unittest.TestCase):
         self.assertFalse(reconcile.blocks_release([merged_classified]))
         self.assertFalse(pending.blocks_slice)
         self.assertTrue(pending.to_dict()["blocks_release"])
+
+
+def _artifact_with_status(status: Any) -> Any:
+    """Build an artifact of the given Status through the comparator itself, never by hand."""
+    failing = _case("a", passed=False)
+    worse = _case("a", passed=False, runtime_status="crash", runtime_passed=False)
+    passing = _case("a", passed=True)
+    finding = [_finding("a", "destination")]
+    sides: dict[Any, tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]] = {
+        comparator.Status.NEW: ([failing], [passing], finding),
+        comparator.Status.WORSENED: ([worse], [failing], finding),
+        comparator.Status.UNCHANGED: ([failing], [failing], finding),
+        comparator.Status.RESOLVED: ([passing], [failing], []),
+        comparator.Status.MISSING: ([], [failing], []),
+        comparator.Status.VANISHED: ([], [passing], []),
+        comparator.Status.PASSING: ([passing], [passing], []),
+    }
+    branch_cases, develop_cases, branch_findings = sides[status]
+    branch = report.load_report(_report(branch_cases, findings=branch_findings))
+    develop = report.load_report(
+        _report(develop_cases, findings=finding if develop_cases and not develop_cases[0]["passed"] else [])
+    )
+    artifact = comparator.compare_case(branch, develop, "a", configuration="text", capabilities=CAPABILITIES)
+    assert artifact.status is status, (artifact.status, status)
+    return artifact
+
+
+class EveryStatusConsumerTests(unittest.TestCase):
+    def test_status_partitions_are_complete(self) -> None:
+        every = set(comparator.Status)
+        self.assertEqual(
+            every,
+            set(comparator.REGRESSION_STATUSES)
+            | set(comparator.NO_LONGER_FAILING_STATUSES)
+            | set(comparator.PROPOSABLE_STATUSES)
+            | set(comparator.KNOWN_BASELINE_STATUSES),
+        )
+        self.assertEqual(
+            set(comparator.PROPOSABLE_STATUSES),
+            {comparator.Status.NEW, comparator.Status.WORSENED, comparator.Status.UNCHANGED},
+        )
+        self.assertFalse(set(comparator.REGRESSION_STATUSES) & set(comparator.NO_LONGER_FAILING_STATUSES))
+
+    def test_every_status_round_trips_and_every_consumer_handles_it(self) -> None:
+        for status in comparator.Status:
+            with self.subTest(status=status.value):
+                artifact = _artifact_with_status(status)
+                text = comparator.serialize_many([artifact])
+                restored = comparator.deserialize_many(text)[0]
+                self.assertEqual(restored.to_dict(), artifact.to_dict())
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "comparison.json").write_text(text)
+                    exit_code = cli.main(
+                        [
+                            "propose",
+                            "--comparison",
+                            str(root / "comparison.json"),
+                            "--case-id",
+                            "a",
+                            "--dimension",
+                            "destination",
+                            "--issue-url",
+                            "https://x/1",
+                            "--closure-packet-url",
+                            "https://x/2",
+                            "--permanent-test-path",
+                            "p",
+                            "--workstream-owner",
+                            "o",
+                            "--detection-artifact",
+                            "d",
+                            "--detected-at",
+                            "2026-08-17T10:00:00-04:00",
+                            "--output-dir",
+                            str(root / "out"),
+                        ]
+                    )
+                    if status in comparator.PROPOSABLE_STATUSES:
+                        self.assertEqual(exit_code, 0)
+                        self.assertTrue((root / "out" / "provisional.json").exists())
+                    else:
+                        self.assertEqual(exit_code, 2)
+                        self.assertFalse((root / "out").exists())
+                payload = ledger.proposed_record(
+                    finding_id="fstcf-v1-ffffffffffffffffffff",
+                    family="union_destination_membership",
+                    case_id="a",
+                    dimension="destination",
+                    issue_url="https://x/1",
+                    closure_packet_url="https://x/2",
+                    permanent_test_paths=["p"],
+                )
+                record = provisional.ProvisionalRecord.create(
+                    finding_id=payload["finding_id"],
+                    payload=payload,
+                    capability_slice=["modules/foundry_script/fs_analyzer.cpp"],
+                    workstream_owner="o",
+                    detection_artifact="d",
+                    develop_comparison=artifact.to_dict(),
+                    detected_at=_ny(2026, 8, 17, 10),
+                    bot_pr_url="https://x/2",
+                    origin="automation",
+                )
+                for pull_request in (None, "open", "closed", "merged"):
+                    result = reconcile.reconcile_finding(
+                        finding_id=record.finding_id,
+                        provisional_record=record,
+                        merged_record=None,
+                        pull_request=None
+                        if pull_request is None
+                        else reconcile.PullRequest(url="u", state=pull_request),
+                        now=_ny(2026, 8, 18, 9),
+                        comparison_status=status.value,
+                    )
+                    self.assertIsInstance(result.state, reconcile.State)
+                    self.assertIsInstance(result.to_dict()["blocks_release"], bool)
+
+    def test_deserialize_rejects_artifact_shape_inconsistent_with_status(self) -> None:
+        artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
+        artifact["branch"] = dict(artifact["branch"], present=False)
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [artifact]}))
+        vanished = _artifact_with_status(comparator.Status.VANISHED).to_dict()
+        vanished["status"] = "new"
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [vanished]}))
+        unknown = _artifact_with_status(comparator.Status.NEW).to_dict()
+        unknown["status"] = "sideways"
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [unknown]}))
+
+    def test_every_reconcile_state_serializes(self) -> None:
+        for state in reconcile.State:
+            result = reconcile.Reconciliation("fstcf-v1-" + "0" * 20, state, "r", ("p",), None, True)
+            payload = result.to_dict()
+            self.assertEqual(payload["state"], state.value)
+            self.assertIn(payload["blocks_capability_slice"], (True, False))
 
 
 class FakeCommandRunner:

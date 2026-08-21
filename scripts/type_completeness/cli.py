@@ -39,7 +39,7 @@ def _compare(arguments: argparse.Namespace) -> int:
 
 
 def _finding_for(artifact: comparator.ComparisonArtifact, dimension: str) -> Optional[dict[str, Any]]:
-    findings = [finding for finding in artifact.branch["findings"] or [] if finding["dimension"] == dimension]
+    findings = [finding for finding in artifact.branch["findings"] if finding["dimension"] == dimension]
     return findings[0] if len(findings) == 1 else None
 
 
@@ -96,6 +96,13 @@ def _propose(arguments: argparse.Namespace) -> int:
         artifact = by_case.get(case_id)
         if artifact is None:
             print(f"comparison has no artifact for case {case_id!r}", file=sys.stderr)
+            return 2
+        if artifact.status not in comparator.PROPOSABLE_STATUSES:
+            print(
+                f"case {case_id!r} has comparison status {artifact.status.value!r}; only "
+                f"{[status.value for status in comparator.PROPOSABLE_STATUSES]} carry a branch failure to propose",
+                file=sys.stderr,
+            )
             return 2
         finding = _finding_for(artifact, arguments.dimension)
         if finding is None:

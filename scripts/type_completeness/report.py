@@ -183,6 +183,13 @@ def load_report(data: Mapping[str, Any]) -> Report:
             )
         )
     cases.sort(key=lambda case: case.case_id)
+    orphans = sorted(set(findings_by_case) - seen)
+    if orphans:
+        raise ReportError(f"report findings target cases it does not report: {orphans}")
+    # The runner marks a case failed whenever a finding targets it, so a finding on a passed case is contradictory.
+    contradictory = [case.case_id for case in cases if case.passed and case.findings]
+    if contradictory:
+        raise ReportError(f"report marks cases passed although findings target them: {contradictory}")
     return Report(family=family, success=success, cases=tuple(cases), raw=dict(data))
 
 

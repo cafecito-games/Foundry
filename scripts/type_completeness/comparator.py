@@ -36,6 +36,12 @@ class Status(str, enum.Enum):
 REGRESSION_STATUSES = (Status.NEW, Status.WORSENED, Status.MISSING, Status.VANISHED)
 # Statuses meaning the case no longer fails on the branch; reconciliation uses this set so it cannot drift.
 NO_LONGER_FAILING_STATUSES = (Status.RESOLVED, Status.PASSING)
+# Statuses with a branch failure to file a ledger proposal for; every other status has nothing to propose.
+PROPOSABLE_STATUSES = (Status.NEW, Status.WORSENED, Status.UNCHANGED)
+# A known develop mismatch reproduced unchanged: not a regression, not progress, but proposable.
+KNOWN_BASELINE_STATUSES = (Status.UNCHANGED,)
+# Statuses whose artifact has no branch side because the case is absent from the branch report.
+BRANCH_ABSENT_STATUSES = (Status.MISSING, Status.VANISHED)
 
 
 def canonical_json(value: Any) -> str:
@@ -145,13 +151,30 @@ class ComparisonArtifact:
             "capability_slice": None if self.capability_slice is None else self.capability_slice.to_dict(),
         }
 
+    def validate(self) -> None:
+        """Every status the comparator can emit has one artifact shape; reject anything else on deserialize."""
+        branch_present = bool(self.branch.get("present"))
+        if branch_present == (self.status in BRANCH_ABSENT_STATUSES):
+            raise ReportError(
+                f"artifact for case {self.case_id!r} has status {self.status.value!r} but branch.present is "
+                f"{branch_present}"
+            )
+        if branch_present and not isinstance(self.branch.get("findings"), list):
+            raise ReportError(f"artifact for case {self.case_id!r} has a branch side without findings")
+        if self.status is not Status.NEW and not self.develop.get("present"):
+            raise ReportError(f"artifact for case {self.case_id!r} has status {self.status.value!r} without develop")
+
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ComparisonArtifact:
-        return cls(
+        try:
+            status = Status(str(data["status"]))
+        except ValueError as error:
+            raise ReportError(f"unknown comparison status {data.get('status')!r}") from error
+        artifact = cls(
             case_id=str(data["case_id"]),
             family=str(data["family"]),
             configuration=str(data["configuration"]),
-            status=Status(str(data["status"])),
+            status=status,
             category=str(data["category"]),
             coordinates=dict(data["coordinates"]),
             branch=dict(data["branch"]),
@@ -160,6 +183,8 @@ class ComparisonArtifact:
             if data.get("capability_slice") is not None
             else None,
         )
+        artifact.validate()
+        return artifact
 
 
 def _status(branch_case: CaseResult, develop_case: Optional[CaseResult]) -> Status:
@@ -238,4 +263,7 @@ def deserialize_many(text: str) -> list[ComparisonArtifact]:
     data = json.loads(text)
     if not schema_version_matches(data.get("schema_version"), COMPARISON_SCHEMA_VERSION):
         raise ReportError("unsupported comparison schema_version")
-    return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]
+    try:
+        return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]
+    except (KeyError, TypeError) as error:
+        raise ReportError(f"malformed comparison artifact: {error!r}") from error
