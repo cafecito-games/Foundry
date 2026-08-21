@@ -94,11 +94,19 @@ reset.
 Expectations attach in two ways:
 
 - A **declared disposition** is a hand-authored anchor with concrete coordinates, witnesses, and expected observable
-  behavior. Every rule family has at least one declared anchor for each applicable surface, and every distinct
-  outcome class in the family has at least one declared witness.
-- A **derived disposition** applies a named relation to one or more declared anchors. It may preserve or apply a
-  fixed transformation to selected observable dimensions, such as preserving static acceptance while adding a
-  runtime membership obligation.
+  behavior. Every rule family has at least one declared anchor for each applicable surface and required observable
+  dimension, and every distinct outcome class in the family has at least one declared witness.
+- A **derived disposition** applies a named relation to one or more declared or derived dispositions. It may preserve
+  or apply a fixed transformation to selected observable dimensions, such as preserving static acceptance while
+  adding a runtime membership obligation.
+
+Derivation is a bounded acyclic chain. The initial global maximum is three relation steps, matching the selected
+depth-three composition bound; a rule family may choose a lower maximum. Every step records its source cell, relation
+or exception ID, input dimension values, and output dimension values in the generated case's provenance. A relation
+must advance the family's declared derivation rank, so cycles are validation errors. Anchor sufficiency validation
+proves that every generated cell is reachable within the family's chain bound rather than discovering unreachable
+cells during execution. A family that cannot cover its declared domain in three steps must add anchors or narrow that
+domain; raising the global bound requires a design amendment.
 
 Relations use bounded predicates over normalized axis coordinates and anchor results. A predicate may compare an
 axis to named values, test membership in a named equivalence class, and combine those checks with conjunction or
@@ -106,9 +114,23 @@ disjunction. It may not inspect generated source or ASTs, call production type-r
 types, or synthesize a new outcome algorithm. This is deliberately a small, scoped decision procedure rather than a
 second type checker.
 
-Manifest validation rejects a cell with no matching expectation, more than one equally specific expectation, an
-unanchored derived expectation, or incompatible outcomes from overlapping relations. The report distinguishes
-declared and derived coverage so a large derived region cannot hide a shortage of independent anchors.
+Each adapter registers the observable dimensions it can produce. A relation propagates or transforms only dimensions
+it names. A required dimension not named by a declared anchor or any step in the selected chain is uncovered for that
+cell, not implicitly accepted. `not_applicable` is an explicit dimension disposition with a rationale. Reports show
+coverage per dimension and break derived coverage out by chain length, so a deep region cannot appear covered while
+asserting only static admission and ignoring carrier, diagnostic, runtime-value, or tooling dimensions.
+
+Specificity is computed over the finite normalized domain. Predicate A is more specific than predicate B when A's
+matched cell set is a strict subset of B's. For one cell and dimension, validation requires one unique maximally
+specific record; tied or incomparable maximal predicates are errors even if they currently produce the same outcome.
+An exception naturally outranks its parent because its match set is a strict subset. If multiple valid relation
+chains reach the same final cell, their outcomes must agree for every covered dimension; incompatible chains are
+errors. The report retains every agreeing chain and chooses the shortest, then lexically smallest, as canonical
+provenance.
+
+Manifest validation rejects a cell with no reachable expectation, an uncovered required dimension, a chain beyond
+the family bound, a cycle, ambiguous predicate selection, an unanchored chain, or incompatible outcomes from
+overlapping chains.
 
 ### Metamorphic exceptions
 
@@ -120,9 +142,25 @@ mutation validation exactly like ordinary rules.
 Every exception has at least one positive witness proving that the exceptional behavior occurs and one boundary
 witness proving that a neighboring ordinary cell still follows the parent relation. Adding or widening an exception
 is a specification change. Free-form clauses such as "unless union semantics intervene" have no executable meaning
-and are forbidden.
+and are forbidden. An exception inherits its parent relation's derivation rank and cannot add a chain step by itself.
 
 ## Architecture
+
+### Shared partitions and observable dimensions
+
+Normalized axis vocabularies are versioned independently from rule families. Each axis has one JSON file in a
+`partitions/` directory containing its concrete leaf members and named equivalence classes as explicit sets of those
+members. Rule coordinates use leaf members. Predicates either name a leaf or use an explicit class selector such as
+`{ "class": "unproven" }`; a class name is never accepted where a concrete coordinate is required.
+
+For example, the `source_proof` partition contains the leaf members `static_member`, `numeric_constant`, `gradual`,
+`erased`, and `variant`, and defines `unproven` as the set `{ gradual, erased, variant }`. Per-axis files limit merge
+conflicts while keeping the vocabulary shared. A partition edit increments that axis's schema version and owns the
+corresponding case-ID migration records.
+
+Observable dimensions are likewise registered in per-adapter JSON files under `dimensions/`. Each entry declares
+the dimension's value vocabulary, the coordinates on which it is required, and legal `not_applicable` conditions.
+Manifest and adapter validation reject unknown axis members, class names, dimensions, and outcomes before generation.
 
 ### Capability manifest
 
@@ -151,10 +189,10 @@ Stable case IDs are derived from semantic coordinates, not generation order. Rep
 issues, and pull requests use those IDs so a case remains traceable when the generator changes.
 
 A repartition may split or merge semantic coordinates, so it ships an ID-migration file beside the rule-family
-files. Migrations map an old ID to one or more replacement IDs and record the reason. Validation rejects alias cycles,
-orphaned ledger references, a removed ID with no migration, and a replacement ID that does not exist. Reports resolve
-old IDs while displaying their current replacements; migration records remain permanent so external issue and pull
-request references do not rot.
+files and references the changed per-axis partition version. Migrations map an old ID to one or more replacement IDs
+and record the reason. Validation rejects alias cycles, orphaned ledger references, a removed ID with no migration,
+and a replacement ID that does not exist. Reports resolve old IDs while displaying their current replacements;
+migration records remain permanent so external issue and pull request references do not rot.
 
 ### Worked rule before framework expansion
 
@@ -169,36 +207,78 @@ without weakening the declared/derived/exception constraints:
   "anchors": [
     {
       "id": "plain_static_member",
-      "coordinates": { "destination": "plain", "source_proof": "static_member" },
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "parameter"
+      },
       "expect": { "analysis": "accept", "runtime_obligation": "none" },
       "surfaces": ["text", "bytecode"]
     },
     {
-      "id": "plain_unproven",
-      "coordinates": { "destination": "plain", "source_proof": "unproven" },
+      "id": "plain_gradual",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "gradual",
+        "boundary": "parameter"
+      },
       "expect": { "analysis": "accept", "runtime_obligation": "typed_destination_check" },
       "surfaces": ["text", "bytecode"]
     },
     {
       "id": "union_numeric_constant",
-      "coordinates": { "destination": "union", "source_proof": "numeric_constant" },
+      "coordinates": {
+        "destination": "union",
+        "source_proof": "numeric_constant",
+        "boundary": "parameter"
+      },
       "expect": { "analysis": "accept", "stored_carrier": "admitting_alternative" },
+      "surfaces": ["text", "bytecode"],
       "historical_issue": 2442
     }
   ],
   "relations": [
     {
+      "id": "gradual_to_erased_parity",
+      "rank": 1,
+      "from": { "source_proof": "gradual" },
+      "to": { "source_proof": "erased" },
+      "derive": { "analysis": "same", "runtime_obligation": "same" }
+    },
+    {
+      "id": "gradual_to_variant_parity",
+      "rank": 1,
+      "from": { "source_proof": "gradual" },
+      "to": { "source_proof": "variant" },
+      "derive": { "analysis": "same", "runtime_obligation": "same" }
+    },
+    {
       "id": "union_wrapper_parity",
+      "rank": 2,
       "from": { "destination": "plain" },
       "to": { "destination": "union" },
       "derive": { "analysis": "same", "runtime_obligation": "same" }
+    },
+    {
+      "id": "reflective_boundary_parity",
+      "rank": 3,
+      "from": { "boundary": "parameter" },
+      "to": { "boundary": "reflective_write" },
+      "derive": { "analysis": "same", "runtime_obligation": "same" }
+    },
+    {
+      "id": "reflective_carrier_parity",
+      "rank": 3,
+      "from": { "boundary": "parameter", "source_proof": "numeric_constant" },
+      "to": { "boundary": "reflective_write" },
+      "derive": { "stored_carrier": "same" }
     }
   ],
   "exceptions": [
     {
       "id": "unproven_source_requires_membership",
       "parent": "union_wrapper_parity",
-      "when": { "source_proof": ["gradual", "erased", "variant"] },
+      "when": { "source_proof": { "class": "unproven" } },
       "derive": { "analysis": "same", "runtime_obligation": "union_membership_check" },
       "rationale": "A union destination must prove membership when the source cannot.",
       "witnesses": {
@@ -213,6 +293,10 @@ without weakening the declared/derived/exception constraints:
 This example makes the pilot precise: wrapper parity applies to static admission, while the union-specific runtime
 membership obligation is an audited transformation with its own text and bytecode witnesses. The numeric-constant
 anchor proves that #2471 restores admission parity and preserves the carrier chosen by the admitting alternative.
+An erased reflective union cell derives from `plain_gradual` through the rank-one proof relation, rank-two wrapper
+relation, and rank-three boundary relation; its provenance records all three steps. The numeric reflective cell's
+carrier dimension is covered separately by `reflective_carrier_parity`; the broader boundary relation does not
+silently claim that dimension.
 
 ### Type-shape generator
 
@@ -353,6 +437,25 @@ Blocking scope is decided by the gate that found the failure:
 Baseline comparison never turns a known mismatch into a passing cell; it only scopes which workflow is blocked while
 the stabilization campaign repairs it.
 
+### Provisional-finding automation
+
+Phase 1 delivers the baseline comparator and deadline service required by this policy. For a new presubmit mismatch,
+the comparator runs the stable case against the matching `develop` configuration, records whether the result is
+unchanged, and emits a proposed per-finding JSON file as a CI artifact. Automation opens or updates a GitHub tracking
+issue and a bot branch/PR for the ledger entry; CI never writes directly to the protected branch. The entry records
+the producing capability slice, workstream owner, detection artifact, `develop` comparison, and classification due
+time.
+
+The deadline is 17:00 America/New_York on the second following weekday after detection; weekends are skipped. A daily
+deadline job marks an expired entry `classification_overdue`, notifies the workstream owner, and blocks subsequent
+pull requests mapped to the producing capability slice until classification. It does not block unrelated repository
+work. Every overdue provisional finding also blocks release and epic closure.
+
+Until the automation is operational, the presubmit check remains blocking unless a human attaches the equivalent
+`develop` rerun artifact, adds the provisional per-finding file through the current pull request or a linked pull
+request, assigns the workstream owner and deadline, and receives review of that classification. This manual path has
+the same data and expiry consequences as the automated path.
+
 ## Execution Flow
 
 For a deterministic run:
@@ -446,6 +549,15 @@ item complete.
 
 ## Test and Automation Strategy
 
+### Budget semantics
+
+Percentile budgets are service-level objectives, not per-run verdicts. Each p95 is calculated over the latest 30
+successful `develop` runs of the same gate and build configuration on the reference four-job agent environment. The
+report shows the sample set and cache state. Presubmit has a three-minute per-run hard timeout, strict shards have a
+ten-minute hard timeout, and scheduled/release shards have a 40-minute hard timeout. Hitting a hard timeout fails that
+job; a p95 trend breach opens a gate-performance closure packet and prevents adding more generated coverage to the
+affected tier until it returns within budget or receives an explicit design amendment.
+
 ### Presubmit gate
 
 Pull requests run deterministic cases selected from the capabilities they change, all directly dependent
@@ -454,9 +566,16 @@ based on manifest dependencies and registered capabilities, not source-text matc
 90-second p95 wall time after binary launch on the reference four-job agent environment.
 
 The selector owns an explicit production-path-to-capability map. An unmapped production change under
-`modules/foundry_script/` runs the broad core presubmit slice and fails selector validation until the path is mapped or
-declared irrelevant. Manifest validation also proves that every rule family is reachable from at least one path
-mapping. This fail-closed fallback makes mapping rot noisy rather than silently reducing coverage.
+`modules/foundry_script/` runs a fixed broad-core fallback calibrated to the same 90-second target and three-minute
+hard timeout, and fails selector validation until the path is mapped or declared irrelevant under the expiring policy
+below. Manifest validation also proves that every rule family is reachable from at least one path mapping. This
+fail-closed fallback makes mapping rot noisy rather than silently reducing coverage.
+
+A production path may be declared irrelevant only with a rationale, owner, and `reviewed_at` date. Any content change
+to that path invalidates the declaration before selection, and an unchanged declaration expires after 90 days unless
+independently re-reviewed. Mechanically nonproduction paths such as prose documents and generated artifacts use
+separate path categories rather than semantic-irrelevance assertions. Reports list irrelevant-path count, owner, age,
+expiry, and fallback activations.
 
 ### Strict validation gate
 
@@ -465,24 +584,32 @@ through `scripts/agent_build.py`. The matrix portion has a five-minute p95 wall-
 the reference four-job agent environment, separate from build time. Reports record total and per-rule/adapter
 durations.
 
-The strict tier always retains, in order:
+The single pre-handoff strict run always retains:
 
 1. Every declared anchor and exception witness.
 2. Every historical soundness regression.
 3. At least one case for each rule family, applicable surface, and expected outcome class.
-4. The complete changed-capability slice for the branch under validation.
 
-If the budget is exceeded, only redundant pairwise/higher-order combinations move to scheduled shards. Unique
-semantic coverage above may not be demoted. A persistent budget breach is a gate failure requiring harness
-optimization, additional deterministic CI shards, or an explicit design amendment; it is not solved by silently
-dropping a rule family.
+The complete changed-capability slice is retained logically but may be partitioned across additional required strict
+CI shards, each with the same five-minute target and ten-minute hard timeout. A core-analyzer change therefore scales
+by adding shards rather than forcing the single pre-handoff run over budget. Handoff and merge require the local
+never-demote floor and every changed-slice shard to pass.
+
+If a tier exceeds its budget, only redundant pairwise/higher-order combinations move to scheduled shards. Unique
+semantic coverage in the never-demote floor or changed slice may not be dropped. A persistent budget breach is a gate
+failure requiring harness optimization, additional deterministic CI shards, or an explicit design amendment.
 
 ### Scheduled exploration
 
 Scheduled campaigns run the complete bounded deterministic matrix in workstream shards, deeper compositions,
 configured higher-order combinations, randomized metamorphic cases, lifecycle stress, and concurrency stress. Each
-shard targets at most 30 minutes. Seeds and artifacts are retained. A newly minimized failure is promoted to the
-strict tier when it represents a distinct semantic class; redundant combinations remain scheduled.
+shard targets at most 30 minutes with the 40-minute hard timeout. Seeds and artifacts are retained. A newly minimized
+failure is promoted to the strict tier when it represents a distinct semantic class; redundant combinations remain
+scheduled.
+
+Exploration and mutation suites are dispatched nightly against `develop`; every deterministic/exploration shard and
+every active mutation recipe must produce one terminal result in each rolling 24-hour window. A missed window is an
+infrastructure failure visible in the coverage report and blocks release while stale.
 
 ### Release gate
 
@@ -516,7 +643,8 @@ mechanism; ordinary source line coverage is secondary.
 The generated report tracks:
 
 - Matrix disposition coverage.
-- Declared-anchor, derived-relation, and first-class-exception coverage.
+- Declared-anchor, derived-relation, and first-class-exception coverage per observable dimension and derivation-chain
+  length.
 - Static/runtime boundary parity.
 - Text/bytecode parity.
 - Representation-child policy and behavioral coverage.
@@ -525,20 +653,24 @@ The generated report tracks:
 - Unclassified failures.
 - Findings discovered during reconnaissance or scheduled exploration versus during implementation.
 - Closure packets that generated in-slice follow-ups after implementation began.
-- Presubmit-selector mapping reachability and conservative-fallback activations.
+- Presubmit-selector mapping reachability, conservative-fallback activations, and irrelevant-path count/owner/age.
+- Provisional-finding age, deadline state, owner, and overdue capability slices.
+- Nightly shard/recipe cadence and missed 24-hour terminal results.
 - Matrix wall time by gate, shard, rule family, and adapter.
 
-The last two measures show whether discovery is moving earlier. A falling raw issue count is not sufficient if new
-features bypass the model or failures remain unclassified.
+The reconnaissance-versus-implementation and in-slice-follow-up measures show whether discovery is moving earlier.
+A falling raw issue count is not sufficient if new features bypass the model or failures remain unclassified.
 
 ## Feature Admission Gate
 
 New type features and changes to existing type semantics may proceed during the stabilization program, but they must:
 
 - Add or revise their capability-manifest rules.
+- Add or revise shared partition and observable-dimension vocabularies with migrations where applicable.
 - Extend the representation census for new child slots or projections.
 - Declare applicable boundaries, execution/lifecycle modes, and tooling surfaces.
 - Add declared anchors, derived relations, and first-class exception witnesses as applicable.
+- Prove every generated cell and required dimension is reachable within the bounded derivation graph.
 - Update the production-path capability map and any case-ID migrations.
 - Pass presubmit and strict deterministic gates.
 - Classify every newly exposed failure before merge.
@@ -551,8 +683,10 @@ manifest dependencies, and behavioral tests can do so without brittle source ins
 ### Phase 1: Baseline and historical mining
 
 - Create the umbrella epic, workstreams, per-family rule directory, per-finding ledger directory, ID-migration
-  directory, capability map, and report skeleton.
+  directory, per-axis partition directory, per-adapter dimension directory, capability map, and report skeleton.
 - Implement the union destination membership worked rule end to end before generalizing the manifest or generator.
+- Implement the `develop` baseline comparator, provisional-finding artifact and bot-PR path, deadline service, and
+  documented manual fallback before presubmit is allowed to treat a pre-existing mismatch as non-blocking.
 - Convert recent type-system pull requests, open issues, deliberate scope notes, review findings, and existing tests
   into regression families and stable seeds. Execute every mined witness against current `develop` first and record
   `still_failing`, `fixed`, or `premise_false`; do not transcribe an issue's claimed behavior into the catalog.
@@ -623,11 +757,13 @@ The epic distinguishes correctness from optional polish without weakening toolin
 
 The stabilization epic closes only when:
 
-- Every in-scope deterministic matrix cell has an executable expected disposition.
+- Every in-scope deterministic matrix cell has an executable expected disposition for every required observable
+  dimension, reachable within its family's bounded relation graph.
 - Every semantic child slot in every inventoried representation has an explicit traversal, projection, preservation,
   substitution, erasure, or not-applicable policy.
 - All deterministic presubmit, strict-validation, and sharded release gates pass within their declared budgets.
 - Scheduled exploration has no unclassified failures.
+- No provisional finding is overdue, and every nightly shard/recipe has a current terminal result.
 - Every known soundness, safety, semantic-correctness, and semantic-parity issue and closure packet is closed. Any
   remaining quality-polish issue is reported under `quality_deferred` with its rationale.
 - Scheduled mutation jobs demonstrate that the harness detects every entry in the reverified historical mutation
@@ -666,9 +802,21 @@ versioned contract.
 
 ### Gate runtime growth
 
-Enforce the 90-second presubmit, five-minute strict, and 30-minute scheduled-shard budgets. Preserve declared anchors,
-exceptions, historical soundness cases, and one case per rule/surface/outcome in strict validation; move only
-redundant combinatorial depth to scheduled shards. Track runtime as a first-class coverage metric.
+Track rolling p95 SLOs separately from three-, ten-, and 40-minute per-run hard timeouts. Preserve declared anchors,
+exceptions, historical soundness cases, and one case per rule/surface/outcome in the local strict floor; shard large
+changed slices and move only redundant combinatorial depth to scheduled campaigns. Track runtime as a first-class
+coverage metric.
+
+### Derivation and dimension blind spots
+
+Cap chains at three rank-ordered steps, retain complete provenance, reject incompatible paths, and report coverage by
+chain length and observable dimension. An unnamed required dimension is uncovered, never an implicit pass.
+
+### Selector and triage automation rot
+
+Invalidate irrelevant-path claims on content change and after 90 days, fail closed on unmapped production paths, and
+enforce provisional-finding deadlines only through the Phase 1 comparator/deadline service or its equivalent manual
+artifact path.
 
 ### A second stale tracking system
 
