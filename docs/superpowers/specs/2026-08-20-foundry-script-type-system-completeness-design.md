@@ -1,7 +1,8 @@
 # Foundry Script Type-System Completeness Program
 
 **Date:** 2026-08-20
-**Status:** Approved
+**Revised:** 2026-08-20
+**Status:** Revised — review requested
 
 ## Problem
 
@@ -19,14 +20,16 @@ cases belong to the same rule.
 
 The project needs an executable definition of type-system completeness. It must find gaps deliberately, turn them
 into bounded work, prevent new features from recreating missing cells, and provide evidence that the known language
-surface has been covered. It must not promise the impossible claim that no future bug can exist.
+surface has been covered. Its headline success measure is the share of findings discovered during reconnaissance or
+scheduled exploration instead of during implementation: the program succeeds when discovery moves before the fix.
+It must not promise the impossible claim that no future bug can exist.
 
 ## Goals
 
 - Define a finite, auditable completeness contract for Foundry Script typing.
 - Cover language semantics, runtime enforcement, diagnostics, editor/LSP behavior, serialization, reload, lifetime,
   cache invalidation, and concurrent analysis where these affect correctness.
-- Give every in-scope type-system combination an executable expected disposition.
+- Give every in-scope type-system combination a declared or relation-derived executable expected disposition.
 - Discover families of adjacent defects before implementation begins rather than during unrelated pull requests.
 - Replace one-reproduction issues with closure packets that own a complete semantic neighborhood.
 - Detect missing recursion, erasure, projection, or reification across every type representation.
@@ -40,6 +43,7 @@ surface has been covered. It must not promise the impossible claim that no futur
 ## Non-goals
 
 - Do not implement a second Foundry Script type checker as the test oracle.
+- Do not promise deterministic replay of real-thread concurrency without a separately designed interleaving harness.
 - Do not enumerate arbitrary programs or unbounded recursive type depth.
 - Do not require every syntactically expressible type combination to become supported.
 - Do not begin with a big-bang rewrite of analyzer, compiler, VM, editor, or LSP typing code.
@@ -58,6 +62,8 @@ one of two dispositions:
 2. Intentionally unsupported, with a language rationale and an executable, consistent rejection expectation.
 
 An unimplemented case, a crash, an unclassified diagnostic, or a link to a future issue is not a disposition.
+Whether an expectation is declared directly or derived from a declared anchor does not change this two-disposition
+rule.
 
 The contract has five axes:
 
@@ -83,11 +89,46 @@ Changing an equivalence partition is a specification change. If scheduled explor
 be expressed by the current axes or rules, the model is incomplete: the catalog is extended and the closure soak is
 reset.
 
+### How expectations attach to cells
+
+Expectations attach in two ways:
+
+- A **declared disposition** is a hand-authored anchor with concrete coordinates, witnesses, and expected observable
+  behavior. Every rule family has at least one declared anchor for each applicable surface, and every distinct
+  outcome class in the family has at least one declared witness.
+- A **derived disposition** applies a named relation to one or more declared anchors. It may preserve or apply a
+  fixed transformation to selected observable dimensions, such as preserving static acceptance while adding a
+  runtime membership obligation.
+
+Relations use bounded predicates over normalized axis coordinates and anchor results. A predicate may compare an
+axis to named values, test membership in a named equivalence class, and combine those checks with conjunction or
+disjunction. It may not inspect generated source or ASTs, call production type-relation code, recurse over arbitrary
+types, or synthesize a new outcome algorithm. This is deliberately a small, scoped decision procedure rather than a
+second type checker.
+
+Manifest validation rejects a cell with no matching expectation, more than one equally specific expectation, an
+unanchored derived expectation, or incompatible outcomes from overlapping relations. The report distinguishes
+declared and derived coverage so a large derived region cannot hide a shortage of independent anchors.
+
+### Metamorphic exceptions
+
+An exception is a first-class manifest record, never prose appended to a relation. It carries its own stable
+identity, parent relation, axis predicate, rationale, fixed outcome transformation, declared witnesses, and affected
+surfaces. Exceptions participate in overlap validation, coverage reports, review, case-ID migration, and scheduled
+mutation validation exactly like ordinary rules.
+
+Every exception has at least one positive witness proving that the exceptional behavior occurs and one boundary
+witness proving that a neighboring ordinary cell still follows the parent relation. Adding or widening an exception
+is a specification change. Free-form clauses such as "unless union semantics intervene" have no executable meaning
+and are forbidden.
+
 ## Architecture
 
 ### Capability manifest
 
-A source-controlled, declarative capability manifest is the program's semantic inventory. Each rule records:
+A source-controlled, declarative capability manifest is the program's semantic inventory. It is stored as one JSON
+file per rule family under a dedicated test-matrix directory so parallel closure packets do not edit one central
+file. Each rule records:
 
 - A stable rule identity.
 - The participating type-shape and composition classes.
@@ -101,11 +142,77 @@ A source-controlled, declarative capability manifest is the program's semantic i
 - Any intentional unsupported disposition and its rationale.
 - Links to historical regression families and permanent seed cases.
 
-The manifest describes rules and expected relations. It does not contain an algorithm capable of deciding arbitrary
-Foundry Script types, which would create a second implementation likely to share or introduce defects.
+The manifest describes declared anchors, bounded relations, first-class exceptions, and expected outcomes. Its
+coordinate predicates implement the limited decision procedure defined above; it does not contain an algorithm
+capable of deciding arbitrary Foundry Script types. Independent anchors, relation cross-checks, and scheduled
+mutation campaigns keep the scoped predicates honest.
 
 Stable case IDs are derived from semantic coordinates, not generation order. Reports, permanent regressions, GitHub
 issues, and pull requests use those IDs so a case remains traceable when the generator changes.
+
+A repartition may split or merge semantic coordinates, so it ships an ID-migration file beside the rule-family
+files. Migrations map an old ID to one or more replacement IDs and record the reason. Validation rejects alias cycles,
+orphaned ledger references, a removed ID with no migration, and a replacement ID that does not exist. Reports resolve
+old IDs while displaying their current replacements; migration records remain permanent so external issue and pull
+request references do not rot.
+
+### Worked rule before framework expansion
+
+Before general generator tooling is built, Phase 1 implements one real rule-family file and runs it end to end. The
+initial family models the union destination membership work from #2469 and the provable numeric-constant parity from
+#2471. The following JSON is illustrative of the required semantics; the implementation plan may refine field names
+without weakening the declared/derived/exception constraints:
+
+```json
+{
+  "family": "union_destination_membership",
+  "anchors": [
+    {
+      "id": "plain_static_member",
+      "coordinates": { "destination": "plain", "source_proof": "static_member" },
+      "expect": { "analysis": "accept", "runtime_obligation": "none" },
+      "surfaces": ["text", "bytecode"]
+    },
+    {
+      "id": "plain_unproven",
+      "coordinates": { "destination": "plain", "source_proof": "unproven" },
+      "expect": { "analysis": "accept", "runtime_obligation": "typed_destination_check" },
+      "surfaces": ["text", "bytecode"]
+    },
+    {
+      "id": "union_numeric_constant",
+      "coordinates": { "destination": "union", "source_proof": "numeric_constant" },
+      "expect": { "analysis": "accept", "stored_carrier": "admitting_alternative" },
+      "historical_issue": 2442
+    }
+  ],
+  "relations": [
+    {
+      "id": "union_wrapper_parity",
+      "from": { "destination": "plain" },
+      "to": { "destination": "union" },
+      "derive": { "analysis": "same", "runtime_obligation": "same" }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "unproven_source_requires_membership",
+      "parent": "union_wrapper_parity",
+      "when": { "source_proof": ["gradual", "erased", "variant"] },
+      "derive": { "analysis": "same", "runtime_obligation": "union_membership_check" },
+      "rationale": "A union destination must prove membership when the source cannot.",
+      "witnesses": {
+        "positive": ["text_gradual_parameter", "bytecode_erased_reflective_write"],
+        "boundary": ["text_static_member_parameter"]
+      }
+    }
+  ]
+}
+```
+
+This example makes the pilot precise: wrapper parity applies to static admission, while the union-specific runtime
+membership obligation is an audited transformation with its own text and bytecode witnesses. The numeric-constant
+anchor proves that #2471 restores admission parity and preserves the carrier chosen by the admitting alternative.
 
 ### Type-shape generator
 
@@ -124,6 +231,13 @@ Generated projects and artifacts are written under the shared Foundry test scrat
 corpus receives only minimized, high-value regressions that improve readability, protect a subtle invariant, or
 exercise infrastructure unavailable to the generated runner.
 
+Every matrix invocation owns a process-unique scratch root, and every generated case gets a child named by stable
+case ID plus an invocation nonce. The harness relies on the process-unique `user://` policy that closed #2100, but it
+still gives spawned tools and editor/LSP subprocesses distinct child roots. A case must not reuse another case's
+`project.foundry`, autoload index, editor cache, FSCache entries, global-class registrations, or conformance state.
+Successful cases clean their children; failing cases retain them and report their exact paths. No generated case may
+write into the tracked fixture tree.
+
 ### Independent oracles
 
 The harness combines several oracles. A cell need not use every oracle, but no broad rule family should rely on only
@@ -138,11 +252,14 @@ These expectations are appropriate for settled language rules and intentional ex
 
 Metamorphic rules compare related programs without needing an independent full type checker. Examples include:
 
-- Wrapping a destination `T` as `T | U` preserves acceptance unless union semantics explicitly change the rule.
+- Wrapping a destination `T` as `T | U` preserves declared observable dimensions; any changed dimension, such as an
+  added runtime membership obligation, is a first-class exception with executable witnesses.
 - Replacing a type parameter with a concrete argument produces the same result as spelling that concrete type
-  directly where ownership semantics do not intervene.
+  directly across the relation's declared ownership coordinates; owner-changing coordinates use named exceptions.
 - Moving the same declared slot between equivalent value boundaries preserves static and runtime enforcement.
-- A type renderer followed by its supported parse/serialization round trip preserves semantic identity.
+- A census-declared lossless renderer followed by its supported parse/serialization round trip preserves semantic
+  identity. A census-declared lossy renderer instead obeys monotonicity: it may erase declared information but never
+  invent type information.
 - Adding an unrelated union alternative or conformance does not change which existing alternative or witness owns a
   value.
 
@@ -193,11 +310,17 @@ that stages editor source overrides and validates proposed edits. The completene
 refactoring or test utilities through an adapter, but its core belongs under `modules/foundry_script/tests/` and
 must run in the normal test build.
 
+The strict editor build exercises every tooling adapter. Template and non-tools builds exercise only their applicable
+parser, runtime, bytecode, and serialization adapters; tools-only cells are reported as not covered by that
+configuration, never as passes or silent skips. Coverage artifacts name the build configuration and enabled adapters
+so a green non-tools run cannot be mistaken for tooling parity evidence.
+
 ### Findings ledger
 
-A source-controlled findings ledger maps stable case IDs and rule families to their disposition, permanent tests,
-GitHub issue, closure packet, and pull request. GitHub provides the workflow view; the repository data remains the
-versioned source of truth from which coverage reports are generated.
+A source-controlled findings-ledger directory maps stable case IDs and rule families to their disposition, permanent
+tests, GitHub issue, closure packet, and pull request. Each finding is a separate JSON file named by finding ID; no
+closure packet edits a shared ledger file. The report generator validates and aggregates the directory. GitHub
+provides the workflow view; the repository data remains the versioned source of truth.
 
 Every failure has exactly one classification:
 
@@ -207,14 +330,35 @@ Every failure has exactly one classification:
 - Intentional unsupported case requiring a rejection rule.
 - Duplicate of an already catalogued finding.
 
-Failures remain blocking until classified. A harness defect is fixed in the harness; it does not silently suppress
-the affected cells. An intentional exclusion requires review of its rationale and a negative executable case.
+Classification is an execution status, not a third expected disposition. A product-defect entry records the intended
+supported or intentionally unsupported disposition and the observed mismatch while the fix is pending. A harness
+defect is fixed in the harness; it does not silently suppress affected cells. An intentional exclusion requires
+review of its rationale and a negative executable case.
+
+Blocking scope is decided by the gate that found the failure:
+
+- **Presubmit:** A failure introduced or worsened by the branch blocks that pull request. An unclassified failure in
+  the changed capability slice blocks only until it is classified. If it reproduces unchanged on `develop` and lies
+  outside the pull request's closure packet, automation opens a provisional finding with a two-business-day
+  classification deadline and the pull request may proceed; if it lies inside the owned packet, the packet expands.
+  A failure outside the changed slice does not transfer ownership to the pull-request author.
+- **Strict handoff:** Branch-introduced or worsened deterministic failures block handoff. Known `develop` mismatches
+  remain visible in the report but do not make unrelated branches newly responsible for them.
+- **Scheduled exploration:** New failures do not stop daily merges. They require provisional ledger entries and
+  classification within two business days, and they block the release gate and epic closure until classified.
+- **Release:** Unclassified failures and confirmed soundness or semantic-correctness mismatches block release.
+  Named cosmetic-quality deferrals follow the closure-severity policy below.
+- **Epic closure:** No unclassified failure or unresolved in-scope mismatch may remain.
+
+Baseline comparison never turns a known mismatch into a passing cell; it only scopes which workflow is blocked while
+the stabilization campaign repairs it.
 
 ## Execution Flow
 
 For a deterministic run:
 
-1. Load and validate the capability manifest and findings ledger.
+1. Load and validate all rule-family, finding, and ID-migration files; reject aliases, references, or mappings that do
+   not resolve.
 2. Select the requested rule families and coverage strength.
 3. Generate stable cases and scratch projects.
 4. Execute the applicable adapters.
@@ -237,7 +381,9 @@ Each unexpected result includes:
 
 Fatal harness initialization errors fail the run without classifying product cells. Individual product crashes,
 timeouts, malformed bytecode outcomes, or editor/LSP failures are case failures with retained artifacts. Scheduled
-concurrency and lifecycle campaigns record their schedule or event sequence so they can be replayed.
+concurrency campaigns retain seeds, inputs, timing, thread/event traces, logs, and scratch state for best-effort
+reproduction; they do not promise deterministic schedule replay. Any future controlled-interleaving or cooperative
+scheduler harness requires its own approved design before it becomes a completeness dependency.
 
 ## Audit and Burn-Down Workflow
 
@@ -292,6 +438,7 @@ Every type-system pull request states the semantic law it establishes. Review ve
 - Text/bytecode and direct/reflective/proxy parity.
 - Serialization, reload, lifetime, or concurrency impact.
 - Diagnostic and tooling consumers.
+- Declared anchors, derived predicates, and every added or widened exception.
 - Manifest, census, seed-family, and ledger changes.
 
 The checklist is scoped by applicability; a pull request does not manufacture irrelevant tests merely to mark every
@@ -303,27 +450,55 @@ item complete.
 
 Pull requests run deterministic cases selected from the capabilities they change, all directly dependent
 metamorphic relations, historical seeds for those families, and a compact cross-feature parity set. The selector is
-based on manifest dependencies and registered capabilities, not source-text matching.
+based on manifest dependencies and registered capabilities, not source-text matching. The matrix portion targets a
+90-second p95 wall time after binary launch on the reference four-job agent environment.
+
+The selector owns an explicit production-path-to-capability map. An unmapped production change under
+`modules/foundry_script/` runs the broad core presubmit slice and fails selector validation until the path is mapped or
+declared irrelevant. Manifest validation also proves that every rule family is reachable from at least one path
+mapping. This fail-closed fallback makes mapping rot noisy rather than silently reducing coverage.
 
 ### Strict validation gate
 
-The native SCons validation build runs the complete bounded deterministic matrix. This remains part of the required
-pre-handoff validation through `scripts/agent_build.py`.
+The native SCons validation build runs a budgeted deterministic matrix as part of required pre-handoff validation
+through `scripts/agent_build.py`. The matrix portion has a five-minute p95 wall-time budget after binary launch on
+the reference four-job agent environment, separate from build time. Reports record total and per-rule/adapter
+durations.
+
+The strict tier always retains, in order:
+
+1. Every declared anchor and exception witness.
+2. Every historical soundness regression.
+3. At least one case for each rule family, applicable surface, and expected outcome class.
+4. The complete changed-capability slice for the branch under validation.
+
+If the budget is exceeded, only redundant pairwise/higher-order combinations move to scheduled shards. Unique
+semantic coverage above may not be demoted. A persistent budget breach is a gate failure requiring harness
+optimization, additional deterministic CI shards, or an explicit design amendment; it is not solved by silently
+dropping a rule family.
 
 ### Scheduled exploration
 
-Scheduled campaigns run deeper compositions, configured higher-order combinations, randomized metamorphic cases,
-lifecycle stress, and replayable concurrency schedules. Seeds and artifacts are retained. A newly minimized failure
-is promoted to the deterministic suite when it represents a stable semantic class.
+Scheduled campaigns run the complete bounded deterministic matrix in workstream shards, deeper compositions,
+configured higher-order combinations, randomized metamorphic cases, lifecycle stress, and concurrency stress. Each
+shard targets at most 30 minutes. Seeds and artifacts are retained. A newly minimized failure is promoted to the
+strict tier when it represents a distinct semantic class; redundant combinations remain scheduled.
 
 ### Release gate
 
-Release validation runs the deterministic matrix, all historical regression families, and every promoted scheduled
-reproducer. Release reports include disposition and parity coverage rather than only pass/fail totals.
+Release validation runs the complete bounded deterministic matrix in shards, all historical regression families,
+and every promoted scheduled reproducer. Release reports include disposition, declared/derived/exception, parity,
+configuration, and runtime coverage rather than only pass/fail totals.
 
 ### Harness validation
 
-The harness is tested by controlled fault injection or mutation. Representative faults include:
+Phase 1 creates a finite mutation catalog from historical escape classes. Each entry owns an ephemeral patch recipe,
+the rule families it should disturb, and the exact case IDs expected to detect it. Scheduled mutation jobs apply one
+recipe in a disposable worktree, use the shared compiler cache, build the affected configuration, and run the named
+detectors. They do not add production test hooks and do not run in presubmit. A recipe that no longer applies is an
+infrastructure failure requiring migration or replacement, not a successful detection.
+
+Representative catalog entries include:
 
 - Omit one composite child from a traversal.
 - Skip a runtime boundary check.
@@ -332,14 +507,16 @@ The harness is tested by controlled fault injection or mutation. Representative 
 - Reorder or collapse union alternatives incorrectly.
 - Lose a type argument during serialization or reload.
 
-The matrix must detect every historical escape class represented by the injected faults. These checks validate the
-audit mechanism; ordinary source line coverage is secondary.
+The matrix must detect every historical escape class listed in the Phase 1 mutation catalog. Mutation shards target
+at most 30 minutes and run on a schedule and during the final closure campaign. These checks validate the audit
+mechanism; ordinary source line coverage is secondary.
 
 ## Coverage Reporting
 
 The generated report tracks:
 
 - Matrix disposition coverage.
+- Declared-anchor, derived-relation, and first-class-exception coverage.
 - Static/runtime boundary parity.
 - Text/bytecode parity.
 - Representation-child policy and behavioral coverage.
@@ -348,6 +525,8 @@ The generated report tracks:
 - Unclassified failures.
 - Findings discovered during reconnaissance or scheduled exploration versus during implementation.
 - Closure packets that generated in-slice follow-ups after implementation began.
+- Presubmit-selector mapping reachability and conservative-fallback activations.
+- Matrix wall time by gate, shard, rule family, and adapter.
 
 The last two measures show whether discovery is moving earlier. A falling raw issue count is not sufficient if new
 features bypass the model or failures remain unclassified.
@@ -359,7 +538,8 @@ New type features and changes to existing type semantics may proceed during the 
 - Add or revise their capability-manifest rules.
 - Extend the representation census for new child slots or projections.
 - Declare applicable boundaries, execution/lifecycle modes, and tooling surfaces.
-- Add explicit and metamorphic expectations.
+- Add declared anchors, derived relations, and first-class exception witnesses as applicable.
+- Update the production-path capability map and any case-ID migrations.
 - Pass presubmit and strict deterministic gates.
 - Classify every newly exposed failure before merge.
 
@@ -370,9 +550,13 @@ manifest dependencies, and behavioral tests can do so without brittle source ins
 
 ### Phase 1: Baseline and historical mining
 
-- Create the umbrella epic, workstreams, catalog skeleton, and findings ledger.
+- Create the umbrella epic, workstreams, per-family rule directory, per-finding ledger directory, ID-migration
+  directory, capability map, and report skeleton.
+- Implement the union destination membership worked rule end to end before generalizing the manifest or generator.
 - Convert recent type-system pull requests, open issues, deliberate scope notes, review findings, and existing tests
-  into regression families and stable seeds.
+  into regression families and stable seeds. Execute every mined witness against current `develop` first and record
+  `still_failing`, `fixed`, or `premise_false`; do not transcribe an issue's claimed behavior into the catalog.
+- Build the finite mutation catalog and detector mapping from the reverified historical families.
 - Record the initial equivalence partitions and intentional exclusions.
 
 ### Phase 2: Representation census
@@ -385,8 +569,8 @@ manifest dependencies, and behavioral tests can do so without brittle source ins
 
 Prove the harness with this law:
 
-> If a value is accepted by destination `T`, wrapping that destination as `T | U` preserves the result unless an
-> explicit union rule changes it.
+> Wrapping destination `T` as `T | U` preserves each observable dimension named by the wrapper-parity relation; every
+> changed dimension is a first-class exception with declared witnesses.
 
 The pilot covers numeric conversions, `Self`, reified parameters, tuples, callables, arguments, returns,
 assignments, reflective writes, proxies, and text/bytecode execution. It directly absorbs the newest regression
@@ -409,15 +593,31 @@ family while exercising every major harness concept.
 
 - Regenerate the full bounded deterministic matrix from a clean state.
 - Reconcile all failures and known issues with the ledger.
-- Run fault-injection checks and scheduled exploration.
+- Run the scheduled mutation catalog and exploration campaigns.
 - Activate the permanent feature-admission gate.
 - Begin a two-week soak under ordinary feature work.
 
 A new defect during the soak does not automatically reset it. A finding that maps to an existing cell counts as an
 implementation regression only if the existing deterministic or scheduled expectation already reproduces it. The
 soak resets when expressing or detecting the finding requires a new axis, equivalence class, semantic rule, witness,
-or oracle. That distinction tests the completeness of the model rather than claiming the implementation can never
-regress.
+or oracle. Every soak-window classification requires review by someone other than the finding or closure-packet
+author. A no-reset classification records the pre-existing reproducing case ID; validation rejects the classification
+if that case does not reproduce the finding. This tests the completeness of the model rather than claiming the
+implementation can never regress.
+
+## Closure Severity Policy
+
+The epic distinguishes correctness from optional polish without weakening tooling parity:
+
+- **Soundness and safety:** Invalid admission, missing runtime enforcement, crashes, corruption, stale/lifetime
+  hazards, and unsafe concurrency behavior. Every such issue must close.
+- **Semantic correctness and parity:** False rejection, wrong inference/substitution/conformance, wrong type identity,
+  inconsistent text/bytecode or boundary behavior, and editor/LSP/refactoring behavior that reports or acts on the
+  wrong semantic type. Every such issue must close.
+- **Quality polish:** Behavior-preserving diagnostic phrasing or layout, cosmetic tooling presentation, and
+  performance that does not affect correctness or gate feasibility. These may be excluded only under the named
+  `quality_deferred` category with rationale and aggregate reporting; they do not receive ad hoc per-issue scope
+  exceptions.
 
 ## Closure Criteria
 
@@ -426,14 +626,16 @@ The stabilization epic closes only when:
 - Every in-scope deterministic matrix cell has an executable expected disposition.
 - Every semantic child slot in every inventoried representation has an explicit traversal, projection, preservation,
   substitution, erasure, or not-applicable policy.
-- All deterministic presubmit, strict-validation, and release gates pass.
+- All deterministic presubmit, strict-validation, and sharded release gates pass within their declared budgets.
 - Scheduled exploration has no unclassified failures.
-- Every known in-scope typing issue and closure packet is closed; every excluded issue has an explicit program-boundary
-  rationale.
-- Fault injection demonstrates that the harness detects the historical omission and divergence classes.
+- Every known soundness, safety, semantic-correctness, and semantic-parity issue and closure packet is closed. Any
+  remaining quality-polish issue is reported under `quality_deferred` with its rationale.
+- Scheduled mutation jobs demonstrate that the harness detects every entry in the reverified historical mutation
+  catalog.
+- Every case-ID reference resolves directly or through a validated migration record.
 - The feature-admission gate is active and documented.
 - The two-week soak completes without requiring a new completeness axis, equivalence class, semantic rule, witness,
-  or oracle.
+  or oracle, with every soak classification independently reviewed.
 
 After closure, the manifest, census, scheduled exploration, and admission gate remain permanent. The program ends;
 the executable completeness contract does not.
@@ -447,8 +649,14 @@ interactions. Promote only demonstrated high-risk combinations rather than incre
 
 ### Oracle duplication
 
-Keep the manifest declarative, combine independent oracles, and validate the harness with injected faults. Do not
-encode a general assignability algorithm in test data.
+Limit derived predicates to normalized coordinates and fixed outcome transformations, require independent declared
+anchors per surface and outcome, combine independent oracles, and validate the harness with scheduled mutations. Do
+not encode a general assignability algorithm in test data.
+
+### Exception creep
+
+Represent every exception as a validated manifest entry with boundary witnesses and report exception counts and
+coverage separately. An exception cannot be added as prose or used to suppress a failing cell.
 
 ### False confidence from a green matrix
 
@@ -456,16 +664,22 @@ Report the declared boundaries and partition strength, retain randomized explora
 axis, equivalence class, semantic rule, witness, or oracle is required. Completeness claims always refer to the
 versioned contract.
 
-### Slow presubmit feedback
+### Gate runtime growth
 
-Select presubmit cases through manifest dependencies, run the full deterministic matrix in strict validation, and
-reserve deep/random stress for scheduled campaigns. Generated cases use shared test infrastructure and scratch
-space.
+Enforce the 90-second presubmit, five-minute strict, and 30-minute scheduled-shard budgets. Preserve declared anchors,
+exceptions, historical soundness cases, and one case per rule/surface/outcome in strict validation; move only
+redundant combinatorial depth to scheduled shards. Track runtime as a first-class coverage metric.
 
 ### A second stale tracking system
 
-Keep the manifest and ledger in the repository, generate reports from them, and make GitHub issues reference stable
-case IDs. Do not maintain an unrelated prose spreadsheet.
+Keep per-family rules, per-finding ledger entries, and ID migrations in the repository; generate reports from them
+and make GitHub issues reference stable case IDs. Do not maintain an unrelated prose spreadsheet or central
+merge-conflict hotspot.
+
+### Mutation cost and brittleness
+
+Run patch-based mutations only in disposable scheduled worktrees with shared compiler caches and finite historical
+detector mappings. Treat a stale patch recipe as infrastructure failure and migrate or replace it explicitly.
 
 ### Audit work blocking feature development
 
