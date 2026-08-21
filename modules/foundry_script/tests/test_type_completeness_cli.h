@@ -67,6 +67,27 @@ static Dictionary completeness_cli_read_json(const String &p_path) {
 	return json.get_data();
 }
 
+// Names of the per-run user-data roots a completeness command creates under p_scratch_root. Compared
+// before and after a run, because the scratch space is shared with other runs and may already hold
+// roots this test did not create.
+static PackedStringArray completeness_cli_user_roots(const String &p_scratch_root) {
+	PackedStringArray roots;
+	Ref<DirAccess> directory = DirAccess::open(p_scratch_root);
+	if (directory.is_null()) {
+		return roots;
+	}
+	directory->set_include_hidden(true);
+	directory->list_dir_begin();
+	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+		if (entry != "." && entry != ".." && entry.begins_with("user-completeness-")) {
+			roots.push_back(entry);
+		}
+	}
+	directory->list_dir_end();
+	roots.sort();
+	return roots;
+}
+
 static FSCompletenessCLI::Options completeness_cli_options(const TemporaryProjectTree &p_tree) {
 	FSCompletenessCLI::Options options;
 	options.families.push_back(completeness_cli_family);
@@ -117,6 +138,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 				had_scratch_environment ? OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH") : String();
 		OS::get_singleton()->set_environment("FOUNDRY_TEST_SCRATCH", scratch_root);
 
+		const PackedStringArray user_roots_before = completeness_cli_user_roots(scratch_root);
+
 		List<String> arguments;
 		arguments.push_back("--headless");
 		arguments.push_back("test");
@@ -149,6 +172,16 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		const Dictionary report = completeness_cli_read_json(report_path);
 		CHECK_EQ(String(report.get("outcome", String())), "passed");
 		CHECK(report.has("timings_ms"));
+
+		// The command owns the user-data root it creates: evidence that lives outside it means the root
+		// is removed, and the report it was asked for survives that removal.
+		PackedStringArray created_user_roots;
+		for (const String &entry : completeness_cli_user_roots(scratch_root)) {
+			if (!user_roots_before.has(entry)) {
+				created_user_roots.push_back(entry);
+			}
+		}
+		CHECK_MESSAGE(created_user_roots.is_empty(), String(", ").join(created_user_roots));
 	}
 
 	TEST_CASE("TypeCompleteness CLI publishes only the selected surface") {
