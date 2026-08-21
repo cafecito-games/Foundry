@@ -344,11 +344,21 @@ static void append_unsuppressed_diagnostic_records(
 			r_diagnostics.push_back(observed);
 		}
 	};
-	auto contains = [](const Vector<ObservedDiagnostic> &p_diagnostics,
-							const ObservedDiagnostic &p_diagnostic) {
-		for (const ObservedDiagnostic &candidate : p_diagnostics) {
+	// Consumes the first unclaimed diagnostic identical to `p_diagnostic`. Matching is a multiset
+	// operation, not membership: two distinct diagnostics can share a position, and every error
+	// carries the same code, so a claimed entry must not answer for a second one. The message is part
+	// of the key because it is the only field that separates same-code diagnostics at one position.
+	auto claim_matching = [](Vector<ObservedDiagnostic> &r_diagnostics, Vector<bool> &r_claimed,
+								  const ObservedDiagnostic &p_diagnostic) {
+		for (int index = 0; index < r_diagnostics.size(); index++) {
+			if (r_claimed[index]) {
+				continue;
+			}
+			const ObservedDiagnostic &candidate = r_diagnostics[index];
 			if (candidate.severity == p_diagnostic.severity && candidate.code == p_diagnostic.code &&
-					candidate.line == p_diagnostic.line && candidate.column == p_diagnostic.column) {
+					candidate.line == p_diagnostic.line && candidate.column == p_diagnostic.column &&
+					candidate.message == p_diagnostic.message) {
+				r_claimed.write[index] = true;
 				return true;
 			}
 		}
@@ -364,6 +374,9 @@ static void append_unsuppressed_diagnostic_records(
 	} else {
 		collect(probe.text, p_path, unsuppressed);
 	}
+	Vector<bool> claimed;
+	claimed.resize(emitted.size());
+	claimed.fill(false);
 
 	for (const ObservedDiagnostic &diagnostic : unsuppressed) {
 		// Removing an inline annotation shifts everything after it on that line, so the probe's
@@ -371,7 +384,7 @@ static void append_unsuppressed_diagnostic_records(
 		// recorded. Without that, a diagnostic the primary analysis still reported would look new.
 		ObservedDiagnostic original = diagnostic;
 		original.column = probe.original_column(diagnostic.line, diagnostic.column);
-		const bool suppressed = !contains(emitted, original);
+		const bool suppressed = !claim_matching(emitted, claimed, original);
 		// An error the primary analysis already reported owns a record from the primary pass.
 		if (original.severity == DIAGNOSTIC_SEVERITY_ERROR && !suppressed) {
 			continue;

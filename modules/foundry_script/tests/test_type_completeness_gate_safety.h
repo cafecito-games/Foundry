@@ -608,6 +608,84 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		}
 		CHECK(found_suppressed_error);
 	}
+
+	TEST_CASE("TypeCompleteness GateSafety records same-code diagnostics on one line separately") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_parameter;
+		unused_parameter.code = FSWarning::UNUSED_PARAMETER;
+		unused_parameter.level = FSWarning::WARN;
+		overrides.push_back(unused_parameter);
+		const WarningSettingsScope warning_settings(overrides);
+
+		// Both parameters raise the same code on the same line. Suppression is keyed on code and line,
+		// so they share every identity field except position and message: a matcher that pairs
+		// diagnostics on position alone would let one answer for the other.
+		FSCompletenessProgram shared_line;
+		shared_line.case_id = "gate_safety_same_code_one_line";
+		shared_line.surface = "text";
+		shared_line.source =
+				"@warning_ignore(\"unused_parameter\") func test(first: int, second: int) -> void:\n\tpass\n";
+
+		const FSCompletenessObservation observation =
+				FSUnionCompletenessAdapter::analyze(shared_line, "text");
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+		CHECK(observation.diagnostics.is_empty());
+		Vector<Dictionary> parameter_records;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			CHECK_NE(String(record.get("severity", String())), "error");
+			if (String(record.get("code", String())) == "UNUSED_PARAMETER") {
+				parameter_records.push_back(record);
+			}
+		}
+		REQUIRE_EQ(parameter_records.size(), 2);
+		CHECK_EQ(int(parameter_records[0].get("line", 0)), 1);
+		CHECK_EQ(int(parameter_records[1].get("line", 0)), 1);
+		CHECK_NE(int(parameter_records[0].get("column", 0)), int(parameter_records[1].get("column", 0)));
+		CHECK_NE(String(parameter_records[0].get("message", String())),
+				String(parameter_records[1].get("message", String())));
+		// Suppression is per code and line, so the two share a flag whichever way it resolves.
+		CHECK_EQ(bool(parameter_records[0].get("suppressed", false)),
+				bool(parameter_records[1].get("suppressed", false)));
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety invents no suppressed evidence when analysis fails") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::ERROR;
+		overrides.push_back(unused_variable);
+		const WarningSettingsScope warning_settings(overrides);
+
+		FSCompletenessProgram rejected;
+		rejected.case_id = "gate_safety_rejected_with_annotation";
+		rejected.surface = "text";
+		rejected.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local: int = \"text\"\n";
+
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(rejected, "text");
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
+		REQUIRE_FALSE(observation.diagnostics.is_empty());
+		int reported_errors = 0;
+		int suppressed_errors = 0;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			if (String(record.get("severity", String())) != "error") {
+				continue;
+			}
+			if (bool(record.get("suppressed", false))) {
+				suppressed_errors++;
+			} else {
+				reported_errors++;
+			}
+		}
+		// The probe re-analyzes a source that still fails, so its errors must reconcile against the
+		// reported ones rather than land as extra suppressed evidence that would fail an accepted
+		// case on severity. A promotion the analyzer never reached is simply not recoverable here.
+		CHECK_EQ(reported_errors, observation.diagnostics.size());
+		CHECK_EQ(suppressed_errors, 0);
+	}
+
 #endif // DEBUG_ENABLED
 
 	TEST_CASE("TypeCompleteness GateSafety records rejected analysis as error severity") {
