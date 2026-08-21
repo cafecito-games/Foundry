@@ -30,11 +30,14 @@
 
 #pragma once
 
+#include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_union_adapter.h"
 
 #include "../fs_analyzer.h"
 #include "../fs_parser.h"
 
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
 #include "tests/test_macros.h"
 
@@ -90,7 +93,13 @@ static void check_union_pilot_packed_paths_unchanged(const HashSet<String> &p_be
 	for (const String &path : p_before) {
 		CHECK(after.has(path));
 	}
-	CHECK_FALSE(PackedData::get_singleton()->has_directory("res://__fstc"));
+}
+
+static void check_union_pilot_synthetic_source_cleaned(const String &p_path) {
+	CHECK_FALSE(FileAccess::exists(p_path));
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(filesystem.is_valid());
+	CHECK_FALSE(filesystem->dir_exists(p_path.get_base_dir()));
 }
 
 static const FSParser::FunctionNode *union_pilot_find_function(
@@ -399,11 +408,43 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 }
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
+	TEST_CASE("TypeCompleteness UnionPilot scratch source identity resolves Holder and cleans its tree") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		REQUIRE_FALSE(resolution.cells.is_empty());
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
+		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
+		const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
+		REQUIRE_FALSE(scratch_root.is_empty());
+
+		String owned_path;
+		String owned_root;
+		{
+			UnionCompletenessInternal::SyntheticSourceScope source_scope(program.case_id, program.source);
+			REQUIRE(source_scope.is_available());
+			owned_path = source_scope.get_path();
+			owned_root = owned_path.get_base_dir();
+			CHECK(TemporaryProjectTree::is_strict_descendant(scratch_root, owned_path));
+			CHECK(FileAccess::exists(owned_path));
+
+			FSParser parser;
+			REQUIRE_EQ(parser.parse(program.source, owned_path, false), OK);
+			FSAnalyzer analyzer(&parser);
+			CHECK_EQ(analyzer.analyze(), OK);
+			CHECK(parser.get_errors().is_empty());
+		}
+
+		CHECK_FALSE(FileAccess::exists(owned_path));
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		CHECK_FALSE(filesystem->dir_exists(owned_root));
+		check_union_pilot_packed_paths_unchanged(packed_paths_before);
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot renders and observes all resolved static semantics") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_EQ(resolution.cells.size(), 40);
 		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
-		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 		HashMap<String, String> semantic_fingerprints;
 		HashMap<String, int> surface_counts;
 
@@ -435,7 +476,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_EQ(fingerprint.source_proof, source_proof);
 			CHECK_EQ(fingerprint.resolved_source_proof, source_proof);
 			CHECK_EQ(fingerprint.boundary, boundary);
-			CHECK_FALSE(PackedData::get_singleton()->has_path(fingerprint.synthetic_path));
+			check_union_pilot_synthetic_source_cleaned(fingerprint.synthetic_path);
 			const String coordinates_without_surface = destination + "|" + source_proof + "|" + boundary;
 			const String semantic_fingerprint = fingerprint.accept_destination + "|" + fingerprint.holder_destination + "|" +
 					fingerprint.operative_destination + "|" + fingerprint.source_proof + "|" +
@@ -457,7 +498,6 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_EQ(entry.value, 2);
 		}
 		check_union_pilot_packed_paths_unchanged(packed_paths_before);
-		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot render rejects missing unknown and wrongly typed coordinates") {
@@ -580,9 +620,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_FALSE(unknown.diagnostics.is_empty());
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot analysis preserves traversal-like identities without writing files") {
+	TEST_CASE("TypeCompleteness UnionPilot analysis confines traversal-like identities to scratch") {
 		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
-		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
@@ -595,14 +634,12 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK(observation.diagnostics.is_empty());
 		const UnionPilotSemanticFingerprint fingerprint = union_pilot_semantic_fingerprint(program);
 		CHECK_FALSE(fingerprint.synthetic_path.contains("escape"));
-		CHECK_FALSE(PackedData::get_singleton()->has_path(fingerprint.synthetic_path));
+		check_union_pilot_synthetic_source_cleaned(fingerprint.synthetic_path);
 		check_union_pilot_packed_paths_unchanged(packed_paths_before);
-		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot repeated same-ID analysis remains independent") {
 		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
-		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
@@ -618,7 +655,6 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK(first.diagnostics.is_empty());
 		CHECK(second.diagnostics.is_empty());
 		check_union_pilot_packed_paths_unchanged(packed_paths_before);
-		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot diagnostics preserve exact owned source order") {

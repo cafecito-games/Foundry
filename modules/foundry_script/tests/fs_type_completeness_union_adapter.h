@@ -51,11 +51,14 @@ struct FSCompletenessObservation {
 	String produced_output;
 };
 
+struct TemporaryProjectTree;
+
 namespace UnionCompletenessInternal {
 
 class SyntheticSourceScope {
 	String path;
-	bool marker_installed = false;
+	TemporaryProjectTree *tree = nullptr;
+	bool source_available = false;
 	bool lock_held = false;
 
 public:
@@ -65,7 +68,7 @@ public:
 	SyntheticSourceScope(const SyntheticSourceScope &) = delete;
 	SyntheticSourceScope &operator=(const SyntheticSourceScope &) = delete;
 
-	bool is_available() const { return marker_installed; }
+	bool is_available() const { return source_available; }
 	const String &get_path() const { return path; }
 };
 

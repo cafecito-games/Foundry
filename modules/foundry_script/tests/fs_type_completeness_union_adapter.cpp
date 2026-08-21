@@ -29,12 +29,12 @@
 /**************************************************************************/
 
 #include "fs_type_completeness_union_adapter.h"
+#include "fs_temporary_project_tree.h"
 
 #include "../fs_analyzer.h"
 #include "../fs_cache.h"
 #include "../fs_parser.h"
 
-#include "core/io/file_access_pack.h"
 #include "core/os/mutex.h"
 #include "core/os/os.h"
 #include "core/templates/safe_refcount.h"
@@ -107,10 +107,9 @@ static Mutex &synthetic_source_mutex() {
 	return mutex;
 }
 
-static String next_synthetic_source_path(const String &p_identity) {
+static String next_synthetic_source_tree_name() {
 	static SafeNumeric<uint64_t> sequence;
-	return vformat("res://__fstc_%s_%d_%s.fs", p_identity.sha256_text(), OS::get_singleton()->get_process_id(),
-			String::num_uint64(sequence.increment()));
+	return vformat("fstc_%d_%s", OS::get_singleton()->get_process_id(), String::num_uint64(sequence.increment()));
 }
 
 static FSCompletenessObservation rejected_observation(
@@ -129,29 +128,31 @@ UnionCompletenessInternal::SyntheticSourceScope::SyntheticSourceScope(
 		const String &p_identity, const String &p_source) {
 	synthetic_source_mutex().lock();
 	lock_held = true;
-	path = next_synthetic_source_path(p_identity);
-	PackedData *packed_data = PackedData::get_singleton();
-	if (packed_data == nullptr || packed_data->is_disabled() || packed_data->has_path(path)) {
+	tree = memnew(TemporaryProjectTree(next_synthetic_source_tree_name()));
+	if (!tree->is_valid()) {
 		return;
 	}
 
-	uint8_t marker_md5[16] = {};
-	packed_data->add_path(String(), path, 1, 0, marker_md5, nullptr, false);
-	marker_installed = packed_data->has_path(path);
-	if (!marker_installed) {
+	const String filename = p_identity.sha256_text() + ".fs";
+	path = tree->root.path_join(filename);
+	tree->write_file(filename, p_source);
+	if (!FileAccess::exists(path)) {
 		return;
 	}
-	FSCache::set_source_override(path, p_source);
+	FSCache::clear_source_override(path);
 	FSCache::remove_parser(path);
 	FSCache::remove_script(path);
+	source_available = true;
 }
 
 UnionCompletenessInternal::SyntheticSourceScope::~SyntheticSourceScope() {
-	if (marker_installed) {
+	if (!path.is_empty()) {
 		FSCache::remove_parser(path);
 		FSCache::remove_script(path);
 		FSCache::clear_source_override(path);
-		PackedData::get_singleton()->remove_path(path);
+	}
+	if (tree != nullptr) {
+		memdelete(tree);
 	}
 	if (lock_held) {
 		synthetic_source_mutex().unlock();
