@@ -50,9 +50,12 @@ newer reviewed commit; a rejected lease is an error naming both SHAs and is not 
 
 ## Obtaining the `develop` report
 
-The runner is currently driven from the doctest pilot (`--suite "*TypeCompleteness*"`) and writes its report
-to the `report_path` in its options. Produce the branch and `develop` reports from binaries built at each
-revision with the same configuration, then feed both files to `compare`.
+`foundry --headless test completeness run --family <f> --catalog <dir> --scratch <dir> --report <path>
+--tier presubmit` publishes one report per family. CI runs that command for every family on each push to
+`develop` and uploads the reports as `type-completeness-baseline-<sha>`; the presubmit gate downloads the
+artifact for `git merge-base origin/develop HEAD`, so the two sides of a comparison always come from the same
+configuration. Locally, produce the branch and `develop` reports from binaries built at each revision with
+the same configuration and feed both files to `compare`.
 
 ## Manual fallback
 
@@ -83,22 +86,68 @@ manifest derives for its family; the record's own slice must lie within it. `pro
 outside the producing slice is rejected, so a provisional record cannot block a capability that did not produce
 the finding.
 
-## Deferred to the #2477 reconciliation
+## Gate-safe evidence
 
-The runner on `develop` emits no per-case `outcome`, `structural_failures`, `diagnostic_records`, or
-`diagnostic_severity`; those belong to the gate-safe evidence contract #2477 is introducing. This package
-deliberately does not read or invent them. Once #2477 lands, the comparator's category handling (`report.Category`)
-and the digest projection are the two places to extend, and the reconciliation relay tracks that work.
+The runner publishes a top-level `outcome` (`passed`, `product_mismatch`, `structural_failure`) alongside
+`success`, and a `structural_failures` array carrying the evidence behind a broken run. `report.load_report`
+requires `outcome`, refuses a document where it disagrees with `success`, and exposes it as
+`Report.is_structural_failure`; `compare` refuses to draw any case-level verdict from such a report and writes
+a refusal envelope instead. Per-case `diagnostics` and `diagnostic_records` are ordinary evidence: they feed
+observation digests and parity findings, and nothing recomputes them.
 
 ## Runner numbers
 
-The engine JSON writer renders every Variant number as a float (`"schema_version": 1.0`, `"cell_count": 2.0`), so
-loaders accept any integral JSON number for versions and counts and reject strings, booleans, and fractional
-values. The fixture `RUNNER_REPORT_TEXT` in `scripts/tests/test_type_completeness_comparator.py` is the
-byte-faithful reference for the runner's output.
+The engine JSON writer renders every Variant number in a *runner report* as a float
+(`"schema_version": 1.0`, `"cell_count": 2.0`), so loaders accept any integral JSON number for versions and
+counts and reject strings, booleans, and fractional values. The fixture `RUNNER_REPORT_TEXT` in
+`scripts/tests/test_type_completeness_comparator.py` is the byte-faithful reference for the runner's output.
+
+The *selection* document is different and deliberately so. `foundry test completeness select --json` builds
+its document from a Dictionary holding `int64_t` members, so `JSON::stringify` renders `"schema_version": 1`
+as a JSON integer. Neither producer is normalized to match the other: both spellings are accepted wherever a
+version or a count is read, and `scripts/tests/fixtures/type_completeness/` holds captured samples of each.
 
 ## Runner categories
 
-Until the runner emits a per-case `category`, every failed case is treated as `product_finding`. When a
-`category` member is present (`product_finding`, `structural_failure`, `failed_witness`,
-`stale_ledger_entry`, `resolved_ledger_entry`) it is consumed as-is and recorded on each comparison artifact.
+Every failed case with no `category` member is treated as `product_finding`. When a `category` member is
+present (`product_finding`, `structural_failure`, `failed_witness`, `stale_ledger_entry`,
+`resolved_ledger_entry`) it is consumed as-is and recorded on each comparison artifact.
+
+## Presubmit gate
+
+`scripts/type_completeness/presubmit.py` is the pull-request gate. It orchestrates and decides nothing the
+steps already decide:
+
+```sh
+python3 scripts/type_completeness/presubmit.py \
+  --binary bin/foundry.linuxbsd.editor.dev.x86_64 \
+  --output-dir type-completeness \
+  --baseline-dir baseline
+```
+
+It writes `selection.json`, one runner report per family below `--scratch`, `comparison.json`, and
+`verdict.json` into `--output-dir`, and the same four documents come out of a CI run and a local run on the
+same inputs, `timings` aside. `verdict.json` carries a digest over the selection, the families run, the
+blocking and known-mismatch identities, the baseline state, and the state itself - never over timings, paths,
+run ids, or timestamps.
+
+Selection happens only in C++. The wrapper shells out to `foundry test completeness select`, parses its JSON,
+and refuses to gate on a selection whose `validation_errors` is non-empty; it never re-derives a family from a
+path. Comparison is the `compare` command above, statuses come from `comparator.Status`, and an unchanged
+in-slice failure is reconciled through `reconcile.reconcile_finding`.
+
+Every state maps to exactly one exit code:
+
+| State | Exit | Meaning |
+| --- | --- | --- |
+| `passed` | 0 | Nothing in the selected slice regressed. |
+| `nothing_selected` | 0 | No changed path maps to a family; no slice ran. |
+| `blocked` | 1 | An in-slice regression, or an unchanged in-slice failure with no ledger authority. |
+| `structural_failure` | 2 | A run broke, published a structural failure, or exited outside the runner's vocabulary. |
+| `baseline_malformed` | 2 | A baseline artifact exists but cannot be loaded. This is not "missing". |
+| `malformed_input` | 2 | The selection or comparison document cannot be interpreted. |
+| `timeout` | 3 | The runner crossed its budget, or the wrapper's deadline fired. |
+| `selector_validation_failed` | 4 | The selector reported a validation error; the slice it reached still ran and published. |
+
+A baseline artifact that does not exist is not an error and is never downgraded: every in-slice failure is
+then compared against an absent `develop` side, which `classify` reads as `new`, so the gate blocks.

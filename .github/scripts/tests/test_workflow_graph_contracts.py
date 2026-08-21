@@ -820,6 +820,67 @@ class MacosBuildsWorkflowTests(WorkflowContractTestCase):
                 self.assertIn(f"FoundryJavaExporterContractTests.{regression}", command)
 
 
+class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
+    """The capability-scoped type-completeness gate and the baseline it compares against."""
+
+    workflow: workflow_graph.Workflow
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.workflow = load_workflow("linux_builds.yml")
+
+    def test_both_gate_jobs_consume_the_binary_the_build_job_produced(self) -> None:
+        for job in ("type-completeness-baseline", "type-completeness-presubmit"):
+            with self.subTest(job=job):
+                self.assertEqual(("build-linux",), self.workflow.needs(job))
+                self.assertEqual(
+                    "linux-editor-binary",
+                    self.workflow.step_with(job, "Download editor binary")["name"],
+                )
+        self.assertEqual("linux-editor-binary", self.workflow.step_with("build-linux", "Upload editor binary")["name"])
+
+    def test_only_develop_publishes_a_baseline(self) -> None:
+        self.assertEqual(
+            "github.ref == 'refs/heads/develop'",
+            workflow_graph.normalize_expression(self.workflow.job_if("type-completeness-baseline")),
+        )
+        # The gate itself is unconditional: a pull request must not be able to skip it.
+        with self.assertRaises(workflow_graph.MissingWorkflowElement):
+            self.workflow.job_key("type-completeness-presubmit", "if")
+
+    def test_the_presubmit_job_never_uploads_a_baseline(self) -> None:
+        uploaded = {
+            step.get("with", {}).get("name")
+            for step in self.workflow.steps("type-completeness-presubmit")
+            if str(step.get("uses", "")).startswith("actions/upload-artifact")
+        }
+        self.assertEqual({"type-completeness-presubmit-${{ github.run_id }}"}, uploaded)
+
+    def test_the_baseline_artifact_is_keyed_by_the_commit_it_measured(self) -> None:
+        self.assertEqual(
+            "type-completeness-baseline-${{ github.sha }}",
+            self.workflow.step_with("type-completeness-baseline", "Upload baseline reports")["name"],
+        )
+
+    def test_the_gate_is_bounded_and_diffs_against_a_real_merge_base(self) -> None:
+        self.assertEqual(10, self.workflow.job_key("type-completeness-presubmit", "timeout-minutes"))
+        self.assertEqual(0, self.workflow.step_with("type-completeness-presubmit", "Checkout")["fetch-depth"])
+
+    def test_the_gate_step_ends_with_the_wrapper_so_its_exit_code_is_the_verdict(self) -> None:
+        command = self.workflow.step_run("type-completeness-presubmit", "Run the type-completeness gate")
+        self.assertIn("scripts/type_completeness/presubmit.py", command)
+        trailing = [line.strip() for line in command.strip().split("\n") if line.strip()][-1]
+        self.assertTrue(trailing.startswith("--"), trailing)
+
+    def test_the_gate_artifacts_are_published_even_when_it_fails(self) -> None:
+        self.assertEqual(
+            "always()",
+            workflow_graph.normalize_expression(
+                self.workflow.step_if("type-completeness-presubmit", "Upload gate artifacts")
+            ),
+        )
+
+
 class StaticChecksWorkflowTests(WorkflowContractTestCase):
     """The style gate has to reach files no pull request touches."""
 

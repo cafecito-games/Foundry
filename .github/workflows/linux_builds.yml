@@ -134,6 +134,131 @@ jobs:
           name: unit-test-shards
           path: shard-logs/
 
+      # The type-completeness jobs must measure the very binary this job tested, not one they
+      # rebuild from the same source with a different cache state.
+      - name: Upload editor binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-editor-binary
+          path: bin/foundry.linuxbsd.editor.dev.x86_64
+          retention-days: 7
+
+  type-completeness-baseline:
+    runs-on: ubuntu-22.04
+    name: Type-completeness develop baseline
+    needs: build-linux
+    # Only `develop` produces a baseline. A pull-request run that uploaded one would let a branch
+    # publish the very report it is measured against.
+    if: github.ref == 'refs/heads/develop'
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - name: Download editor binary
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-editor-binary
+          path: bin
+
+      - name: Publish a baseline report per family
+        env:
+          FOUNDRY_TEST_SCRATCH: ${{ github.workspace }}/.test_scratch
+        run: |
+          set -euo pipefail
+          chmod +x bin/foundry.linuxbsd.editor.dev.x86_64
+          catalog=modules/foundry_script/tests/type_completeness
+          mkdir -p baseline "$FOUNDRY_TEST_SCRATCH"
+          # Every family with a rule manifest gets a baseline, not only the broad core: a pull request
+          # may select any of them, and a family with no baseline is compared against an absent develop
+          # side, which reads every one of its failures as new.
+          for manifest in "$catalog"/rules/*.json; do
+            family=$(basename "$manifest" .json)
+            scratch="$FOUNDRY_TEST_SCRATCH/baseline-$family"
+            mkdir -p "$scratch"
+            ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test completeness run \
+              --family "$family" \
+              --catalog "$catalog" \
+              --scratch "$scratch" \
+              --report "$scratch/report.json" \
+              --tier presubmit || echo "::warning::baseline run for $family exited non-zero"
+            if [ -f "$scratch/report.json" ]; then
+              cp "$scratch/report.json" "baseline/$family.json"
+            fi
+          done
+          ls -l baseline
+
+      - name: Upload baseline reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: type-completeness-baseline-${{ github.sha }}
+          path: baseline/
+          retention-days: 30
+
+  type-completeness-presubmit:
+    runs-on: ubuntu-22.04
+    name: Type-completeness presubmit gate
+    needs: build-linux
+    # The matrix portion is bounded separately by the runner's own `--timeout-seconds`; this bounds
+    # everything around it.
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          # The gate diffs against the merge base with `develop`, which needs real history.
+          fetch-depth: 0
+
+      - name: Download editor binary
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-editor-binary
+          path: bin
+
+      - name: Download the develop baseline for the merge base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          git fetch --no-tags origin develop
+          merge_base=$(git merge-base origin/develop HEAD)
+          echo "merge_base=$merge_base" >> "$GITHUB_ENV"
+          mkdir -p baseline
+          # A baseline that cannot be fetched is absent, not an error: the gate then compares every
+          # in-slice failure against an absent develop side and reads it as new.
+          gh run download --name "type-completeness-baseline-$merge_base" --dir baseline || \
+            echo "::warning::no develop baseline artifact for $merge_base; every in-slice failure is new"
+          ls -l baseline || true
+
+      - name: Run the type-completeness gate
+        env:
+          FOUNDRY_TEST_SCRATCH: ${{ github.workspace }}/.test_scratch
+        run: |
+          set -uo pipefail
+          chmod +x bin/foundry.linuxbsd.editor.dev.x86_64
+          mkdir -p "$FOUNDRY_TEST_SCRATCH"
+          # The gate's own exit code is the step's verdict, so nothing may run after it: a trailing
+          # command would discard the distinction between blocked, timed out, and structurally broken.
+          exec python3 scripts/type_completeness/presubmit.py \
+            --binary bin/foundry.linuxbsd.editor.dev.x86_64 \
+            --output-dir type-completeness \
+            --scratch "$FOUNDRY_TEST_SCRATCH/presubmit" \
+            --baseline-dir baseline \
+            --merge-base-ref origin/develop
+
+      - name: Upload gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: type-completeness-presubmit-${{ github.run_id }}
+          path: type-completeness/
+          retention-days: 14
+
   release-vm-error-tests:
     runs-on: ubuntu-22.04
     name: Template release VM runtime error coverage
