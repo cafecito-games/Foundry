@@ -583,6 +583,57 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 				"required dimension 'runtime_obligation' when selector for axis 'source_proof' must be a string leaf or an object containing only 'class'"));
 	}
 
+	TEST_CASE("TypeCompleteness Manifest vocabulary rejects dead required dimension selectors") {
+		TemporaryProjectTree tree("type_completeness_vocabulary_dead_required_selectors");
+		REQUIRE(tree.is_valid());
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE(catalog.load(type_completeness_catalog_root, errors) == OK);
+
+		FSCompletenessManifest manifest = load_representative_completeness_manifest(tree);
+		manifest.domain.erase("boundary");
+		manifest.required_dimensions.write[0].when["boundary"] = "argument_binding";
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"required dimension 'analysis' when selector uses axis 'boundary' not declared in manifest domain"));
+
+		manifest = load_representative_completeness_manifest(tree);
+		manifest.domain["source_proof"].erase("numeric_constant");
+		manifest.required_dimensions.write[0].when["source_proof"] = "numeric_constant";
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"required dimension 'analysis' when selector for axis 'source_proof' uses leaf 'numeric_constant' not declared in manifest domain"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest vocabulary rejects dead relation source selectors") {
+		TemporaryProjectTree tree("type_completeness_vocabulary_dead_relation_selectors");
+		REQUIRE(tree.is_valid());
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE(catalog.load(type_completeness_catalog_root, errors) == OK);
+
+		FSCompletenessManifest manifest = load_representative_completeness_manifest(tree);
+		manifest.domain.erase("boundary");
+		manifest.relations.write[0].from["boundary"] = "argument_binding";
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"relation 'unproven_to_union' from selector uses axis 'boundary' not declared in manifest domain"));
+
+		manifest = load_representative_completeness_manifest(tree);
+		manifest.domain["source_proof"].erase("numeric_constant");
+		manifest.relations.write[0].from["source_proof"] = "numeric_constant";
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"relation 'unproven_to_union' from selector for axis 'source_proof' uses leaf 'numeric_constant' not declared in manifest domain"));
+
+		manifest = load_representative_completeness_manifest(tree);
+		manifest.domain["source_proof"] = Vector<String>({ "static_member", "numeric_constant" });
+		manifest.required_dimensions.write[1].when.clear();
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"relation 'unproven_to_union' from selector for axis 'source_proof' class 'unproven' matches no leaves declared in manifest domain"));
+	}
+
 	TEST_CASE("TypeCompleteness Manifest vocabulary requires concrete relation destination patches") {
 		TemporaryProjectTree tree("type_completeness_vocabulary_relation_to");
 		REQUIRE(tree.is_valid());

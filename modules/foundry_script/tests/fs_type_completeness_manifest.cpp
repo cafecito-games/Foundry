@@ -1205,19 +1205,26 @@ static Vector<String> sorted_manifest_axes(const HashMap<String, Vector<String>>
 }
 
 static void validate_selector(const Dictionary &p_selector, const String &p_context,
-		const HashMap<String, FSCompletenessPartition> &p_partitions, Vector<String> &r_errors) {
+		const HashMap<String, FSCompletenessPartition> &p_partitions,
+		const HashMap<String, Vector<String>> *p_domain, Vector<String> &r_errors) {
 	for (const String &axis : sorted_dictionary_keys(p_selector)) {
 		const FSCompletenessPartition *partition = p_partitions.getptr(axis);
 		if (partition == nullptr) {
 			r_errors.push_back(vformat("%s selector uses unknown axis '%s'", p_context, axis));
 			continue;
 		}
+		const Vector<String> *domain_leaves = p_domain == nullptr ? nullptr : p_domain->getptr(axis);
 
 		const Variant value = p_selector[axis];
 		if (value.get_type() == Variant::STRING) {
 			const String leaf = value;
 			if (!partition->leaves.has(leaf)) {
 				r_errors.push_back(vformat("%s selector for axis '%s' uses unknown leaf '%s'", p_context, axis, leaf));
+			} else if (p_domain != nullptr && domain_leaves == nullptr) {
+				r_errors.push_back(vformat("%s selector uses axis '%s' not declared in manifest domain", p_context, axis));
+			} else if (domain_leaves != nullptr && !domain_leaves->has(leaf)) {
+				r_errors.push_back(vformat(
+						"%s selector for axis '%s' uses leaf '%s' not declared in manifest domain", p_context, axis, leaf));
 			}
 			continue;
 		}
@@ -1233,6 +1240,22 @@ static void validate_selector(const Dictionary &p_selector, const String &p_cont
 			if (!partition->classes.has(class_name)) {
 				r_errors.push_back(vformat("%s selector for axis '%s' references unknown class '%s'",
 						p_context, axis, class_name));
+			} else if (p_domain != nullptr && domain_leaves == nullptr) {
+				r_errors.push_back(vformat("%s selector uses axis '%s' not declared in manifest domain", p_context, axis));
+			} else if (domain_leaves != nullptr) {
+				bool matches_domain = false;
+				const HashSet<String> &class_members = partition->classes[class_name];
+				for (const String &leaf : *domain_leaves) {
+					if (class_members.has(leaf)) {
+						matches_domain = true;
+						break;
+					}
+				}
+				if (!matches_domain) {
+					r_errors.push_back(vformat(
+							"%s selector for axis '%s' class '%s' matches no leaves declared in manifest domain",
+							p_context, axis, class_name));
+				}
 			}
 			continue;
 		}
@@ -1309,7 +1332,7 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 			r_errors.push_back(vformat("required dimension references unknown dimension '%s'", required.dimension));
 		}
 		validate_selector(required.when, vformat("required dimension '%s' when", required.dimension),
-				p_catalog.partitions, r_errors);
+				p_catalog.partitions, &p_manifest.domain, r_errors);
 	}
 
 	for (const FSCompletenessAnchor &anchor : p_manifest.anchors) {
@@ -1339,14 +1362,14 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 
 	for (const FSCompletenessRelation &relation : p_manifest.relations) {
 		const String record = vformat("relation '%s'", relation.id);
-		validate_selector(relation.from, record + " from", p_catalog.partitions, r_errors);
+		validate_selector(relation.from, record + " from", p_catalog.partitions, &p_manifest.domain, r_errors);
 		validate_coordinate_patch(relation.to, record + " to", p_catalog.partitions, r_errors);
 		validate_dimension_outcomes(relation.derive, record, "derives", true, p_catalog.dimensions, r_errors);
 	}
 
 	for (const FSCompletenessException &exception : p_manifest.exceptions) {
 		const String record = vformat("exception '%s'", exception.id);
-		validate_selector(exception.when, record + " when", p_catalog.partitions, r_errors);
+		validate_selector(exception.when, record + " when", p_catalog.partitions, nullptr, r_errors);
 		validate_dimension_outcomes(exception.derive, record, "derives", true, p_catalog.dimensions, r_errors);
 	}
 
