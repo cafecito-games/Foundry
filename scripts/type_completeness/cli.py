@@ -11,14 +11,7 @@ from typing import Any, Optional
 
 from . import comparator, deadline, ledger, provisional, reconcile, report
 
-DEFAULT_CAPABILITIES_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "modules"
-    / "foundry_script"
-    / "tests"
-    / "type_completeness"
-    / "capabilities.json"
-)
+DEFAULT_CAPABILITIES_PATH = report.DEFAULT_CAPABILITIES_PATH
 
 
 def _write_json(path: Path, text: str) -> None:
@@ -116,6 +109,7 @@ def _propose(arguments: argparse.Namespace) -> int:
     detected_at = (
         deadline.parse_timestamp(arguments.detected_at) if arguments.detected_at else datetime.now(timezone.utc)
     )
+    capabilities = report.load_capabilities_file(Path(arguments.capabilities))
     proposals: list[tuple[dict[str, Any], provisional.ProvisionalRecord]] = []
     handled_finding_ids: set[str] = set()
     for artifact, echoed in selected:
@@ -165,6 +159,7 @@ def _propose(arguments: argparse.Namespace) -> int:
                 migrated_from=migrated_from or None,
                 resolved_case_ids=resolved_case_ids,
                 proposed_case_ids=group if migrated_from else (),
+                capabilities=capabilities,
             )
             proposals.append((payload, record))
         handled_finding_ids.add(finding_id)
@@ -182,8 +177,9 @@ def _propose(arguments: argparse.Namespace) -> int:
 
 
 def _reconcile(arguments: argparse.Namespace) -> int:
+    capabilities = report.load_capabilities_file(Path(arguments.capabilities))
     record = provisional.ProvisionalRecord.from_dict(
-        json.loads(Path(arguments.provisional).read_text(encoding="utf-8"))
+        json.loads(Path(arguments.provisional).read_text(encoding="utf-8")), capabilities=capabilities
     )
     merged = ledger.load_ledger(Path(arguments.ledger_dir)).get(record.finding_id)
     pull_request = None
@@ -253,6 +249,11 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("--detected-at", help="ISO-8601 timestamp with offset; defaults to now")
     propose.add_argument("--bot-pr-url")
     propose.add_argument("--origin", choices=provisional.ORIGINS, default="automation")
+    propose.add_argument(
+        "--capabilities",
+        default=str(DEFAULT_CAPABILITIES_PATH),
+        help="capabilities manifest mapping families to production paths (default: the repository manifest)",
+    )
     propose.add_argument("--output-dir", required=True)
     propose.set_defaults(handler=_propose)
 
@@ -262,6 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile_parser.add_argument("--pull-request-state", choices=("open", "merged", "closed"))
     reconcile_parser.add_argument("--comparison-status", choices=[status.value for status in comparator.Status])
     reconcile_parser.add_argument("--now", help="ISO-8601 timestamp with offset; defaults to now")
+    reconcile_parser.add_argument(
+        "--capabilities",
+        default=str(DEFAULT_CAPABILITIES_PATH),
+        help="capabilities manifest mapping families to production paths (default: the repository manifest)",
+    )
     reconcile_parser.add_argument("--output")
     reconcile_parser.set_defaults(handler=_reconcile)
     return parser

@@ -9,7 +9,14 @@ from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
 from . import deadline, ledger
-from .report import schema_version_matches
+from .comparator import ComparisonArtifact
+from .report import (
+    DEFAULT_CAPABILITIES_PATH,
+    ReportError,
+    capability_slice_for_family,
+    load_capabilities_file,
+    schema_version_matches,
+)
 
 PROVISIONAL_SCHEMA_VERSION = 1
 ORIGINS = ("automation", "manual")
@@ -22,21 +29,26 @@ class ProvisionalError(ValueError):
     """Raised when a provisional record is missing or malformed."""
 
 
-def _producing_slice(comparison: Mapping[str, Any]) -> Optional[frozenset[str]]:
-    """The capability slice the comparison artifact recorded.
+def _validated_comparison(comparison: Mapping[str, Any], capabilities: Mapping[str, Any]) -> dict[str, Any]:
+    """The embedded develop comparison must be a complete artifact that passes the comparator's own
+    validation (identity, digests, status) and must record exactly the capability slice the manifest derives for
+    its family, so neither list inside a tracking issue can be edited to redirect blocking."""
+    try:
+        artifact = ComparisonArtifact.from_dict(comparison)
+    except (ReportError, KeyError, TypeError, ValueError) as error:
+        raise ProvisionalError(f"develop_comparison is not a valid comparison artifact: {error}") from error
+    expected_slice = capability_slice_for_family(capabilities, artifact.family)
+    if artifact.capability_slice is None or artifact.capability_slice != expected_slice:
+        raise ProvisionalError(
+            f"develop_comparison records capability slice {artifact.capability_slice} but the manifest derives "
+            f"{expected_slice} for family {artifact.family!r}"
+        )
+    return artifact.to_dict()
 
-    ``None`` only when the artifact explicitly carried no slice (absent or null); anything else that is not a
-    well-formed slice is a parse error so a tampered record cannot bypass the containment check.
-    """
-    recorded = comparison.get("capability_slice")
-    if recorded is None:
-        return None
-    if not isinstance(recorded, Mapping):
-        raise ProvisionalError("develop_comparison.capability_slice must be an object or null")
-    paths = recorded.get("paths")
-    if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or not path for path in paths):
-        raise ProvisionalError("develop_comparison.capability_slice.paths must be a non-empty array of path strings")
-    return frozenset(paths)
+
+def _producing_slice(comparison: Mapping[str, Any]) -> frozenset[str]:
+    recorded = comparison["capability_slice"]
+    return frozenset(str(path) for path in recorded["paths"])
 
 
 def _path_list(value: Any) -> list[str]:
@@ -81,6 +93,7 @@ class ProvisionalRecord:
         migrated_from: Optional[str] = None,
         resolved_case_ids: Iterable[str] = (),
         proposed_case_ids: Iterable[str] = (),
+        capabilities: Optional[Mapping[str, Any]] = None,
     ) -> ProvisionalRecord:
         if origin not in ORIGINS:
             raise ProvisionalError(f"origin must be one of {ORIGINS}; got {origin!r}")
@@ -89,14 +102,15 @@ class ProvisionalRecord:
         paths = tuple(capability_slice)
         if not paths or any(not isinstance(path, str) or not path for path in paths):
             raise ProvisionalError("capability_slice must be a non-empty list of non-empty path strings")
-        producing = _producing_slice(develop_comparison)
-        if producing is not None:
-            outside = sorted(set(paths) - producing)
-            if outside:
-                raise ProvisionalError(
-                    f"capability_slice {outside} lies outside the producing slice {sorted(producing)} "
-                    "recorded in develop_comparison"
-                )
+        manifest = load_capabilities_file(DEFAULT_CAPABILITIES_PATH) if capabilities is None else capabilities
+        validated_comparison = _validated_comparison(develop_comparison, manifest)
+        producing = _producing_slice(validated_comparison)
+        outside = sorted(set(paths) - producing)
+        if outside:
+            raise ProvisionalError(
+                f"capability_slice {outside} lies outside the producing slice {sorted(producing)} the manifest "
+                "derives for the finding's family"
+            )
         if record["finding_id"] != finding_id:
             raise ProvisionalError("finding_id does not match the proposed ledger payload")
         return cls(
@@ -106,7 +120,7 @@ class ProvisionalRecord:
             capability_slice=paths,
             workstream_owner=workstream_owner,
             detection_artifact=detection_artifact,
-            develop_comparison=dict(develop_comparison),
+            develop_comparison=validated_comparison,
             detected_at=detected_at.astimezone(deadline.NEW_YORK),
             due_at=deadline.classification_deadline(detected_at),
             bot_pr_url=bot_pr_url,
@@ -138,7 +152,7 @@ class ProvisionalRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> ProvisionalRecord:
+    def from_dict(cls, data: Mapping[str, Any], capabilities: Optional[Mapping[str, Any]] = None) -> ProvisionalRecord:
         try:
             if not schema_version_matches(data["schema_version"], PROVISIONAL_SCHEMA_VERSION):
                 raise ProvisionalError("unsupported provisional schema_version")
@@ -156,6 +170,7 @@ class ProvisionalRecord:
                 migrated_from=None if data["migrated_from"] is None else str(data["migrated_from"]),
                 resolved_case_ids=[str(case_id) for case_id in data["resolved_case_ids"]],
                 proposed_case_ids=[str(case_id) for case_id in data["proposed_case_ids"]],
+                capabilities=capabilities,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise ProvisionalError(f"malformed provisional record: {error}") from error
@@ -185,7 +200,7 @@ def render_issue_body(record: ProvisionalRecord, title_note: str = "") -> str:
     return "\n".join(lines) + "\n"
 
 
-def parse_issue_body(body: str) -> ProvisionalRecord:
+def parse_issue_body(body: str, capabilities: Optional[Mapping[str, Any]] = None) -> ProvisionalRecord:
     match = _BLOCK.search(body)
     if match is None:
         raise ProvisionalError("issue body has no provisional record block")
@@ -193,4 +208,4 @@ def parse_issue_body(body: str) -> ProvisionalRecord:
         data = json.loads(match.group(1))
     except ValueError as error:
         raise ProvisionalError(f"provisional record block is not valid JSON: {error}") from error
-    return ProvisionalRecord.from_dict(data)
+    return ProvisionalRecord.from_dict(data, capabilities=capabilities)

@@ -223,6 +223,16 @@ class CapabilitySlice:
         return cls(family=str(data["family"]), paths=tuple(paths), broad_core=broad_core)
 
 
+DEFAULT_CAPABILITIES_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "modules"
+    / "foundry_script"
+    / "tests"
+    / "type_completeness"
+    / "capabilities.json"
+)
+
+
 def load_capabilities_file(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

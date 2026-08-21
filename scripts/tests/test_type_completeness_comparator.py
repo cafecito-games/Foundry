@@ -129,6 +129,10 @@ CAPABILITIES = {
 }
 
 
+_CAPABILITIES_FILE = Path(tempfile.mkdtemp(prefix="type_completeness_capabilities_")) / "capabilities.json"
+_CAPABILITIES_FILE.write_text(json.dumps(CAPABILITIES))
+
+
 def _ny(year: int, month: int, day: int, hour: int, minute: int = 0, second: int = 0) -> datetime:
     return datetime(year, month, day, hour, minute, second, tzinfo=NY)
 
@@ -266,6 +270,8 @@ class ReportLoadingTests(unittest.TestCase):
                         str(root / "develop.json"),
                         "--configuration",
                         "text",
+                        "--capabilities",
+                        str(_CAPABILITIES_FILE),
                         "--output",
                         str(root / "comparison.json"),
                         "--fail-on-regression",
@@ -299,6 +305,8 @@ class ReportLoadingTests(unittest.TestCase):
                         "d",
                         "--detected-at",
                         "2026-08-17T10:00:00-04:00",
+                        "--capabilities",
+                        str(_CAPABILITIES_FILE),
                         "--output-dir",
                         str(root / "out"),
                     ]
@@ -852,7 +860,8 @@ class ProvisionalRecordTests(unittest.TestCase):
             "capability_slice": ["modules/foundry_script/fs_analyzer.cpp"],
             "workstream_owner": "owner",
             "detection_artifact": "https://ci/artifact",
-            "develop_comparison": {"status": "unchanged"},
+            "develop_comparison": _artifact_with_status(comparator.Status.UNCHANGED).to_dict(),
+            "capabilities": CAPABILITIES,
             "detected_at": _ny(2026, 8, 17, 10),
             "bot_pr_url": "https://x/2",
             "origin": "automation",
@@ -869,7 +878,7 @@ class ProvisionalRecordTests(unittest.TestCase):
     def test_issue_body_round_trip(self) -> None:
         record = self._record()
         body = provisional.render_issue_body(record, title_note="Provisional finding")
-        parsed = provisional.parse_issue_body(body)
+        parsed = provisional.parse_issue_body(body, capabilities=CAPABILITIES)
         self.assertEqual(parsed, record)
 
     def test_parse_rejects_body_without_record(self) -> None:
@@ -880,55 +889,63 @@ class ProvisionalRecordTests(unittest.TestCase):
         data = self._record().to_dict()
         del data["state"]
         with self.assertRaises(provisional.ProvisionalError):
-            provisional.ProvisionalRecord.from_dict(data)
+            provisional.ProvisionalRecord.from_dict(data, capabilities=CAPABILITIES)
 
     def test_parse_rejects_malformed_capability_slice(self) -> None:
         record = self._record()
         for bad_slice in ("modules/foundry_script/fs_analyzer.cpp", [], [""], [1], None):
             data = dict(record.to_dict(), capability_slice=bad_slice)
             with self.assertRaises(provisional.ProvisionalError, msg=repr(bad_slice)):
-                provisional.ProvisionalRecord.from_dict(data)
+                provisional.ProvisionalRecord.from_dict(data, capabilities=CAPABILITIES)
         with self.assertRaises(provisional.ProvisionalError):
             self._record(capability_slice=[])
 
-    def test_capability_slice_outside_the_embedded_comparison_slice_is_rejected(self) -> None:
-        comparison = {
-            "status": "unchanged",
-            "capability_slice": {
-                "family": "f",
-                "paths": ["modules/foundry_script/fs_analyzer.cpp"],
-                "broad_core": True,
-            },
-        }
-        record = self._record(develop_comparison=comparison)
+    def test_capability_slice_outside_the_manifest_slice_is_rejected(self) -> None:
+        record = self._record()
         self.assertEqual(record.capability_slice, ("modules/foundry_script/fs_analyzer.cpp",))
+        with self.assertRaises(provisional.ProvisionalError):
+            self._record(capability_slice=["editor/editor_node.cpp"])
         tampered = dict(record.to_dict(), capability_slice=["editor/editor_node.cpp"])
         with self.assertRaises(provisional.ProvisionalError):
-            provisional.ProvisionalRecord.from_dict(tampered)
-        widened = dict(
-            record.to_dict(),
-            capability_slice=["modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/fs_vm.cpp"],
+            provisional.ProvisionalRecord.from_dict(tampered, capabilities=CAPABILITIES)
+
+    def test_tampering_both_slice_lists_is_rejected(self) -> None:
+        record = self._record()
+        comparison = dict(record.develop_comparison)
+        comparison["capability_slice"] = dict(comparison["capability_slice"], paths=["editor/editor_node.cpp"])
+        tampered = dict(record.to_dict(), capability_slice=["editor/editor_node.cpp"], develop_comparison=comparison)
+        with self.assertRaises(provisional.ProvisionalError):
+            provisional.ProvisionalRecord.from_dict(tampered, capabilities=CAPABILITIES)
+        # Fixing the comparison_id to match the edited slice still fails: the slice must come from the manifest.
+        rebound = comparator.ComparisonArtifact.from_dict
+        comparison_with_id = dict(comparison)
+        comparison_with_id["comparison_id"] = comparator.digest_of(
+            {
+                "case_id": comparison["case_id"],
+                "family": comparison["family"],
+                "configuration": comparison["configuration"],
+                "category": comparison["category"],
+                "capability_slice": comparison["capability_slice"],
+                "branch_digest": comparison["branch"]["digest"],
+                "develop_digest": comparison["develop"]["digest"],
+            }
+        )[:16]
+        self.assertIsNotNone(rebound)
+        tampered = dict(
+            record.to_dict(), capability_slice=["editor/editor_node.cpp"], develop_comparison=comparison_with_id
         )
         with self.assertRaises(provisional.ProvisionalError):
-            provisional.ProvisionalRecord.from_dict(widened)
-        with self.assertRaises(provisional.ProvisionalError):
-            self._record(develop_comparison=comparison, capability_slice=["editor/editor_node.cpp"])
+            provisional.ProvisionalRecord.from_dict(tampered, capabilities=CAPABILITIES)
 
-    def test_malformed_embedded_capability_slice_is_a_parse_error(self) -> None:
-        malformed_values: list[Any] = [
-            "modules/foundry_script/fs_analyzer.cpp",
-            {"family": "f", "paths": [], "broad_core": True},
-            {"family": "f", "paths": "modules/foundry_script/fs_analyzer.cpp", "broad_core": True},
-            {"family": "f", "paths": [1], "broad_core": True},
-            {"family": "f", "broad_core": True},
-            [],
-        ]
-        for malformed in malformed_values:
-            comparison = {"status": "unchanged", "capability_slice": malformed}
-            with self.assertRaises(provisional.ProvisionalError, msg=repr(malformed)):
-                self._record(develop_comparison=comparison)
-        absent = self._record(develop_comparison={"status": "unchanged", "capability_slice": None})
-        self.assertEqual(absent.capability_slice, ("modules/foundry_script/fs_analyzer.cpp",))
+    def test_embedded_comparison_is_validated_as_an_artifact(self) -> None:
+        record = self._record()
+        relabelled = dict(record.develop_comparison, status="resolved")
+        with self.assertRaises(provisional.ProvisionalError):
+            self._record(develop_comparison=relabelled)
+        with self.assertRaises(provisional.ProvisionalError):
+            self._record(develop_comparison={"status": "unchanged"})
+        with self.assertRaises(provisional.ProvisionalError):
+            self._record(develop_comparison=dict(record.develop_comparison, capability_slice=None))
 
     def test_manual_record_carries_manual_origin_with_same_fields(self) -> None:
         manual = self._record(origin="manual")
@@ -955,7 +972,8 @@ class ReconciliationTests(unittest.TestCase):
             "capability_slice": ["modules/foundry_script/fs_analyzer.cpp"],
             "workstream_owner": "owner",
             "detection_artifact": "https://ci/artifact",
-            "develop_comparison": {"status": "unchanged"},
+            "develop_comparison": _artifact_with_status(comparator.Status.UNCHANGED).to_dict(),
+            "capabilities": CAPABILITIES,
             "detected_at": _ny(2026, 8, 17, 10),
             "bot_pr_url": "https://x/2",
             "origin": "automation",
@@ -1198,6 +1216,8 @@ class EveryStatusConsumerTests(unittest.TestCase):
                             "d",
                             "--detected-at",
                             "2026-08-17T10:00:00-04:00",
+                            "--capabilities",
+                            str(_CAPABILITIES_FILE),
                             "--output-dir",
                             str(root / "out"),
                         ]
@@ -1227,6 +1247,7 @@ class EveryStatusConsumerTests(unittest.TestCase):
                     detected_at=_ny(2026, 8, 17, 10),
                     bot_pr_url="https://x/2",
                     origin="automation",
+                    capabilities=CAPABILITIES,
                 )
                 for pull_request in (None, "open", "closed", "merged"):
                     result = reconcile.reconcile_finding(
@@ -1403,8 +1424,8 @@ class ConcurrentCreateTests(unittest.TestCase):
     def test_duplicate_ledger_pull_requests_after_create_converge_on_the_lowest(self) -> None:
         after = json.dumps(
             [
-                {"url": "https://github.com/x/pull/22", "number": 22, "state": "OPEN"},
-                {"url": "https://github.com/x/pull/21", "number": 21, "state": "OPEN"},
+                {"url": "https://github.com/x/pull/22", "number": 22, "state": "OPEN", "baseRefName": "develop"},
+                {"url": "https://github.com/x/pull/21", "number": 21, "state": "OPEN", "baseRefName": "develop"},
             ]
         )
         runner = SequencedCommandRunner("[]", after, "https://github.com/x/pull/22\n")
@@ -1490,7 +1511,11 @@ class GitHubAutomationTests(unittest.TestCase):
 
     def test_refuses_to_open_or_update_a_pull_request_from_a_non_bot_branch(self) -> None:
         runner = FakeCommandRunner(
-            {"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "OPEN"}])}
+            {
+                "pr list": json.dumps(
+                    [{"url": "https://github.com/x/pull/3", "number": 3, "state": "OPEN", "baseRefName": "develop"}]
+                )
+            }
         )
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         with self.assertRaises(github.ProtectedBranchError):
@@ -1512,7 +1537,9 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertFalse(any("--auto" in call for call in joined))
 
     def test_closed_unmerged_ledger_pr_is_reopened_and_updated(self) -> None:
-        listing = json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "CLOSED"}])
+        listing = json.dumps(
+            [{"url": "https://github.com/x/pull/3", "number": 3, "state": "CLOSED", "baseRefName": "develop"}]
+        )
         runner = FakeCommandRunner({"pr list": listing})
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         url = client.open_or_update_ledger_pull_request(
@@ -1526,7 +1553,9 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertFalse(any("pr create" in call for call in joined))
 
     def test_merged_ledger_pr_is_left_alone(self) -> None:
-        listing = json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "MERGED"}])
+        listing = json.dumps(
+            [{"url": "https://github.com/x/pull/3", "number": 3, "state": "MERGED", "baseRefName": "develop"}]
+        )
         runner = FakeCommandRunner({"pr list": listing})
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         url = client.open_or_update_ledger_pull_request(
@@ -1539,8 +1568,8 @@ class GitHubAutomationTests(unittest.TestCase):
     def test_merged_ledger_pr_outranks_an_older_closed_one(self) -> None:
         listing = json.dumps(
             [
-                {"url": "https://github.com/x/pull/5", "number": 5, "state": "CLOSED"},
-                {"url": "https://github.com/x/pull/9", "number": 9, "state": "MERGED"},
+                {"url": "https://github.com/x/pull/5", "number": 5, "state": "CLOSED", "baseRefName": "develop"},
+                {"url": "https://github.com/x/pull/9", "number": 9, "state": "MERGED", "baseRefName": "develop"},
             ]
         )
         runner = FakeCommandRunner({"pr list": listing})
@@ -1551,11 +1580,58 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertEqual(url, "https://github.com/x/pull/9")
         self.assertEqual([call for call in runner.calls if call[1:3] != ["pr", "list"]], [])
 
+    def test_open_pr_to_another_base_is_retargeted_not_reused(self) -> None:
+        listing = json.dumps(
+            [{"url": "https://github.com/x/pull/4", "number": 4, "state": "OPEN", "baseRefName": "main"}]
+        )
+        runner = FakeCommandRunner({"pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/4")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertTrue(any("pr edit 4" in call and "--base develop" in call for call in joined))
+        self.assertFalse(any(call[1:3] == ["pr", "create"] for call in runner.calls))
+
+    def test_two_open_prs_with_other_bases_is_an_error(self) -> None:
+        listing = json.dumps(
+            [
+                {"url": "https://github.com/x/pull/4", "number": 4, "state": "OPEN", "baseRefName": "main"},
+                {"url": "https://github.com/x/pull/6", "number": 6, "state": "OPEN", "baseRefName": "release"},
+            ]
+        )
+        runner = FakeCommandRunner({"pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        with self.assertRaises(github.AutomationError):
+            client.open_or_update_ledger_pull_request("bot/type-completeness/abc", title="t", body="b", base="develop")
+        self.assertFalse(any(call[1:3] in (["pr", "create"], ["pr", "edit"]) for call in runner.calls))
+
+    def test_pr_listing_requests_base_ref(self) -> None:
+        runner = FakeCommandRunner({"pr list": "[]", "pr create": "https://github.com/x/pull/9"})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        client.open_or_update_ledger_pull_request("bot/type-completeness/abc", title="t", body="b", base="develop")
+        listing = next(call for call in runner.calls if call[1:3] == ["pr", "list"])
+        self.assertIn("baseRefName", listing[listing.index("--json") + 1])
+
+    def test_merged_pr_to_another_base_is_not_authoritative(self) -> None:
+        listing = json.dumps(
+            [
+                {"url": "https://github.com/x/pull/4", "number": 4, "state": "MERGED", "baseRefName": "main"},
+            ]
+        )
+        runner = FakeCommandRunner({"pr list": listing, "pr create": "https://github.com/x/pull/10"})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/10")
+
     def test_open_ledger_pr_is_preferred_over_closed_ones(self) -> None:
         listing = json.dumps(
             [
-                {"url": "https://github.com/x/pull/3", "number": 3, "state": "CLOSED"},
-                {"url": "https://github.com/x/pull/5", "number": 5, "state": "OPEN"},
+                {"url": "https://github.com/x/pull/3", "number": 3, "state": "CLOSED", "baseRefName": "develop"},
+                {"url": "https://github.com/x/pull/5", "number": 5, "state": "OPEN", "baseRefName": "develop"},
             ]
         )
         runner = FakeCommandRunner({"pr list": listing})
@@ -1570,7 +1646,11 @@ class GitHubAutomationTests(unittest.TestCase):
 
     def test_existing_pr_is_updated_not_duplicated(self) -> None:
         runner = FakeCommandRunner(
-            {"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "OPEN"}])}
+            {
+                "pr list": json.dumps(
+                    [{"url": "https://github.com/x/pull/3", "number": 3, "state": "OPEN", "baseRefName": "develop"}]
+                )
+            }
         )
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         url = client.open_or_update_ledger_pull_request(
@@ -1662,6 +1742,8 @@ class CliTests(unittest.TestCase):
                     str(root / "develop.json"),
                     "--configuration",
                     "text",
+                    "--capabilities",
+                    str(_CAPABILITIES_FILE),
                     "--output",
                     str(root / "comparison.json"),
                 ]
@@ -1705,6 +1787,8 @@ class CliTests(unittest.TestCase):
                 str(root / "develop.json"),
                 "--configuration",
                 "text",
+                "--capabilities",
+                str(_CAPABILITIES_FILE),
                 "--output",
                 str(root / "comparison.json"),
             ]
@@ -1717,7 +1801,7 @@ class CliTests(unittest.TestCase):
             findings = [_finding("a", "destination")]
             branch = report.load_report(_report([_case("a", passed=False)], findings=findings))
             develop = report.load_report(_report([_case("a", passed=False)], findings=findings))
-            artifact = comparator.compare_reports(branch, develop, configuration="text")[0]
+            artifact = comparator.compare_reports(branch, develop, configuration="text", capabilities=CAPABILITIES)[0]
             (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
             exit_code = cli.main(
                 [
@@ -1744,13 +1828,15 @@ class CliTests(unittest.TestCase):
                     "2026-08-17T10:00:00-04:00",
                     "--origin",
                     "manual",
+                    "--capabilities",
+                    str(_CAPABILITIES_FILE),
                     "--output-dir",
                     str(root / "out"),
                 ]
             )
             self.assertEqual(exit_code, 0)
             record = provisional.ProvisionalRecord.from_dict(
-                json.loads((root / "out" / "provisional.json").read_text())
+                json.loads((root / "out" / "provisional.json").read_text()), capabilities=CAPABILITIES
             )
             self.assertEqual(record.due_at, _ny(2026, 8, 19, 17))
             self.assertEqual(record.origin, "manual")
@@ -1785,6 +1871,8 @@ class CliTests(unittest.TestCase):
             "d",
             "--detected-at",
             "2026-08-17T10:00:00-04:00",
+            "--capabilities",
+            str(_CAPABILITIES_FILE),
             "--output-dir",
             str(root / "out"),
         ]
@@ -1795,7 +1883,7 @@ class CliTests(unittest.TestCase):
             self._comparison_with_slice(root)
             self.assertEqual(cli.main(self._propose_arguments(root)), 0)
             record = provisional.ProvisionalRecord.from_dict(
-                json.loads((root / "out" / "provisional.json").read_text())
+                json.loads((root / "out" / "provisional.json").read_text()), capabilities=CAPABILITIES
             )
             self.assertEqual(
                 record.capability_slice,
@@ -1812,7 +1900,7 @@ class CliTests(unittest.TestCase):
             narrowed = self._propose_arguments(root) + ["--capability-path", "modules/foundry_script/fs_vm.cpp"]
             self.assertEqual(cli.main(narrowed), 0)
             record = provisional.ProvisionalRecord.from_dict(
-                json.loads((root / "out" / "provisional.json").read_text())
+                json.loads((root / "out" / "provisional.json").read_text()), capabilities=CAPABILITIES
             )
             self.assertEqual(record.capability_slice, ("modules/foundry_script/fs_vm.cpp",))
 
@@ -1853,12 +1941,14 @@ class CliTests(unittest.TestCase):
                 "d",
                 "--detected-at",
                 "2026-08-17T10:00:00-04:00",
+                "--capabilities",
+                str(_CAPABILITIES_FILE),
                 "--output-dir",
                 str(root / "out"),
             ]
             self.assertEqual(cli.main(arguments), 0)
             record = provisional.ProvisionalRecord.from_dict(
-                json.loads((root / "out" / "provisional.json").read_text())
+                json.loads((root / "out" / "provisional.json").read_text()), capabilities=CAPABILITIES
             )
             self.assertEqual(record.payload["classification"], "product_defect")
             self.assertEqual(record.payload["issue_url"], "https://github.com/x/issues/40")
@@ -1881,6 +1971,8 @@ class CliTests(unittest.TestCase):
                 "o",
                 "--detection-artifact",
                 "d",
+                "--capabilities",
+                str(_CAPABILITIES_FILE),
                 "--output-dir",
                 str(root / "out"),
             ]
@@ -1925,6 +2017,8 @@ class CliTests(unittest.TestCase):
             "d",
             "--detected-at",
             "2026-08-17T10:00:00-04:00",
+            "--capabilities",
+            str(_CAPABILITIES_FILE),
             "--output-dir",
             str(root / "out"),
         ]
@@ -1940,7 +2034,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(historical["case_id"], "old")
             self.assertEqual(historical["classification"], "product_defect")
             record = provisional.ProvisionalRecord.from_dict(
-                json.loads((root / "out" / "provisional.json").read_text())
+                json.loads((root / "out" / "provisional.json").read_text()), capabilities=CAPABILITIES
             )
             self.assertEqual(record.finding_id, historical_id)
             self.assertEqual(record.migrated_from, "old")
@@ -1961,7 +2055,7 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(child["case_id"], case_id)
                 self.assertEqual(child["classification"], "product_defect")
                 record = provisional.ProvisionalRecord.from_dict(
-                    json.loads((root / "out" / f"provisional_{child_id}.json").read_text())
+                    json.loads((root / "out" / f"provisional_{child_id}.json").read_text()), capabilities=CAPABILITIES
                 )
                 self.assertEqual(record.migrated_from, "old")
                 self.assertEqual(record.proposed_case_ids, ("new_a", "new_b"))
@@ -1999,6 +2093,8 @@ class CliTests(unittest.TestCase):
                     "o",
                     "--detection-artifact",
                     "d",
+                    "--capabilities",
+                    str(_CAPABILITIES_FILE),
                     "--output-dir",
                     str(root / "out"),
                 ]
@@ -2021,10 +2117,11 @@ class CliTests(unittest.TestCase):
             record = provisional.ProvisionalRecord.create(
                 finding_id=payload["finding_id"],
                 payload=payload,
-                capability_slice=["x.cpp"],
+                capability_slice=["modules/foundry_script/fs_vm.cpp"],
                 workstream_owner="o",
                 detection_artifact="a",
-                develop_comparison={"status": "unchanged"},
+                develop_comparison=_artifact_with_status(comparator.Status.UNCHANGED).to_dict(),
+                capabilities=CAPABILITIES,
                 detected_at=_ny(2026, 8, 17, 10),
                 bot_pr_url="https://x/2",
                 origin="automation",
@@ -2037,6 +2134,8 @@ class CliTests(unittest.TestCase):
                     "reconcile",
                     "--provisional",
                     str(root / "provisional.json"),
+                    "--capabilities",
+                    str(_CAPABILITIES_FILE),
                     "--ledger-dir",
                     str(ledger_dir),
                     "--pull-request-state",
@@ -2050,7 +2149,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 1)
             written = json.loads((root / "reconciliation.json").read_text())
             self.assertEqual(written["state"], "overdue")
-            self.assertEqual(written["blocked_capability_slice"], ["x.cpp"])
+            self.assertEqual(written["blocked_capability_slice"], ["modules/foundry_script/fs_vm.cpp"])
 
     def test_reconcile_command_without_pull_request_state_keeps_classified_ledger_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2067,10 +2166,11 @@ class CliTests(unittest.TestCase):
             record = provisional.ProvisionalRecord.create(
                 finding_id=payload["finding_id"],
                 payload=payload,
-                capability_slice=["x.cpp"],
+                capability_slice=["modules/foundry_script/fs_vm.cpp"],
                 workstream_owner="o",
                 detection_artifact="a",
-                develop_comparison={"status": "unchanged"},
+                develop_comparison=_artifact_with_status(comparator.Status.UNCHANGED).to_dict(),
+                capabilities=CAPABILITIES,
                 detected_at=_ny(2026, 8, 17, 10),
                 bot_pr_url="https://x/2",
                 origin="automation",
@@ -2082,6 +2182,8 @@ class CliTests(unittest.TestCase):
                 "reconcile",
                 "--provisional",
                 str(root / "provisional.json"),
+                "--capabilities",
+                str(_CAPABILITIES_FILE),
                 "--ledger-dir",
                 str(ledger_dir),
                 "--now",

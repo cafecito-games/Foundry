@@ -40,7 +40,9 @@ one tracking issue per finding (label `type-completeness-finding`; a closed one 
 duplicated), and one ledger pull request per bot branch looked up in any state. The finding ID in the issue
 title and the bot branch name are the idempotency keys; GitHub cannot enforce them atomically, so after every
 create the client re-lists and converges concurrent duplicates onto the lowest-numbered open one (closing the
-others with a comment naming the survivor). Duplicates are converged, not prevented. For pull requests: an open one is updated, otherwise a merged one is
+others with a comment naming the survivor). Duplicates are converged, not prevented. Pull requests are matched on head branch and base branch: one from the bot branch to another base is never
+silently reused; the only open one is retargeted with `gh pr edit --base`, several open ones are an error.
+For pull requests to the requested base: an open one is updated, otherwise a merged one is
 authoritative and left alone, and only when neither exists is a closed unmerged one reopened and updated. It refuses protected branches and never passes `--auto` or merges. Pushes to a bot branch carry an explicit
 lease: the automation records the branch's remote SHA with `observe_remote_branch` before it starts (absent
 for a new branch) and pushes with `--force-with-lease=<ref>:<that SHA>`, so a stale run can never replace a
@@ -74,7 +76,10 @@ child is listed in the same run, in which case one record per child is written (
 formula) and the provisional records carry `migrated_from`, `resolved_case_ids`, and `proposed_case_ids`. The
 historical entry is never replaced implicitly.
 
-`propose` takes the capability slice from the artifact; `--capability-path` may only narrow it and any path
+A provisional record embeds its develop comparison as a full artifact that is re-validated on every parse
+(identity, digests, status) and whose recorded capability slice must equal the slice the capabilities
+manifest derives for its family; the record's own slice must lie within it. `propose` and `reconcile` take
+`--capabilities` for that manifest. `propose` takes the capability slice from the artifact; `--capability-path` may only narrow it and any path
 outside the producing slice is rejected, so a provisional record cannot block a capability that did not produce
 the finding.
 

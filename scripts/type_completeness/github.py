@@ -90,30 +90,38 @@ class AutomationClient:
                 f"({(error.stderr or '').strip()})"
             ) from error
 
-    def _find_pull_request(self, branch: str) -> Optional[tuple[int, str, str]]:
-        """Find the one ledger pull request for a bot branch in any state; an open one wins over closed ones."""
+    def _list_pull_requests(self, branch: str) -> list[dict[str, Any]]:
         output = self._gh(
-            "pr", "list", "--repo", self._repository, "--head", branch, "--state", "all", "--json", "url,number,state"
+            "pr",
+            "list",
+            "--repo",
+            self._repository,
+            "--head",
+            branch,
+            "--state",
+            "all",
+            "--json",
+            "url,number,state,baseRefName",
         )
         entries = json.loads(output or "[]")
-        if not entries:
-            return None
-        states = {
-            int(entry["number"]): _state_of(entry, ("OPEN", "CLOSED", "MERGED"), "pull request") for entry in entries
-        }
+        for entry in entries:
+            entry["state"] = _state_of(entry, ("OPEN", "CLOSED", "MERGED"), "pull request")
+            if not isinstance(entry.get("baseRefName"), str) or not entry["baseRefName"]:
+                raise AutomationError(f"gh reported pull request #{entry.get('number')} without a base branch")
         # OPEN is the live proposal; MERGED is authoritative and must never be shadowed by an older CLOSED one.
-        entries.sort(key=lambda entry: (PULL_REQUEST_PRECEDENCE[states[int(entry["number"])]], int(entry["number"])))
-        chosen = entries[0]
-        return int(chosen["number"]), str(chosen["url"]), states[int(chosen["number"])]
+        entries.sort(key=lambda entry: (PULL_REQUEST_PRECEDENCE[entry["state"]], int(entry["number"])))
+        return list(entries)
 
     def open_or_update_ledger_pull_request(self, branch: str, title: str, body: str, base: str) -> str:
         if branch in PROTECTED_BRANCHES or not branch.startswith(BOT_BRANCH_PREFIX):
             raise ProtectedBranchError(
                 f"refusing to open or update a pull request for {branch!r}; only {BOT_BRANCH_PREFIX}* branches are allowed"
             )
-        existing = self._find_pull_request(branch)
-        if existing is not None:
-            number, url, state = existing
+        entries = self._list_pull_requests(branch)
+        matching = [entry for entry in entries if entry["baseRefName"] == base]
+        if matching:
+            chosen = matching[0]
+            number, url, state = int(chosen["number"]), str(chosen["url"]), chosen["state"]
             if state == "MERGED":
                 # The ledger entry already landed; the merged record is the source of truth now.
                 return url
@@ -122,6 +130,30 @@ class AutomationClient:
                 self._gh("pr", "reopen", str(number), "--repo", self._repository)
             self._gh("pr", "edit", str(number), "--repo", self._repository, "--title", title, "--body", body)
             return url
+        # A pull request from this bot branch to another base is never silently reused: retarget the only open
+        # one, refuse when several are open, and otherwise open a fresh one against the requested base.
+        other_open = [entry for entry in entries if entry["state"] == "OPEN"]
+        if len(other_open) > 1:
+            raise AutomationError(
+                f"bot branch {branch!r} has several open pull requests to other bases: "
+                f"{[entry['url'] for entry in other_open]}; resolve them by hand"
+            )
+        if other_open:
+            chosen = other_open[0]
+            self._gh(
+                "pr",
+                "edit",
+                str(chosen["number"]),
+                "--repo",
+                self._repository,
+                "--base",
+                base,
+                "--title",
+                title,
+                "--body",
+                body,
+            )
+            return str(chosen["url"])
         created = self._gh(
             "pr",
             "create",
@@ -136,15 +168,20 @@ class AutomationClient:
             "--body",
             body,
         ).strip()
-        return self._converge_pull_requests(branch, created)
+        return self._converge_pull_requests(branch, base, created)
 
-    def _converge_pull_requests(self, branch: str, created_url: str) -> str:
+    def _converge_pull_requests(self, branch: str, base: str, created_url: str) -> str:
         """GitHub has no create-if-absent, so a concurrent run may have created a second pull request between
-        our lookup and our create. Keep the lowest-numbered open one and close the rest pointing at it."""
-        output = self._gh(
-            "pr", "list", "--repo", self._repository, "--head", branch, "--state", "open", "--json", "url,number,state"
+        our lookup and our create. Keep the lowest-numbered open one against the same base and close the rest
+        pointing at it; merged or closed ones and ones to other bases are never duplicates."""
+        entries = sorted(
+            (
+                entry
+                for entry in self._list_pull_requests(branch)
+                if entry["state"] == "OPEN" and entry["baseRefName"] == base
+            ),
+            key=lambda entry: int(entry["number"]),
         )
-        entries = sorted(json.loads(output or "[]"), key=lambda entry: int(entry["number"]))
         if len(entries) <= 1:
             return str(entries[0]["url"]) if entries else created_url
         survivor = entries[0]
