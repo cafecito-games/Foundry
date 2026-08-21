@@ -385,7 +385,23 @@ class GateTests(GateTestCase):
         self.assertEqual(verdict["state"], "nothing_selected")
         self.assertEqual(code, 0)
         self.assertEqual(verdict["families_run"], [])
+        # No family reached the comparison step, so the gate says it looked at no baseline rather than
+        # claiming one was present.
+        self.assertEqual(verdict["baseline_state"], "not_consulted")
         self.assertTrue((output / "comparison.json").exists())
+
+    def test_an_unchanged_failure_with_no_finding_to_reconcile_blocks(self) -> None:
+        # A failed case the runner filed no finding against has nothing a ledger entry could name, so
+        # no authority for it can exist and it must not be waved through as a known mismatch.
+        document = failed_report()
+        document["findings"] = []
+        self.write_report(document)
+        baseline = self.work / "baseline"
+        self.write_report(document, directory=baseline)
+        code, verdict, _ = self.run_gate(baseline_dir=baseline, environment={"FOUNDRY_FAKE_RUN_EXIT": "1"})
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(code, 1)
+        self.assertEqual(verdict["known_mismatch_ids"], [])
 
     def test_an_empty_changed_paths_file_selects_nothing(self) -> None:
         self.changed_paths.write_text("", encoding="utf-8")

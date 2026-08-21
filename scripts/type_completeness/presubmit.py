@@ -124,6 +124,9 @@ class BaselineState(str, enum.Enum):
     PRESENT = "present"
     MISSING = "missing"
     MALFORMED = "malformed"
+    # No family reached the comparison step, so no baseline was looked at. Reported as itself rather
+    # than as "present", which would claim a baseline this run never saw.
+    NOT_CONSULTED = "not_consulted"
 
 
 # Worst first: one malformed baseline refuses the whole gate, and one missing baseline degrades the
@@ -438,7 +441,17 @@ class Gate:
                     f"{artifact.case_id} is {artifact.status.value} in family {artifact.family}",
                 )
                 continue
-            for finding in artifact.branch.get("findings") or []:
+            findings = artifact.branch.get("findings") or []
+            if not findings:
+                # An unchanged failure carrying no finding has nothing a ledger entry could ever be
+                # filed against, so no authority can exist for it and it cannot be waved through.
+                blocking.append(artifact.comparison_id)
+                self.record(
+                    Verdict.BLOCKED,
+                    f"{artifact.case_id} fails unchanged in family {artifact.family} with no finding to reconcile",
+                )
+                continue
+            for finding in findings:
                 finding_id = str(finding["finding_id"])
                 result = reconcile.reconcile_finding(
                     finding_id=finding_id,
@@ -567,7 +580,7 @@ def _aggregate_baseline_state(states: Sequence[BaselineState]) -> BaselineState:
     for state in BASELINE_PRECEDENCE:
         if state in states:
             return state
-    return BaselineState.PRESENT
+    return BaselineState.NOT_CONSULTED
 
 
 def _publish(
