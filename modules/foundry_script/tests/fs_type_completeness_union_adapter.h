@@ -61,6 +61,23 @@ struct FSCompletenessRuntimeResult : FSCompletenessObservation {
 	String status;
 };
 
+// Evidence that must agree between the two surfaces of one semantic case because it does not depend
+// on the surface. The adapter's pair counter and the runner's parity report both derive their
+// verdict from this, so a surface disagreement can never be counted in one and missed in the other.
+struct FSCompletenessSurfaceEvidenceMismatch {
+	bool produced_output = false;
+	bool diagnostics = false;
+	bool diagnostic_records = false;
+	bool runtime_status = false;
+
+	bool any() const {
+		return produced_output || diagnostics || diagnostic_records || runtime_status;
+	}
+};
+
+FSCompletenessSurfaceEvidenceMismatch compare_surface_evidence(
+		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode);
+
 struct FSCompletenessRuntimeBatch {
 	HashMap<String, FSCompletenessRuntimeResult> text;
 	HashMap<String, FSCompletenessRuntimeResult> bytecode;

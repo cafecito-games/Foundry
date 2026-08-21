@@ -419,8 +419,11 @@ static Dictionary aggregate_parity_evidence(const FSCompletenessResolvedCell &p_
 	Dictionary evidence;
 	evidence["text_case_id"] = p_text.case_id;
 	evidence["bytecode_case_id"] = p_bytecode.case_id;
+	// The surface-independent half of the comparison is the adapter's, so the report cannot disagree
+	// with the pair-failure count the adapter derived from the same evidence.
+	const FSCompletenessSurfaceEvidenceMismatch mismatch = compare_surface_evidence(p_text, p_bytecode);
 	bool has_primary = false;
-	if (p_text.produced_output != p_bytecode.produced_output) {
+	if (mismatch.produced_output) {
 		const Dictionary output = parity_evidence(
 				p_text.produced_output, p_bytecode.produced_output, p_text.case_id, p_bytecode.case_id);
 		evidence["output"] = output;
@@ -428,15 +431,15 @@ static Dictionary aggregate_parity_evidence(const FSCompletenessResolvedCell &p_
 		evidence["bytecode"] = p_bytecode.produced_output;
 		has_primary = true;
 	}
-	if (p_text.diagnostics != p_bytecode.diagnostics) {
+	if (mismatch.diagnostics) {
 		evidence["diagnostics"] = parity_evidence(
 				p_text.diagnostics, p_bytecode.diagnostics, p_text.case_id, p_bytecode.case_id);
 	}
-	if (p_text.diagnostic_records != p_bytecode.diagnostic_records) {
+	if (mismatch.diagnostic_records) {
 		evidence["diagnostic_records"] = parity_evidence(p_text.diagnostic_records,
 				p_bytecode.diagnostic_records, p_text.case_id, p_bytecode.case_id);
 	}
-	if (p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status) {
+	if (mismatch.runtime_status) {
 		evidence["runtime_status"] = parity_evidence(
 				runtime_status(p_text.passed, p_text.status),
 				runtime_status(p_bytecode.passed, p_bytecode.status), p_text.case_id, p_bytecode.case_id);

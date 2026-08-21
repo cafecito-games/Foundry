@@ -849,8 +849,7 @@ static bool is_surface_identity_dimension(const Variant &p_key) {
 
 static bool observations_match_on_common_dimensions(
 		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
-	if (p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status ||
-			p_text.diagnostics != p_bytecode.diagnostics || p_text.produced_output != p_bytecode.produced_output) {
+	if (compare_surface_evidence(p_text, p_bytecode).any()) {
 		return false;
 	}
 	for (const Variant &key : p_text.dimensions.keys()) {
@@ -1361,6 +1360,16 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 	}
 	r_batch = completed;
 	return OK;
+}
+
+FSCompletenessSurfaceEvidenceMismatch compare_surface_evidence(
+		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
+	FSCompletenessSurfaceEvidenceMismatch mismatch;
+	mismatch.produced_output = p_text.produced_output != p_bytecode.produced_output;
+	mismatch.diagnostics = p_text.diagnostics != p_bytecode.diagnostics;
+	mismatch.diagnostic_records = p_text.diagnostic_records != p_bytecode.diagnostic_records;
+	mismatch.runtime_status = p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status;
+	return mismatch;
 }
 
 Error FSUnionCompletenessAdapter::witness_coordinates(const String &p_witness_id, Dictionary &r_coordinates) {

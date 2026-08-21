@@ -77,6 +77,25 @@ static void gate_safety_corrupt_partner_obligation(FSCompletenessObservation &r_
 	}
 }
 
+static Dictionary gate_safety_diagnostic_record(const String &p_severity, const String &p_code) {
+	Dictionary record;
+	record["severity"] = p_severity;
+	record["category"] = "analysis";
+	record["code"] = p_code;
+	record["line"] = 1.0;
+	record["column"] = 1.0;
+	record["message"] = "injected " + p_code;
+	record["suppressed"] = false;
+	return record;
+}
+
+static void gate_safety_inject_text_only_warning_record(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_pair_text_id) {
+		r_observation.diagnostic_records.push_back(
+				gate_safety_diagnostic_record("warning", "INJECTED_SURFACE_ONLY_WARNING"));
+	}
+}
+
 static String gate_safety_finding_id(const String &p_case_id, const String &p_dimension) {
 	return "fstcf-v1-" + (p_case_id + "|" + p_dimension).sha256_text().substr(0, 20);
 }
@@ -802,6 +821,72 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		}
 		CHECK(checked_witness);
 		gate_safety_partner_case_id.clear();
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety treats a diagnostic-record disagreement as a surface mismatch") {
+		FSCompletenessRuntimeResult text;
+		text.case_id = "gate_safety_text";
+		text.surface = "text";
+		text.passed = true;
+		text.status = "ok";
+		text.produced_output = "uint 5\n";
+		text.diagnostic_records = Array();
+		FSCompletenessRuntimeResult bytecode = text;
+		bytecode.case_id = "gate_safety_bytecode";
+		bytecode.surface = "bytecode";
+		// `Array` assignment shares the instance, so the two surfaces need distinct evidence arrays.
+		bytecode.diagnostic_records = Array();
+		CHECK_FALSE(compare_surface_evidence(text, bytecode).any());
+
+		text.diagnostic_records.push_back(
+				gate_safety_diagnostic_record("warning", "INJECTED_SURFACE_ONLY_WARNING"));
+		const FSCompletenessSurfaceEvidenceMismatch mismatch = compare_surface_evidence(text, bytecode);
+		CHECK(mismatch.diagnostic_records);
+		CHECK(mismatch.any());
+		CHECK_FALSE(mismatch.produced_output);
+		CHECK_FALSE(mismatch.diagnostics);
+		CHECK_FALSE(mismatch.runtime_status);
+
+		bytecode.diagnostic_records = text.diagnostic_records.duplicate(true);
+		CHECK_FALSE(compare_surface_evidence(text, bytecode).any());
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety fails a pair that differs only in diagnostic records") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "plain", "static_member", "argument_binding");
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_record_parity_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = gate_safety_inject_text_only_warning_record;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+
+		// A warning record never raises the severity profile to error, so the record disagreement is
+		// the only thing that can fail this pair.
+		REQUIRE_EQ(result.findings.size(), 1);
+		const FSCompletenessFinding &finding = result.findings[0];
+		CHECK_EQ(finding.dimension, "text_bytecode_parity");
+		CHECK_EQ(finding.case_id, union_pilot_mutated_pair_text_id);
+		const Dictionary evidence = finding.parity_evidence;
+		REQUIRE(evidence.has("diagnostic_records"));
+		CHECK_FALSE(evidence.has("output"));
+		CHECK_FALSE(evidence.has("diagnostics"));
+		CHECK_FALSE(evidence.has("runtime_status"));
+		CHECK(Dictionary(evidence.get("dimensions", Dictionary())).is_empty());
+		for (const String &case_id : { union_pilot_mutated_pair_text_id, union_pilot_mutated_pair_bytecode_id }) {
+			CAPTURE(case_id);
+			const Dictionary case_report = gate_safety_case_report(result.report, case_id);
+			REQUIRE_FALSE(case_report.is_empty());
+			CHECK_EQ(String(case_report.get("status", String())), "failed");
+			CHECK_FALSE(Dictionary(case_report.get("parity_evidence", Dictionary())).is_empty());
+		}
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety keeps parity evidence on both surfaces of a failing pair") {
