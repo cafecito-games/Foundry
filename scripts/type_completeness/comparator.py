@@ -40,8 +40,6 @@ NO_LONGER_FAILING_STATUSES = (Status.RESOLVED, Status.PASSING)
 PROPOSABLE_STATUSES = (Status.NEW, Status.WORSENED, Status.UNCHANGED)
 # A known develop mismatch reproduced unchanged: not a regression, not progress, but proposable.
 KNOWN_BASELINE_STATUSES = (Status.UNCHANGED,)
-# Statuses whose artifact has no branch side because the case is absent from the branch report.
-BRANCH_ABSENT_STATUSES = (Status.MISSING, Status.VANISHED)
 
 
 def canonical_json(value: Any) -> str:
@@ -152,17 +150,16 @@ class ComparisonArtifact:
         }
 
     def validate(self) -> None:
-        """Every status the comparator can emit has one artifact shape; reject anything else on deserialize."""
-        branch_present = bool(self.branch.get("present"))
-        if branch_present == (self.status in BRANCH_ABSENT_STATUSES):
+        """A deserialized artifact must carry digests that match its evidence and a status the classifier
+        re-derives from its two sides; a relabelled or tampered artifact is rejected."""
+        _check_side(self.branch, "branch", self.case_id)
+        _check_side(self.develop, "develop", self.case_id)
+        derived = classify(self.branch, self.develop)
+        if derived is not self.status:
             raise ReportError(
-                f"artifact for case {self.case_id!r} has status {self.status.value!r} but branch.present is "
-                f"{branch_present}"
+                f"artifact for case {self.case_id!r} is labelled {self.status.value!r} but its sides classify as "
+                f"{derived.value!r}"
             )
-        if branch_present and not isinstance(self.branch.get("findings"), list):
-            raise ReportError(f"artifact for case {self.case_id!r} has a branch side without findings")
-        if self.status is not Status.NEW and not self.develop.get("present"):
-            raise ReportError(f"artifact for case {self.case_id!r} has status {self.status.value!r} without develop")
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ComparisonArtifact:
@@ -187,14 +184,32 @@ class ComparisonArtifact:
         return artifact
 
 
-def _status(branch_case: CaseResult, develop_case: Optional[CaseResult]) -> Status:
-    if branch_case.passed:
-        return Status.RESOLVED if develop_case is not None and develop_case.failed else Status.PASSING
-    if develop_case is None or develop_case.passed:
+def classify(branch: Mapping[str, Any], develop: Mapping[str, Any]) -> Status:
+    """The one status classifier, defined over the serialized sides so a deserialized artifact re-derives its
+    status from exactly the data it carries."""
+    if not branch.get("present"):
+        if not develop.get("present"):
+            raise ReportError("a comparison artifact needs at least one side")
+        return Status.VANISHED if develop.get("passed") else Status.MISSING
+    if branch.get("passed"):
+        return Status.RESOLVED if develop.get("present") and not develop.get("passed") else Status.PASSING
+    if not develop.get("present") or develop.get("passed"):
         return Status.NEW
-    if _case_digest(branch_case) == _case_digest(develop_case):
+    if branch.get("digest") == develop.get("digest"):
         return Status.UNCHANGED
     return Status.WORSENED
+
+
+def _check_side(side: Mapping[str, Any], name: str, case_id: str) -> None:
+    if not side.get("present"):
+        return
+    if not isinstance(side.get("passed"), bool) or not isinstance(side.get("findings"), list):
+        raise ReportError(f"artifact for case {case_id!r} has a malformed {name} side")
+    expected = digest_of(
+        {"observation": side.get("observation"), "findings": [_finding_digest_view(f) for f in side["findings"]]}
+    )
+    if side.get("digest") != expected:
+        raise ReportError(f"artifact for case {case_id!r} has a {name} digest that does not match its evidence")
 
 
 def compare_case(
@@ -209,23 +224,20 @@ def compare_case(
     capability_slice = None if capabilities is None else capability_slice_for_family(capabilities, branch.family)
     branch_case = branch.find_case(case_id)
     develop_case = develop.find_case(case_id)
-    if branch_case is None:
-        if develop_case is None:
-            raise KeyError(case_id)
-        status = Status.MISSING if develop_case.failed else Status.VANISHED
-    else:
-        status = _status(branch_case, develop_case)
+    if branch_case is None and develop_case is None:
+        raise KeyError(case_id)
     anchor = branch_case if branch_case is not None else develop_case
     assert anchor is not None
+    branch_side, develop_side = _side(branch_case), _side(develop_case)
     return ComparisonArtifact(
         case_id=case_id,
         family=branch.family,
         configuration=configuration,
-        status=status,
+        status=classify(branch_side, develop_side),
         category=anchor.category.value,
         coordinates=anchor.coordinates,
-        branch=_side(branch_case),
-        develop=_side(develop_case),
+        branch=branch_side,
+        develop=develop_side,
         capability_slice=capability_slice,
     )
 

@@ -94,7 +94,7 @@ class AutomationClient:
                 self._gh("pr", "reopen", str(number), "--repo", self._repository)
             self._gh("pr", "edit", str(number), "--repo", self._repository, "--title", title, "--body", body)
             return url
-        return self._gh(
+        created = self._gh(
             "pr",
             "create",
             "--repo",
@@ -108,6 +108,29 @@ class AutomationClient:
             "--body",
             body,
         ).strip()
+        return self._converge_pull_requests(branch, created)
+
+    def _converge_pull_requests(self, branch: str, created_url: str) -> str:
+        """GitHub has no create-if-absent, so a concurrent run may have created a second pull request between
+        our lookup and our create. Keep the lowest-numbered open one and close the rest pointing at it."""
+        output = self._gh(
+            "pr", "list", "--repo", self._repository, "--head", branch, "--state", "open", "--json", "url,number,state"
+        )
+        entries = sorted(json.loads(output or "[]"), key=lambda entry: int(entry["number"]))
+        if len(entries) <= 1:
+            return str(entries[0]["url"]) if entries else created_url
+        survivor = entries[0]
+        for duplicate in entries[1:]:
+            self._gh(
+                "pr",
+                "close",
+                str(duplicate["number"]),
+                "--repo",
+                self._repository,
+                "--comment",
+                f"Duplicate ledger pull request created concurrently; superseded by {survivor['url']}.",
+            )
+        return str(survivor["url"])
 
     def _find_tracking_issue(self, finding_id: str) -> Optional[tuple[int, str, bool]]:
         """Find the one tracking issue for a finding in any state; an open one wins over closed duplicates."""
@@ -145,6 +168,41 @@ class AutomationClient:
                 self._gh("issue", "reopen", str(number), "--repo", self._repository)
             self._gh("issue", "edit", str(number), "--repo", self._repository, "--title", title, "--body", body)
             return url
-        return self._gh(
+        created = self._gh(
             "issue", "create", "--repo", self._repository, "--title", title, "--body", body, "--label", TRACKING_LABEL
         ).strip()
+        return self._converge_tracking_issues(finding_id, created)
+
+    def _converge_tracking_issues(self, finding_id: str, created_url: str) -> str:
+        """The finding ID in the title is the idempotency key, but GitHub cannot enforce it atomically: after
+        creating, re-list and converge any concurrent duplicates onto the lowest-numbered open issue."""
+        output = self._gh(
+            "issue",
+            "list",
+            "--repo",
+            self._repository,
+            "--label",
+            TRACKING_LABEL,
+            "--state",
+            "open",
+            "--search",
+            f'"{finding_id}" in:title',
+            "--json",
+            "url,number,state",
+        )
+        entries = sorted(json.loads(output or "[]"), key=lambda entry: int(entry["number"]))
+        if len(entries) <= 1:
+            return str(entries[0]["url"]) if entries else created_url
+        survivor = entries[0]
+        for duplicate in entries[1:]:
+            self._gh(
+                "issue",
+                "comment",
+                str(duplicate["number"]),
+                "--repo",
+                self._repository,
+                "--body",
+                f"Duplicate tracking issue created concurrently; superseded by {survivor['url']}.",
+            )
+            self._gh("issue", "close", str(duplicate["number"]), "--repo", self._repository)
+        return str(survivor["url"])

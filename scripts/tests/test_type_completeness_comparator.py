@@ -1255,6 +1255,32 @@ class EveryStatusConsumerTests(unittest.TestCase):
         with self.assertRaises(report.ReportError):
             comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [unknown]}))
 
+    def test_relabelled_status_is_rejected_for_every_pair(self) -> None:
+        for status in comparator.Status:
+            artifact = _artifact_with_status(status).to_dict()
+            for other in comparator.Status:
+                if other is status:
+                    continue
+                with self.subTest(status=status.value, relabelled=other.value):
+                    tampered = dict(artifact, status=other.value)
+                    with self.assertRaises(report.ReportError):
+                        comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+
+    def test_tampered_side_values_are_rejected(self) -> None:
+        artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
+        # Claim the branch passes while keeping the 'unchanged' label.
+        tampered = dict(artifact, branch=dict(artifact["branch"], passed=True))
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+        # Claim a different develop digest while keeping the 'unchanged' label.
+        tampered = dict(artifact, develop=dict(artifact["develop"], digest="0" * 64))
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+        # A digest that does not match the recorded observation is rejected too.
+        tampered = dict(artifact, branch=dict(artifact["branch"], digest="0" * 64))
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+
     def test_every_reconcile_state_serializes(self) -> None:
         for state in reconcile.State:
             result = reconcile.Reconciliation("fstcf-v1-" + "0" * 20, state, "r", ("p",), None, True)
@@ -1274,6 +1300,72 @@ class FakeCommandRunner:
             if key in " ".join(arguments):
                 return value
         return ""
+
+
+class SequencedCommandRunner:
+    """Fake gh whose listing answers change after a create, to model a concurrent run racing ours."""
+
+    def __init__(self, before: str, after: str, create_url: str) -> None:
+        self.calls: list[list[str]] = []
+        self.before, self.after, self.create_url = before, after, create_url
+        self.created = False
+
+    def __call__(self, arguments: list[str]) -> str:
+        self.calls.append(list(arguments))
+        joined = " ".join(arguments)
+        if " list" in joined:
+            return self.after if self.created else self.before
+        if " create" in joined:
+            self.created = True
+            return self.create_url
+        return ""
+
+
+class ConcurrentCreateTests(unittest.TestCase):
+    def test_duplicate_tracking_issues_after_create_converge_on_the_lowest(self) -> None:
+        after = json.dumps(
+            [
+                {"url": "https://github.com/x/issues/12", "number": 12, "state": "OPEN"},
+                {"url": "https://github.com/x/issues/11", "number": 11, "state": "OPEN"},
+            ]
+        )
+        runner = SequencedCommandRunner("[]", after, "https://github.com/x/issues/12\n")
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.create_or_update_tracking_issue("finding-1", title="t", body="b")
+        self.assertEqual(url, "https://github.com/x/issues/11")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertEqual(sum(call[1:3] == ["issue", "create"] for call in runner.calls), 1)
+        self.assertTrue(any("issue comment 12" in call and "issues/11" in call for call in joined))
+        self.assertTrue(any("issue close 12" in call for call in joined))
+        self.assertFalse(any("close 11" in call for call in joined))
+
+    def test_single_issue_after_create_is_returned_unchanged(self) -> None:
+        after = json.dumps([{"url": "https://github.com/x/issues/5", "number": 5, "state": "OPEN"}])
+        runner = SequencedCommandRunner("[]", after, "https://github.com/x/issues/5\n")
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        self.assertEqual(
+            client.create_or_update_tracking_issue("finding-1", title="t", body="b"), "https://github.com/x/issues/5"
+        )
+        self.assertFalse(any("close" in " ".join(call) for call in runner.calls))
+
+    def test_duplicate_ledger_pull_requests_after_create_converge_on_the_lowest(self) -> None:
+        after = json.dumps(
+            [
+                {"url": "https://github.com/x/pull/22", "number": 22, "state": "OPEN"},
+                {"url": "https://github.com/x/pull/21", "number": 21, "state": "OPEN"},
+            ]
+        )
+        runner = SequencedCommandRunner("[]", after, "https://github.com/x/pull/22\n")
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/21")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertEqual(sum(call[1:3] == ["pr", "create"] for call in runner.calls), 1)
+        self.assertTrue(any("pr close 22" in call and "pull/21" in call for call in joined))
+        self.assertFalse(any("close 21" in call for call in joined))
+        self.assertFalse(any("merge" in call or "--auto" in call for call in joined))
 
 
 class GitHubAutomationTests(unittest.TestCase):
