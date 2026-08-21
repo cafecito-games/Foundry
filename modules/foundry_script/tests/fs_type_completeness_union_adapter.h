@@ -51,6 +51,26 @@ struct FSCompletenessObservation {
 	String produced_output;
 };
 
+namespace UnionCompletenessInternal {
+
+class SyntheticSourceScope {
+	String path;
+	bool marker_installed = false;
+	bool lock_held = false;
+
+public:
+	SyntheticSourceScope(const String &p_identity, const String &p_source);
+	~SyntheticSourceScope();
+
+	SyntheticSourceScope(const SyntheticSourceScope &) = delete;
+	SyntheticSourceScope &operator=(const SyntheticSourceScope &) = delete;
+
+	bool is_available() const { return marker_installed; }
+	const String &get_path() const { return path; }
+};
+
+} // namespace UnionCompletenessInternal
+
 class FSUnionCompletenessAdapter {
 public:
 	static Error render(const FSCompletenessResolvedCell &, FSCompletenessProgram &);

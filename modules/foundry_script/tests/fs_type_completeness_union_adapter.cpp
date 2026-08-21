@@ -102,44 +102,15 @@ static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, 
 	}
 }
 
-// FSAnalyzer resolves a local script class through FSCache while reducing Holder.new(). The source
-// override supplies that self-load from memory. FSCache's parser lookup also asks PackedData whether
-// the identity exists, so a zero-content marker makes the synthetic identity discoverable without
-// creating a filesystem artifact. Every invocation owns a unique path and removes all cache state.
-class SyntheticAnalyzerSource {
-	String path;
-	bool marker_installed = false;
+static Mutex &synthetic_source_mutex() {
+	static Mutex mutex;
+	return mutex;
+}
 
-public:
-	SyntheticAnalyzerSource(const String &p_path, const String &p_source) :
-			path(p_path) {
-		PackedData *packed_data = PackedData::get_singleton();
-		if (packed_data != nullptr && !packed_data->is_disabled()) {
-			uint8_t marker_md5[16] = {};
-			packed_data->add_path(String(), path, 1, 0, marker_md5, nullptr, false);
-			marker_installed = true;
-		}
-		FSCache::set_source_override(path, p_source);
-		FSCache::remove_parser(path);
-		FSCache::remove_script(path);
-	}
-
-	~SyntheticAnalyzerSource() {
-		FSCache::remove_parser(path);
-		FSCache::remove_script(path);
-		FSCache::clear_source_override(path);
-		if (marker_installed) {
-			PackedData::get_singleton()->remove_path(path);
-		}
-	}
-
-	bool is_available() const { return marker_installed; }
-};
-
-static String next_analyzer_path(const String &p_case_id) {
+static String next_synthetic_source_path(const String &p_identity) {
 	static SafeNumeric<uint64_t> sequence;
-	return vformat("user://type_completeness/%d/%s/%s.fs",
-			OS::get_singleton()->get_process_id(), p_case_id.sha256_text(), String::num_uint64(sequence.increment()));
+	return vformat("res://__fstc_%s_%d_%s.fs", p_identity.sha256_text(), OS::get_singleton()->get_process_id(),
+			String::num_uint64(sequence.increment()));
 }
 
 static FSCompletenessObservation rejected_observation(
@@ -153,6 +124,39 @@ static FSCompletenessObservation rejected_observation(
 }
 
 } // namespace
+
+UnionCompletenessInternal::SyntheticSourceScope::SyntheticSourceScope(
+		const String &p_identity, const String &p_source) {
+	synthetic_source_mutex().lock();
+	lock_held = true;
+	path = next_synthetic_source_path(p_identity);
+	PackedData *packed_data = PackedData::get_singleton();
+	if (packed_data == nullptr || packed_data->is_disabled() || packed_data->has_path(path)) {
+		return;
+	}
+
+	uint8_t marker_md5[16] = {};
+	packed_data->add_path(String(), path, 1, 0, marker_md5, nullptr, false);
+	marker_installed = packed_data->has_path(path);
+	if (!marker_installed) {
+		return;
+	}
+	FSCache::set_source_override(path, p_source);
+	FSCache::remove_parser(path);
+	FSCache::remove_script(path);
+}
+
+UnionCompletenessInternal::SyntheticSourceScope::~SyntheticSourceScope() {
+	if (marker_installed) {
+		FSCache::remove_parser(path);
+		FSCache::remove_script(path);
+		FSCache::clear_source_override(path);
+		PackedData::get_singleton()->remove_path(path);
+	}
+	if (lock_held) {
+		synthetic_source_mutex().unlock();
+	}
+}
 
 Error FSUnionCompletenessAdapter::render(
 		const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) {
@@ -227,15 +231,13 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	FSCompletenessObservation observation;
 	observation.case_id = p_program.case_id;
 	observation.surface = p_surface;
-	static Mutex analysis_mutex;
-	MutexLock analysis_lock(analysis_mutex);
-	const String path = next_analyzer_path(p_program.case_id);
-	SyntheticAnalyzerSource synthetic_source(path, p_program.source);
+	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		observation.dimensions["analysis"] = "reject";
 		observation.diagnostics.push_back("In-memory analyzer identity is unavailable.");
 		return observation;
 	}
+	const String &path = synthetic_source.get_path();
 
 	FSParser parser;
 	const Error parse_error = parser.parse(p_program.source, path, false);

@@ -33,16 +33,9 @@
 #include "fs_type_completeness_union_adapter.h"
 
 #include "../fs_analyzer.h"
-#include "../fs_cache.h"
 #include "../fs_parser.h"
 
-#include "core/config/project_settings.h"
-#include "core/io/dir_access.h"
-#include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
-#include "core/os/mutex.h"
-#include "core/os/os.h"
-#include "core/templates/safe_refcount.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -82,36 +75,23 @@ static FSCompletenessProgram stale_union_pilot_program() {
 }
 
 struct UnionPilotSemanticFingerprint {
-	String destination;
+	String accept_destination;
+	String holder_destination;
+	String operative_destination;
 	String source_proof;
+	String resolved_source_proof;
 	String boundary;
+	String synthetic_path;
 };
 
-struct UnionPilotCacheCleanup {
-	String path;
-
-	explicit UnionPilotCacheCleanup(const String &p_path) :
-			path(p_path) {}
-
-	~UnionPilotCacheCleanup() {
-		FSCache::remove_parser(path);
-		FSCache::remove_script(path);
+static void check_union_pilot_packed_paths_unchanged(const HashSet<String> &p_before) {
+	const HashSet<String> after = PackedData::get_singleton()->get_file_paths();
+	CHECK_EQ(after.size(), p_before.size());
+	for (const String &path : p_before) {
+		CHECK(after.has(path));
 	}
-};
-
-struct UnionPilotPackedMarker {
-	String path;
-
-	explicit UnionPilotPackedMarker(const String &p_path) :
-			path(p_path) {
-		uint8_t marker_md5[16] = {};
-		PackedData::get_singleton()->add_path(String(), path, 1, 0, marker_md5, nullptr, false);
-	}
-
-	~UnionPilotPackedMarker() {
-		PackedData::get_singleton()->remove_path(path);
-	}
-};
+	CHECK_FALSE(PackedData::get_singleton()->has_directory("res://__fstc"));
+}
 
 static const FSParser::FunctionNode *union_pilot_find_function(
 		const FSParser::ClassNode *p_class, const StringName &p_name) {
@@ -120,6 +100,24 @@ static const FSParser::FunctionNode *union_pilot_find_function(
 	}
 	const FSParser::ClassNode::Member &member = p_class->get_member(p_name);
 	return member.type == FSParser::ClassNode::Member::FUNCTION ? member.function : nullptr;
+}
+
+static const FSParser::VariableNode *union_pilot_find_member_variable(
+		const FSParser::ClassNode *p_class, const StringName &p_name) {
+	if (p_class == nullptr || !p_class->has_member(p_name)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member &member = p_class->get_member(p_name);
+	return member.type == FSParser::ClassNode::Member::VARIABLE ? member.variable : nullptr;
+}
+
+static const FSParser::ClassNode *union_pilot_find_class(
+		const FSParser::ClassNode *p_class, const StringName &p_name) {
+	if (p_class == nullptr || !p_class->has_member(p_name)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member &member = p_class->get_member(p_name);
+	return member.type == FSParser::ClassNode::Member::CLASS ? member.m_class : nullptr;
 }
 
 static const FSParser::VariableNode *union_pilot_find_local(
@@ -150,14 +148,29 @@ static bool union_pilot_is_unsigned_five(const FSParser::ExpressionNode *p_expre
 	}
 	const FSParser::LiteralNode *literal = static_cast<const FSParser::LiteralNode *>(p_expression);
 	return literal->value.get_type() == Variant::UINT && uint64_t(literal->value) == 5 &&
-			literal->numeric_type_is_explicit && literal->numeric_type == NumericType::UINT32;
+			literal->numeric_type_is_explicit && literal->numeric_type == NumericType::UINT32 &&
+			literal->get_datatype().kind == FSParser::DataType::BUILTIN &&
+			literal->get_datatype().builtin_type == Variant::UINT &&
+			literal->get_datatype().type_source == FSParser::DataType::ANNOTATED_EXPLICIT &&
+			literal->get_datatype().numeric_type == NumericType::UINT32;
+}
+
+static bool union_pilot_is_explicit_builtin(const FSParser::DataType &p_type, Variant::Type p_builtin) {
+	return p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == p_builtin &&
+			p_type.type_source == FSParser::DataType::ANNOTATED_EXPLICIT;
+}
+
+static bool union_pilot_is_explicit_variant(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::VARIANT &&
+			p_type.type_source == FSParser::DataType::ANNOTATED_EXPLICIT;
 }
 
 static String union_pilot_destination_fingerprint(const FSParser::DataType &p_type) {
-	if (p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::UINT) {
+	if (union_pilot_is_explicit_builtin(p_type, Variant::UINT)) {
 		return "plain";
 	}
-	if (p_type.kind != FSParser::DataType::UNION || p_type.union_members.size() != 2) {
+	if (p_type.kind != FSParser::DataType::UNION || p_type.type_source != FSParser::DataType::ANNOTATED_EXPLICIT ||
+			p_type.union_members.size() != 2) {
 		return "invalid";
 	}
 	bool has_uint = false;
@@ -205,19 +218,104 @@ static String union_pilot_source_fingerprint(const FSParser::ExpressionNode *p_e
 	return "erased";
 }
 
+static String union_pilot_resolved_source_fingerprint(
+		const FSParser::ExpressionNode *p_expression, const FSParser::ClassNode *p_root_class,
+		const FSParser::FunctionNode *p_test) {
+	const FSParser::VariableNode *typed_source = union_pilot_find_local(p_test, SNAME("typed_source"));
+	const FSParser::VariableNode *variant_source = union_pilot_find_local(p_test, SNAME("variant_source"));
+	const FSParser::FunctionNode *supply = union_pilot_find_function(p_root_class, SNAME("supply"));
+	const FSParser::FunctionNode *erase = union_pilot_find_function(p_root_class, SNAME("erase"));
+	if (p_expression == nullptr || typed_source == nullptr || variant_source == nullptr || supply == nullptr ||
+			erase == nullptr) {
+		return "invalid";
+	}
+
+	if (p_expression->type == FSParser::Node::IDENTIFIER) {
+		const FSParser::IdentifierNode *identifier = static_cast<const FSParser::IdentifierNode *>(p_expression);
+		if (identifier->name == SNAME("typed_source")) {
+			return identifier->source == FSParser::IdentifierNode::LOCAL_VARIABLE &&
+							identifier->variable_source == typed_source && typed_source->datatype_specifier != nullptr &&
+							union_pilot_is_unsigned_five(typed_source->initializer) &&
+							union_pilot_is_explicit_builtin(typed_source->get_datatype(), Variant::UINT) &&
+							union_pilot_is_explicit_builtin(identifier->get_datatype(), Variant::UINT)
+					? "static_member"
+					: "invalid";
+		}
+		if (identifier->name == SNAME("variant_source")) {
+			return identifier->source == FSParser::IdentifierNode::LOCAL_VARIABLE &&
+							identifier->variable_source == variant_source && variant_source->datatype_specifier != nullptr &&
+							union_pilot_is_unsigned_five(variant_source->initializer) &&
+							union_pilot_is_explicit_variant(variant_source->get_datatype()) &&
+							union_pilot_is_explicit_variant(identifier->get_datatype())
+					? "variant"
+					: "invalid";
+		}
+	}
+
+	if (p_expression->type == FSParser::Node::LITERAL) {
+		const FSParser::LiteralNode *literal = static_cast<const FSParser::LiteralNode *>(p_expression);
+		const FSParser::DataType datatype = literal->get_datatype();
+		return literal->value.get_type() == Variant::INT && int64_t(literal->value) == 5 &&
+						!literal->numeric_type_is_explicit && literal->numeric_type == NumericType::INT32 &&
+						literal->is_constant && union_pilot_is_explicit_builtin(datatype, Variant::UINT) &&
+						datatype.numeric_type == NumericType::UINT32
+				? "numeric_constant"
+				: "invalid";
+	}
+
+	if (p_expression->type != FSParser::Node::CALL) {
+		return "invalid";
+	}
+	const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(p_expression);
+	if (call->function_name == SNAME("supply")) {
+		if (call->arguments.size() != 1 || !union_pilot_is_unsigned_five(call->arguments[0]) ||
+				!union_pilot_is_identifier(call->callee, SNAME("supply"))) {
+			return "invalid";
+		}
+		return supply->parameters.size() == 1 && supply->parameters[0]->datatype_specifier == nullptr &&
+						supply->return_type == nullptr && supply->parameters[0]->get_datatype().kind == FSParser::DataType::VARIANT &&
+						supply->parameters[0]->get_datatype().type_source == FSParser::DataType::UNDETECTED &&
+						supply->get_datatype().kind == FSParser::DataType::VARIANT &&
+						supply->get_datatype().type_source == FSParser::DataType::INFERRED &&
+						call->get_datatype().kind == FSParser::DataType::VARIANT &&
+						call->get_datatype().type_source == FSParser::DataType::INFERRED
+				? "gradual"
+				: "invalid";
+	}
+
+	if (call->function_name != SNAME("erase") || call->arguments.size() != 1 ||
+			!union_pilot_is_unsigned_five(call->arguments[0]) || call->callee == nullptr ||
+			call->callee->type != FSParser::Node::SUBSCRIPT || erase->type_parameters.size() != 1 ||
+			erase->type_parameters[0]->identifier == nullptr ||
+			erase->type_parameters[0]->identifier->name != SNAME("T") || erase->type_parameters[0]->bound != nullptr ||
+			erase->parameters.size() != 1 || erase->parameters[0]->datatype_specifier == nullptr ||
+			erase->return_type == nullptr || !union_pilot_is_explicit_variant(erase->get_datatype()) ||
+			!union_pilot_is_explicit_variant(call->get_datatype())) {
+		return "invalid";
+	}
+	const FSParser::DataType parameter_type = erase->parameters[0]->get_datatype();
+	if (parameter_type.kind != FSParser::DataType::TYPE_PARAMETER ||
+			parameter_type.type_parameter_name != SNAME("T") || parameter_type.type_parameter_index != 0 ||
+			parameter_type.type_parameter_scope != FSParser::DataType::TYPE_PARAMETER_METHOD ||
+			!parameter_type.type_parameter_bound.is_empty()) {
+		return "invalid";
+	}
+	const FSParser::SubscriptNode *application = static_cast<const FSParser::SubscriptNode *>(call->callee);
+	if (application->is_attribute || !union_pilot_is_identifier(application->base, SNAME("erase")) ||
+			!union_pilot_is_identifier(application->index, SNAME("uint"))) {
+		return "invalid";
+	}
+	return call->resolved_parameter_types.size() == 1 &&
+					union_pilot_is_explicit_builtin(call->resolved_parameter_types[0], Variant::UINT)
+			? "erased"
+			: "invalid";
+}
+
 static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCompletenessProgram &p_program) {
-	static SafeNumeric<uint64_t> sequence;
-	static Mutex analysis_mutex;
-	MutexLock lock(analysis_mutex);
-	const String path = vformat("user://type_completeness/fingerprint/%d/%s/%d.fs",
-			OS::get_singleton()->get_process_id(), p_program.case_id.sha256_text().substr(0, 24), sequence.increment());
-	UnionPilotCacheCleanup cleanup(path);
-	UnionPilotPackedMarker marker(path);
-	HashMap<String, String> overrides;
-	overrides[path] = p_program.source;
-	FSCacheSourceOverrideGuard source_override(overrides);
-	FSCache::remove_parser(path);
-	FSCache::remove_script(path);
+	UnionPilotSemanticFingerprint fingerprint;
+	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
+	REQUIRE(synthetic_source.is_available());
+	const String &path = synthetic_source.get_path();
 
 	FSParser parser;
 	REQUIRE_EQ(parser.parse(p_program.source, path, false), OK);
@@ -225,12 +323,17 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 	REQUIRE_EQ(analyzer.analyze(), OK);
 	REQUIRE(parser.get_errors().is_empty());
 
-	UnionPilotSemanticFingerprint fingerprint;
 	const FSParser::ClassNode *root_class = parser.get_tree();
 	const FSParser::FunctionNode *accept = union_pilot_find_function(root_class, SNAME("accept"));
 	REQUIRE(accept != nullptr);
 	REQUIRE_EQ(accept->parameters.size(), 1);
-	fingerprint.destination = union_pilot_destination_fingerprint(accept->parameters[0]->get_datatype());
+	fingerprint.accept_destination = union_pilot_destination_fingerprint(accept->parameters[0]->get_datatype());
+	const FSParser::ClassNode *holder_class = union_pilot_find_class(root_class, SNAME("Holder"));
+	REQUIRE(holder_class != nullptr);
+	const FSParser::VariableNode *holder_value = union_pilot_find_member_variable(holder_class, SNAME("value"));
+	REQUIRE(holder_value != nullptr);
+	fingerprint.holder_destination = union_pilot_destination_fingerprint(holder_value->get_datatype());
+	fingerprint.synthetic_path = path;
 
 	const FSParser::FunctionNode *test = union_pilot_find_function(root_class, SNAME("test"));
 	REQUIRE(test != nullptr);
@@ -289,6 +392,9 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 		fingerprint.boundary = "reflective_write";
 	}
 	fingerprint.source_proof = union_pilot_source_fingerprint(source_expression);
+	fingerprint.resolved_source_proof =
+			union_pilot_resolved_source_fingerprint(source_expression, root_class, test);
+	fingerprint.operative_destination = fingerprint.boundary == "argument_binding" ? fingerprint.accept_destination : fingerprint.holder_destination;
 	return fingerprint;
 }
 
@@ -296,6 +402,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	TEST_CASE("TypeCompleteness UnionPilot renders and observes all resolved static semantics") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_EQ(resolution.cells.size(), 40);
+		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
+		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 		HashMap<String, String> semantic_fingerprints;
 		HashMap<String, int> surface_counts;
 
@@ -321,11 +429,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			const String destination = cell.coordinates.get("destination", String());
 			const String source_proof = cell.coordinates.get("source_proof", String());
 			const String boundary = cell.coordinates.get("boundary", String());
-			CHECK_EQ(fingerprint.destination, destination);
+			CHECK_EQ(fingerprint.accept_destination, destination);
+			CHECK_EQ(fingerprint.holder_destination, destination);
+			CHECK_EQ(fingerprint.operative_destination, destination);
 			CHECK_EQ(fingerprint.source_proof, source_proof);
+			CHECK_EQ(fingerprint.resolved_source_proof, source_proof);
 			CHECK_EQ(fingerprint.boundary, boundary);
+			CHECK_FALSE(PackedData::get_singleton()->has_path(fingerprint.synthetic_path));
 			const String coordinates_without_surface = destination + "|" + source_proof + "|" + boundary;
-			const String semantic_fingerprint = fingerprint.destination + "|" + fingerprint.source_proof + "|" + fingerprint.boundary;
+			const String semantic_fingerprint = fingerprint.accept_destination + "|" + fingerprint.holder_destination + "|" +
+					fingerprint.operative_destination + "|" + fingerprint.source_proof + "|" +
+					fingerprint.resolved_source_proof + "|" + fingerprint.boundary;
 			if (const String *existing = semantic_fingerprints.getptr(coordinates_without_surface)) {
 				CHECK_EQ(*existing, semantic_fingerprint);
 			} else {
@@ -342,6 +456,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		for (const KeyValue<String, int> &entry : surface_counts) {
 			CHECK_EQ(entry.value, 2);
 		}
+		check_union_pilot_packed_paths_unchanged(packed_paths_before);
+		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot render rejects missing unknown and wrongly typed coordinates") {
@@ -465,26 +581,28 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot analysis preserves traversal-like identities without writing files") {
+		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
+		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
 		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
 		program.case_id = "../../escape|x";
-		const String escaped_path = "user://escape|x.fs";
-		REQUIRE_FALSE(FileAccess::exists(escaped_path));
 
 		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(program, program.surface);
 		CHECK_EQ(observation.case_id, program.case_id);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 		CHECK(observation.diagnostics.is_empty());
-		const bool escaped_file_created = FileAccess::exists(escaped_path);
-		CHECK_FALSE(escaped_file_created);
-		if (escaped_file_created) {
-			DirAccess::remove_absolute(ProjectSettings::get_singleton()->globalize_path(escaped_path));
-		}
+		const UnionPilotSemanticFingerprint fingerprint = union_pilot_semantic_fingerprint(program);
+		CHECK_FALSE(fingerprint.synthetic_path.contains("escape"));
+		CHECK_FALSE(PackedData::get_singleton()->has_path(fingerprint.synthetic_path));
+		check_union_pilot_packed_paths_unchanged(packed_paths_before);
+		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot repeated same-ID analysis remains independent") {
+		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
+		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
@@ -499,6 +617,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(String(second.dimensions.get("analysis", String())), "accept");
 		CHECK(first.diagnostics.is_empty());
 		CHECK(second.diagnostics.is_empty());
+		check_union_pilot_packed_paths_unchanged(packed_paths_before);
+		CHECK_FALSE(PackedData::get_singleton()->has_directory("user://type_completeness"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot diagnostics preserve exact owned source order") {
