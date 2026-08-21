@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "production": [
+    {
+      "paths": [
+        "modules/foundry_script/fs_analyzer.cpp",
+        "modules/foundry_script/fs_compiler.cpp",
+        "modules/foundry_script/fs_vm.cpp",
+        "modules/foundry_script/fs_type.cpp",
+        "modules/foundry_script/fs_function.cpp",
+        "modules/foundry_script/fs_reflection.cpp"
+      ],
+      "families": [
+        "union_destination_membership"
+      ]
+    }
+  ],
+  "nonproduction_prefixes": [
+    "docs/",
+    "modules/foundry_script/tests/"
+  ],
+  "broad_core_families": [
+    "union_destination_membership"
+  ]
+}

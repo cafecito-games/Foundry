@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "family": "union_destination_membership",
+  "domain": {
+    "destination": [
+      "plain",
+      "union"
+    ],
+    "source_proof": [
+      "static_member",
+      "numeric_constant",
+      "gradual",
+      "erased",
+      "variant"
+    ],
+    "boundary": [
+      "argument_binding",
+      "reflective_write"
+    ],
+    "surface": [
+      "text",
+      "bytecode"
+    ]
+  },
+  "required_dimensions": [
+    {
+      "dimension": "analysis",
+      "when": {}
+    },
+    {
+      "dimension": "runtime_obligation",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      }
+    },
+    {
+      "dimension": "stored_carrier",
+      "when": {
+        "source_proof": "numeric_constant"
+      }
+    }
+  ],
+  "anchors": [
+    {
+      "id": "plain_static_member",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "argument_binding"
+      },
+      "expect": {
+        "analysis": "accept"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "plain_gradual",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "gradual",
+        "boundary": "argument_binding"
+      },
+      "expect": {
+        "analysis": "accept",
+        "runtime_obligation": "typed_destination_check"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "union_numeric_constant",
+      "coordinates": {
+        "destination": "union",
+        "source_proof": "numeric_constant",
+        "boundary": "argument_binding"
+      },
+      "expect": {
+        "analysis": "accept",
+        "stored_carrier": "admitting_alternative"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "plain_numeric_constant_parity",
+      "from": {
+        "destination": "plain",
+        "source_proof": "static_member"
+      },
+      "to": {
+        "source_proof": "numeric_constant"
+      },
+      "derive": {
+        "analysis": "same",
+        "stored_carrier": "plain_destination"
+      }
+    },
+    {
+      "id": "gradual_to_erased_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "erased"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same"
+      }
+    },
+    {
+      "id": "gradual_to_variant_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "variant"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same"
+      }
+    },
+    {
+      "id": "union_wrapper_parity",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "union"
+      },
+      "derive": {
+        "analysis": "same"
+      }
+    },
+    {
+      "id": "reflective_boundary_parity",
+      "from": {
+        "boundary": "argument_binding"
+      },
+      "to": {
+        "boundary": "reflective_write"
+      },
+      "derive": {
+        "analysis": "same"
+      }
+    },
+    {
+      "id": "reflective_runtime_parity",
+      "from": {
+        "boundary": "argument_binding",
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "to": {
+        "boundary": "reflective_write"
+      },
+      "derive": {
+        "runtime_obligation": "same"
+      }
+    },
+    {
+      "id": "reflective_carrier_parity",
+      "from": {
+        "boundary": "argument_binding",
+        "source_proof": "numeric_constant"
+      },
+      "to": {
+        "boundary": "reflective_write"
+      },
+      "derive": {
+        "stored_carrier": "same"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "unproven_source_requires_membership",
+      "parent": "union_wrapper_parity",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "union_membership_check"
+      },
+      "rationale": "A union destination must prove membership when the source cannot.",
+      "positive_witnesses": [
+        "text_gradual_argument_binding",
+        "bytecode_erased_reflective_write"
+      ],
+      "boundary_witnesses": [
+        "text_static_member_argument_binding"
+      ]
+    }
+  ],
+  "max_chain_length": 3
+}

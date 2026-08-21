@@ -224,6 +224,80 @@ TEST_SUITE("[Modules][FoundryScript][TemporaryProjectTree]") {
 		CHECK(TemporaryProjectTree::is_strict_descendant(scratch_root, accepted));
 	}
 
+	TEST_CASE("TemporaryProjectTree resolves only existing canonical paths owned by test scratch") {
+		TemporaryProjectTree tree(vformat("temporary_project_tree_existing_owned_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("nested/value.txt", "value\n");
+
+		String resolved = "unchanged";
+		CHECK_EQ(TemporaryProjectTree::resolve_existing_owned_path(tree.root, resolved), OK);
+		CHECK_EQ(resolved, tree.root);
+
+		resolved = "unchanged";
+		CHECK_EQ(TemporaryProjectTree::resolve_existing_owned_path(
+						 tree.root.path_join("nested/value.txt"), resolved),
+				OK);
+		CHECK_EQ(resolved, tree.root.path_join("nested/value.txt"));
+
+		resolved = "unchanged";
+		CHECK_EQ(TemporaryProjectTree::resolve_existing_owned_path(
+						 tree.root.path_join("missing"), resolved),
+				ERR_CANT_RESOLVE);
+		CHECK(resolved.is_empty());
+	}
+
+	TEST_CASE("TemporaryProjectTree rejects canonical paths reached through outside symlinks") {
+		TemporaryProjectTree tree(vformat("temporary_project_tree_existing_symlink_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String executable_path = OS::get_singleton()->get_executable_path();
+		REQUIRE(FileAccess::exists(executable_path));
+
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		const String outside_link = tree.root.path_join("outside_link");
+		if (filesystem->create_link(executable_path.get_base_dir(), outside_link) != OK) {
+			// Some filesystems forbid symlink creation; the behavior under test is unavailable here.
+			return;
+		}
+
+		String resolved = "unchanged";
+		CHECK_EQ(TemporaryProjectTree::resolve_existing_owned_path(outside_link, resolved), ERR_UNAUTHORIZED);
+		CHECK(resolved.is_empty());
+
+		resolved = "unchanged";
+		CHECK_EQ(TemporaryProjectTree::resolve_existing_owned_path(
+						 outside_link.path_join(executable_path.get_file()), resolved),
+				ERR_UNAUTHORIZED);
+		CHECK(resolved.is_empty());
+	}
+
+	TEST_CASE("TemporaryProjectTree rejects an existing lexical prefix sibling") {
+		ScratchSandbox sandbox(vformat("temporary_project_tree_existing_prefix_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(sandbox.is_valid());
+		const String configured_root = sandbox.path.path_join("configured");
+		const String prefix_sibling = sandbox.path.path_join("configured_sibling");
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		REQUIRE_EQ(filesystem->make_dir_recursive(configured_root), OK);
+		REQUIRE_EQ(filesystem->make_dir_recursive(prefix_sibling), OK);
+
+		const bool had_scratch_environment = OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH");
+		const String previous_scratch_environment =
+				OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+		OS::get_singleton()->set_environment("FOUNDRY_TEST_SCRATCH", configured_root);
+		String resolved = "unchanged";
+		const Error resolve_error =
+				TemporaryProjectTree::resolve_existing_owned_path(prefix_sibling, resolved);
+		if (had_scratch_environment) {
+			OS::get_singleton()->set_environment("FOUNDRY_TEST_SCRATCH", previous_scratch_environment);
+		} else {
+			OS::get_singleton()->unset_environment("FOUNDRY_TEST_SCRATCH");
+		}
+
+		CHECK_EQ(resolve_error, ERR_UNAUTHORIZED);
+		CHECK(resolved.is_empty());
+	}
+
 	TEST_CASE("TemporaryProjectTree refuses to delete the scratch root itself") {
 		const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
 		REQUIRE_FALSE(scratch_root.is_empty());
