@@ -455,6 +455,30 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			CHECK_EQ(int(record.get("line", 0)), 2);
 		}
 		CHECK(found_inline_suppressed);
+
+		FSCompletenessProgram multiline_suppressed;
+		multiline_suppressed.case_id = "gate_safety_unused_variable_multiline";
+		multiline_suppressed.surface = "text";
+		multiline_suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\n\t\t\"unused_variable\")\n\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation multiline_observation =
+				FSUnionCompletenessAdapter::analyze(multiline_suppressed, "text");
+		CHECK_EQ(String(multiline_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(multiline_observation.diagnostics.is_empty());
+		bool found_multiline_suppressed = false;
+		for (int index = 0; index < multiline_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = multiline_observation.diagnostic_records[index];
+			// A probe that left the annotation's continuation lines behind would report parse errors.
+			CHECK_NE(String(record.get("severity", String())), "error");
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_multiline_suppressed = true;
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 4);
+		}
+		CHECK(found_multiline_suppressed);
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety records a suppressed error-level diagnostic") {

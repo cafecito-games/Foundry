@@ -1892,23 +1892,17 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 Error FSCompletenessRunner::run(
 		const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
 	const Error error = run_family(p_options, r_result);
-	if (error == OK) {
-		r_result.outcome = "passed";
+	// A run that reached publication classified itself. Anything else aborted before evidence could
+	// be published: naming the outcome keeps a broken run from reading like a clean one, and keeps it
+	// out of the product-mismatch channel whatever error the aborted operation happened to return.
+	if (r_result.outcome != "not_run") {
 		return error;
 	}
-	if (error == FAILED) {
-		r_result.outcome = "product_mismatch";
-		return error;
-	}
-	// Anything else aborted before evidence could be published. Naming the outcome keeps a broken run
-	// from reading like a clean one, and keeps it out of the product-mismatch channel.
 	r_result.outcome = "structural_failure";
-	if (r_result.structural_failures.is_empty()) {
-		r_result.structural_failures.push_back(make_structural_failure("run_aborted",
-				"The run aborted before completeness evidence could be published.", String(), String(),
-				String(), error));
-	}
-	return error;
+	r_result.structural_failures.push_back(make_structural_failure("run_aborted",
+			"The run aborted before completeness evidence could be published.", String(), String(),
+			String(), error));
+	return error == FAILED ? ERR_INVALID_DATA : error;
 }
 
 } // namespace FSTests

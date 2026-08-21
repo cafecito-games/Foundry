@@ -208,46 +208,66 @@ static int find_annotation_arguments_end(const String &p_line, int p_open_parent
 	return -1;
 }
 
-// Removes leading warning-suppression annotations without touching anything else on the line, so a
-// statement written on the same line as its annotation survives and every line number is preserved.
+// Removes leading warning-suppression annotations, including ones whose argument list spans several
+// physical lines, and keeps the newlines they occupied so every following line number is preserved.
+// A statement written on the same line as its annotation survives.
 static String strip_warning_ignore_annotations(const String &p_source) {
-	const PackedStringArray lines = p_source.split("\n", true);
-	PackedStringArray stripped = lines;
-	for (int index = 0; index < lines.size(); index++) {
-		String line = lines[index];
-		while (true) {
-			const int annotation = line.find("@warning_ignore");
-			if (annotation < 0 || !line.substr(0, annotation).strip_edges().is_empty()) {
-				break;
+	static const String ANNOTATION_PREFIX = "@warning_ignore";
+	String stripped;
+	int copied_from = 0;
+	int index = 0;
+	bool at_line_content_start = true;
+	while (index < p_source.length()) {
+		const char32_t character = p_source[index];
+		if (character == U'\n') {
+			at_line_content_start = true;
+			index++;
+			continue;
+		}
+		if (character == U' ' || character == U'\t') {
+			index++;
+			continue;
+		}
+		if (!at_line_content_start || p_source.substr(index, ANNOTATION_PREFIX.length()) != ANNOTATION_PREFIX) {
+			at_line_content_start = false;
+			index++;
+			continue;
+		}
+
+		int name_end = index + 1;
+		while (name_end < p_source.length() && is_annotation_name_character(p_source[name_end])) {
+			name_end++;
+		}
+		int cursor = name_end;
+		while (cursor < p_source.length() && (p_source[cursor] == U' ' || p_source[cursor] == U'\t')) {
+			cursor++;
+		}
+		int span_end = name_end;
+		if (cursor < p_source.length() && p_source[cursor] == U'(') {
+			const int arguments_end = find_annotation_arguments_end(p_source, cursor);
+			if (arguments_end < 0) {
+				// An unterminated argument list would leave a fragment behind; keep the source as written.
+				at_line_content_start = false;
+				index = name_end;
+				continue;
 			}
-			int name_end = annotation + 1;
-			while (name_end < line.length() && is_annotation_name_character(line[name_end])) {
-				name_end++;
-			}
-			int annotation_end = name_end;
-			int cursor = name_end;
-			while (cursor < line.length() && (line[cursor] == U' ' || line[cursor] == U'\t')) {
-				cursor++;
-			}
-			if (cursor < line.length() && line[cursor] == U'(') {
-				const int arguments_end = find_annotation_arguments_end(line, cursor);
-				annotation_end = arguments_end < 0 ? line.length() : arguments_end;
-			}
-			// The whitespace that separated the annotation from the statement goes with it: leaving it
-			// behind would mix the indentation characters and make the probe source unparsable.
-			while (annotation_end < line.length() &&
-					(line[annotation_end] == U' ' || line[annotation_end] == U'\t')) {
-				annotation_end++;
-			}
-			line = line.substr(0, annotation) + line.substr(annotation_end);
-			if (line.strip_edges().is_empty()) {
-				line = String();
-				break;
+			span_end = arguments_end;
+		}
+		while (span_end < p_source.length() && (p_source[span_end] == U' ' || p_source[span_end] == U'\t')) {
+			span_end++;
+		}
+
+		stripped += p_source.substr(copied_from, index - copied_from);
+		for (int scan = index; scan < span_end; scan++) {
+			if (p_source[scan] == U'\n') {
+				stripped += "\n";
 			}
 		}
-		stripped.write[index] = line;
+		copied_from = span_end;
+		index = span_end;
 	}
-	return String("\n").join(stripped);
+	stripped += p_source.substr(copied_from);
+	return stripped;
 }
 
 // Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
