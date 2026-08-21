@@ -560,6 +560,38 @@ static bool is_union_pilot_adapter_diagnostic_target(const FSCompletenessProgram
 			p_program.coordinates.get("boundary", String()) == "reflective_write";
 }
 
+static FSCompletenessProgram *find_union_pilot_contract_program(
+		Vector<FSCompletenessProgram> &r_programs, const String &p_surface) {
+	for (FSCompletenessProgram &program : r_programs) {
+		if (program.coordinates.get("surface", String()) == p_surface &&
+				program.coordinates.get("destination", String()) == "plain" &&
+				program.coordinates.get("source_proof", String()) == "static_member" &&
+				program.coordinates.get("boundary", String()) == "argument_binding") {
+			return &program;
+		}
+	}
+	return nullptr;
+}
+
+static String union_pilot_absolute_fixture_path(const String &p_relative_path) {
+	return TestUtils::get_tests_dir().get_base_dir().path_join(p_relative_path).simplify_path();
+}
+
+static String union_pilot_preload_source(
+		const String &p_source, const String &p_dependency_path, const String &p_constant_name) {
+	return vformat("const %s = preload(\"%s\")\n", p_constant_name, p_dependency_path.c_escape()) + p_source;
+}
+
+static bool union_pilot_diagnostics_contain(
+		const PackedStringArray &p_diagnostics, const String &p_fragment) {
+	for (const String &diagnostic : p_diagnostics) {
+		if (diagnostic.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void fail_union_pilot_runtime_result(FSCompletenessRuntimeResult &r_result) {
 	if (r_result.case_id == union_pilot_mutated_case_id) {
 		r_result.passed = false;
@@ -859,6 +891,99 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(int(parsed_report.get("cell_count", 0)), 40);
 		CHECK_EQ(Array(parsed_report.get("findings", Array())).size(), 4);
 		CHECK_EQ(Array(parsed_report.get("cases", Array())).size(), 40);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner reports dependency compiler failures") {
+		UnionPilotProgramMutationScope mutation_scope;
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			FSCompletenessProgram program;
+			REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+			if (program.coordinates.get("surface", String()) != "text" ||
+					program.coordinates.get("destination", String()) != "plain" ||
+					program.coordinates.get("source_proof", String()) != "static_member" ||
+					program.coordinates.get("boundary", String()) != "argument_binding") {
+				continue;
+			}
+			union_pilot_mutated_case_id = program.case_id;
+			const String dependency_path = union_pilot_absolute_fixture_path(
+					"modules/foundry_script/tests/scripts/analyzer/errors/"
+					"enum_name_bare_payload_case_in_own_body.notest.fs");
+			REQUIRE(FileAccess::exists(dependency_path));
+			union_pilot_program_mutation_source = union_pilot_preload_source(
+					program.source, dependency_path, "RunnerCompilerFailureDependency");
+			break;
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		REQUIRE_FALSE(union_pilot_program_mutation_source.is_empty());
+		FSCompletenessProgram analysis_program;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.case_id == union_pilot_mutated_case_id) {
+				REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, analysis_program), OK);
+				analysis_program.source = union_pilot_program_mutation_source;
+				break;
+			}
+		}
+		const FSCompletenessObservation analysis =
+				FSUnionCompletenessAdapter::analyze(analysis_program, analysis_program.surface);
+		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
+		CHECK(analysis.diagnostics.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_runner_compiler_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.program_mutator = inject_union_pilot_analyzer_error;
+
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 40);
+		CHECK_EQ(union_pilot_program_callback_count, 40);
+		CHECK_EQ(union_pilot_program_mutation_count, 1);
+		CHECK(FileAccess::exists(options.report_path));
+		CHECK_EQ(int(result.report.get("cell_count", 0)), 40);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+		CHECK_EQ(result.findings.size(), 3);
+
+		HashSet<String> target_dimensions;
+		String target_artifact_path;
+		for (const FSCompletenessFinding &finding : result.findings) {
+			CHECK_EQ(finding.case_id, union_pilot_mutated_case_id);
+			target_dimensions.insert(finding.dimension);
+			CHECK_FALSE(finding.parity_evidence.is_empty());
+			target_artifact_path = finding.artifact_path;
+		}
+		CHECK(target_dimensions.has("diagnostics"));
+		CHECK(target_dimensions.has("output"));
+		CHECK(target_dimensions.has("runtime_status"));
+		CHECK_EQ(target_dimensions.size(), 3);
+		CHECK(FileAccess::exists(target_artifact_path));
+		CHECK_EQ(FileAccess::get_file_as_string(target_artifact_path), union_pilot_program_mutation_source);
+
+		const Array cases = result.report.get("cases", Array());
+		REQUIRE_EQ(cases.size(), 40);
+		int target_case_count = 0;
+		for (int i = 0; i < cases.size(); i++) {
+			const Dictionary case_report = cases[i];
+			if (case_report.get("case_id", String()) != union_pilot_mutated_case_id) {
+				continue;
+			}
+			target_case_count++;
+			CHECK_EQ(String(case_report.get("status", String())), "failed");
+			CHECK_FALSE(bool(case_report.get("passed", true)));
+			CHECK_EQ(String(case_report.get("runtime_status", String())), "compiler_error");
+			CHECK_FALSE(Array(case_report.get("diagnostics", Array())).is_empty());
+			CHECK(String(case_report.get("produced_output", String())).begins_with("FS_TEST_COMPILER_ERROR\n"));
+			CHECK_EQ(String(Dictionary(case_report.get("actual", Dictionary())).get("analysis", String())),
+					"accept");
+		}
+		CHECK_EQ(target_case_count, 1);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects mutated program identity before staging") {
@@ -1814,6 +1939,146 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(String(target->dimensions.get("analysis", String())), "reject");
 		CHECK_FALSE(target->diagnostics.is_empty());
 		CHECK(target->produced_output.begins_with("FS_TEST_ANALYZER_ERROR\n"));
+		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot publishes dependency compiler failures") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		FSCompletenessProgram *target_program = find_union_pilot_contract_program(programs, "text");
+		REQUIRE(target_program != nullptr);
+		if (target_program == nullptr) {
+			return;
+		}
+		const String dependency_path = union_pilot_absolute_fixture_path(
+				"modules/foundry_script/tests/scripts/analyzer/errors/"
+				"enum_name_bare_payload_case_in_own_body.notest.fs");
+		REQUIRE(FileAccess::exists(dependency_path));
+		target_program->source = union_pilot_preload_source(
+				target_program->source, dependency_path, "CompilerFailureDependency");
+		const FSCompletenessObservation analysis =
+				FSUnionCompletenessAdapter::analyze(*target_program, target_program->surface);
+		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
+		CHECK(analysis.diagnostics.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_compiler_observation_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		REQUIRE_EQ(execution_error, OK);
+		if (execution_error != OK) {
+			return;
+		}
+		CHECK_EQ(batch.text.size(), 20);
+		CHECK_EQ(batch.bytecode.size(), 20);
+		CHECK_EQ(batch.parity_failures, 1);
+		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_program->case_id);
+		REQUIRE(target != nullptr);
+		if (target == nullptr) {
+			return;
+		}
+		CHECK_FALSE(target->passed);
+		CHECK_EQ(target->status, "compiler_error");
+		CHECK_EQ(String(target->dimensions.get("analysis", String())), "accept");
+		CHECK_FALSE(target->diagnostics.is_empty());
+		CHECK(target->produced_output.begins_with("FS_TEST_COMPILER_ERROR\n"));
+		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot publishes bytecode dependency reload failures") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		FSCompletenessProgram *target_program = find_union_pilot_contract_program(programs, "bytecode");
+		REQUIRE(target_program != nullptr);
+		if (target_program == nullptr) {
+			return;
+		}
+		const String dependency_path = union_pilot_absolute_fixture_path(
+				"modules/foundry_script/tests/scripts/runtime/features/metatypes.notest.fs");
+		REQUIRE(FileAccess::exists(dependency_path));
+		target_program->source = union_pilot_preload_source(
+				target_program->source, dependency_path, "BytecodeReloadDependency");
+		const FSCompletenessObservation analysis =
+				FSUnionCompletenessAdapter::analyze(*target_program, target_program->surface);
+		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
+		CHECK(analysis.diagnostics.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_bytecode_reload_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		ErrorDetector reload_error_detector;
+		ERR_PRINT_OFF;
+		const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		ERR_PRINT_ON;
+		REQUIRE_EQ(execution_error, OK);
+		if (execution_error != OK) {
+			return;
+		}
+		CHECK_EQ(batch.text.size(), 20);
+		CHECK_EQ(batch.bytecode.size(), 20);
+		CHECK_EQ(batch.parity_failures, 1);
+		const FSCompletenessRuntimeResult *target = batch.bytecode.getptr(target_program->case_id);
+		REQUIRE(target != nullptr);
+		if (target == nullptr) {
+			return;
+		}
+		CHECK_FALSE(target->passed);
+		CHECK_EQ(target->status, "ok");
+		CHECK_EQ(String(target->dimensions.get("analysis", String())), "accept");
+		CHECK(union_pilot_diagnostics_contain(target->diagnostics, "Runtime contract bytecode reload failed"));
+		CHECK_EQ(target->produced_output, "uint 5\n");
+		CHECK_NE(int64_t(target->dimensions.get("original_instance_id", int64_t(0))), 0);
+		CHECK_FALSE(target->dimensions.has("inspected_instance_id"));
+		CHECK(reload_error_detector.has_error);
+		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot publishes missing destination descriptors") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		FSCompletenessProgram *target_program = find_union_pilot_contract_program(programs, "text");
+		REQUIRE(target_program != nullptr);
+		if (target_program == nullptr) {
+			return;
+		}
+		target_program->source = target_program->source.replace("accept(", "accept_probe(");
+		const FSCompletenessObservation analysis =
+				FSUnionCompletenessAdapter::analyze(*target_program, target_program->surface);
+		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
+		CHECK(analysis.diagnostics.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_descriptor_observation_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		REQUIRE_EQ(execution_error, OK);
+		if (execution_error != OK) {
+			return;
+		}
+		CHECK_EQ(batch.text.size(), 20);
+		CHECK_EQ(batch.bytecode.size(), 20);
+		CHECK_EQ(batch.parity_failures, 1);
+		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_program->case_id);
+		REQUIRE(target != nullptr);
+		if (target == nullptr) {
+			return;
+		}
+		CHECK_FALSE(target->passed);
+		CHECK_EQ(target->status, "ok");
+		CHECK_EQ(String(target->dimensions.get("analysis", String())), "accept");
+		CHECK(target->diagnostics.has("Compiled accept function does not expose one destination argument."));
+		CHECK_EQ(target->produced_output, "uint 5\n");
+		const int64_t original_id = target->dimensions.get("original_instance_id", int64_t(0));
+		const int64_t inspected_id = target->dimensions.get("inspected_instance_id", int64_t(0));
+		CHECK_NE(original_id, 0);
+		CHECK_EQ(inspected_id, original_id);
+		CHECK_EQ(bool(target->dimensions.get("inspected_compiled_binary", true)), false);
 		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
 	}
 

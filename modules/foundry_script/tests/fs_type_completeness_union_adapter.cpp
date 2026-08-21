@@ -365,7 +365,50 @@ public:
 };
 #endif
 
-static Error compile_runtime_contract_script(const FSCompletenessProgram &p_program,
+enum RuntimeInspectionDisposition {
+	RUNTIME_INSPECTION_COMPLETE,
+	RUNTIME_INSPECTION_PRODUCT_FAILURE,
+	RUNTIME_INSPECTION_STRUCTURAL_FAILURE,
+};
+
+struct RuntimeInspectionStepResult {
+	RuntimeInspectionDisposition disposition = RUNTIME_INSPECTION_COMPLETE;
+	Error error = OK;
+};
+
+static bool is_runtime_inspection_resource_failure(const Error p_error) {
+	switch (p_error) {
+		case ERR_OUT_OF_MEMORY:
+		case ERR_FILE_NOT_FOUND:
+		case ERR_FILE_BAD_DRIVE:
+		case ERR_FILE_BAD_PATH:
+		case ERR_FILE_NO_PERMISSION:
+		case ERR_FILE_ALREADY_IN_USE:
+		case ERR_FILE_CANT_OPEN:
+		case ERR_FILE_CANT_WRITE:
+		case ERR_FILE_CANT_READ:
+		case ERR_FILE_EOF:
+		case ERR_CANT_OPEN:
+		case ERR_CANT_CREATE:
+		case ERR_CANT_ACQUIRE_RESOURCE:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static RuntimeInspectionStepResult runtime_inspection_failure(
+		const Error p_error, const RuntimeInspectionDisposition p_disposition) {
+	RuntimeInspectionStepResult result;
+	result.disposition = p_disposition == RUNTIME_INSPECTION_STRUCTURAL_FAILURE ||
+			is_runtime_inspection_resource_failure(p_error)
+			? RUNTIME_INSPECTION_STRUCTURAL_FAILURE
+			: RUNTIME_INSPECTION_PRODUCT_FAILURE;
+	result.error = p_error == OK ? ERR_INVALID_DATA : p_error;
+	return result;
+}
+
+static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompletenessProgram &p_program,
 		Ref<FoundryScript> &r_original, Ref<FoundryScript> &r_inspected, PackedStringArray &r_diagnostics) {
 	r_original.unref();
 	r_inspected.unref();
@@ -373,14 +416,15 @@ static Error compile_runtime_contract_script(const FSCompletenessProgram &p_prog
 			"runtime_contract_" + p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		r_diagnostics.push_back("Runtime contract source identity is unavailable.");
-		return ERR_CANT_CREATE;
+		return runtime_inspection_failure(ERR_CANT_CREATE, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
 	}
 
 	Error error = OK;
 	r_original = FSCache::get_shallow_script(synthetic_source.get_path(), error);
 	if (error != OK || r_original.is_null()) {
 		r_diagnostics.push_back(vformat("Runtime contract script setup failed (error %d).", error));
-		return error == OK ? ERR_CANT_CREATE : error;
+		return runtime_inspection_failure(
+				error == OK ? ERR_CANT_CREATE : error, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
 	}
 
 	FSParser parser;
@@ -398,7 +442,7 @@ static Error compile_runtime_contract_script(const FSCompletenessProgram &p_prog
 		if (r_diagnostics.is_empty()) {
 			r_diagnostics.push_back(vformat("Runtime contract compilation failed (error %d).", error));
 		}
-		return error;
+		return runtime_inspection_failure(error, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 	}
 
 	r_inspected = r_original;
@@ -409,7 +453,7 @@ static Error compile_runtime_contract_script(const FSCompletenessProgram &p_prog
 		error = exporter.serialize(r_original, buffer);
 		if (error != OK) {
 			r_diagnostics.push_back(vformat("Runtime contract serialization failed (error %d).", error));
-			return error;
+			return runtime_inspection_failure(error, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 		}
 
 		Ref<FoundryScript> restored;
@@ -422,18 +466,24 @@ static Error compile_runtime_contract_script(const FSCompletenessProgram &p_prog
 		if (error == OK) {
 			error = loader.load_full(buffer, restored);
 		}
-		if (error != OK || restored.is_null() || !restored->is_valid() || !restored->is_compiled_binary() ||
-				restored.ptr() == r_original.ptr()) {
+		if (restored.is_null() || restored.ptr() == r_original.ptr()) {
 			r_diagnostics.push_back(vformat("Runtime contract bytecode reload failed (error %d).", error));
-			return error == OK ? ERR_INVALID_DATA : error;
+			r_inspected.unref();
+			return runtime_inspection_failure(
+					error == OK ? ERR_INVALID_DATA : error, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
+		}
+		if (error != OK || !restored->is_valid() || !restored->is_compiled_binary()) {
+			r_diagnostics.push_back(vformat("Runtime contract bytecode reload failed (error %d).", error));
+			r_inspected.unref();
+			return runtime_inspection_failure(error, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 		}
 		r_inspected = restored;
 #else
 		r_diagnostics.push_back("Runtime contract bytecode reload is unavailable in this build.");
-		return ERR_UNAVAILABLE;
+		return runtime_inspection_failure(ERR_UNAVAILABLE, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
 #endif
 	}
-	return OK;
+	return RuntimeInspectionStepResult();
 }
 
 static bool descriptor_is_expected_destination(const FSDataType &p_descriptor, const String &p_destination) {
@@ -461,13 +511,13 @@ struct RuntimeDescriptorEvidence {
 	bool inspected_compiled_binary = false;
 };
 
-static Error inspect_runtime_destination_descriptor(const Ref<FoundryScript> &p_inspected,
+static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const Ref<FoundryScript> &p_inspected,
 		const String &p_boundary, RuntimeDescriptorEvidence &r_evidence,
 		PackedStringArray &r_diagnostics) {
 	r_evidence = RuntimeDescriptorEvidence();
 	if (p_inspected.is_null()) {
 		r_diagnostics.push_back("Compiled runtime script is unavailable for descriptor inspection.");
-		return ERR_INVALID_DATA;
+		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
 	}
 	r_evidence.inspected_instance_id = p_inspected->get_instance_id();
 	r_evidence.inspected_compiled_binary = p_inspected->is_compiled_binary();
@@ -475,25 +525,25 @@ static Error inspect_runtime_destination_descriptor(const Ref<FoundryScript> &p_
 		FSFunction *const *accept = p_inspected->get_member_functions().getptr(SNAME("accept"));
 		if (accept == nullptr || *accept == nullptr || (*accept)->get_argument_count() != 1) {
 			r_diagnostics.push_back("Compiled accept function does not expose one destination argument.");
-			return ERR_INVALID_DATA;
+			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 		}
 		r_evidence.descriptor = (*accept)->get_argument_type(0);
-		return OK;
+		return RuntimeInspectionStepResult();
 	}
 
 	const Ref<FoundryScript> *holder = p_inspected->get_subclasses().getptr(SNAME("Holder"));
 	if (holder == nullptr || holder->is_null()) {
 		r_diagnostics.push_back("Compiled Holder class is unavailable.");
-		return ERR_INVALID_DATA;
+		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 	}
 	r_evidence.inspected_owner_instance_id = (*holder)->get_instance_id();
 	const FSDataType *descriptor = (*holder)->find_member_data_type(SNAME("value"));
 	if (descriptor == nullptr) {
 		r_diagnostics.push_back("Compiled Holder.value descriptor is unavailable.");
-		return ERR_INVALID_DATA;
+		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 	}
 	r_evidence.descriptor = *descriptor;
-	return OK;
+	return RuntimeInspectionStepResult();
 }
 
 static bool is_surface_identity_dimension(const Variant &p_key) {
@@ -503,7 +553,8 @@ static bool is_surface_identity_dimension(const Variant &p_key) {
 
 static bool observations_match_on_common_dimensions(
 		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
-	if (p_text.produced_output != p_bytecode.produced_output) {
+	if (p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status ||
+			p_text.diagnostics != p_bytecode.diagnostics || p_text.produced_output != p_bytecode.produced_output) {
 		return false;
 	}
 	for (const Variant &key : p_text.dimensions.keys()) {
@@ -700,10 +751,15 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 
 	Ref<FoundryScript> original;
 	Ref<FoundryScript> inspected;
-	const Error compile_error =
+	const RuntimeInspectionStepResult compile_result =
 			compile_runtime_contract_script(p_program, original, inspected, observation.diagnostics);
-	if (compile_error != OK) {
-		r_structural_error = compile_error;
+	if (original.is_valid()) {
+		observation.dimensions["original_instance_id"] = int64_t(original->get_instance_id());
+	}
+	if (compile_result.disposition != RUNTIME_INSPECTION_COMPLETE) {
+		if (compile_result.disposition == RUNTIME_INSPECTION_STRUCTURAL_FAILURE) {
+			r_structural_error = compile_result.error;
+		}
 		return observation;
 	}
 	const ObjectID original_instance_id = original->get_instance_id();
@@ -713,18 +769,22 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 		original.unref();
 	}
 	RuntimeDescriptorEvidence descriptor_evidence;
-	const Error descriptor_error = inspect_runtime_destination_descriptor(
+	const RuntimeInspectionStepResult descriptor_result = inspect_runtime_destination_descriptor(
 			inspected, boundary, descriptor_evidence, observation.diagnostics);
-	if (descriptor_error != OK) {
-		r_structural_error = descriptor_error;
-		return observation;
-	}
 	observation.dimensions["original_instance_id"] = int64_t(original_instance_id);
-	observation.dimensions["inspected_instance_id"] = int64_t(descriptor_evidence.inspected_instance_id);
+	if (descriptor_evidence.inspected_instance_id.is_valid()) {
+		observation.dimensions["inspected_instance_id"] = int64_t(descriptor_evidence.inspected_instance_id);
+	}
 	observation.dimensions["inspected_compiled_binary"] = descriptor_evidence.inspected_compiled_binary;
-	if (boundary == "reflective_write") {
+	if (boundary == "reflective_write" && descriptor_evidence.inspected_owner_instance_id.is_valid()) {
 		observation.dimensions["inspected_owner_instance_id"] =
 				int64_t(descriptor_evidence.inspected_owner_instance_id);
+	}
+	if (descriptor_result.disposition != RUNTIME_INSPECTION_COMPLETE) {
+		if (descriptor_result.disposition == RUNTIME_INSPECTION_STRUCTURAL_FAILURE) {
+			r_structural_error = descriptor_result.error;
+		}
+		return observation;
 	}
 
 	if (!descriptor_is_expected_destination(descriptor_evidence.descriptor, destination)) {
@@ -958,7 +1018,7 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 			}
 			FSCompletenessRuntimeResult result;
 			static_cast<FSCompletenessObservation &>(result) = observation;
-			result.passed = outcome.passed;
+			result.passed = outcome.passed && observation.diagnostics.is_empty();
 			result.status = outcome.status;
 			result.produced_output = produced_output;
 			r_results[case_id] = result;
