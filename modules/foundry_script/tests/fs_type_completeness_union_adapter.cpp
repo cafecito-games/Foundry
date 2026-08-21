@@ -172,6 +172,48 @@ struct RuntimeDestination {
 	RuntimeDestinationKind kind = RUNTIME_DESTINATION_FILE;
 };
 
+class RuntimeInvocationScope {
+	String path;
+
+public:
+	~RuntimeInvocationScope() {
+		if (path.is_empty()) {
+			return;
+		}
+		const Error cleanup_error = TemporaryProjectTree::remove_owned_path(path);
+		if (cleanup_error != OK) {
+			ERR_PRINT(vformat("Could not remove completeness runtime staging '%s' (error %d).", path, cleanup_error));
+		}
+	}
+
+	Error create(const String &p_parent) {
+		static SafeNumeric<uint64_t> invocation_sequence;
+		for (int attempt = 0; attempt < 4096; attempt++) {
+			const String candidate = p_parent.path_join(vformat("fstc-runtime-%d-%s",
+					OS::get_singleton()->get_process_id(),
+					String::num_uint64(invocation_sequence.increment())));
+			const Error create_error = DirAccess::make_dir_absolute(candidate);
+			if (create_error == ERR_ALREADY_EXISTS) {
+				continue;
+			}
+			if (create_error != OK) {
+				return create_error;
+			}
+			path = candidate;
+			String canonical_candidate;
+			const Error resolve_error = TemporaryProjectTree::resolve_existing_owned_path(
+					candidate, canonical_candidate);
+			if (resolve_error != OK || canonical_candidate != candidate.simplify_path()) {
+				return resolve_error == OK ? ERR_UNAUTHORIZED : resolve_error;
+			}
+			return OK;
+		}
+		return ERR_ALREADY_EXISTS;
+	}
+
+	const String &get_path() const { return path; }
+};
+
 static Error reject_symlink_aliases(const String &p_container_root, const String &p_path) {
 	const String container_root = p_container_root.simplify_path();
 	String current = p_path.simplify_path();
@@ -237,25 +279,76 @@ static Error preflight_runtime_destination(
 	return OK;
 }
 
-static Error write_runtime_file(const String &p_path, const String &p_contents) {
-	Ref<DirAccess> directory = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (directory.is_null()) {
-		return ERR_CANT_CREATE;
-	}
-	if (directory->is_link(p_path.get_base_dir()) || directory->is_link(p_path)) {
-		return ERR_UNAUTHORIZED;
-	}
-	const Error directory_error = directory->make_dir_recursive(p_path.get_base_dir());
-	if (directory_error != OK) {
-		return directory_error;
-	}
+static Error write_runtime_file_exclusive(const String &p_path, const String &p_contents) {
 	Error file_error = OK;
-	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &file_error);
+	Ref<FileAccess> file = FileAccess::open(
+			p_path, FileAccess::WRITE | FileAccess::WRITE_EXCL, &file_error);
 	if (file.is_null()) {
 		return file_error == OK ? ERR_CANT_CREATE : file_error;
 	}
 	file->store_string(p_contents);
 	return file->get_error();
+}
+
+static Error validate_runtime_staging_whitelist(
+		const String &p_invocation_root, const HashSet<String> &p_expected_files) {
+	Ref<DirAccess> root = DirAccess::open(p_invocation_root);
+	if (root.is_null()) {
+		return ERR_CANT_OPEN;
+	}
+	root->set_include_hidden(true);
+	HashSet<String> observed_surfaces;
+	root->list_dir_begin();
+	for (String entry = root->get_next(); !entry.is_empty(); entry = root->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+		const String child = p_invocation_root.path_join(entry);
+		if (root->is_link(child)) {
+			root->list_dir_end();
+			return ERR_UNAUTHORIZED;
+		}
+		if (!root->current_is_dir() || (entry != "text" && entry != "bytecode") ||
+				observed_surfaces.has(entry)) {
+			root->list_dir_end();
+			return ERR_INVALID_DATA;
+		}
+		observed_surfaces.insert(entry);
+	}
+	root->list_dir_end();
+	if (observed_surfaces.size() != 2) {
+		return ERR_INVALID_DATA;
+	}
+
+	HashSet<String> observed_files;
+	for (const String &surface : { String("text"), String("bytecode") }) {
+		const String surface_root = p_invocation_root.path_join(surface);
+		Ref<DirAccess> directory = DirAccess::open(surface_root);
+		if (directory.is_null()) {
+			return ERR_CANT_OPEN;
+		}
+		directory->set_include_hidden(true);
+		directory->list_dir_begin();
+		for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+			if (entry == "." || entry == "..") {
+				continue;
+			}
+			const String child = surface_root.path_join(entry);
+			const String relative_path = surface.path_join(entry);
+			if (directory->is_link(child)) {
+				directory->list_dir_end();
+				return ERR_UNAUTHORIZED;
+			}
+			if (directory->current_is_dir() || !p_expected_files.has(relative_path) ||
+					observed_files.has(relative_path)) {
+				directory->list_dir_end();
+				return ERR_INVALID_DATA;
+			}
+			observed_files.insert(relative_path);
+		}
+		directory->list_dir_end();
+	}
+	return observed_files.size() == p_expected_files.size() ? OK : ERR_INVALID_DATA;
 }
 
 #ifdef TOOLS_ENABLED
@@ -361,27 +454,51 @@ static bool descriptor_is_expected_destination(const FSDataType &p_descriptor, c
 	return has_uint && has_string;
 }
 
-static const FSDataType *find_runtime_destination_descriptor(const Ref<FoundryScript> &p_script,
-		const String &p_boundary, PackedStringArray &r_diagnostics) {
+struct RuntimeDescriptorEvidence {
+	FSDataType descriptor;
+	ObjectID inspected_instance_id;
+	ObjectID inspected_owner_instance_id;
+	bool inspected_compiled_binary = false;
+};
+
+static Error inspect_runtime_destination_descriptor(const Ref<FoundryScript> &p_inspected,
+		const String &p_boundary, RuntimeDescriptorEvidence &r_evidence,
+		PackedStringArray &r_diagnostics) {
+	r_evidence = RuntimeDescriptorEvidence();
+	if (p_inspected.is_null()) {
+		r_diagnostics.push_back("Compiled runtime script is unavailable for descriptor inspection.");
+		return ERR_INVALID_DATA;
+	}
+	r_evidence.inspected_instance_id = p_inspected->get_instance_id();
+	r_evidence.inspected_compiled_binary = p_inspected->is_compiled_binary();
 	if (p_boundary == "argument_binding") {
-		FSFunction *const *accept = p_script->get_member_functions().getptr(SNAME("accept"));
+		FSFunction *const *accept = p_inspected->get_member_functions().getptr(SNAME("accept"));
 		if (accept == nullptr || *accept == nullptr || (*accept)->get_argument_count() != 1) {
 			r_diagnostics.push_back("Compiled accept function does not expose one destination argument.");
-			return nullptr;
+			return ERR_INVALID_DATA;
 		}
-		return &(*accept)->get_argument_type(0);
+		r_evidence.descriptor = (*accept)->get_argument_type(0);
+		return OK;
 	}
 
-	const Ref<FoundryScript> *holder = p_script->get_subclasses().getptr(SNAME("Holder"));
+	const Ref<FoundryScript> *holder = p_inspected->get_subclasses().getptr(SNAME("Holder"));
 	if (holder == nullptr || holder->is_null()) {
 		r_diagnostics.push_back("Compiled Holder class is unavailable.");
-		return nullptr;
+		return ERR_INVALID_DATA;
 	}
+	r_evidence.inspected_owner_instance_id = (*holder)->get_instance_id();
 	const FSDataType *descriptor = (*holder)->find_member_data_type(SNAME("value"));
 	if (descriptor == nullptr) {
 		r_diagnostics.push_back("Compiled Holder.value descriptor is unavailable.");
+		return ERR_INVALID_DATA;
 	}
-	return descriptor;
+	r_evidence.descriptor = *descriptor;
+	return OK;
+}
+
+static bool is_surface_identity_dimension(const Variant &p_key) {
+	return p_key == "original_instance_id" || p_key == "inspected_instance_id" ||
+			p_key == "inspected_compiled_binary" || p_key == "inspected_owner_instance_id";
 }
 
 static bool observations_match_on_common_dimensions(
@@ -390,6 +507,9 @@ static bool observations_match_on_common_dimensions(
 		return false;
 	}
 	for (const Variant &key : p_text.dimensions.keys()) {
+		if (is_surface_identity_dimension(key)) {
+			continue;
+		}
 		if (p_bytecode.dimensions.has(key) && p_text.dimensions[key] != p_bytecode.dimensions[key]) {
 			return false;
 		}
@@ -555,17 +675,18 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 	String source_proof;
 	String boundary;
 	String surface;
-	Dictionary coordinates;
-	coordinates["destination"] = p_runtime_context.get("destination", Variant());
-	coordinates["source_proof"] = p_runtime_context.get("source_proof", Variant());
-	coordinates["boundary"] = p_runtime_context.get("boundary", Variant());
-	coordinates["surface"] = p_runtime_context.get("surface", Variant());
-	if (coordinates.size() != 4 || !read_coordinate(coordinates, "destination", destination) ||
-			!read_coordinate(coordinates, "source_proof", source_proof) ||
-			!read_coordinate(coordinates, "boundary", boundary) ||
-			!read_coordinate(coordinates, "surface", surface) || surface != p_program.surface) {
+	if (!read_program_coordinates(p_program, destination, source_proof, boundary, surface) ||
+			surface != p_program.surface) {
 		observation.diagnostics.push_back("Runtime contract coordinates are invalid.");
 		return observation;
+	}
+	for (const String &axis : { String("destination"), String("source_proof"), String("boundary"), String("surface") }) {
+		if (p_runtime_context.has(axis) &&
+				p_runtime_context.get(axis, Variant()) != p_program.coordinates.get(axis, Variant())) {
+			observation.diagnostics.push_back(
+					vformat("Runtime context coordinate '%s' disagrees with the program.", axis));
+			return observation;
+		}
 	}
 
 	const Variant produced_value = p_runtime_context.get("produced_output", Variant());
@@ -582,23 +703,34 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 	if (compile_error != OK) {
 		return observation;
 	}
+	const ObjectID original_instance_id = original->get_instance_id();
 	if (surface == "bytecode") {
-		observation.dimensions["descriptor_surface"] = "serialized_reload";
+		// Descriptor inspection below receives only the restored script. Dropping the original local
+		// reference makes an accidental query through the source-compiled object impossible here.
+		original.unref();
 	}
-
-	const FSDataType *descriptor =
-			find_runtime_destination_descriptor(inspected, boundary, observation.diagnostics);
-	if (descriptor == nullptr) {
+	RuntimeDescriptorEvidence descriptor_evidence;
+	const Error descriptor_error = inspect_runtime_destination_descriptor(
+			inspected, boundary, descriptor_evidence, observation.diagnostics);
+	if (descriptor_error != OK) {
 		return observation;
 	}
-	if (!descriptor_is_expected_destination(*descriptor, destination)) {
+	observation.dimensions["original_instance_id"] = int64_t(original_instance_id);
+	observation.dimensions["inspected_instance_id"] = int64_t(descriptor_evidence.inspected_instance_id);
+	observation.dimensions["inspected_compiled_binary"] = descriptor_evidence.inspected_compiled_binary;
+	if (boundary == "reflective_write") {
+		observation.dimensions["inspected_owner_instance_id"] =
+				int64_t(descriptor_evidence.inspected_owner_instance_id);
+	}
+
+	if (!descriptor_is_expected_destination(descriptor_evidence.descriptor, destination)) {
 		observation.diagnostics.push_back(vformat(
 				"Runtime destination descriptor does not match declared '%s' coordinates.", destination));
 	}
 	Ref<RefCounted> unrelated;
 	unrelated.instantiate();
 	const Variant unrelated_value = unrelated;
-	if (descriptor->is_type(unrelated_value)) {
+	if (descriptor_evidence.descriptor.is_type(unrelated_value)) {
 		observation.diagnostics.push_back("Runtime destination descriptor admits RefCounted.new().");
 	}
 	if (!observation.diagnostics.is_empty()) {
@@ -713,43 +845,67 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 		}
 	}
 
-	const String text_root = canonical_root.path_join("text");
-	const String bytecode_root = canonical_root.path_join("bytecode");
+	RuntimeInvocationScope invocation;
+	error = invocation.create(canonical_root);
+	if (error != OK) {
+		return error;
+	}
+	const String text_root = invocation.get_path().path_join("text");
+	const String bytecode_root = invocation.get_path().path_join("bytecode");
+	error = DirAccess::make_dir_absolute(text_root);
+	if (error != OK) {
+		return error;
+	}
+	error = DirAccess::make_dir_absolute(bytecode_root);
+	if (error != OK) {
+		return error;
+	}
+
 	Vector<RuntimeDestination> destinations;
 	destinations.push_back({ text_root, RUNTIME_DESTINATION_DIRECTORY });
 	destinations.push_back({ bytecode_root, RUNTIME_DESTINATION_DIRECTORY });
 	destinations.push_back({ text_root.path_join("project.foundry"), RUNTIME_DESTINATION_FILE });
 	destinations.push_back({ bytecode_root.path_join("project.foundry"), RUNTIME_DESTINATION_FILE });
+	HashSet<String> expected_files;
+	expected_files.insert("text/project.foundry");
+	expected_files.insert("bytecode/project.foundry");
 	for (const FSCompletenessProgram &program : p_programs) {
 		const String surface_root = program.surface == "text" ? text_root : bytecode_root;
 		destinations.push_back({ surface_root.path_join(program.case_id + ".fs"), RUNTIME_DESTINATION_FILE });
 		destinations.push_back({ surface_root.path_join(program.case_id + ".out"), RUNTIME_DESTINATION_FILE });
+		expected_files.insert(program.surface.path_join(program.case_id + ".fs"));
+		expected_files.insert(program.surface.path_join(program.case_id + ".out"));
 	}
 	for (const RuntimeDestination &destination : destinations) {
-		error = preflight_runtime_destination(canonical_root, destination);
+		error = preflight_runtime_destination(invocation.get_path(), destination);
 		if (error != OK) {
 			return error;
 		}
 	}
 
-	error = write_runtime_file(text_root.path_join("project.foundry"), String());
+	error = write_runtime_file_exclusive(text_root.path_join("project.foundry"), String());
 	if (error != OK) {
 		return error;
 	}
-	error = write_runtime_file(bytecode_root.path_join("project.foundry"), String());
+	error = write_runtime_file_exclusive(bytecode_root.path_join("project.foundry"), String());
 	if (error != OK) {
 		return error;
 	}
 	for (const FSCompletenessProgram &program : p_programs) {
 		const String surface_root = program.surface == "text" ? text_root : bytecode_root;
-		error = write_runtime_file(surface_root.path_join(program.case_id + ".fs"), program.source);
+		error = write_runtime_file_exclusive(
+				surface_root.path_join(program.case_id + ".fs"), program.source);
 		if (error == OK) {
-			error = write_runtime_file(
+			error = write_runtime_file_exclusive(
 					surface_root.path_join(program.case_id + ".out"), "FS_TEST_OK\n" + program.expected_output);
 		}
 		if (error != OK) {
 			return error;
 		}
+	}
+	error = validate_runtime_staging_whitelist(invocation.get_path(), expected_files);
+	if (error != OK) {
+		return error;
 	}
 
 	FSCompletenessRuntimeBatch completed;
@@ -785,7 +941,7 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 			if (extract_program_output(outcome, produced_output) != OK) {
 				return ERR_INVALID_DATA;
 			}
-			Dictionary runtime_context = program->coordinates.duplicate();
+			Dictionary runtime_context;
 			runtime_context["produced_output"] = produced_output;
 			const FSCompletenessObservation observation = inspect_runtime_contract(*program, runtime_context);
 			if (!observation.diagnostics.is_empty()) {

@@ -41,6 +41,8 @@
 #include "core/io/file_access_pack.h"
 #include "core/os/os.h"
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
+#include "tests/test_utils.h"
 
 namespace FSTests {
 
@@ -105,6 +107,24 @@ static FSCompletenessRuntimeBatch stale_union_pilot_runtime_batch() {
 	batch.text[result.case_id] = result;
 	batch.parity_failures = 9;
 	return batch;
+}
+
+static PackedStringArray union_pilot_directory_entries(const String &p_path) {
+	PackedStringArray entries;
+	Ref<DirAccess> directory = DirAccess::open(p_path);
+	if (directory.is_null()) {
+		return entries;
+	}
+	directory->set_include_hidden(true);
+	directory->list_dir_begin();
+	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+		if (entry != "." && entry != "..") {
+			entries.push_back(entry);
+		}
+	}
+	directory->list_dir_end();
+	entries.sort();
+	return entries;
 }
 
 struct UnionPilotSemanticFingerprint {
@@ -452,6 +472,21 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			REQUIRE_FALSE(scratch_root.is_empty());
 			CHECK(TemporaryProjectTree::is_strict_descendant(scratch_root, tree.root));
 
+			const FSCompletenessProgram *text_program = nullptr;
+			for (const FSCompletenessProgram &program : programs) {
+				if (program.surface == "text") {
+					text_program = &program;
+					break;
+				}
+			}
+			REQUIRE(text_program != nullptr);
+			tree.write_file("sentinel.txt", "caller sentinel\n");
+			tree.write_file("text/project.foundry", "caller project sentinel\n");
+			tree.write_file("text/" + text_program->case_id + ".fs", "caller source sentinel\n");
+			tree.write_file("text/stray.fs", text_program->source);
+			tree.write_file("text/stray.out", "FS_TEST_OK\n" + text_program->expected_output);
+			const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
+
 			FSCompletenessRuntimeBatch batch;
 			const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
 			REQUIRE_EQ(execution_error, OK);
@@ -480,8 +515,24 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 					CAPTURE(dimension.key);
 					CHECK_EQ(result->dimensions.get(dimension.key, Variant()), dimension.value.expected);
 				}
+				const int64_t original_instance_id = result->dimensions.get("original_instance_id", int64_t(0));
+				const int64_t inspected_instance_id = result->dimensions.get("inspected_instance_id", int64_t(0));
+				CHECK_NE(original_instance_id, 0);
+				CHECK_NE(inspected_instance_id, 0);
 				if (surface == "bytecode") {
-					CHECK_EQ(String(result->dimensions.get("descriptor_surface", String())), "serialized_reload");
+					CHECK_NE(original_instance_id, inspected_instance_id);
+					CHECK_EQ(bool(result->dimensions.get("inspected_compiled_binary", false)), true);
+				} else {
+					CHECK_EQ(original_instance_id, inspected_instance_id);
+					CHECK_EQ(bool(result->dimensions.get("inspected_compiled_binary", true)), false);
+				}
+				if (cell.coordinates.get("boundary", String()) == "reflective_write") {
+					const int64_t owner_instance_id =
+							result->dimensions.get("inspected_owner_instance_id", int64_t(0));
+					CHECK_NE(owner_instance_id, 0);
+					CHECK_NE(owner_instance_id, inspected_instance_id);
+				} else {
+					CHECK_FALSE(result->dimensions.has("inspected_owner_instance_id"));
 				}
 
 				const String pair_key = String(cell.coordinates.get("destination", String())) + "|" +
@@ -491,10 +542,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			}
 			CHECK_EQ(semantic_pairs.size(), 20);
 
-			CHECK(FileAccess::exists(tree.root.path_join("text/project.foundry")));
-			CHECK(FileAccess::exists(tree.root.path_join("bytecode/project.foundry")));
-			CHECK_EQ(DirAccess::get_files_at(tree.root.path_join("text")).size(), 41);
-			CHECK_EQ(DirAccess::get_files_at(tree.root.path_join("bytecode")).size(), 41);
+			CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+			CHECK_EQ(FileAccess::get_file_as_string(tree.root.path_join("sentinel.txt")), "caller sentinel\n");
+			CHECK_EQ(FileAccess::get_file_as_string(tree.root.path_join("text/project.foundry")),
+					"caller project sentinel\n");
+			CHECK_EQ(FileAccess::get_file_as_string(
+							 tree.root.path_join("text/" + text_program->case_id + ".fs")),
+					"caller source sentinel\n");
+			CHECK(FileAccess::exists(tree.root.path_join("text/stray.fs")));
+			CHECK(FileAccess::exists(tree.root.path_join("text/stray.out")));
 			CHECK_FALSE(FileAccess::exists(tree.root.get_base_dir().path_join(programs[0].case_id + ".fs")));
 		}
 		CHECK_FALSE(FileAccess::exists(owned_root));
@@ -571,7 +627,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot rejects unsafe scratch roots and runner setup failure") {
+	TEST_CASE("TypeCompleteness UnionPilot rejects unsafe scratch roots and duplicate global setup") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
 		const Vector<String> unsafe_roots = {
@@ -597,16 +653,30 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 
 		TemporaryProjectTree tree(vformat("type_completeness_union_setup_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
-		tree.write_file("text/stray.fs", "func test():\n\tpass\n");
+		const String duplicate_class_fixture = TestUtils::get_tests_dir().get_base_dir().path_join(
+				"modules/foundry_script/tests/scripts/utils.notest.fs");
+		const String duplicate_class_source = FileAccess::get_file_as_string(duplicate_class_fixture);
+		REQUIRE_FALSE(duplicate_class_source.is_empty());
+		Vector<FSCompletenessProgram> duplicate_class_programs = programs;
+		int duplicate_count = 0;
+		for (FSCompletenessProgram &program : duplicate_class_programs) {
+			if (program.surface == "text" && duplicate_count < 2) {
+				program.source = duplicate_class_source;
+				duplicate_count++;
+			}
+		}
+		REQUIRE_EQ(duplicate_count, 2);
+		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 		batch = stale_union_pilot_runtime_batch();
+		ErrorDetector setup_error_detector;
 		ERR_PRINT_OFF;
-		const Error setup_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		const Error setup_error =
+				FSUnionCompletenessAdapter::execute(tree.root, duplicate_class_programs, batch);
 		ERR_PRINT_ON;
 		CHECK_EQ(setup_error, ERR_CANT_OPEN);
+		CHECK(setup_error_detector.has_error);
 		check_union_pilot_runtime_batch_cleared(batch);
-		CHECK(FileAccess::exists(tree.root.path_join("text/project.foundry")));
-		CHECK(FileAccess::exists(tree.root.path_join("bytecode/project.foundry")));
-		CHECK(FileAccess::exists(tree.root.path_join("text/stray.fs")));
+		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot refuses symlinked runtime roots and ancestors") {
@@ -618,23 +688,12 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(neighbor.is_valid());
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(filesystem.is_valid());
-		if (filesystem->create_link(neighbor.root, tree.root.path_join("text")) != OK) {
-			return;
-		}
-
-		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
-		check_union_pilot_runtime_batch_cleared(batch);
-		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("project.foundry")));
-		CHECK_FALSE(FileAccess::exists(tree.root.path_join("bytecode/project.foundry")));
-		CHECK_EQ(DirAccess::remove_absolute(tree.root.path_join("text")), OK);
-
 		const String outside_root_link = tree.root.path_join("outside_root");
 		if (filesystem->create_link(neighbor.root, outside_root_link) != OK) {
 			return;
 		}
 
-		batch = stale_union_pilot_runtime_batch();
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
 		CHECK_EQ(FSUnionCompletenessAdapter::execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("text/project.foundry")));
@@ -651,7 +710,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("existing_root/text/project.foundry")));
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot preflights both surfaces before writing any fixture") {
+	TEST_CASE("TypeCompleteness UnionPilot leaves caller surface aliases untouched") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
 		TemporaryProjectTree tree(vformat("type_completeness_union_surface_plan_%d", OS::get_singleton()->get_process_id()));
@@ -660,37 +719,21 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(neighbor.is_valid());
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(filesystem.is_valid());
-		if (filesystem->create_link(neighbor.root, tree.root.path_join("bytecode")) != OK) {
+		neighbor.write_file("sentinel.txt", "neighbor sentinel\n");
+		if (filesystem->create_link(neighbor.root, tree.root.path_join("text")) != OK) {
 			return;
 		}
+		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
-		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
-		check_union_pilot_runtime_batch_cleared(batch);
-		CHECK_FALSE(FileAccess::exists(tree.root.path_join("text/project.foundry")));
+		FSCompletenessRuntimeBatch batch;
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), OK);
+		CHECK_EQ(batch.text.size(), 20);
+		CHECK_EQ(batch.bytecode.size(), 20);
+		CHECK_EQ(batch.parity_failures, 0);
+		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("sentinel.txt")),
+				"neighbor sentinel\n");
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("project.foundry")));
-
-		CHECK_EQ(DirAccess::remove_absolute(tree.root.path_join("bytecode")), OK);
-		neighbor.write_file("existing_source.fs", "keep\n");
-		String text_case_id;
-		for (const FSCompletenessProgram &program : programs) {
-			if (program.surface == "text") {
-				text_case_id = program.case_id;
-				break;
-			}
-		}
-		REQUIRE_FALSE(text_case_id.is_empty());
-		REQUIRE_EQ(filesystem->make_dir_recursive(tree.root.path_join("text")), OK);
-		if (filesystem->create_link(neighbor.root.path_join("existing_source.fs"),
-					tree.root.path_join("text").path_join(text_case_id + ".fs")) != OK) {
-			return;
-		}
-
-		batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
-		check_union_pilot_runtime_batch_cleared(batch);
-		CHECK_FALSE(FileAccess::exists(tree.root.path_join("text/project.foundry")));
-		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("existing_source.fs")), "keep\n");
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runtime descriptor rejects RefCounted") {
@@ -715,6 +758,23 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessObservation observation =
 				FSUnionCompletenessAdapter::inspect_runtime_contract(program, runtime_context);
 		CHECK(observation.diagnostics.has("Runtime destination descriptor admits RefCounted.new()."));
+		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runtime contract rejects coordinate context disagreement") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		REQUIRE_FALSE(resolution.cells.is_empty());
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
+		Dictionary runtime_context;
+		runtime_context["produced_output"] = "uint 5\n";
+		runtime_context["destination"] =
+				program.coordinates.get("destination", String()) == "plain" ? "union" : "plain";
+
+		const FSCompletenessObservation observation =
+				FSUnionCompletenessAdapter::inspect_runtime_contract(program, runtime_context);
+		CHECK(observation.diagnostics.has(
+				"Runtime context coordinate 'destination' disagrees with the program."));
 		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
 	}
 
