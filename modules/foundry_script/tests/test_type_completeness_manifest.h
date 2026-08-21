@@ -130,6 +130,30 @@ static FSCompletenessManifest load_representative_completeness_manifest(Temporar
 }
 
 static const char *type_completeness_catalog_root = "modules/foundry_script/tests/type_completeness";
+static const char *type_completeness_capability_path =
+		"modules/foundry_script/tests/type_completeness/capabilities.json";
+
+static String write_completeness_capability_map(TemporaryProjectTree &p_tree, const String &p_contents) {
+	p_tree.write_file("capabilities.json", p_contents);
+	return p_tree.root.path_join("capabilities.json");
+}
+
+static String make_completeness_rule(const String &p_family) {
+	return vformat(R"JSON({
+  "schema_version": 1,
+  "family": "%s",
+  "domain": {"shape": ["plain"]},
+  "required_dimensions": [],
+  "anchors": [],
+  "relations": [],
+  "exceptions": []
+})JSON",
+			p_family);
+}
+
+static bool selection_has_only_family(const FSCompletenessSelection &p_selection, const String &p_family) {
+	return p_selection.families.size() == 1 && p_selection.families.has(p_family);
+}
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 	TEST_CASE("TypeCompleteness Manifest loads a valid typed manifest") {
@@ -763,6 +787,291 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK_FALSE(catalog.axis_has_leaf("source_proof", "variant"));
 		CHECK_FALSE(catalog.dimension_has_outcome("analysis", "accept"));
 		CHECK_FALSE(catalog.axis_has_leaf("other_shape", "plain"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability map loads checked-in ownership and applies precedence") {
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(capability_map.load(type_completeness_capability_path, errors) == OK,
+				String(" | ").join(errors));
+		CHECK(errors.is_empty());
+
+		const FSCompletenessSelection compiler =
+				capability_map.select(Vector<String>({ "modules/foundry_script/fs_compiler.cpp" }));
+		CHECK(selection_has_only_family(compiler, "union_destination_membership"));
+		CHECK_FALSE(compiler.used_broad_core_fallback);
+		CHECK(compiler.validation_errors.is_empty());
+
+		const FSCompletenessSelection fallback =
+				capability_map.select(Vector<String>({ "modules/foundry_script/new_type_surface.cpp" }));
+		CHECK(selection_has_only_family(fallback, "union_destination_membership"));
+		CHECK(fallback.used_broad_core_fallback);
+		REQUIRE_EQ(fallback.validation_errors.size(), 1);
+		CHECK_EQ(fallback.validation_errors[0],
+				"unmapped production path: modules/foundry_script/new_type_surface.cpp");
+
+		const FSCompletenessSelection ignored = capability_map.select(Vector<String>({
+				"docs/type_completeness.md",
+				"modules/foundry_script/tests/test_type_completeness_manifest.h",
+		}));
+		CHECK(ignored.families.is_empty());
+		CHECK_FALSE(ignored.used_broad_core_fallback);
+		CHECK(ignored.validation_errors.is_empty());
+
+		const FSCompletenessSelection sibling =
+				capability_map.select(Vector<String>({ "modules/foundry_script_extra/fs_compiler.cpp" }));
+		CHECK(sibling.families.is_empty());
+		CHECK_FALSE(sibling.used_broad_core_fallback);
+		CHECK(sibling.validation_errors.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability matching is component-aware and unions changed paths") {
+		TemporaryProjectTree tree("type_completeness_capability_matching");
+		REQUIRE(tree.is_valid());
+		const String path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version": 1,
+  "production": [
+    {"paths": ["modules/foundry_script/exact.cpp"], "families": ["exact_family"]},
+    {"paths": ["modules/foundry_script/editor/"], "families": ["editor_family"]},
+    {"paths": ["modules/foundry_script/tests/owned.cpp"], "families": ["owned_test_family"]},
+    {
+      "paths": ["modules/foundry_script/shared/", "modules/foundry_script/shared/special.cpp"],
+      "families": ["shared_family"]
+    }
+  ],
+  "nonproduction_prefixes": ["docs/", "modules/foundry_script/tests/"],
+  "broad_core_families": ["broad_family"]
+})JSON");
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(capability_map.load(path, errors) == OK, String(" | ").join(errors));
+
+		const FSCompletenessSelection selection = capability_map.select(Vector<String>({
+				"modules/foundry_script/editor/tool.cpp",
+				"modules/foundry_script/exact.cpp",
+				"modules/foundry_script/editor/tool.cpp",
+		}));
+		CHECK_EQ(selection.families.size(), 2);
+		CHECK(selection.families.has("exact_family"));
+		CHECK(selection.families.has("editor_family"));
+		CHECK_FALSE(selection.used_broad_core_fallback);
+		CHECK(selection.validation_errors.is_empty());
+
+		const FSCompletenessSelection reversed = capability_map.select(Vector<String>({
+				"modules/foundry_script/exact.cpp",
+				"modules/foundry_script/editor/tool.cpp",
+		}));
+		CHECK_EQ(reversed.families, selection.families);
+		CHECK_EQ(reversed.validation_errors, selection.validation_errors);
+
+		CHECK(selection_has_only_family(capability_map.select(
+												Vector<String>({ "modules/foundry_script/shared/special.cpp" })),
+				"shared_family"));
+		CHECK(selection_has_only_family(capability_map.select(
+												Vector<String>({ "modules/foundry_script/tests/owned.cpp" })),
+				"owned_test_family"));
+		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/exact.cpp/child" }))
+						.used_broad_core_fallback);
+		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/editorial/tool.cpp" }))
+						.used_broad_core_fallback);
+		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/tests/runner.cpp" }))
+						.families.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability loader rejects malformed schema and ambiguous ownership") {
+		struct InvalidCapabilityMap {
+			const char *name;
+			const char *json;
+			const char *diagnostic;
+		};
+		const InvalidCapabilityMap cases[] = {
+			{ "unknown", R"JSON({
+  "schema_version":1,
+  "production":[],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["core"],
+  "typo":true
+})JSON",
+					"$.typo: unknown field 'typo'" },
+			{ "duplicate_raw", R"JSON({
+  "schema_version":1,
+  "production":[],
+  "production":[],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["core"]
+})JSON",
+					"$.production: duplicate object member 'production'" },
+			{ "duplicate_array", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/a.cpp","modules/foundry_script/a.cpp"],"families":["a"]}],
+  "nonproduction_prefixes":["docs/","docs/"],
+  "broad_core_families":["core","core"]
+})JSON",
+					"duplicate value" },
+			{ "invalid_paths", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["/absolute.cpp","scheme://file","a\\b","a/./b","a//b",""] ,"families":[""]}],
+  "nonproduction_prefixes":["../docs/"],
+  "broad_core_families":[]
+})JSON",
+					"must be a normalized repository-relative path" },
+			{ "ambiguous", R"JSON({
+  "schema_version":1,
+  "production":[
+    {"paths":["modules/foundry_script/editor/"],"families":["editor"]},
+    {"paths":["modules/foundry_script/editor/tool.cpp"],"families":["tool"]}
+  ],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["core"]
+})JSON",
+					"ambiguous production ownership" },
+			{ "cross_category", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/tests/"],"families":["owned"]}],
+  "nonproduction_prefixes":["modules/foundry_script/tests/"],
+  "broad_core_families":["core"]
+})JSON",
+					"overlaps nonproduction path" },
+			{ "unsafe_family", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/a.cpp"],"families":["../unsafe"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["core.json"]
+})JSON",
+					"safe filename-stem family id" },
+		};
+
+		for (const InvalidCapabilityMap &test_case : cases) {
+			CAPTURE(test_case.name);
+			TemporaryProjectTree tree(vformat("type_completeness_capability_invalid_%s", test_case.name));
+			REQUIRE(tree.is_valid());
+			FSCompletenessCapabilityMap capability_map;
+			Vector<String> errors;
+			CHECK_EQ(capability_map.load(write_completeness_capability_map(tree, test_case.json), errors),
+					ERR_INVALID_DATA);
+			CHECK(completeness_errors_contain_text(errors, test_case.diagnostic));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability reload clears state and invalid changes fail closed") {
+		TemporaryProjectTree tree("type_completeness_capability_reload");
+		REQUIRE(tree.is_valid());
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		const String valid_path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/exact.cpp"],"families":["exact"]}],
+  "nonproduction_prefixes":["modules/foundry_script/tests/"],
+  "broad_core_families":["broad"]
+})JSON");
+		REQUIRE(capability_map.load(valid_path, errors) == OK);
+		REQUIRE(selection_has_only_family(
+				capability_map.select(Vector<String>({ "modules/foundry_script/exact.cpp" })), "exact"));
+
+		tree.write_file("invalid.json", "[]");
+		errors.push_back("stale error");
+		CHECK_EQ(capability_map.load(tree.root.path_join("invalid.json"), errors), ERR_INVALID_DATA);
+		CHECK_FALSE(completeness_errors_contain(errors, "stale error"));
+		const FSCompletenessSelection cleared =
+				capability_map.select(Vector<String>({ "modules/foundry_script/exact.cpp" }));
+		CHECK(cleared.families.is_empty());
+		CHECK(cleared.used_broad_core_fallback);
+
+		const FSCompletenessSelection invalid = capability_map.select(Vector<String>({
+				"modules/foundry_script/../outside.cpp",
+				"modules\\foundry_script\\fs_compiler.cpp",
+				"/modules/foundry_script/fs_compiler.cpp",
+		}));
+		CHECK(invalid.used_broad_core_fallback);
+		CHECK_GE(invalid.validation_errors.size(), 3);
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability validation checks family reachability without mutation") {
+		TemporaryProjectTree tree("type_completeness_capability_rule_coverage");
+		REQUIRE(tree.is_valid());
+		const String map_path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/mapped.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["broad"]
+})JSON");
+		tree.write_file("rules/broad.json", make_completeness_rule("broad"));
+		tree.write_file("rules/unreachable.json", make_completeness_rule("unreachable"));
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE(capability_map.load(map_path, errors) == OK);
+		CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain_text(errors, "mapped family 'mapped' has no rule manifest"));
+		CHECK(completeness_errors_contain_text(errors, "rule family 'broad' is unreachable"));
+		CHECK(completeness_errors_contain_text(errors, "rule family 'unreachable' is unreachable"));
+		CHECK(selection_has_only_family(
+				capability_map.select(Vector<String>({ "modules/foundry_script/mapped.cpp" })), "mapped"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability validation parses rules and rejects collisions") {
+		TemporaryProjectTree tree("type_completeness_capability_rule_integrity");
+		REQUIRE(tree.is_valid());
+		const String map_path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/mapped.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["mapped"]
+})JSON");
+		tree.write_file("rules/a.json", make_completeness_rule("mapped"));
+		tree.write_file("rules/b.json", make_completeness_rule("mapped"));
+		tree.write_file("rules/malformed.json", "{not json");
+		tree.write_file("rules/not-json.txt", "unexpected");
+		tree.write_file("rules/.hidden.json", make_completeness_rule("hidden"));
+		tree.write_file("rules/unknown_rule.json", R"JSON({
+  "schema_version":1,
+  "family":"unknown_rule",
+  "domain":{"shape":["plain"]},
+  "required_dimensions":[],
+  "anchors":[],
+  "relations":[],
+  "exceptions":[],
+  "unknown":true
+})JSON");
+		tree.write_file("rules/nested/rule.json", make_completeness_rule("mapped"));
+#ifdef UNIX_ENABLED
+		TemporaryProjectTree neighbor("type_completeness_capability_rule_link_target");
+		REQUIRE(neighbor.is_valid());
+		neighbor.write_file("linked.json", make_completeness_rule("mapped"));
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		REQUIRE_EQ(filesystem->create_link(
+						   neighbor.root.path_join("linked.json"), tree.root.path_join("rules/linked.json")),
+				OK);
+#endif
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE(capability_map.load(map_path, errors) == OK);
+		CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain_text(errors, "duplicate rule family 'mapped'"));
+		CHECK(completeness_errors_contain_text(errors, "malformed.json"));
+		CHECK(completeness_errors_contain_text(errors, "unexpected non-JSON entry 'not-json.txt'"));
+		CHECK(completeness_errors_contain_text(errors, "unexpected hidden entry '.hidden.json'"));
+		CHECK(completeness_errors_contain_text(errors, "unexpected directory entry 'nested'"));
+		CHECK(completeness_errors_contain_text(errors, "unknown_rule.json: $.unknown: unknown field 'unknown'"));
+		CHECK(completeness_errors_contain_text(errors, "filename stem must equal rule family 'mapped'"));
+#ifdef UNIX_ENABLED
+		CHECK(completeness_errors_contain_text(errors, "linked rule entry 'linked.json' is not allowed"));
+#endif
+	}
+
+	TEST_CASE("TypeCompleteness Manifest checked-in capability families have exactly one reachable rule") {
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE(capability_map.load(type_completeness_capability_path, errors) == OK);
+		CHECK_EQ(capability_map.validate_against_rule_directory(
+						 String(type_completeness_catalog_root).path_join("rules"), errors),
+				OK);
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 	}
 }
 

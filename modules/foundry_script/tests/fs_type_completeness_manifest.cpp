@@ -37,6 +37,14 @@
 #include "core/math/math_funcs.h"
 #include "core/variant/array.h"
 
+#ifdef UNIX_ENABLED
+#include <cstdlib>
+#endif
+
+#ifdef WINDOWS_ENABLED
+#include <windows.h>
+#endif
+
 namespace FSTests {
 
 static void append_error(Vector<String> &r_errors, const String &p_path, const String &p_reason) {
@@ -126,6 +134,9 @@ static bool append_unique_id(const String &p_id, const String &p_path, HashSet<S
 	return true;
 }
 
+static void validate_allowed_fields(const Dictionary &p_object, const Vector<String> &p_allowed_fields,
+		const String &p_path, Vector<String> &r_errors);
+
 static bool require_json_integer(const Variant &p_value, const String &p_path, int &r_value, Vector<String> &r_errors) {
 	if (p_value.get_type() != Variant::FLOAT && p_value.get_type() != Variant::INT) {
 		append_error(r_errors, p_path, "expected an integer");
@@ -205,6 +216,7 @@ static void parse_required_dimensions(const Array &p_records, FSCompletenessMani
 		if (!require_dictionary(p_records[i], record_path, object, r_errors)) {
 			continue;
 		}
+		validate_allowed_fields(object, Vector<String>({ "dimension", "when" }), record_path, r_errors);
 		FSCompletenessRequiredDimension record;
 		const bool has_dimension = require_string(object, SNAME("dimension"), record_path + ".dimension", record.dimension, r_errors);
 		if (has_dimension && record.dimension.is_empty()) {
@@ -238,6 +250,8 @@ static void parse_anchors(const Array &p_records, FSCompletenessManifest &r_mani
 		if (!require_dictionary(p_records[i], record_path, object, r_errors)) {
 			continue;
 		}
+		validate_allowed_fields(object, Vector<String>({ "id", "coordinates", "expect", "surfaces" }),
+				record_path, r_errors);
 		FSCompletenessAnchor record;
 		if (require_string(object, SNAME("id"), record_path + ".id", record.id, r_errors)) {
 			append_unique_id(record.id, record_path + ".id", r_ids, r_errors);
@@ -267,6 +281,7 @@ static void parse_relations(const Array &p_records, FSCompletenessManifest &r_ma
 		if (!require_dictionary(p_records[i], record_path, object, r_errors)) {
 			continue;
 		}
+		validate_allowed_fields(object, Vector<String>({ "id", "from", "to", "derive" }), record_path, r_errors);
 		FSCompletenessRelation record;
 		if (require_string(object, SNAME("id"), record_path + ".id", record.id, r_errors)) {
 			append_unique_id(record.id, record_path + ".id", r_ids, r_errors);
@@ -295,6 +310,10 @@ static void parse_exceptions(const Array &p_records, FSCompletenessManifest &r_m
 		if (!require_dictionary(p_records[i], record_path, object, r_errors)) {
 			continue;
 		}
+		validate_allowed_fields(object,
+				Vector<String>({ "id", "parent", "when", "derive", "rationale", "positive_witnesses",
+						"boundary_witnesses" }),
+				record_path, r_errors);
 		FSCompletenessException record;
 		if (require_string(object, SNAME("id"), record_path + ".id", record.id, r_errors)) {
 			append_unique_id(record.id, record_path + ".id", r_ids, r_errors);
@@ -348,6 +367,10 @@ Error FSCompletenessManifest::load(const String &p_path, FSCompletenessManifest 
 
 	const Dictionary root = json_data;
 	FSCompletenessManifest parsed;
+	validate_allowed_fields(root,
+			Vector<String>({ "schema_version", "family", "domain", "required_dimensions", "anchors", "relations",
+					"exceptions", "max_chain_length" }),
+			"$", r_errors);
 	if (!root.has(SNAME("schema_version"))) {
 		append_error(r_errors, "$.schema_version", "required field is missing");
 	} else if (require_json_integer(root[SNAME("schema_version")], "$.schema_version", parsed.schema_version, r_errors)) {
@@ -442,6 +465,490 @@ static void validate_allowed_fields(const Dictionary &p_object, const Vector<Str
 			append_error(r_errors, append_json_path_member(p_path, field), vformat("unknown field '%s'", field));
 		}
 	}
+}
+
+static bool is_normalized_repository_path(const String &p_path) {
+	if (p_path.is_empty() || p_path != p_path.strip_edges() || p_path.is_absolute_path() ||
+			p_path.contains(":") || p_path.contains("\\")) {
+		return false;
+	}
+	const bool is_directory_prefix = p_path.ends_with("/");
+	const String path_without_trailing_slash = is_directory_prefix ? p_path.trim_suffix("/") : p_path;
+	if (path_without_trailing_slash.is_empty() || path_without_trailing_slash.simplify_path() != path_without_trailing_slash) {
+		return false;
+	}
+	const PackedStringArray components = path_without_trailing_slash.split("/", true);
+	for (const String &component : components) {
+		if (component.is_empty() || component == "." || component == "..") {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool capability_path_matches(const String &p_rule, const String &p_path) {
+	if (p_rule.ends_with("/")) {
+		return p_path.length() > p_rule.length() && p_path.begins_with(p_rule);
+	}
+	return p_path == p_rule;
+}
+
+static bool capability_rules_overlap(const String &p_left, const String &p_right) {
+	return p_left == p_right || capability_path_matches(p_left, p_right) || capability_path_matches(p_right, p_left);
+}
+
+static bool is_foundry_script_production_path(const String &p_path) {
+	static const String production_root = "modules/foundry_script/";
+	return p_path.length() > production_root.length() && p_path.begins_with(production_root);
+}
+
+static bool is_foundry_script_production_rule(const String &p_path) {
+	static const String production_root = "modules/foundry_script/";
+	return p_path == production_root || is_foundry_script_production_path(p_path);
+}
+
+static bool invalid_path_may_target_production(const String &p_path) {
+	String forward_path = p_path.replace("\\", "/");
+	while (forward_path.begins_with("/")) {
+		forward_path = forward_path.trim_prefix("/");
+	}
+	return forward_path.begins_with("modules/foundry_script/");
+}
+
+static bool parse_capability_string_array(const Dictionary &p_object, const StringName &p_field,
+		const String &p_path, Vector<String> &r_values, Vector<String> &r_errors) {
+	Array values;
+	if (!require_array(p_object, p_field, p_path, values, r_errors)) {
+		return false;
+	}
+	return parse_string_array(values, p_path, r_values, r_errors, true);
+}
+
+static bool is_safe_capability_family(const String &p_family) {
+	if (p_family.is_empty()) {
+		return false;
+	}
+	for (int i = 0; i < p_family.length(); i++) {
+		const char32_t character = p_family[i];
+		if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+					(character >= '0' && character <= '9') || character == '_' || character == '-')) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static void sort_and_deduplicate_errors(Vector<String> &r_errors) {
+	r_errors.sort();
+	Vector<String> unique_errors;
+	for (const String &error : r_errors) {
+		if (unique_errors.is_empty() || unique_errors[unique_errors.size() - 1] != error) {
+			unique_errors.push_back(error);
+		}
+	}
+	r_errors = unique_errors;
+}
+
+static String canonicalize_existing_capability_path(const String &p_path) {
+#ifdef UNIX_ENABLED
+	char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
+	if (resolved == nullptr) {
+		return String();
+	}
+	String canonical;
+	const Error parse_error = canonical.append_utf8(resolved);
+	::free(resolved);
+	return parse_error == OK ? canonical.simplify_path() : String();
+#elif defined(WINDOWS_ENABLED)
+	HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+			FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	if (handle == INVALID_HANDLE_VALUE) {
+		return String();
+	}
+	WCHAR buffer[4096];
+	const DWORD length = ::GetFinalPathNameByHandleW(
+			handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	::CloseHandle(handle);
+	if (length == 0 || length > 4095) {
+		return String();
+	}
+	buffer[length] = 0;
+	return String::utf16((const char16_t *)buffer, (int)length)
+			.trim_prefix("\\\\?\\")
+			.replace("\\", "/")
+			.simplify_path();
+#else
+	return p_path.simplify_path();
+#endif
+}
+
+struct CapabilityOwnershipEntry {
+	String path;
+	int record_index = -1;
+};
+
+Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_errors) {
+	production_prefixes.clear();
+	nonproduction_prefixes.clear();
+	broad_core_families.clear();
+	r_errors.clear();
+
+	Error read_error = OK;
+	const String source = FileAccess::get_file_as_string(p_path, &read_error);
+	if (read_error != OK) {
+		append_error(r_errors, p_path, vformat("could not read file (error %d)", read_error));
+		return ERR_INVALID_DATA;
+	}
+
+	Variant json_data;
+	if (parse_type_completeness_json(source, String(), json_data, r_errors) == ERR_PARSE_ERROR) {
+		return ERR_INVALID_DATA;
+	}
+	if (json_data.get_type() != Variant::DICTIONARY) {
+		append_error(r_errors, "$", "expected an object");
+		return ERR_INVALID_DATA;
+	}
+
+	const Dictionary root = json_data;
+	validate_allowed_fields(root,
+			Vector<String>({ "schema_version", "production", "nonproduction_prefixes", "broad_core_families" }),
+			"$", r_errors);
+	int schema_version = 0;
+	if (!root.has(SNAME("schema_version"))) {
+		append_error(r_errors, "$.schema_version", "required field is missing");
+	} else if (require_json_integer(root[SNAME("schema_version")], "$.schema_version", schema_version, r_errors) &&
+			schema_version != 1) {
+		append_error(r_errors, "$.schema_version", "must equal 1");
+	}
+
+	FSCompletenessCapabilityMap parsed;
+	Vector<CapabilityOwnershipEntry> ownership_entries;
+	Array production;
+	if (require_array(root, SNAME("production"), "$.production", production, r_errors)) {
+		if (production.is_empty()) {
+			append_error(r_errors, "$.production", "must contain at least one ownership record");
+		}
+		for (int record_index = 0; record_index < production.size(); record_index++) {
+			const String record_path = vformat("$.production[%d]", record_index);
+			Dictionary record;
+			if (!require_dictionary(production[record_index], record_path, record, r_errors)) {
+				continue;
+			}
+			validate_allowed_fields(record, Vector<String>({ "paths", "families" }), record_path, r_errors);
+			Vector<String> paths;
+			Vector<String> families;
+			parse_capability_string_array(record, SNAME("paths"), record_path + ".paths", paths, r_errors);
+			parse_capability_string_array(record, SNAME("families"), record_path + ".families", families, r_errors);
+			paths.sort();
+			families.sort();
+
+			HashSet<String> family_set;
+			for (int family_index = 0; family_index < families.size(); family_index++) {
+				const String &family = families[family_index];
+				if (family.is_empty()) {
+					continue;
+				}
+				if (!is_safe_capability_family(family)) {
+					append_error(r_errors, vformat("%s.families[%d]", record_path, family_index),
+							"must be a safe filename-stem family id");
+					continue;
+				}
+				family_set.insert(family);
+			}
+			for (int path_index = 0; path_index < paths.size(); path_index++) {
+				const String &path = paths[path_index];
+				if (!is_normalized_repository_path(path)) {
+					append_error(r_errors, vformat("%s.paths[%d]", record_path, path_index),
+							"must be a normalized repository-relative path");
+					continue;
+				}
+				if (!is_foundry_script_production_rule(path)) {
+					append_error(r_errors, vformat("%s.paths[%d]", record_path, path_index),
+							"must identify a path within modules/foundry_script/");
+					continue;
+				}
+				parsed.production_prefixes.push_back(Pair<String, HashSet<String>>(path, family_set));
+				CapabilityOwnershipEntry entry;
+				entry.path = path;
+				entry.record_index = record_index;
+				ownership_entries.push_back(entry);
+			}
+		}
+	}
+
+	for (int left = 0; left < ownership_entries.size(); left++) {
+		for (int right = left + 1; right < ownership_entries.size(); right++) {
+			if (ownership_entries[left].record_index != ownership_entries[right].record_index &&
+					capability_rules_overlap(ownership_entries[left].path, ownership_entries[right].path)) {
+				append_error(r_errors, "$.production",
+						vformat("ambiguous production ownership between '%s' and '%s'",
+								ownership_entries[left].path, ownership_entries[right].path));
+			}
+		}
+	}
+
+	Vector<String> nonproduction;
+	if (parse_capability_string_array(root, SNAME("nonproduction_prefixes"), "$.nonproduction_prefixes",
+				nonproduction, r_errors)) {
+		nonproduction.sort();
+		for (int i = 0; i < nonproduction.size(); i++) {
+			if (!is_normalized_repository_path(nonproduction[i])) {
+				append_error(r_errors, vformat("$.nonproduction_prefixes[%d]", i),
+						"must be a normalized repository-relative path");
+				continue;
+			}
+			parsed.nonproduction_prefixes.push_back(nonproduction[i]);
+		}
+	}
+
+	Vector<String> broad_families;
+	if (parse_capability_string_array(root, SNAME("broad_core_families"), "$.broad_core_families",
+				broad_families, r_errors)) {
+		broad_families.sort();
+		for (int family_index = 0; family_index < broad_families.size(); family_index++) {
+			const String &family = broad_families[family_index];
+			if (!family.is_empty()) {
+				if (!is_safe_capability_family(family)) {
+					append_error(r_errors, vformat("$.broad_core_families[%d]", family_index),
+							"must be a safe filename-stem family id");
+				} else {
+					parsed.broad_core_families.insert(family);
+				}
+			}
+		}
+	}
+
+	for (int left = 0; left < parsed.nonproduction_prefixes.size(); left++) {
+		for (int right = left + 1; right < parsed.nonproduction_prefixes.size(); right++) {
+			if (capability_rules_overlap(
+						parsed.nonproduction_prefixes[left], parsed.nonproduction_prefixes[right])) {
+				append_error(r_errors, "$.nonproduction_prefixes",
+						vformat("overlapping entries '%s' and '%s'",
+								parsed.nonproduction_prefixes[left], parsed.nonproduction_prefixes[right]));
+			}
+		}
+	}
+	for (const Pair<String, HashSet<String>> &production_entry : parsed.production_prefixes) {
+		for (const String &nonproduction_entry : parsed.nonproduction_prefixes) {
+			if (production_entry.first.ends_with("/") &&
+					capability_rules_overlap(production_entry.first, nonproduction_entry)) {
+				append_error(r_errors, "$",
+						vformat("production path '%s' overlaps nonproduction path '%s'",
+								production_entry.first, nonproduction_entry));
+			}
+		}
+	}
+
+	for (int left = 0; left < parsed.production_prefixes.size(); left++) {
+		for (int right = left + 1; right < parsed.production_prefixes.size(); right++) {
+			if (parsed.production_prefixes[right].first < parsed.production_prefixes[left].first) {
+				SWAP(parsed.production_prefixes.write[left], parsed.production_prefixes.write[right]);
+			}
+		}
+	}
+
+	if (!r_errors.is_empty()) {
+		sort_and_deduplicate_errors(r_errors);
+		return ERR_INVALID_DATA;
+	}
+	production_prefixes = parsed.production_prefixes;
+	nonproduction_prefixes = parsed.nonproduction_prefixes;
+	broad_core_families = parsed.broad_core_families;
+	return OK;
+}
+
+FSCompletenessSelection FSCompletenessCapabilityMap::select(const Vector<String> &p_changed_paths) const {
+	FSCompletenessSelection selection;
+	const bool map_is_loaded = !production_prefixes.is_empty() && !broad_core_families.is_empty();
+	if (!map_is_loaded) {
+		selection.used_broad_core_fallback = true;
+		selection.validation_errors.push_back("capability map is not loaded");
+	}
+	Vector<String> changed_paths = p_changed_paths;
+	changed_paths.sort();
+	String previous_path;
+	bool has_previous_path = false;
+	for (const String &path : changed_paths) {
+		if (has_previous_path && path == previous_path) {
+			continue;
+		}
+		previous_path = path;
+		has_previous_path = true;
+
+		if (!is_normalized_repository_path(path)) {
+			selection.validation_errors.push_back(vformat("invalid changed path: %s", path));
+			if (invalid_path_may_target_production(path)) {
+				selection.used_broad_core_fallback = true;
+				for (const String &family : broad_core_families) {
+					selection.families.insert(family);
+				}
+			}
+			continue;
+		}
+
+		bool mapped = false;
+		for (const Pair<String, HashSet<String>> &entry : production_prefixes) {
+			if (!capability_path_matches(entry.first, path)) {
+				continue;
+			}
+			mapped = true;
+			for (const String &family : entry.second) {
+				selection.families.insert(family);
+			}
+		}
+		if (mapped) {
+			continue;
+		}
+
+		bool nonproduction = false;
+		for (const String &prefix : nonproduction_prefixes) {
+			if (capability_path_matches(prefix, path)) {
+				nonproduction = true;
+				break;
+			}
+		}
+		if (nonproduction) {
+			continue;
+		}
+		if (!mapped && is_foundry_script_production_path(path)) {
+			selection.used_broad_core_fallback = true;
+			selection.validation_errors.push_back(vformat("unmapped production path: %s", path));
+			for (const String &family : broad_core_families) {
+				selection.families.insert(family);
+			}
+		}
+	}
+	sort_and_deduplicate_errors(selection.validation_errors);
+	return selection;
+}
+
+Error FSCompletenessCapabilityMap::validate_against_rule_directory(
+		const String &p_directory, Vector<String> &r_errors) const {
+	r_errors.clear();
+	Error open_error = OK;
+	Ref<DirAccess> directory = DirAccess::open(p_directory, &open_error);
+	if (directory.is_null()) {
+		r_errors.push_back(vformat("%s: could not open rule directory (error %d)", p_directory, open_error));
+		return ERR_INVALID_DATA;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		r_errors.push_back(vformat("%s: filesystem access is unavailable", p_directory));
+		return ERR_INVALID_DATA;
+	}
+	if (filesystem->is_link(p_directory)) {
+		r_errors.push_back(vformat("%s: linked rule directory is not allowed", p_directory));
+		return ERR_INVALID_DATA;
+	}
+	const String directory_path = directory->get_current_dir().replace("\\", "/").simplify_path();
+	const String canonical_directory_path = canonicalize_existing_capability_path(directory_path);
+	if (canonical_directory_path.is_empty() || canonical_directory_path != directory_path) {
+		r_errors.push_back(vformat("%s: rule directory must be canonical", p_directory));
+		return ERR_INVALID_DATA;
+	}
+	if (directory->list_dir_begin() != OK) {
+		r_errors.push_back(vformat("%s: could not list rule directory", p_directory));
+		return ERR_INVALID_DATA;
+	}
+
+	Vector<String> json_files;
+	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+		if (entry.begins_with(".")) {
+			r_errors.push_back(vformat("%s: unexpected hidden entry '%s'", p_directory, entry));
+			continue;
+		}
+		const String entry_path = directory_path.path_join(entry).simplify_path();
+		if (entry_path.get_base_dir() != directory_path) {
+			r_errors.push_back(vformat("%s: non-contained rule entry '%s'", p_directory, entry));
+			continue;
+		}
+		if (directory->is_link(entry) || filesystem->is_link(entry_path)) {
+			r_errors.push_back(vformat("%s: linked rule entry '%s' is not allowed", p_directory, entry));
+			continue;
+		}
+		if (directory->current_is_dir()) {
+			r_errors.push_back(vformat("%s: unexpected directory entry '%s'", p_directory, entry));
+			continue;
+		}
+		if (entry.get_extension().to_lower() != "json") {
+			r_errors.push_back(vformat("%s: unexpected non-JSON entry '%s'", p_directory, entry));
+			continue;
+		}
+		json_files.push_back(entry_path);
+	}
+	directory->list_dir_end();
+	json_files.sort();
+	if (json_files.is_empty()) {
+		r_errors.push_back(vformat("%s: must contain at least one JSON rule manifest", p_directory));
+	}
+
+	HashMap<String, String> family_sources;
+	for (const String &file : json_files) {
+		const String canonical_file = canonicalize_existing_capability_path(file);
+		if (canonical_file.is_empty() || canonical_file != file || canonical_file.get_base_dir() != canonical_directory_path) {
+			r_errors.push_back(vformat("%s: rule manifest must be a canonical direct child", file));
+			continue;
+		}
+		FSCompletenessManifest manifest;
+		Vector<String> file_errors;
+		if (FSCompletenessManifest::load(file, manifest, file_errors) != OK) {
+			append_catalog_errors(r_errors, file, file_errors);
+			continue;
+		}
+		if (!is_safe_capability_family(manifest.family)) {
+			r_errors.push_back(vformat("%s: rule family '%s' is not a safe filename stem", file, manifest.family));
+			continue;
+		}
+		const String *prior_source = family_sources.getptr(manifest.family);
+		if (prior_source != nullptr) {
+			r_errors.push_back(vformat("%s: duplicate rule family '%s' (already declared by %s)",
+					file, manifest.family, *prior_source));
+			continue;
+		}
+		family_sources.insert(manifest.family, file);
+		if (file.get_file().get_basename() != manifest.family) {
+			r_errors.push_back(vformat("%s: filename stem must equal rule family '%s'", file, manifest.family));
+		}
+	}
+
+	HashSet<String> explicitly_mapped_families;
+	for (const Pair<String, HashSet<String>> &entry : production_prefixes) {
+		for (const String &family : entry.second) {
+			explicitly_mapped_families.insert(family);
+		}
+	}
+	HashSet<String> referenced_families = explicitly_mapped_families;
+	for (const String &family : broad_core_families) {
+		referenced_families.insert(family);
+	}
+	Vector<String> sorted_referenced;
+	for (const String &family : referenced_families) {
+		sorted_referenced.push_back(family);
+	}
+	sorted_referenced.sort();
+	for (const String &family : sorted_referenced) {
+		if (!family_sources.has(family)) {
+			r_errors.push_back(vformat("mapped family '%s' has no rule manifest", family));
+		}
+	}
+
+	Vector<String> sorted_rule_families;
+	for (const KeyValue<String, String> &entry : family_sources) {
+		sorted_rule_families.push_back(entry.key);
+	}
+	sorted_rule_families.sort();
+	for (const String &family : sorted_rule_families) {
+		if (!explicitly_mapped_families.has(family)) {
+			r_errors.push_back(vformat("rule family '%s' is unreachable from the capability map", family));
+		}
+	}
+
+	sort_and_deduplicate_errors(r_errors);
+	return r_errors.is_empty() ? OK : ERR_INVALID_DATA;
 }
 
 static bool collect_catalog_files(const String &p_directory, Vector<String> &r_files, Vector<String> &r_errors) {

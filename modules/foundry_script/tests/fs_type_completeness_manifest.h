@@ -34,6 +34,7 @@
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
+#include "core/templates/pair.h"
 #include "core/templates/vector.h"
 #include "core/variant/dictionary.h"
 
@@ -92,6 +93,23 @@ struct FSCompletenessPartition {
 struct FSCompletenessDimension {
 	String id;
 	HashSet<String> outcomes;
+};
+
+struct FSCompletenessSelection {
+	HashSet<String> families;
+	bool used_broad_core_fallback = false;
+	Vector<String> validation_errors;
+};
+
+class FSCompletenessCapabilityMap {
+	Vector<Pair<String, HashSet<String>>> production_prefixes;
+	Vector<String> nonproduction_prefixes;
+	HashSet<String> broad_core_families;
+
+public:
+	Error load(const String &p_path, Vector<String> &r_errors);
+	Error validate_against_rule_directory(const String &p_directory, Vector<String> &r_errors) const;
+	FSCompletenessSelection select(const Vector<String> &p_changed_paths) const;
 };
 
 class FSCompletenessCatalog {
