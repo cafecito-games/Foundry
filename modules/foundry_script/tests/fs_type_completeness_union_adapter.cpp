@@ -162,6 +162,81 @@ static String semantic_pair_key(const Dictionary &p_coordinates) {
 	return FSCompletenessCaseID::canonical_coordinates(semantic_coordinates);
 }
 
+enum RuntimeDestinationKind {
+	RUNTIME_DESTINATION_DIRECTORY,
+	RUNTIME_DESTINATION_FILE,
+};
+
+struct RuntimeDestination {
+	String path;
+	RuntimeDestinationKind kind = RUNTIME_DESTINATION_FILE;
+};
+
+static Error reject_symlink_aliases(const String &p_container_root, const String &p_path) {
+	const String container_root = p_container_root.simplify_path();
+	String current = p_path.simplify_path();
+	if (current != container_root &&
+			!TemporaryProjectTree::is_strict_descendant(container_root, current)) {
+		return ERR_UNAUTHORIZED;
+	}
+
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_CANT_OPEN;
+	}
+	while (true) {
+		if (filesystem->is_link(current)) {
+			return ERR_UNAUTHORIZED;
+		}
+		if (current == container_root) {
+			return OK;
+		}
+		const String parent = current.get_base_dir().simplify_path();
+		if (parent.is_empty() || parent == current) {
+			return ERR_UNAUTHORIZED;
+		}
+		current = parent;
+	}
+}
+
+static Error preflight_runtime_destination(
+		const String &p_runtime_root, const RuntimeDestination &p_destination) {
+	if (!TemporaryProjectTree::is_strict_descendant(p_runtime_root, p_destination.path)) {
+		return ERR_UNAUTHORIZED;
+	}
+	const Error alias_error = reject_symlink_aliases(p_runtime_root, p_destination.path);
+	if (alias_error != OK) {
+		return alias_error;
+	}
+
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_CANT_OPEN;
+	}
+	const bool directory_exists = filesystem->dir_exists(p_destination.path);
+	const bool file_exists = filesystem->file_exists(p_destination.path);
+	if (!directory_exists && !file_exists) {
+		return OK;
+	}
+
+	String canonical_existing_path;
+	const Error resolve_error = TemporaryProjectTree::resolve_existing_owned_path(
+			p_destination.path, canonical_existing_path);
+	if (resolve_error != OK) {
+		return resolve_error;
+	}
+	if (!TemporaryProjectTree::is_strict_descendant(p_runtime_root, canonical_existing_path)) {
+		return ERR_UNAUTHORIZED;
+	}
+	if (p_destination.kind == RUNTIME_DESTINATION_DIRECTORY && !directory_exists) {
+		return ERR_CANT_CREATE;
+	}
+	if (p_destination.kind == RUNTIME_DESTINATION_FILE && !file_exists) {
+		return ERR_CANT_CREATE;
+	}
+	return OK;
+}
+
 static Error write_runtime_file(const String &p_path, const String &p_contents) {
 	Ref<DirAccess> directory = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	if (directory.is_null()) {
@@ -554,19 +629,21 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 		const Vector<FSCompletenessProgram> &p_programs, FSCompletenessRuntimeBatch &r_batch) {
 	r_batch = FSCompletenessRuntimeBatch();
 	const String test_scratch_root = TemporaryProjectTree::get_test_scratch_root();
-	if (test_scratch_root.is_empty() || p_scratch_root.is_empty() || p_scratch_root.contains("://") ||
-			!p_scratch_root.is_absolute_path() ||
-			!TemporaryProjectTree::is_strict_descendant(test_scratch_root, p_scratch_root.simplify_path())) {
-		return ERR_INVALID_PARAMETER;
+	if (test_scratch_root.is_empty()) {
+		return ERR_CANT_RESOLVE;
 	}
-	Error canonical_error = OK;
-	Ref<DirAccess> canonical_directory = DirAccess::open(p_scratch_root, &canonical_error);
-	if (canonical_error != OK || canonical_directory.is_null()) {
-		return ERR_INVALID_PARAMETER;
+	String canonical_root;
+	Error error = TemporaryProjectTree::resolve_existing_owned_path(p_scratch_root, canonical_root);
+	if (error != OK) {
+		return error;
 	}
-	if (!TemporaryProjectTree::is_strict_descendant(
-				test_scratch_root, canonical_directory->get_current_dir().simplify_path())) {
-		return ERR_UNAUTHORIZED;
+	error = reject_symlink_aliases(test_scratch_root, p_scratch_root);
+	if (error != OK) {
+		return error;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null() || !filesystem->dir_exists(canonical_root)) {
+		return ERR_CANT_OPEN;
 	}
 
 	struct SemanticPair {
@@ -636,9 +713,26 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 		}
 	}
 
-	const String text_root = p_scratch_root.path_join("text");
-	const String bytecode_root = p_scratch_root.path_join("bytecode");
-	Error error = write_runtime_file(text_root.path_join("project.foundry"), String());
+	const String text_root = canonical_root.path_join("text");
+	const String bytecode_root = canonical_root.path_join("bytecode");
+	Vector<RuntimeDestination> destinations;
+	destinations.push_back({ text_root, RUNTIME_DESTINATION_DIRECTORY });
+	destinations.push_back({ bytecode_root, RUNTIME_DESTINATION_DIRECTORY });
+	destinations.push_back({ text_root.path_join("project.foundry"), RUNTIME_DESTINATION_FILE });
+	destinations.push_back({ bytecode_root.path_join("project.foundry"), RUNTIME_DESTINATION_FILE });
+	for (const FSCompletenessProgram &program : p_programs) {
+		const String surface_root = program.surface == "text" ? text_root : bytecode_root;
+		destinations.push_back({ surface_root.path_join(program.case_id + ".fs"), RUNTIME_DESTINATION_FILE });
+		destinations.push_back({ surface_root.path_join(program.case_id + ".out"), RUNTIME_DESTINATION_FILE });
+	}
+	for (const RuntimeDestination &destination : destinations) {
+		error = preflight_runtime_destination(canonical_root, destination);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	error = write_runtime_file(text_root.path_join("project.foundry"), String());
 	if (error != OK) {
 		return error;
 	}

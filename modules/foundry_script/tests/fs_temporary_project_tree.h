@@ -206,6 +206,36 @@ struct TemporaryProjectTree {
 		return resolve_owned_child(scratch_root, p_name, r_absolute_path);
 	}
 
+	// Canonicalizes an existing absolute file or directory and proves that its resolved target is
+	// owned by the configured test scratch. Unlike resolve_owned_path(), this follows filesystem
+	// aliases and therefore detects a lexically contained path that resolves outside scratch.
+	static Error resolve_existing_owned_path(const String &p_path, String &r_canonical_path) {
+		r_canonical_path = String();
+		if (!is_absolute_filesystem_path(p_path)) {
+			return ERR_CANT_RESOLVE;
+		}
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (filesystem.is_null() ||
+				(!filesystem->dir_exists(p_path) && !filesystem->file_exists(p_path))) {
+			return ERR_CANT_RESOLVE;
+		}
+		const String scratch_root = get_test_scratch_root();
+		if (scratch_root.is_empty()) {
+			return ERR_CANT_RESOLVE;
+		}
+		const String canonical_scratch_root = canonicalize_existing_path(scratch_root);
+		const String canonical_path = canonicalize_existing_path(p_path);
+		if (!is_absolute_filesystem_path(canonical_scratch_root) ||
+				!is_absolute_filesystem_path(canonical_path)) {
+			return ERR_CANT_RESOLVE;
+		}
+		if (!is_strict_descendant(canonical_scratch_root, canonical_path)) {
+			return ERR_UNAUTHORIZED;
+		}
+		r_canonical_path = canonical_path;
+		return OK;
+	}
+
 	// Recursively removes an owned scratch path. Refuses, without deleting anything, when the path
 	// is not a strict descendant of the scratch root or when it contains the running executable.
 	static Error remove_owned_path(const String &p_absolute_path) {

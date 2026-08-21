@@ -586,19 +586,30 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			check_union_pilot_runtime_batch_cleared(batch);
 		}
 
+		TemporaryProjectTree invalid_tree(vformat("type_completeness_union_invalid_root_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(invalid_tree.is_valid());
+		invalid_tree.write_file("occupied", "not a directory");
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_NE(FSUnionCompletenessAdapter::execute(
+						 invalid_tree.root.path_join("occupied"), programs, batch),
+				OK);
+		check_union_pilot_runtime_batch_cleared(batch);
+
 		TemporaryProjectTree tree(vformat("type_completeness_union_setup_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
-		tree.write_file("occupied", "not a directory");
-		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		tree.write_file("text/stray.fs", "func test():\n\tpass\n");
+		batch = stale_union_pilot_runtime_batch();
 		ERR_PRINT_OFF;
-		const Error setup_error =
-				FSUnionCompletenessAdapter::execute(tree.root.path_join("occupied"), programs, batch);
+		const Error setup_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
 		ERR_PRINT_ON;
-		CHECK_NE(setup_error, OK);
+		CHECK_EQ(setup_error, ERR_CANT_OPEN);
 		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK(FileAccess::exists(tree.root.path_join("text/project.foundry")));
+		CHECK(FileAccess::exists(tree.root.path_join("bytecode/project.foundry")));
+		CHECK(FileAccess::exists(tree.root.path_join("text/stray.fs")));
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot refuses a symlinked surface before writing outside its tree") {
+	TEST_CASE("TypeCompleteness UnionPilot refuses symlinked runtime roots and ancestors") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
 		TemporaryProjectTree tree(vformat("type_completeness_union_symlink_%d", OS::get_singleton()->get_process_id()));
@@ -615,16 +626,71 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("project.foundry")));
+		CHECK_FALSE(FileAccess::exists(tree.root.path_join("bytecode/project.foundry")));
+		CHECK_EQ(DirAccess::remove_absolute(tree.root.path_join("text")), OK);
+
+		const String outside_root_link = tree.root.path_join("outside_root");
+		if (filesystem->create_link(neighbor.root, outside_root_link) != OK) {
+			return;
+		}
+
+		batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
+		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("text/project.foundry")));
 
 		if (filesystem->create_link(neighbor.root, tree.root.path_join("ancestor_link")) != OK) {
 			return;
 		}
+		REQUIRE_EQ(filesystem->make_dir_recursive(neighbor.root.path_join("existing_root")), OK);
 		batch = stale_union_pilot_runtime_batch();
 		CHECK_EQ(FSUnionCompletenessAdapter::execute(
-						 tree.root.path_join("ancestor_link/new_root"), programs, batch),
-				ERR_INVALID_PARAMETER);
+						 tree.root.path_join("ancestor_link/existing_root"), programs, batch),
+				ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
-		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("new_root/text/project.foundry")));
+		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("existing_root/text/project.foundry")));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot preflights both surfaces before writing any fixture") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		TemporaryProjectTree tree(vformat("type_completeness_union_surface_plan_%d", OS::get_singleton()->get_process_id()));
+		TemporaryProjectTree neighbor(vformat("type_completeness_union_surface_neighbor_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		REQUIRE(neighbor.is_valid());
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		if (filesystem->create_link(neighbor.root, tree.root.path_join("bytecode")) != OK) {
+			return;
+		}
+
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
+		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK_FALSE(FileAccess::exists(tree.root.path_join("text/project.foundry")));
+		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("project.foundry")));
+
+		CHECK_EQ(DirAccess::remove_absolute(tree.root.path_join("bytecode")), OK);
+		neighbor.write_file("existing_source.fs", "keep\n");
+		String text_case_id;
+		for (const FSCompletenessProgram &program : programs) {
+			if (program.surface == "text") {
+				text_case_id = program.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(text_case_id.is_empty());
+		REQUIRE_EQ(filesystem->make_dir_recursive(tree.root.path_join("text")), OK);
+		if (filesystem->create_link(neighbor.root.path_join("existing_source.fs"),
+					tree.root.path_join("text").path_join(text_case_id + ".fs")) != OK) {
+			return;
+		}
+
+		batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
+		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK_FALSE(FileAccess::exists(tree.root.path_join("text/project.foundry")));
+		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("existing_source.fs")), "keep\n");
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runtime descriptor rejects RefCounted") {
