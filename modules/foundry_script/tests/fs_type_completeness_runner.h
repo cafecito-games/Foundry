@@ -51,6 +51,8 @@ struct FSCompletenessFinding {
 	String issue_url;
 	String closure_packet_url;
 	PackedStringArray permanent_test_paths;
+	String migrated_from;
+	PackedStringArray resolved_case_ids;
 };
 
 struct FSCompletenessRunOptions {
@@ -59,6 +61,7 @@ struct FSCompletenessRunOptions {
 	String scratch_root;
 	String report_path;
 	void (*observation_mutator)(FSCompletenessObservation &) = nullptr;
+	void (*runtime_result_mutator)(FSCompletenessRuntimeResult &) = nullptr;
 };
 
 struct FSCompletenessRunResult {

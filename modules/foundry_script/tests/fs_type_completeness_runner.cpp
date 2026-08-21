@@ -41,6 +41,11 @@
 #include "core/io/json.h"
 #include "core/os/os.h"
 #include "core/templates/hash_set.h"
+#include "tests/test_utils.h"
+
+#ifdef WINDOWS_ENABLED
+#include <windows.h>
+#endif
 
 namespace FSTests {
 
@@ -248,6 +253,12 @@ static Dictionary finding_report(const FSCompletenessFinding &p_finding) {
 		permanent_test_paths.push_back(path);
 	}
 	report["permanent_test_paths"] = permanent_test_paths;
+	report["migrated_from"] = p_finding.migrated_from;
+	Array resolved_case_ids;
+	for (const String &case_id : p_finding.resolved_case_ids) {
+		resolved_case_ids.push_back(case_id);
+	}
+	report["resolved_case_ids"] = resolved_case_ids;
 	return report;
 }
 
@@ -255,7 +266,11 @@ static void sort_findings(Vector<FSCompletenessFinding> &r_findings) {
 	for (int i = 1; i < r_findings.size(); i++) {
 		const FSCompletenessFinding finding = r_findings[i];
 		int position = i;
-		while (position > 0 && finding.finding_id < r_findings[position - 1].finding_id) {
+		while (position > 0 && (finding.finding_id < r_findings[position - 1].finding_id ||
+					(finding.finding_id == r_findings[position - 1].finding_id &&
+							(finding.case_id < r_findings[position - 1].case_id ||
+									(finding.case_id == r_findings[position - 1].case_id &&
+											finding.dimension < r_findings[position - 1].dimension))))) {
 			r_findings.write[position] = r_findings[position - 1];
 			position--;
 		}
@@ -437,6 +452,37 @@ static const FSCompletenessResolvedCell *find_cell_by_id(
 	return nullptr;
 }
 
+static bool ledger_dimension_is_known(
+		const FSCompletenessResolvedCell &p_cell, const String &p_dimension) {
+	return p_cell.dimensions.has(p_dimension) || p_dimension == "output" ||
+			p_dimension == "diagnostics" || p_dimension == "runtime_status" ||
+			p_dimension == "text_bytecode_parity";
+}
+
+static Error validate_permanent_test_path(const String &p_path) {
+	if (p_path.is_empty() || p_path.is_absolute_path() || p_path.simplify_path() != p_path ||
+			p_path.contains("://") || p_path.contains("/../") ||
+			p_path.ends_with("/..")) {
+		return ERR_INVALID_DATA;
+	}
+	const String repository_root = TestUtils::get_tests_dir().get_base_dir().simplify_path();
+	const String absolute_path = repository_root.path_join(p_path).simplify_path();
+	if (!TemporaryProjectTree::is_strict_descendant(repository_root, absolute_path) ||
+			!FileAccess::exists(absolute_path) || DirAccess::dir_exists_absolute(absolute_path)) {
+		return ERR_INVALID_DATA;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_UNAVAILABLE;
+	}
+	for (String current = absolute_path; current != repository_root; current = current.get_base_dir()) {
+		if (current.is_empty() || filesystem->is_link(current)) {
+			return ERR_UNAUTHORIZED;
+		}
+	}
+	return OK;
+}
+
 static Error load_findings_ledger(const String &p_directory, const String &p_family,
 		const FSCompletenessResolution &p_resolution, const HashSet<String> &p_current_ids,
 		const FSCompletenessMigrations &p_migrations,
@@ -512,7 +558,8 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 		finding.classification = record["classification"];
 		finding.issue_url = record["issue_url"];
 		finding.closure_packet_url = record["closure_packet_url"];
-		if (finding_ids.has(finding.finding_id) || finding.family != p_family ||
+		if (file_path.get_file().get_basename() != finding.finding_id ||
+				finding_ids.has(finding.finding_id) || finding.family != p_family ||
 				!classification_is_known(finding.classification) ||
 				(!finding.issue_url.begins_with("https://") && !finding.issue_url.begins_with("http://")) ||
 				(!finding.closure_packet_url.begins_with("https://") &&
@@ -520,19 +567,6 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 			return ERR_INVALID_DATA;
 		}
 		finding_ids.insert(finding.finding_id);
-
-		if (!p_current_ids.has(finding.case_id)) {
-			const Vector<String> migrated_ids = p_migrations.resolve(finding.case_id);
-			if (migrated_ids.size() != 1 || !p_current_ids.has(migrated_ids[0])) {
-				return ERR_INVALID_DATA;
-			}
-			finding.case_id = migrated_ids[0];
-		}
-		const FSCompletenessResolvedCell *cell = find_cell_by_id(p_resolution, finding.case_id);
-		if (cell == nullptr ||
-				(finding.dimension != "text_bytecode_parity" && !cell->dimensions.has(finding.dimension))) {
-			return ERR_INVALID_DATA;
-		}
 
 		if (record["permanent_test_paths"].get_type() != Variant::ARRAY) {
 			return ERR_INVALID_DATA;
@@ -548,15 +582,44 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 				return ERR_INVALID_DATA;
 			}
 			const String path = paths[path_index];
+			if (validate_permanent_test_path(path) != OK) {
+				return ERR_INVALID_DATA;
+			}
 			observed_paths.insert(path);
 			finding.permanent_test_paths.push_back(path);
 		}
 
-		const String reconciliation_key = finding.case_id + "|" + finding.dimension;
-		if (r_findings.has(reconciliation_key)) {
-			return ERR_INVALID_DATA;
+		const String ledger_case_id = finding.case_id;
+		Vector<String> resolved_case_ids;
+		if (p_current_ids.has(ledger_case_id)) {
+			resolved_case_ids.push_back(ledger_case_id);
+		} else {
+			resolved_case_ids = p_migrations.resolve(ledger_case_id);
+			if (resolved_case_ids.is_empty()) {
+				return ERR_INVALID_DATA;
+			}
+			resolved_case_ids.sort();
+			finding.migrated_from = ledger_case_id;
 		}
-		r_findings[reconciliation_key] = finding;
+		for (const String &resolved_case_id : resolved_case_ids) {
+			if (!p_current_ids.has(resolved_case_id)) {
+				return ERR_INVALID_DATA;
+			}
+			finding.resolved_case_ids.push_back(resolved_case_id);
+		}
+		for (const String &resolved_case_id : resolved_case_ids) {
+			const FSCompletenessResolvedCell *cell = find_cell_by_id(p_resolution, resolved_case_id);
+			if (cell == nullptr || !ledger_dimension_is_known(*cell, finding.dimension)) {
+				return ERR_INVALID_DATA;
+			}
+			FSCompletenessFinding resolved_finding = finding;
+			resolved_finding.case_id = resolved_case_id;
+			const String reconciliation_key = resolved_case_id + "|" + finding.dimension;
+			if (r_findings.has(reconciliation_key)) {
+				return ERR_INVALID_DATA;
+			}
+			r_findings[reconciliation_key] = resolved_finding;
+		}
 	}
 	return OK;
 }
@@ -603,6 +666,158 @@ static Error validate_owned_report_path(
 	return OK;
 }
 
+class ReportArtifactScope {
+	String artifact_root;
+	Vector<String> created_files;
+	Vector<String> created_directories;
+	bool committed = false;
+
+	Error ensure_directory(const String &p_canonical_scratch_root, const String &p_path) {
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (filesystem.is_null()) {
+			return ERR_UNAVAILABLE;
+		}
+		if (filesystem->is_link(p_path)) {
+			return ERR_UNAUTHORIZED;
+		}
+		if (!filesystem->dir_exists(p_path)) {
+			if (filesystem->file_exists(p_path)) {
+				return ERR_ALREADY_EXISTS;
+			}
+			const Error create_error = DirAccess::make_dir_absolute(p_path);
+			if (create_error != OK) {
+				return create_error;
+			}
+			created_directories.push_back(p_path);
+		}
+		String canonical_path;
+		if (TemporaryProjectTree::resolve_existing_owned_path(p_path, canonical_path) != OK ||
+				canonical_path != p_path ||
+				!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, canonical_path)) {
+			return ERR_UNAUTHORIZED;
+		}
+		return OK;
+	}
+
+public:
+	~ReportArtifactScope() {
+		if (committed) {
+			return;
+		}
+		for (int index = created_files.size() - 1; index >= 0; index--) {
+			DirAccess::remove_absolute(created_files[index]);
+		}
+		for (int index = created_directories.size() - 1; index >= 0; index--) {
+			DirAccess::remove_absolute(created_directories[index]);
+		}
+	}
+
+	Error stage(const String &p_canonical_scratch_root,
+			const Vector<FSCompletenessProgram> &p_programs) {
+		artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
+		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, artifact_root)) {
+			return ERR_UNAUTHORIZED;
+		}
+		Error error = ensure_directory(p_canonical_scratch_root, artifact_root);
+		if (error != OK) {
+			return error;
+		}
+		for (const String &surface : { String("text"), String("bytecode") }) {
+			error = ensure_directory(p_canonical_scratch_root, artifact_root.path_join(surface));
+			if (error != OK) {
+				return error;
+			}
+		}
+
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (filesystem.is_null()) {
+			return ERR_UNAVAILABLE;
+		}
+		for (const FSCompletenessProgram &program : p_programs) {
+			const String path = artifact_path(program);
+			if (filesystem->is_link(path)) {
+				return ERR_UNAUTHORIZED;
+			}
+			if (filesystem->file_exists(path)) {
+				String canonical_path;
+				Error read_error = OK;
+				const String source = FileAccess::get_file_as_string(path, &read_error);
+				if (TemporaryProjectTree::resolve_existing_owned_path(path, canonical_path) != OK ||
+						canonical_path != path || read_error != OK || source != program.source) {
+					return ERR_ALREADY_EXISTS;
+				}
+				continue;
+			}
+			Error open_error = OK;
+			Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE | FileAccess::WRITE_EXCL, &open_error);
+			if (file.is_null()) {
+				return open_error == OK ? ERR_CANT_CREATE : open_error;
+			}
+			created_files.push_back(path);
+			if (!file->store_string(program.source)) {
+				file.unref();
+				return ERR_CANT_CREATE;
+			}
+			file->flush();
+			const Error write_error = file->get_error();
+			file.unref();
+			if (write_error != OK) {
+				return write_error;
+			}
+			String canonical_path;
+			if (TemporaryProjectTree::resolve_existing_owned_path(path, canonical_path) != OK ||
+					canonical_path != path) {
+				return ERR_UNAUTHORIZED;
+			}
+		}
+		return OK;
+	}
+
+	String artifact_path(const FSCompletenessProgram &p_program) const {
+		return artifact_root.path_join(p_program.surface).path_join(p_program.case_id + ".fs");
+	}
+
+	void commit() { committed = true; }
+};
+
+class ReportTemporaryFile {
+	String path;
+	bool active = false;
+
+public:
+	~ReportTemporaryFile() {
+		if (active) {
+			DirAccess::remove_absolute(path);
+		}
+	}
+
+	void retain_for_cleanup(const String &p_path) {
+		path = p_path;
+		active = true;
+	}
+
+	void release() { active = false; }
+};
+
+static Error replace_report_file(const String &p_temporary_path, const String &p_report_path) {
+#ifdef WINDOWS_ENABLED
+	const Char16String temporary_utf16 = p_temporary_path.utf16();
+	const Char16String report_utf16 = p_report_path.utf16();
+	if (FileAccess::exists(p_report_path)) {
+		return ReplaceFileW((LPCWSTR)report_utf16.get_data(), (LPCWSTR)temporary_utf16.get_data(),
+				nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS,
+				nullptr, nullptr) != 0 ?
+				OK :
+				FAILED;
+	}
+	return MoveFileW((LPCWSTR)temporary_utf16.get_data(), (LPCWSTR)report_utf16.get_data()) != 0 ? OK : FAILED;
+#else
+	// The temp file is a sibling of the destination, so the platform rename is one
+	// process-visible atomic replacement. This does not promise power-loss durability.
+	return DirAccess::rename_absolute(p_temporary_path, p_report_path);
+#endif
+}
+
 static Error write_report_atomically(const String &p_canonical_scratch_root,
 		const String &p_report_path, const Dictionary &p_report) {
 	Error validation_error = validate_owned_report_path(p_canonical_scratch_root, p_report_path);
@@ -612,6 +827,7 @@ static Error write_report_atomically(const String &p_canonical_scratch_root,
 	const String contents = JSON::stringify(p_report, "\t", false, true) + "\n";
 	String temporary_path;
 	Ref<FileAccess> temporary;
+	ReportTemporaryFile temporary_cleanup;
 	for (int attempt = 0; attempt < 128; attempt++) {
 		temporary_path = p_report_path + vformat(".tmp.%d.%d", OS::get_singleton()->get_process_id(), attempt);
 		Error open_error = OK;
@@ -627,23 +843,25 @@ static Error write_report_atomically(const String &p_canonical_scratch_root,
 	if (temporary.is_null()) {
 		return ERR_ALREADY_EXISTS;
 	}
+	temporary_cleanup.retain_for_cleanup(temporary_path);
+	if (!temporary->store_string(contents)) {
+		temporary.unref();
+		return ERR_CANT_CREATE;
+	}
+	temporary->flush();
+	const Error write_error = temporary->get_error();
+	temporary.unref();
+	if (write_error != OK) {
+		return write_error;
+	}
 	String canonical_temporary_path;
 	if (TemporaryProjectTree::resolve_existing_owned_path(
 				temporary_path, canonical_temporary_path) != OK ||
 			canonical_temporary_path != temporary_path) {
-		temporary.unref();
 		return ERR_UNAUTHORIZED;
-	}
-	temporary->store_string(contents);
-	const Error write_error = temporary->get_error();
-	temporary.unref();
-	if (write_error != OK) {
-		DirAccess::remove_absolute(temporary_path);
-		return write_error;
 	}
 	validation_error = validate_owned_report_path(p_canonical_scratch_root, p_report_path);
 	if (validation_error != OK) {
-		DirAccess::remove_absolute(temporary_path);
 		return validation_error;
 	}
 	canonical_temporary_path.clear();
@@ -652,9 +870,9 @@ static Error write_report_atomically(const String &p_canonical_scratch_root,
 			canonical_temporary_path != temporary_path) {
 		return ERR_UNAUTHORIZED;
 	}
-	const Error rename_error = DirAccess::rename_absolute(temporary_path, p_report_path);
-	if (rename_error != OK) {
-		DirAccess::remove_absolute(temporary_path);
+	const Error rename_error = replace_report_file(temporary_path, p_report_path);
+	if (rename_error == OK) {
+		temporary_cleanup.release();
 	}
 	return rename_error;
 }
@@ -844,6 +1062,11 @@ Error FSCompletenessRunner::run(
 		}
 		programs.push_back(program);
 	}
+	ReportArtifactScope artifact_scope;
+	error = artifact_scope.stage(canonical_scratch_root, programs);
+	if (error != OK) {
+		return error;
+	}
 
 	FSCompletenessRuntimeBatch batch;
 	error = FSUnionCompletenessAdapter::execute(canonical_scratch_root, programs, batch);
@@ -859,6 +1082,15 @@ Error FSCompletenessRunner::run(
 			p_options.observation_mutator(static_cast<FSCompletenessObservation &>(*actual));
 		}
 	}
+	if (p_options.runtime_result_mutator != nullptr) {
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
+			if (actual == nullptr) {
+				return ERR_INVALID_DATA;
+			}
+			p_options.runtime_result_mutator(*actual);
+		}
+	}
 	error = validate_witness_observations(manifest, resolution, batch);
 	if (error != OK) {
 		return error;
@@ -871,7 +1103,7 @@ Error FSCompletenessRunner::run(
 		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
-		const String artifact_path = canonical_scratch_root.path_join(cell.case_id + ".fs");
+		const String artifact_path = artifact_scope.artifact_path(*program);
 		if (!actual->passed || actual->status != "ok") {
 			append_finding(findings, p_options.family, cell.case_id, "runtime_status",
 					runtime_status(true, "ok"), runtime_status(actual->passed, actual->status), artifact_path);
@@ -962,7 +1194,11 @@ Error FSCompletenessRunner::run(
 			finding.expected = "matching_surface_observations";
 			finding.parity_evidence = evidence;
 			finding.actual = finding.parity_evidence;
-			finding.artifact_path = canonical_scratch_root.path_join(pair.text->case_id + ".fs");
+			const FSCompletenessProgram *text_program = find_program_by_id(programs, pair.text->case_id);
+			if (text_program == nullptr) {
+				return ERR_INVALID_DATA;
+			}
+			finding.artifact_path = artifact_scope.artifact_path(*text_program);
 			findings.push_back(finding);
 		}
 	}
@@ -978,6 +1214,8 @@ Error FSCompletenessRunner::run(
 		finding.issue_url = known->issue_url;
 		finding.closure_packet_url = known->closure_packet_url;
 		finding.permanent_test_paths = known->permanent_test_paths;
+		finding.migrated_from = known->migrated_from;
+		finding.resolved_case_ids = known->resolved_case_ids;
 		reconciled_ledger_entries.insert(reconciliation_key);
 	}
 	if (reconciled_ledger_entries.size() != ledger.size()) {
@@ -1040,7 +1278,7 @@ Error FSCompletenessRunner::run(
 		case_report["diagnostics"] = diagnostics;
 		case_report["produced_output"] = actual->produced_output;
 		case_report["expected_output"] = program->expected_output;
-		case_report["artifact_path"] = canonical_scratch_root.path_join(cell->case_id + ".fs");
+		case_report["artifact_path"] = artifact_scope.artifact_path(*program);
 		cases.push_back(case_report);
 	}
 	Array report_findings;
@@ -1065,6 +1303,7 @@ Error FSCompletenessRunner::run(
 	if (error != OK) {
 		return error;
 	}
+	artifact_scope.commit();
 	FSCompletenessRunResult completed;
 	completed.success = success;
 	completed.executed_cells = resolution.cells.size();

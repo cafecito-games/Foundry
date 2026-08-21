@@ -490,6 +490,13 @@ static void add_union_pilot_diagnostic(FSCompletenessObservation &r_observation)
 	}
 }
 
+static void fail_union_pilot_runtime_result(FSCompletenessRuntimeResult &r_result) {
+	if (r_result.case_id == union_pilot_mutated_case_id) {
+		r_result.passed = false;
+		r_result.status = "injected_failure";
+	}
+}
+
 static void corrupt_union_pilot_witness_dimension(FSCompletenessObservation &r_observation) {
 	if (r_observation.case_id == union_pilot_mutated_case_id) {
 		r_observation.dimensions["runtime_obligation"] = "typed_destination_check";
@@ -503,6 +510,13 @@ static void corrupt_union_pilot_multiple_observations(FSCompletenessObservation 
 		r_observation.dimensions["stored_carrier"] = "plain_destination";
 	} else if (r_observation.case_id == union_pilot_mutated_pair_bytecode_id) {
 		r_observation.dimensions["stored_carrier"] = "wrong_bytecode_carrier";
+	}
+}
+
+static void corrupt_union_pilot_both_stored_carriers(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_pair_text_id ||
+			r_observation.case_id == union_pilot_mutated_pair_bytecode_id) {
+		r_observation.dimensions["stored_carrier"] = "plain_destination";
 	}
 }
 
@@ -553,6 +567,7 @@ static String union_pilot_finding_record(const String &p_finding_id, const Strin
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	TEST_CASE("TypeCompleteness UnionPilot runner publishes complete deterministic coverage") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		TemporaryProjectTree tree(vformat("type_completeness_union_report_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 		tree.write_file("report.json", "previous regular report\n");
@@ -604,6 +619,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const Array findings = report.get("findings", Array());
 		CHECK(findings.is_empty());
 		CHECK_EQ(result.report, report);
+		int durable_artifacts = 0;
 		for (int i = 0; i < cases.size(); i++) {
 			CAPTURE(i);
 			REQUIRE_EQ(cases[i].get_type(), Variant::DICTIONARY);
@@ -611,12 +627,49 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_FALSE(String(case_report.get("case_id", String())).is_empty());
 			CHECK_EQ(Dictionary(case_report.get("coordinates", Dictionary())).size(), 4);
 			CHECK_EQ(String(case_report.get("status", String())), "passed");
-			CHECK_FALSE(String(case_report.get("artifact_path", String())).is_empty());
+			const String case_id = case_report.get("case_id", String());
+			const String surface = Dictionary(case_report.get("coordinates", Dictionary())).get("surface", String());
+			const String artifact_path = case_report.get("artifact_path", String());
+			CHECK_EQ(artifact_path,
+					tree.root.path_join("report-artifacts").path_join(surface).path_join(case_id + ".fs"));
+			CHECK(FileAccess::exists(artifact_path));
+			for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+				if (cell.case_id != case_id) {
+					continue;
+				}
+				FSCompletenessProgram program;
+				REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+				CHECK_EQ(FileAccess::get_file_as_string(artifact_path), program.source);
+				durable_artifacts++;
+				break;
+			}
 			CHECK_FALSE(Dictionary(case_report.get("expected", Dictionary())).is_empty());
 			CHECK_FALSE(Dictionary(case_report.get("actual", Dictionary())).is_empty());
 			CHECK_FALSE(Dictionary(case_report.get("canonical_provenance", Dictionary())).is_empty());
 			CHECK_FALSE(Dictionary(case_report.get("agreeing_provenance", Dictionary())).is_empty());
+			const Dictionary coordinates = case_report.get("coordinates", Dictionary());
+			if (coordinates.get("destination", String()) == "plain" &&
+					coordinates.get("source_proof", String()) == "static_member" &&
+					coordinates.get("boundary", String()) == "argument_binding" &&
+					coordinates.get("surface", String()) == "text") {
+				const Array canonical_analysis =
+						Dictionary(case_report.get("canonical_provenance", Dictionary())).get("analysis", Array());
+				const Array agreeing_analysis =
+						Dictionary(case_report.get("agreeing_provenance", Dictionary())).get("analysis", Array());
+				CHECK(canonical_analysis.is_empty());
+				REQUIRE_EQ(agreeing_analysis.size(), 1);
+				CHECK(Array(agreeing_analysis[0]).is_empty());
+			}
 		}
+		CHECK_EQ(durable_artifacts, 40);
+
+		FSCompletenessRunResult repeated_result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, repeated_result), OK);
+		Error repeated_read_error = OK;
+		const String repeated_source = FileAccess::get_file_as_string(options.report_path, &repeated_read_error);
+		REQUIRE_EQ(repeated_read_error, OK);
+		CHECK_EQ(repeated_source, report_source);
+		CHECK_EQ(repeated_result.report, report);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner creates an owned scratch root before execution") {
@@ -646,9 +699,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(filesystem.is_valid());
 		const String report_link = tree.root.path_join("report-link");
-		if (filesystem->create_link(neighbor.root, report_link) != OK) {
-			return;
-		}
+		REQUIRE_EQ(filesystem->create_link(neighbor.root, report_link), OK);
 		const PackedStringArray neighbor_entries_before = union_pilot_directory_entries(neighbor.root);
 
 		FSCompletenessRunOptions options;
@@ -680,9 +731,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(filesystem.is_valid());
 		const String report_path = tree.root.path_join("report.json");
-		if (filesystem->create_link(neighbor.root.path_join("caller-report.json"), report_path) != OK) {
-			return;
-		}
+		REQUIRE_EQ(filesystem->create_link(neighbor.root.path_join("caller-report.json"), report_path), OK);
 		const PackedStringArray neighbor_entries_before = union_pilot_directory_entries(neighbor.root);
 
 		FSCompletenessRunOptions options;
@@ -704,6 +753,36 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("caller-report.json")),
 				"caller report sentinel\n");
 		CHECK_EQ(union_pilot_directory_entries(neighbor.root), neighbor_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner preserves reports when temp names are exhausted") {
+		TemporaryProjectTree tree(vformat("type_completeness_union_report_collision_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("report.json", "caller report sentinel\n");
+		const String report_path = tree.root.path_join("report.json");
+		for (int attempt = 0; attempt < 128; attempt++) {
+			tree.write_file(vformat("report.json.tmp.%d.%d", OS::get_singleton()->get_process_id(), attempt),
+					"occupied temp\n");
+		}
+		const PackedStringArray entries_before = union_pilot_directory_entries(tree.root);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.findings.push_back(FSCompletenessFinding());
+		result.report["stale"] = true;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_ALREADY_EXISTS);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(report_path), "caller report sentinel\n");
+		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner reconciles a direct mismatch with parity evidence") {
@@ -747,6 +826,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(String(finding.actual), "plain_destination");
 		CHECK_EQ(finding.classification, "unclassified");
 		CHECK_FALSE(finding.artifact_path.is_empty());
+		CHECK(FileAccess::exists(finding.artifact_path));
 		CHECK_EQ(String(finding.parity_evidence.get("text", String())), "plain_destination");
 		CHECK_EQ(String(finding.parity_evidence.get("bytecode", String())), "admitting_alternative");
 
@@ -886,6 +966,34 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK(FileAccess::exists(options.report_path));
 	}
 
+	TEST_CASE("TypeCompleteness UnionPilot runner reports failed runtime status") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "plain", "static_member", "reflective_write");
+		union_pilot_mutated_case_id = union_pilot_mutated_pair_text_id;
+		TemporaryProjectTree tree(vformat("type_completeness_union_runtime_status_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.runtime_result_mutator = fail_union_pilot_runtime_result;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].case_id, union_pilot_mutated_case_id);
+		CHECK_EQ(result.findings[0].dimension, "runtime_status");
+		const Dictionary actual = result.findings[0].actual;
+		CHECK_EQ(bool(actual.get("passed", true)), false);
+		CHECK_EQ(String(actual.get("status", String())), "injected_failure");
+		CHECK_FALSE(result.findings[0].parity_evidence.is_empty());
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot runner reports witness observation regressions") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		Dictionary coordinates;
@@ -972,7 +1080,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		TemporaryProjectTree tree(vformat("type_completeness_union_known_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
-		tree.write_file("catalog/findings/known.json",
+		tree.write_file("catalog/findings/" + finding_id + ".json",
 				union_pilot_finding_record(
 						finding_id, union_pilot_mutated_case_id, "product_defect"));
 
@@ -1012,6 +1120,53 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(String(Dictionary(report_findings[0]).get("classification", String())), "product_defect");
 	}
 
+	TEST_CASE("TypeCompleteness UnionPilot runner expands a split migration deterministically") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "union", "numeric_constant", "argument_binding");
+		const String old_case_id = "fstc-v1-split-union-numeric";
+		const String finding_id = "fstcf-v1-split-union-numeric";
+		TemporaryProjectTree tree(vformat("type_completeness_union_split_migration_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/migrations/v1.json", vformat(R"JSON({
+	"schema_version": 1,
+	"migrations": [{
+		"old_id": "%s",
+		"new_ids": ["%s", "%s"],
+		"reason": "surface split"
+	}]
+}
+)JSON",
+				old_case_id, union_pilot_mutated_pair_text_id, union_pilot_mutated_pair_bytecode_id));
+		tree.write_file("catalog/findings/" + finding_id + ".json",
+				union_pilot_finding_record(finding_id, old_case_id, "product_defect"));
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_both_stored_carriers;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
+		REQUIRE_EQ(result.findings.size(), 2);
+		const Array report_findings = result.report.get("findings", Array());
+		REQUIRE_EQ(report_findings.size(), 2);
+		for (int i = 0; i < report_findings.size(); i++) {
+			const Dictionary finding = report_findings[i];
+			CHECK_EQ(String(finding.get("finding_id", String())), finding_id);
+			CHECK_EQ(String(finding.get("classification", String())), "product_defect");
+			CHECK_EQ(String(finding.get("migrated_from", String())), old_case_id);
+			const Array resolved_ids = finding.get("resolved_case_ids", Array());
+			REQUIRE_EQ(resolved_ids.size(), 2);
+			CHECK_EQ(String(resolved_ids[0]), union_pilot_mutated_pair_text_id < union_pilot_mutated_pair_bytecode_id ?
+					union_pilot_mutated_pair_text_id : union_pilot_mutated_pair_bytecode_id);
+			CHECK_EQ(String(resolved_ids[1]), union_pilot_mutated_pair_text_id < union_pilot_mutated_pair_bytecode_id ?
+					union_pilot_mutated_pair_bytecode_id : union_pilot_mutated_pair_text_id);
+		}
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects malformed unresolved and duplicate ledger records atomically") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		String current_case_id;
@@ -1023,22 +1178,38 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE_FALSE(current_case_id.is_empty());
 		const String finding_id = "fstcf-v1-ledger-validation";
+		const String other_finding_id = "fstcf-v1-ledger-validation-other";
 		struct InvalidLedgerCase {
 			const char *name;
 			String first;
 			String second;
+			String first_filename;
+			String second_filename;
+			Error expected_error;
 		};
 		const InvalidLedgerCase invalid_cases[] = {
 			{ "unknown_field",
 					union_pilot_finding_record(finding_id, current_case_id, "product_defect",
 							",\n\t\"unexpected\": true"),
-					String() },
-			{ "unresolved_case", union_pilot_finding_record(finding_id, "fstc-v1-does-not-exist", "product_defect"), String() },
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
+			{ "unresolved_case", union_pilot_finding_record(finding_id, "fstc-v1-does-not-exist", "product_defect"),
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
 			{ "unknown_classification",
 					union_pilot_finding_record(finding_id, current_case_id, "not_a_classification"),
-					String() },
-			{ "duplicate_id", union_pilot_finding_record(finding_id, current_case_id, "product_defect"),
-					union_pilot_finding_record(finding_id, current_case_id, "duplicate") },
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
+			{ "filename_mismatch", union_pilot_finding_record(finding_id, current_case_id, "product_defect"),
+					String(), "wrong-name.json", String(), ERR_INVALID_DATA },
+			{ "duplicate_raw_member",
+					union_pilot_finding_record(finding_id, current_case_id, "product_defect",
+							",\n\t\"family\": \"union_destination_membership\""),
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
+			{ "unsafe_permanent_path",
+					union_pilot_finding_record(finding_id, current_case_id, "product_defect")
+							.replace("modules/foundry_script/tests/test_type_completeness_union_pilot.h", "../outside.h"),
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
+			{ "reconciliation_collision", union_pilot_finding_record(finding_id, current_case_id, "product_defect"),
+					union_pilot_finding_record(other_finding_id, current_case_id, "duplicate"),
+					finding_id + ".json", other_finding_id + ".json", ERR_INVALID_DATA },
 		};
 
 		for (const InvalidLedgerCase &invalid : invalid_cases) {
@@ -1047,9 +1218,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 					invalid.name, OS::get_singleton()->get_process_id()));
 			REQUIRE(tree.is_valid());
 			const String catalog_root = stage_union_pilot_completeness_catalog(tree);
-			tree.write_file("catalog/findings/a.json", invalid.first);
+			tree.write_file("catalog/findings/" + invalid.first_filename, invalid.first);
 			if (!invalid.second.is_empty()) {
-				tree.write_file("catalog/findings/b.json", invalid.second);
+				tree.write_file("catalog/findings/" + invalid.second_filename, invalid.second);
 			}
 			tree.write_file("report.json", "caller report sentinel\n");
 
@@ -1063,7 +1234,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			result.executed_cells = 99;
 			result.findings.push_back(FSCompletenessFinding());
 			result.report["stale"] = true;
-			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_EQ(FSCompletenessRunner::run(options, result), invalid.expected_error);
 			CHECK_FALSE(result.success);
 			CHECK_EQ(result.executed_cells, 0);
 			CHECK(result.findings.is_empty());
@@ -1303,18 +1474,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(filesystem.is_valid());
 		const String outside_root_link = tree.root.path_join("outside_root");
-		if (filesystem->create_link(neighbor.root, outside_root_link) != OK) {
-			return;
-		}
+		REQUIRE_EQ(filesystem->create_link(neighbor.root, outside_root_link), OK);
 
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
 		CHECK_EQ(FSUnionCompletenessAdapter::execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("text/project.foundry")));
 
-		if (filesystem->create_link(neighbor.root, tree.root.path_join("ancestor_link")) != OK) {
-			return;
-		}
+		REQUIRE_EQ(filesystem->create_link(neighbor.root, tree.root.path_join("ancestor_link")), OK);
 		REQUIRE_EQ(filesystem->make_dir_recursive(neighbor.root.path_join("existing_root")), OK);
 		batch = stale_union_pilot_runtime_batch();
 		CHECK_EQ(FSUnionCompletenessAdapter::execute(
@@ -1334,9 +1501,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(filesystem.is_valid());
 		neighbor.write_file("sentinel.txt", "neighbor sentinel\n");
-		if (filesystem->create_link(neighbor.root, tree.root.path_join("text")) != OK) {
-			return;
-		}
+		REQUIRE_EQ(filesystem->create_link(neighbor.root, tree.root.path_join("text")), OK);
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 		FSCompletenessRuntimeBatch batch;
