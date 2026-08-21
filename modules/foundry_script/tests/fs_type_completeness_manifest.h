@@ -59,19 +59,30 @@ struct FSCompletenessRelation {
 	Dictionary derive;
 };
 
+// One declared witness of an exception: an identity and the full coordinates of the cell that must
+// observe it. The coordinates are data in the rule manifest rather than a table in an adapter, so a
+// family can add a witness without a C++ change and a witness can never silently name a cell that the
+// manifest domain does not contain.
+struct FSCompletenessWitness {
+	String id;
+	Dictionary coordinates;
+};
+
 struct FSCompletenessException {
 	String id;
 	String parent;
 	Dictionary when;
 	Dictionary derive;
 	String rationale;
-	Vector<String> positive_witnesses;
-	Vector<String> boundary_witnesses;
+	Vector<FSCompletenessWitness> positive_witnesses;
+	Vector<FSCompletenessWitness> boundary_witnesses;
 };
 
 struct FSCompletenessManifest {
 	int schema_version = 0;
 	String family;
+	// Registered id of the adapter that renders, analyzes, and executes this family.
+	String adapter;
 	HashMap<String, Vector<String>> domain;
 	Vector<String> domain_axis_order;
 	Vector<FSCompletenessRequiredDimension> required_dimensions;
@@ -121,6 +132,8 @@ class FSCompletenessCatalog {
 
 public:
 	Error load(const String &p_root, Vector<String> &r_errors);
+	// True when the catalog declares p_axis at all, whatever leaves it declares on it.
+	bool has_axis(const String &p_axis) const;
 	bool axis_has_leaf(const String &p_axis, const String &p_leaf) const;
 	bool class_contains(const String &p_axis, const String &p_class, const String &p_leaf) const;
 	bool dimension_has_outcome(const String &p_dimension, const String &p_outcome) const;
@@ -128,5 +141,10 @@ public:
 
 Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 		const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors);
+
+// Coordinates p_manifest declares for p_witness_id, or an empty dictionary when no exception declares
+// that witness. Witness identity is manifest data, so this is the one way to resolve it.
+Dictionary manifest_witness_coordinates(
+		const FSCompletenessManifest &p_manifest, const String &p_witness_id);
 
 } // namespace FSTests

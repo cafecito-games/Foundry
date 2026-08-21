@@ -33,10 +33,51 @@
 #include "fs_type_completeness_union_adapter.h"
 
 #include "core/error/error_list.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 #include "core/variant/dictionary.h"
 
 namespace FSTests {
+
+// Every stage a structural failure can name. The strings live here once so a producer, a report, a
+// comparator, and a test cannot drift apart on the spelling of a verdict.
+namespace FSCompletenessStructuralStage {
+
+static constexpr const char *ADAPTER_UNKNOWN = "adapter_unknown";
+static constexpr const char *ADAPTER_DUPLICATE = "adapter_duplicate";
+static constexpr const char *PROGRAM_CARDINALITY = "program_cardinality";
+static constexpr const char *WITNESS_DECLARED_TWICE = "witness_declared_twice";
+static constexpr const char *WITNESS_ID_UNKNOWN = "witness_id_unknown";
+static constexpr const char *WITNESS_CELL_MISSING = "witness_cell_missing";
+static constexpr const char *WITNESS_CELL_AMBIGUOUS = "witness_cell_ambiguous";
+static constexpr const char *WITNESS_EXCEPTION_PROVENANCE_MISSING = "witness_exception_provenance_missing";
+static constexpr const char *WITNESS_BOUNDARY_PROVENANCE_MISSING = "witness_boundary_provenance_missing";
+static constexpr const char *WITNESS_RUNTIME_RESULT_MISSING = "witness_runtime_result_missing";
+static constexpr const char *WITNESS_RUNTIME_IDENTITY_MISMATCH = "witness_runtime_identity_mismatch";
+static constexpr const char *LEDGER_ENTRY_STALE = "ledger_entry_stale";
+static constexpr const char *RUN_TIMEOUT = "run_timeout";
+static constexpr const char *RUN_TIMEOUT_REPORT_UNWRITABLE = "run_timeout_report_unwritable";
+static constexpr const char *RUN_ABORTED = "run_aborted";
+
+static constexpr const char *ALL[] = {
+	ADAPTER_UNKNOWN,
+	ADAPTER_DUPLICATE,
+	PROGRAM_CARDINALITY,
+	WITNESS_DECLARED_TWICE,
+	WITNESS_ID_UNKNOWN,
+	WITNESS_CELL_MISSING,
+	WITNESS_CELL_AMBIGUOUS,
+	WITNESS_EXCEPTION_PROVENANCE_MISSING,
+	WITNESS_BOUNDARY_PROVENANCE_MISSING,
+	WITNESS_RUNTIME_RESULT_MISSING,
+	WITNESS_RUNTIME_IDENTITY_MISMATCH,
+	LEDGER_ENTRY_STALE,
+	RUN_TIMEOUT,
+	RUN_TIMEOUT_REPORT_UNWRITABLE,
+	RUN_ABORTED,
+};
+
+} // namespace FSCompletenessStructuralStage
 
 struct FSCompletenessFinding {
 	String finding_id;
@@ -79,6 +120,12 @@ struct FSCompletenessRunOptions {
 	// this only narrows the published document for a consumer that compares one configuration.
 	String published_surface;
 
+	// Surface leaves whose cells this run renders and executes. Empty runs every surface the manifest
+	// domain declares. A surface outside the domain is refused rather than silently running nothing.
+	// Parity is only decided for pairs whose surfaces all ran, because parity evidence a run did not
+	// observe is not evidence of agreement.
+	HashSet<String> surfaces;
+
 	// Absolute deadline on `clock`, in microseconds. Zero runs without a deadline.
 	uint64_t deadline_usec = 0;
 	FSCompletenessClock clock = nullptr;
@@ -105,9 +152,33 @@ struct FSCompletenessRunResult {
 	Dictionary report;
 };
 
+// One declared witness bound to the single resolved cell its coordinates name.
+struct FSCompletenessWitnessBinding {
+	String witness_id;
+	String exception_id;
+	String parent_relation_id;
+	bool boundary = false;
+	const FSCompletenessResolvedCell *cell = nullptr;
+};
+
+// Resolves every witness a manifest declares to exactly one cell that actually observes the exception
+// (or, for a boundary witness, the unexcepted parent relation). Each way a witness can fail to bind
+// reports a distinct stage, so a comparator can tell an unresolvable witness from an ambiguous or an
+// unobserving one. Exposed so every refusal is provable without running a whole matrix.
+Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
+		const FSCompletenessResolution &p_resolution, Vector<FSCompletenessWitnessBinding> &r_bindings,
+		Vector<FSCompletenessStructuralFailure> &r_failures);
+
 class FSCompletenessRunner {
 public:
 	static Error run(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result);
+
+	// The dimensions the runner itself observes for every family, whatever its adapter declares. A
+	// ledger entry may name one of these even though no cell carries it.
+	static HashSet<String> builtin_dimensions();
+
+	// The report record of one structural failure. The one place a failure becomes a document.
+	static Dictionary structural_failure_report(const FSCompletenessStructuralFailure &p_failure);
 
 	// Publishes a document that belongs to a run without being a family report - the index over a
 	// multi-family invocation - under exactly the contract a report is published with: the path must

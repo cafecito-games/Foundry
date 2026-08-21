@@ -58,30 +58,13 @@ namespace {
 static const String union_completeness_family = "union_destination_membership";
 static thread_local UnionCompletenessInternal::PersistedWriteTestHook persisted_write_test_hook = nullptr;
 
-static bool is_allowed_coordinate(const String &p_axis, const String &p_value) {
-	if (p_axis == "destination") {
-		return p_value == "plain" || p_value == "union";
-	}
-	if (p_axis == "source_proof") {
-		return p_value == "static_member" || p_value == "numeric_constant" || p_value == "gradual" ||
-				p_value == "erased" || p_value == "variant";
-	}
-	if (p_axis == "boundary") {
-		return p_value == "argument_binding" || p_value == "reflective_write";
-	}
-	if (p_axis == "surface") {
-		return p_value == "text" || p_value == "bytecode";
-	}
-	return false;
-}
-
 static bool read_coordinate(const Dictionary &p_coordinates, const String &p_axis, String &r_value) {
 	const Variant value = p_coordinates.get(p_axis, Variant());
 	if (value.get_type() != Variant::STRING) {
 		return false;
 	}
 	r_value = value;
-	return is_allowed_coordinate(p_axis, r_value);
+	return FSUnionCompletenessAdapter::shared().can_render(p_axis, r_value);
 }
 
 static String source_expression_for(const String &p_source_proof) {
@@ -852,27 +835,6 @@ static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const 
 	return RuntimeInspectionStepResult();
 }
 
-static bool is_surface_identity_dimension(const Variant &p_key) {
-	return p_key == "original_instance_id" || p_key == "inspected_instance_id" ||
-			p_key == "inspected_compiled_binary" || p_key == "inspected_owner_instance_id";
-}
-
-static bool observations_match_on_common_dimensions(
-		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
-	if (compare_surface_evidence(p_text, p_bytecode).any()) {
-		return false;
-	}
-	for (const Variant &key : p_text.dimensions.keys()) {
-		if (is_surface_identity_dimension(key)) {
-			continue;
-		}
-		if (p_bytecode.dimensions.has(key) && p_text.dimensions[key] != p_bytecode.dimensions[key]) {
-			return false;
-		}
-	}
-	return true;
-}
-
 static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outcome) {
 	const String status_line = "FS_TEST_OK\n";
 	if (p_outcome.output.begins_with(status_line)) {
@@ -918,8 +880,31 @@ UnionCompletenessInternal::SyntheticSourceScope::~SyntheticSourceScope() {
 	}
 }
 
+const FSUnionCompletenessAdapter &FSUnionCompletenessAdapter::shared() {
+	static FSUnionCompletenessAdapter adapter;
+	return adapter;
+}
+
+String FSUnionCompletenessAdapter::id() const {
+	return union_completeness_family;
+}
+
+HashSet<String> FSUnionCompletenessAdapter::observable_dimensions() const {
+	return HashSet<String>({ "analysis", "runtime_obligation", "stored_carrier" });
+}
+
+HashMap<String, Vector<String>> FSUnionCompletenessAdapter::renderable_leaves() const {
+	HashMap<String, Vector<String>> leaves;
+	leaves["destination"] = Vector<String>({ "plain", "union" });
+	leaves["source_proof"] =
+			Vector<String>({ "static_member", "numeric_constant", "gradual", "erased", "variant" });
+	leaves["boundary"] = Vector<String>({ "argument_binding", "reflective_write" });
+	leaves["surface"] = Vector<String>({ "text", "bytecode" });
+	return leaves;
+}
+
 Error FSUnionCompletenessAdapter::render(
-		const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) {
+		const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) const {
 	r_program = FSCompletenessProgram();
 	if (p_cell.case_id.is_empty() || p_cell.coordinates.size() != 4) {
 		return ERR_INVALID_DATA;
@@ -978,7 +963,7 @@ BOUNDARY_BODY
 }
 
 FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
-		const FSCompletenessProgram &p_program, const String &p_surface) {
+		const FSCompletenessProgram &p_program, const String &p_surface) const {
 	if (p_surface != "text" && p_surface != "bytecode") {
 		return rejected_observation(p_program, p_surface, vformat("Unknown surface '%s'.", p_surface));
 	}
@@ -1027,7 +1012,7 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 static FSCompletenessObservation inspect_runtime_contract_body(
 		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
 	r_structural_error = OK;
-	FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(p_program, p_program.surface);
+	FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(p_program, p_program.surface);
 
 	String destination;
 	String source_proof;
@@ -1141,13 +1126,13 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 }
 
 FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
-		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) {
+		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) const {
 	Error structural_error = OK;
 	return inspect_runtime_contract_internal(p_program, p_runtime_context, structural_error);
 }
 
 Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
-		const Vector<FSCompletenessProgram> &p_programs, FSCompletenessRuntimeBatch &r_batch) {
+		const Vector<FSCompletenessProgram> &p_programs, FSCompletenessRuntimeBatch &r_batch) const {
 	r_batch = FSCompletenessRuntimeBatch();
 	const String test_scratch_root = TemporaryProjectTree::get_test_scratch_root();
 	if (test_scratch_root.is_empty()) {
@@ -1224,8 +1209,10 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 			bytecode_programs[program.case_id] = program;
 		}
 	}
-	if (p_programs.size() != 40 || pairs.size() != 20 || text_programs.size() != 20 ||
-			bytecode_programs.size() != 20) {
+	// Every semantic pair must carry exactly one program per surface leaf. The absolute size of the
+	// matrix is the manifest domain's business and is checked by the runner against the resolved
+	// cells; here only the shape the pairing depends on is enforced.
+	if (text_programs.size() + bytecode_programs.size() != p_programs.size()) {
 		return ERR_INVALID_DATA;
 	}
 	for (const KeyValue<String, SemanticPair> &entry : pairs) {
@@ -1355,13 +1342,9 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 	}
 
 	for (const KeyValue<String, SemanticPair> &entry : pairs) {
-		const FSCompletenessRuntimeResult *text = completed.text.getptr(entry.value.text_id);
-		const FSCompletenessRuntimeResult *bytecode = completed.bytecode.getptr(entry.value.bytecode_id);
-		if (text == nullptr || bytecode == nullptr) {
+		if (completed.text.getptr(entry.value.text_id) == nullptr ||
+				completed.bytecode.getptr(entry.value.bytecode_id) == nullptr) {
 			return ERR_INVALID_DATA;
-		}
-		if (!observations_match_on_common_dimensions(*text, *bytecode)) {
-			completed.parity_failures++;
 		}
 	}
 	r_batch = completed;
@@ -1444,42 +1427,6 @@ FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source)
 	stripped += p_source.substr(copied_from);
 	probe.text = stripped;
 	return probe;
-}
-
-FSCompletenessSurfaceEvidenceMismatch compare_surface_evidence(
-		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
-	FSCompletenessSurfaceEvidenceMismatch mismatch;
-	mismatch.produced_output = p_text.produced_output != p_bytecode.produced_output;
-	mismatch.diagnostics = p_text.diagnostics != p_bytecode.diagnostics;
-	mismatch.diagnostic_records = p_text.diagnostic_records != p_bytecode.diagnostic_records;
-	mismatch.runtime_status = p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status;
-	return mismatch;
-}
-
-Error FSUnionCompletenessAdapter::witness_coordinates(const String &p_witness_id, Dictionary &r_coordinates) {
-	r_coordinates.clear();
-	if (p_witness_id == "text_gradual_argument_binding") {
-		r_coordinates["destination"] = "union";
-		r_coordinates["source_proof"] = "gradual";
-		r_coordinates["boundary"] = "argument_binding";
-		r_coordinates["surface"] = "text";
-		return OK;
-	}
-	if (p_witness_id == "bytecode_erased_reflective_write") {
-		r_coordinates["destination"] = "union";
-		r_coordinates["source_proof"] = "erased";
-		r_coordinates["boundary"] = "reflective_write";
-		r_coordinates["surface"] = "bytecode";
-		return OK;
-	}
-	if (p_witness_id == "text_static_member_argument_binding") {
-		r_coordinates["destination"] = "union";
-		r_coordinates["source_proof"] = "static_member";
-		r_coordinates["boundary"] = "argument_binding";
-		r_coordinates["surface"] = "text";
-		return OK;
-	}
-	return ERR_DOES_NOT_EXIST;
 }
 
 } // namespace FSTests

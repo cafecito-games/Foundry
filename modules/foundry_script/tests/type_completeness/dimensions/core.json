@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "adapter": "core",
+  "adapter": "union_destination_membership",
   "dimensions": [
     {
       "id": "analysis",

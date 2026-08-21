@@ -71,7 +71,8 @@ static bool completeness_errors_contain_text(const Vector<String> &p_errors, con
 
 static String write_representative_completeness_manifest(TemporaryProjectTree &p_tree) {
 	return write_completeness_manifest(p_tree, R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "union_destination_membership",
   "family": "assignment_compatibility",
   "domain": {
     "destination": ["plain", "union"],
@@ -115,8 +116,24 @@ static String write_representative_completeness_manifest(TemporaryProjectTree &p
     "when": {"boundary": "reflective_write", "source_proof": "variant"},
     "derive": {"analysis": "reject"},
     "rationale": "Reflective writes do not establish a static source proof.",
-    "positive_witnesses": ["reflective_union_accepts"],
-    "boundary_witnesses": ["reflective_plain_rejects"]
+    "positive_witnesses": [{
+      "id": "reflective_union_accepts",
+      "coordinates": {
+        "destination": "union",
+        "source_proof": "variant",
+        "boundary": "reflective_write",
+        "surface": "bytecode"
+      }
+    }],
+    "boundary_witnesses": [{
+      "id": "reflective_plain_rejects",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "variant",
+        "boundary": "reflective_write",
+        "surface": "text"
+      }
+    }]
   }]
 })JSON");
 }
@@ -140,7 +157,8 @@ static String write_completeness_capability_map(TemporaryProjectTree &p_tree, co
 
 static String make_completeness_rule(const String &p_family) {
 	return vformat(R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "%s",
   "domain": {"shape": ["plain"]},
   "required_dimensions": [],
@@ -160,7 +178,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		TemporaryProjectTree tree("type_completeness_manifest_happy");
 		REQUIRE(tree.is_valid());
 		const String path = write_completeness_manifest(tree, R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": ["plain", "union"], "surface": ["text"]},
   "required_dimensions": [{"dimension": "analysis", "when": {}}],
@@ -185,7 +204,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		const Error load_error = FSCompletenessManifest::load(path, manifest, errors);
 		REQUIRE_MESSAGE(load_error == OK, String(" | ").join(errors));
 		REQUIRE(errors.is_empty());
-		CHECK_EQ(manifest.schema_version, 1);
+		CHECK_EQ(manifest.schema_version, 2);
 		CHECK_EQ(manifest.family, "sample");
 		CHECK_EQ(manifest.domain.size(), 2);
 		CHECK_EQ(manifest.domain_axis_order.size(), 2);
@@ -203,7 +222,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		TemporaryProjectTree tree("type_completeness_manifest_malformed");
 		REQUIRE(tree.is_valid());
 		const String path = write_completeness_manifest(tree, R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": ["plain", "plain"]},
   "required_dimensions": [],
@@ -227,7 +247,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		TemporaryProjectTree tree("type_completeness_manifest_full_records");
 		REQUIRE(tree.is_valid());
 		const String path = write_completeness_manifest(tree, R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "complete",
   "domain": {"shape": ["plain"], "surface": ["text", "bytecode"]},
   "required_dimensions": [{"dimension": "analysis", "when": {"surface": "text"}}],
@@ -249,8 +270,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
     "when": {"shape": "plain"},
     "derive": {"analysis": "reject"},
     "rationale": "The bytecode boundary is intentional.",
-    "positive_witnesses": ["accept_plain"],
-    "boundary_witnesses": ["reject_plain"]
+    "positive_witnesses": [{"id": "accept_plain", "coordinates": {"shape": "plain", "surface": "text"}}],
+    "boundary_witnesses": [{"id": "reject_plain", "coordinates": {"shape": "plain", "surface": "bytecode"}}]
   }],
   "max_chain_length": 2
 })JSON");
@@ -264,8 +285,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK_EQ(manifest.anchors[0].surfaces[1], "bytecode");
 		REQUIRE_EQ(manifest.exceptions.size(), 1);
 		CHECK_EQ(manifest.exceptions[0].parent, "relation");
-		CHECK_EQ(manifest.exceptions[0].positive_witnesses[0], "accept_plain");
-		CHECK_EQ(manifest.exceptions[0].boundary_witnesses[0], "reject_plain");
+		CHECK_EQ(manifest.exceptions[0].positive_witnesses[0].id, "accept_plain");
+		CHECK_EQ(String(manifest.exceptions[0].positive_witnesses[0].coordinates["surface"]), "text");
+		CHECK_EQ(manifest.exceptions[0].boundary_witnesses[0].id, "reject_plain");
+		CHECK_EQ(String(manifest.exceptions[0].boundary_witnesses[0].coordinates["surface"]), "bytecode");
 		CHECK_EQ(manifest.max_chain_length, 2);
 	}
 
@@ -273,7 +296,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		TemporaryProjectTree tree("type_completeness_manifest_invalid_contract");
 		REQUIRE(tree.is_valid());
 		const String path = write_completeness_manifest(tree, R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": [], "surface": [""]},
   "required_dimensions": [
@@ -308,7 +332,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		errors.push_back("stale error");
 
 		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_bad_syntax", R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample"
 )JSON",
 						 manifest, errors),
@@ -362,7 +387,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		FSCompletenessManifest manifest;
 		Vector<String> errors;
 		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_quoted_axis", R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"a.b": ["plain", "plain"]},
   "required_dimensions": [],
@@ -379,7 +405,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		FSCompletenessManifest manifest;
 		Vector<String> errors;
 		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_cross_kind_id", R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": ["plain"]},
   "required_dimensions": [],
@@ -396,7 +423,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		FSCompletenessManifest manifest;
 		Vector<String> errors;
 		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_bad_exception", R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": ["plain"]},
   "required_dimensions": [],
@@ -408,7 +436,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
     "when": {},
     "derive": {},
     "rationale": "Boundary behavior.",
-    "positive_witnesses": ["", 7],
+    "positive_witnesses": [{"id": "", "coordinates": {}}, 7],
     "boundary_witnesses": []
   }]
 })JSON",
@@ -416,10 +444,12 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 				ERR_INVALID_DATA);
 		CHECK(completeness_errors_contain(errors, "$.exceptions[0].parent: unknown relation 'missing'"));
 		CHECK(completeness_errors_contain(errors, "$.exceptions[0].derive: must be non-empty"));
-		CHECK(completeness_errors_contain(errors, "$.exceptions[0].positive_witnesses[0]: must be non-empty"));
-		CHECK(completeness_errors_contain(errors, "$.exceptions[0].positive_witnesses[1]: expected a string"));
-		CHECK(completeness_errors_contain(errors,
-				"$.exceptions[0].boundary_witnesses: must contain at least one string"));
+		CHECK(completeness_errors_contain(errors, "$.exceptions[0].positive_witnesses[0].id: must be non-empty"));
+		CHECK(completeness_errors_contain(
+				errors, "$.exceptions[0].positive_witnesses[0].coordinates: must be non-empty"));
+		CHECK(completeness_errors_contain(errors, "$.exceptions[0].positive_witnesses[1]: expected an object"));
+		CHECK(completeness_errors_contain(
+				errors, "$.exceptions[0].boundary_witnesses: must contain at least one witness"));
 	}
 
 	TEST_CASE("TypeCompleteness Manifest rejects both max chain bound edges") {
@@ -427,7 +457,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 			FSCompletenessManifest manifest;
 			Vector<String> errors;
 			const String contents = vformat(R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": ["plain"]},
   "required_dimensions": [],
@@ -449,7 +480,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		manifest.family = "stale";
 		Vector<String> errors;
 		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_duplicate_root", R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "first",
   "family": "second",
   "domain": {"shape": ["plain"]},
@@ -468,7 +500,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		FSCompletenessManifest manifest;
 		Vector<String> errors;
 		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_duplicate_nested", R"JSON({
-  "schema_version": 1,
+  "schema_version": 2,
+  "adapter": "sample_adapter",
   "family": "sample",
   "domain": {"shape": ["plain"]},
   "required_dimensions": [],
@@ -506,7 +539,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/shape.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"core","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("partitions/.DS_Store", "filesystem metadata");
 		tree.write_file("dimensions/.metadata.json", "not catalog data");
 
@@ -524,7 +557,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/shape.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"core","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("partitions/notes.txt", "unexpected");
 		tree.write_file("dimensions/nested/metadata.json", "unexpected");
 
@@ -747,9 +780,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/b.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["union"],"classes":{}})JSON");
 		tree.write_file("dimensions/a.json",
-				R"JSON({"schema_version":1,"adapter":"first","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("dimensions/b.json",
-				R"JSON({"schema_version":1,"adapter":"second","dimensions":[{"id":"analysis","outcomes":["reject"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"synthetic_pair_identity","dimensions":[{"id":"analysis","outcomes":["reject"]}]})JSON");
 
 		FSCompletenessCatalog catalog;
 		Vector<String> errors;
@@ -777,7 +810,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
   }
 })JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"core","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 
 		FSCompletenessCatalog catalog;
 		Vector<String> errors;
@@ -819,7 +852,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 				R"JSON({"schema_version":1,"axis":"a_shape","leaves":["plain"],"classes":{},"a_typo":true})JSON");
 		tree.write_file("dimensions/core.json", R"JSON({
   "schema_version": 1,
-  "adapter": "core",
+  "adapter": "union_destination_membership",
   "dimensions": [{"id": "analysis", "outcomes": ["accept"], "outcome": "accept"}],
   "dimensionz": []
 })JSON");
@@ -849,7 +882,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 })JSON");
 		tree.write_file("dimensions/duplicate.json", R"JSON({
   "schema_version": 1,
-  "adapter": "core",
+  "adapter": "union_destination_membership",
   "dimensions": [{
     "id": "analysis",
     "outcomes": ["accept"],
