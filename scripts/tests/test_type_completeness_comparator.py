@@ -12,6 +12,7 @@ import json
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -585,6 +586,63 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual(second.utcoffset(), timedelta(hours=-5))
         self.assertEqual(second.astimezone(timezone.utc), datetime(2026, 11, 1, 6, 0, tzinfo=timezone.utc))
         self.assertEqual(deadline.format_timestamp(second), "2026-11-01T01:00:00-05:00")
+
+    def test_parse_timestamp_accepts_iso_8601_offsets_including_z(self) -> None:
+        expected = datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc)
+        for text in (
+            "2026-08-17T14:00:00Z",
+            "2026-08-17T14:00:00+00:00",
+            "2026-08-17T10:00:00-04:00",
+            "2026-08-17T14:00:00+0000",
+            "2026-08-17T09:00:00-0500",
+            "2026-08-17T14:00:00.0Z",
+            "2026-08-17T14:00:00.000000+00:00",
+        ):
+            parsed = deadline.parse_timestamp(text)
+            self.assertEqual(parsed, expected, text)
+            self.assertEqual(parsed.utcoffset(), timedelta(0), text)
+        self.assertEqual(
+            deadline.parse_timestamp("2026-08-17T14:00:00.25Z"),
+            datetime(2026, 8, 17, 14, 0, 0, 250000, tzinfo=timezone.utc),
+        )
+        self.assertEqual(deadline.parse_timestamp("2026-08-17T14:00:00.123456789Z").microsecond, 123456)
+
+    def test_parse_timestamp_rejects_naive_and_malformed_input(self) -> None:
+        for text in (
+            "2026-08-17T14:00:00",
+            "2026-08-17",
+            "2026-08-17 14:00:00Z",
+            "2026-08-17T14:00Z",
+            "2026-08-17T25:00:00Z",
+            "2026-13-01T00:00:00Z",
+            "2026-08-17T14:00:00+24:00",
+            "2026-08-17T14:00:00+05",
+            "garbage",
+            "",
+        ):
+            with self.assertRaises(ValueError, msg=repr(text)) as context:
+                deadline.parse_timestamp(text)
+            self.assertIn("ISO-8601", str(context.exception), text)
+
+    def test_parse_timestamp_does_not_depend_on_fromisoformat(self) -> None:
+        class GuardedDatetime(datetime):
+            @classmethod
+            def fromisoformat(cls, text: str) -> GuardedDatetime:
+                raise AssertionError("parse_timestamp must not call datetime.fromisoformat")
+
+        with unittest.mock.patch.object(deadline, "datetime", GuardedDatetime):
+            parsed = deadline.parse_timestamp("2026-08-17T14:00:00Z")
+        self.assertEqual(parsed, datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc))
+
+    def test_utc_timestamps_round_trip_through_z(self) -> None:
+        moment = datetime(2026, 8, 17, 14, 30, 15, 500000, tzinfo=timezone.utc)
+        text = deadline.format_utc_timestamp(moment)
+        self.assertEqual(text, "2026-08-17T14:30:15.500000Z")
+        self.assertEqual(deadline.parse_timestamp(text), moment)
+        self.assertEqual(deadline.format_utc_timestamp(_ny(2026, 8, 19, 17)), "2026-08-19T21:00:00Z")
+        new_york_text = deadline.format_timestamp(_ny(2026, 8, 19, 17))
+        self.assertEqual(new_york_text, "2026-08-19T17:00:00-04:00")
+        self.assertEqual(deadline.parse_timestamp(new_york_text), _ny(2026, 8, 19, 17))
 
     def test_overdue_boundary_at_1700(self) -> None:
         due = _ny(2026, 8, 19, 17)

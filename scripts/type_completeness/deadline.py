@@ -7,7 +7,8 @@ at 02:00 local until the first Sunday of November at 02:00 local.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, tzinfo
+import re
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import Optional
 
 STANDARD_OFFSET = timedelta(hours=-5)
@@ -91,8 +92,55 @@ def is_overdue(due_at: datetime, now: datetime) -> bool:
 
 
 def format_timestamp(moment: datetime) -> str:
+    """Render in America/New_York, the zone the classification deadline is defined in."""
     return _require_aware(moment, "moment").isoformat()
 
 
+def format_utc_timestamp(moment: datetime) -> str:
+    """Render as UTC with the ``Z`` designator; ``parse_timestamp`` reads it back unchanged."""
+    utc = _require_aware(moment, "moment").astimezone(timezone.utc)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S") + (f".{utc.microsecond:06d}" if utc.microsecond else "") + "Z"
+
+
+# YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|+HHMM). Python 3.8's datetime.fromisoformat rejects ``Z``, offsets
+# without a colon, and fractions that are not 3 or 6 digits, so the format is parsed explicitly instead.
+_TIMESTAMP = re.compile(
+    r"^(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})T(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})"
+    r"(?:\.(?P<fraction>\d{1,9}))?(?P<offset>Z|[+-]\d{2}:?\d{2})$"
+)
+
+
 def parse_timestamp(text: str) -> datetime:
-    return _require_aware(datetime.fromisoformat(text), "timestamp")
+    """Parse an ISO-8601 timestamp with an explicit offset and return it normalized to UTC."""
+    match = _TIMESTAMP.match(text)
+    if match is None:
+        raise ValueError(
+            f"{text!r} is not an ISO-8601 timestamp with an explicit offset "
+            "(expected YYYY-MM-DDTHH:MM:SS[.ffffff](Z|+HH:MM|+HHMM))"
+        )
+    fraction = match.group("fraction") or ""
+    microsecond = int((fraction + "000000")[:6]) if fraction else 0
+    offset_text = match.group("offset")
+    if offset_text == "Z":
+        offset = timedelta(0)
+    else:
+        sign = 1 if offset_text[0] == "+" else -1
+        digits = offset_text[1:].replace(":", "")
+        offset_hours, offset_minutes = int(digits[:2]), int(digits[2:])
+        if offset_hours > 23 or offset_minutes > 59:
+            raise ValueError(f"{text!r} is not an ISO-8601 timestamp: offset {offset_text!r} is out of range")
+        offset = sign * timedelta(hours=offset_hours, minutes=offset_minutes)
+    try:
+        local = datetime(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+            int(match.group("hour")),
+            int(match.group("minute")),
+            int(match.group("second")),
+            microsecond,
+            tzinfo=timezone(offset),
+        )
+    except ValueError as error:
+        raise ValueError(f"{text!r} is not a valid ISO-8601 timestamp: {error}") from error
+    return local.astimezone(timezone.utc)

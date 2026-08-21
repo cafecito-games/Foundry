@@ -22,7 +22,8 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
   (`<finding_id>.json`, exactly the fields the runner validates; the finding ID is the one the runner emitted
   for that case and dimension, never recomputed), the machine-readable provisional record
   (`provisional.json`), and the tracking-issue body that embeds it. The deadline is 17:00 America/New_York on
-  the second weekday after detection, skipping weekends; `--detected-at` makes it reproducible.
+  the second weekday after detection, skipping weekends; `--detected-at` makes it reproducible. Timestamps on
+  the command line are ISO-8601 with an explicit offset (`Z`, `+HH:MM`, or `+HHMM`); naive values are rejected.
 - `reconcile --provisional provisional.json --ledger-dir <findings dir> --pull-request-state open|merged|closed`
   reports `pending_merge`, `merged`, `resolved`, `conflicting`, or `overdue` and exits non-zero when the state
   blocks the producing capability slice (`overdue`, `conflicting`). The output also carries `blocks_release`,
