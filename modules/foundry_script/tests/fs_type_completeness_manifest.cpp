@@ -41,6 +41,178 @@ static void append_error(Vector<String> &r_errors, const String &p_path, const S
 	r_errors.push_back(vformat("%s: %s", p_path, p_reason));
 }
 
+static bool is_json_path_identifier(const String &p_member) {
+	if (p_member.is_empty()) {
+		return false;
+	}
+	for (int i = 0; i < p_member.length(); i++) {
+		const char32_t character = p_member[i];
+		const bool valid = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+				character == '_' || (i > 0 && character >= '0' && character <= '9');
+		if (!valid) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static String append_json_path_member(const String &p_path, const String &p_member, bool p_force_quoted = false) {
+	if (!p_force_quoted && is_json_path_identifier(p_member)) {
+		return p_path + "." + p_member;
+	}
+	return vformat("%s[%s]", p_path, JSON::stringify(p_member));
+}
+
+// Core JSON parsing stores objects in Dictionary and therefore cannot retain duplicate member
+// occurrences. This small recursive scanner runs only after the core parser has accepted the
+// document. It follows the JSON structure closely enough to retain object membership and delegates
+// string-literal decoding back to JSON, so escaped spellings such as `"a"` and `"\u0061"` compare
+// as the same member without maintaining a second escape implementation here.
+class JSONDuplicateMemberDetector {
+	const String &source;
+	Vector<String> &errors;
+	int index = 0;
+
+	void skip_whitespace() {
+		while (index < source.length() && source[index] <= 32) {
+			index++;
+		}
+	}
+
+	bool parse_string(String &r_decoded) {
+		skip_whitespace();
+		if (index >= source.length() || source[index] != '"') {
+			return false;
+		}
+		const int start = index++;
+		while (index < source.length()) {
+			const char32_t character = source[index++];
+			if (character == '\\') {
+				if (index >= source.length()) {
+					return false;
+				}
+				index++;
+				continue;
+			}
+			if (character == '"') {
+				const Variant decoded = JSON::parse_string(source.substr(start, index - start));
+				if (decoded.get_type() != Variant::STRING) {
+					return false;
+				}
+				r_decoded = decoded;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool parse_value(const String &p_path) {
+		skip_whitespace();
+		if (index >= source.length()) {
+			return false;
+		}
+		switch (source[index]) {
+			case '{':
+				return parse_object(p_path);
+			case '[':
+				return parse_array(p_path);
+			case '"': {
+				String ignored;
+				return parse_string(ignored);
+			}
+			default:
+				while (index < source.length() && source[index] != ',' && source[index] != ']' && source[index] != '}') {
+					index++;
+				}
+				return true;
+		}
+	}
+
+	bool parse_object(const String &p_path) {
+		if (source[index++] != '{') {
+			return false;
+		}
+		HashSet<String> members;
+		skip_whitespace();
+		if (index < source.length() && source[index] == '}') {
+			index++;
+			return true;
+		}
+
+		while (index < source.length()) {
+			String member;
+			if (!parse_string(member)) {
+				return false;
+			}
+			skip_whitespace();
+			if (index >= source.length() || source[index++] != ':') {
+				return false;
+			}
+
+			const String member_path = append_json_path_member(p_path, member);
+			if (members.has(member)) {
+				append_error(errors, member_path, vformat("duplicate object member '%s'", member));
+			} else {
+				members.insert(member);
+			}
+			if (!parse_value(member_path)) {
+				return false;
+			}
+
+			skip_whitespace();
+			if (index < source.length() && source[index] == ',') {
+				index++;
+				continue;
+			}
+			if (index < source.length() && source[index] == '}') {
+				index++;
+				return true;
+			}
+			return false;
+		}
+		return false;
+	}
+
+	bool parse_array(const String &p_path) {
+		if (source[index++] != '[') {
+			return false;
+		}
+		skip_whitespace();
+		if (index < source.length() && source[index] == ']') {
+			index++;
+			return true;
+		}
+
+		int element = 0;
+		while (index < source.length()) {
+			if (!parse_value(vformat("%s[%d]", p_path, element++))) {
+				return false;
+			}
+			skip_whitespace();
+			if (index < source.length() && source[index] == ',') {
+				index++;
+				continue;
+			}
+			if (index < source.length() && source[index] == ']') {
+				index++;
+				return true;
+			}
+			return false;
+		}
+		return false;
+	}
+
+public:
+	JSONDuplicateMemberDetector(const String &p_source, Vector<String> &r_errors) :
+			source(p_source), errors(r_errors) {}
+
+	void detect() {
+		if (!parse_value("$")) {
+			append_error(errors, "$", "could not verify unique object members");
+		}
+	}
+};
+
 static bool require_string(const Dictionary &p_object, const StringName &p_field, const String &p_path, String &r_value,
 		Vector<String> &r_errors) {
 	if (!p_object.has(p_field)) {
@@ -155,7 +327,7 @@ static void parse_domain(const Dictionary &p_domain, FSCompletenessManifest &r_m
 	}
 	for (const Variant &axis_variant : p_domain.keys()) {
 		const String axis = axis_variant;
-		const String axis_path = vformat("$.domain.%s", axis);
+		const String axis_path = append_json_path_member("$.domain", axis, true);
 		if (axis.is_empty()) {
 			append_error(r_errors, "$.domain", "axis names must be non-empty");
 			continue;
@@ -318,6 +490,7 @@ Error FSCompletenessManifest::load(const String &p_path, FSCompletenessManifest 
 		append_error(r_errors, "$", vformat("invalid JSON at line %d: %s", json.get_error_line(), json.get_error_message()));
 		return ERR_INVALID_DATA;
 	}
+	JSONDuplicateMemberDetector(source, r_errors).detect();
 	if (json.get_data().get_type() != Variant::DICTIONARY) {
 		append_error(r_errors, "$", "expected an object");
 		return ERR_INVALID_DATA;

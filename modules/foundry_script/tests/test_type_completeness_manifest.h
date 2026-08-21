@@ -42,6 +42,33 @@ static String write_completeness_manifest(TemporaryProjectTree &p_tree, const St
 	return p_tree.root.path_join("manifest.json");
 }
 
+static Error load_completeness_manifest_text(const String &p_tree_name, const String &p_contents,
+		FSCompletenessManifest &r_manifest, Vector<String> &r_errors) {
+	TemporaryProjectTree tree(p_tree_name);
+	if (!tree.is_valid()) {
+		return ERR_CANT_CREATE;
+	}
+	return FSCompletenessManifest::load(write_completeness_manifest(tree, p_contents), r_manifest, r_errors);
+}
+
+static bool completeness_errors_contain(const Vector<String> &p_errors, const String &p_expected) {
+	for (const String &error : p_errors) {
+		if (error == p_expected) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool completeness_errors_contain_text(const Vector<String> &p_errors, const String &p_expected) {
+	for (const String &error : p_errors) {
+		if (error.contains(p_expected)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 	TEST_CASE("TypeCompleteness Manifest loads a valid typed manifest") {
 		TemporaryProjectTree tree("type_completeness_manifest_happy");
@@ -66,7 +93,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 })JSON");
 
 		FSCompletenessManifest manifest;
+		manifest.family = "stale";
 		Vector<String> errors;
+		errors.push_back("stale error");
 		const Error load_error = FSCompletenessManifest::load(path, manifest, errors);
 		REQUIRE_MESSAGE(load_error == OK, String(" | ").join(errors));
 		REQUIRE(errors.is_empty());
@@ -184,6 +213,192 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK_EQ(FSCompletenessManifest::load(path, manifest, errors), ERR_INVALID_DATA);
 		CHECK_GE(errors.size(), 10);
 		CHECK(manifest.family.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rejects malformed syntax with a parse diagnostic") {
+		FSCompletenessManifest manifest;
+		manifest.family = "stale";
+		Vector<String> errors;
+		errors.push_back("stale error");
+
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_bad_syntax", R"JSON({
+  "schema_version": 1,
+  "family": "sample"
+)JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK_EQ(errors.size(), 1);
+		CHECK(completeness_errors_contain_text(errors, "$: invalid JSON at line"));
+		CHECK(completeness_errors_contain_text(errors, "Expected '}'"));
+		CHECK_EQ(manifest.schema_version, 0);
+		CHECK(manifest.family.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rejects a non-object root and clears caller state") {
+		FSCompletenessManifest manifest;
+		manifest.family = "stale";
+		manifest.relations.push_back(FSCompletenessRelation());
+		Vector<String> errors;
+		errors.push_back("stale error");
+
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_array_root", "[]", manifest, errors),
+				ERR_INVALID_DATA);
+		REQUIRE_EQ(errors.size(), 1);
+		CHECK_EQ(errors[0], "$: expected an object");
+		CHECK(manifest.family.is_empty());
+		CHECK(manifest.relations.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Manifest reports each wrong required root field type") {
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_wrong_root_types", R"JSON({
+  "schema_version": "1",
+  "family": 7,
+  "domain": [],
+  "required_dimensions": {},
+  "anchors": {},
+  "relations": {},
+  "exceptions": {}
+})JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors, "$.schema_version: expected an integer"));
+		CHECK(completeness_errors_contain(errors, "$.family: expected a string"));
+		CHECK(completeness_errors_contain(errors, "$.domain: expected an object"));
+		CHECK(completeness_errors_contain(errors, "$.required_dimensions: expected an array"));
+		CHECK(completeness_errors_contain(errors, "$.anchors: expected an array"));
+		CHECK(completeness_errors_contain(errors, "$.relations: expected an array"));
+		CHECK(completeness_errors_contain(errors, "$.exceptions: expected an array"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest quotes dynamic domain axes in duplicate diagnostics") {
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_quoted_axis", R"JSON({
+  "schema_version": 1,
+  "family": "sample",
+  "domain": {"a.b": ["plain", "plain"]},
+  "required_dimensions": [],
+  "anchors": [],
+  "relations": [],
+  "exceptions": []
+})JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors, "$.domain[\"a.b\"][1]: duplicate value 'plain'"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rejects a cross-kind duplicate id") {
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_cross_kind_id", R"JSON({
+  "schema_version": 1,
+  "family": "sample",
+  "domain": {"shape": ["plain"]},
+  "required_dimensions": [],
+  "anchors": [{"id": "shared", "coordinates": {"shape": "plain"}, "expect": {"analysis": "accept"}}],
+  "relations": [{"id": "shared", "from": {"shape": "plain"}, "to": {"shape": "plain"}, "derive": {"analysis": "same"}}],
+  "exceptions": []
+})JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors, "$.relations[0].id: duplicate id 'shared'"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest reports exception parent derive and witness violations") {
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_bad_exception", R"JSON({
+  "schema_version": 1,
+  "family": "sample",
+  "domain": {"shape": ["plain"]},
+  "required_dimensions": [],
+  "anchors": [],
+  "relations": [{"id": "relation", "from": {"shape": "plain"}, "to": {"shape": "plain"}, "derive": {"analysis": "same"}}],
+  "exceptions": [{
+    "id": "exception",
+    "parent": "missing",
+    "when": {},
+    "derive": {},
+    "rationale": "Boundary behavior.",
+    "positive_witnesses": ["", 7],
+    "boundary_witnesses": []
+  }]
+})JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors, "$.exceptions[0].parent: unknown relation 'missing'"));
+		CHECK(completeness_errors_contain(errors, "$.exceptions[0].derive: must be non-empty"));
+		CHECK(completeness_errors_contain(errors, "$.exceptions[0].positive_witnesses[0]: must be non-empty"));
+		CHECK(completeness_errors_contain(errors, "$.exceptions[0].positive_witnesses[1]: expected a string"));
+		CHECK(completeness_errors_contain(errors,
+				"$.exceptions[0].boundary_witnesses: must contain at least one string"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rejects both max chain bound edges") {
+		for (int bound : { 0, 4 }) {
+			FSCompletenessManifest manifest;
+			Vector<String> errors;
+			const String contents = vformat(R"JSON({
+  "schema_version": 1,
+  "family": "sample",
+  "domain": {"shape": ["plain"]},
+  "required_dimensions": [],
+  "anchors": [],
+  "relations": [],
+  "exceptions": [],
+  "max_chain_length": %d
+})JSON",
+					bound);
+			CHECK_EQ(load_completeness_manifest_text(vformat("type_completeness_manifest_chain_%d", bound), contents,
+							 manifest, errors),
+					ERR_INVALID_DATA);
+			CHECK(completeness_errors_contain(errors, "$.max_chain_length: must be between 1 and 3"));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rejects duplicate root object members") {
+		FSCompletenessManifest manifest;
+		manifest.family = "stale";
+		Vector<String> errors;
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_duplicate_root", R"JSON({
+  "schema_version": 1,
+  "family": "first",
+  "family": "second",
+  "domain": {"shape": ["plain"]},
+  "required_dimensions": [],
+  "anchors": [],
+  "relations": [],
+  "exceptions": []
+})JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors, "$.family: duplicate object member 'family'"));
+		CHECK(manifest.family.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rejects escaped-equivalent members in nested objects") {
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		CHECK_EQ(load_completeness_manifest_text("type_completeness_manifest_duplicate_nested", R"JSON({
+  "schema_version": 1,
+  "family": "sample",
+  "domain": {"shape": ["plain"]},
+  "required_dimensions": [],
+  "anchors": [{
+    "id": "anchor",
+    "coordinates": {"a.b": "first", "a\u002eb": "second"},
+    "expect": {"analysis": "accept"}
+  }],
+  "relations": [],
+  "exceptions": []
+})JSON",
+						 manifest, errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"$.anchors[0].coordinates[\"a.b\"]: duplicate object member 'a.b'"));
+		CHECK(manifest.anchors.is_empty());
 	}
 }
 
