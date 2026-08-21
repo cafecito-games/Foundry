@@ -31,12 +31,13 @@
 #include "fs_type_completeness_union_adapter.h"
 
 #include "../fs_analyzer.h"
+#include "../fs_cache.h"
 #include "../fs_parser.h"
 
-#include "core/config/project_settings.h"
-#include "core/io/dir_access.h"
-#include "core/io/file_access.h"
+#include "core/io/file_access_pack.h"
+#include "core/os/mutex.h"
 #include "core/os/os.h"
+#include "core/templates/safe_refcount.h"
 
 namespace FSTests {
 
@@ -93,10 +94,52 @@ static String boundary_body_for(const String &p_boundary) {
 		   "\tvar stored: Variant = holder.value";
 }
 
-static void append_parser_diagnostics(const FSParser &p_parser, PackedStringArray &r_diagnostics) {
-	for (const FSParser::ParserError &error : p_parser.get_errors()) {
-		r_diagnostics.push_back(vformat("%d:%d: %s", error.line, error.column, error.message));
+static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, PackedStringArray &r_diagnostics) {
+	for (const FSParser::ParserError *error : p_parser.get_errors_in_source_order()) {
+		if (error != nullptr) {
+			r_diagnostics.push_back(vformat("%d:%d: %s", error->line, error->column, error->message));
+		}
 	}
+}
+
+// FSAnalyzer resolves a local script class through FSCache while reducing Holder.new(). The source
+// override supplies that self-load from memory. FSCache's parser lookup also asks PackedData whether
+// the identity exists, so a zero-content marker makes the synthetic identity discoverable without
+// creating a filesystem artifact. Every invocation owns a unique path and removes all cache state.
+class SyntheticAnalyzerSource {
+	String path;
+	bool marker_installed = false;
+
+public:
+	SyntheticAnalyzerSource(const String &p_path, const String &p_source) :
+			path(p_path) {
+		PackedData *packed_data = PackedData::get_singleton();
+		if (packed_data != nullptr && !packed_data->is_disabled()) {
+			uint8_t marker_md5[16] = {};
+			packed_data->add_path(String(), path, 1, 0, marker_md5, nullptr, false);
+			marker_installed = true;
+		}
+		FSCache::set_source_override(path, p_source);
+		FSCache::remove_parser(path);
+		FSCache::remove_script(path);
+	}
+
+	~SyntheticAnalyzerSource() {
+		FSCache::remove_parser(path);
+		FSCache::remove_script(path);
+		FSCache::clear_source_override(path);
+		if (marker_installed) {
+			PackedData::get_singleton()->remove_path(path);
+		}
+	}
+
+	bool is_available() const { return marker_installed; }
+};
+
+static String next_analyzer_path(const String &p_case_id) {
+	static SafeNumeric<uint64_t> sequence;
+	return vformat("user://type_completeness/%d/%s/%s.fs",
+			OS::get_singleton()->get_process_id(), p_case_id.sha256_text(), String::num_uint64(sequence.increment()));
 }
 
 static FSCompletenessObservation rejected_observation(
@@ -184,27 +227,16 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	FSCompletenessObservation observation;
 	observation.case_id = p_program.case_id;
 	observation.surface = p_surface;
-	const String path = vformat("user://type_completeness/%d/%s.fs",
-			OS::get_singleton()->get_process_id(), p_program.case_id);
-	const String absolute_directory = ProjectSettings::get_singleton()->globalize_path(path.get_base_dir());
-	const Error directory_error = DirAccess::make_dir_recursive_absolute(absolute_directory);
-	if (directory_error != OK) {
+	static Mutex analysis_mutex;
+	MutexLock analysis_lock(analysis_mutex);
+	const String path = next_analyzer_path(p_program.case_id);
+	SyntheticAnalyzerSource synthetic_source(path, p_program.source);
+	if (!synthetic_source.is_available()) {
 		observation.dimensions["analysis"] = "reject";
-		observation.diagnostics.push_back(vformat("Could not create analyzer scratch directory: %d.", directory_error));
+		observation.diagnostics.push_back("In-memory analyzer identity is unavailable.");
 		return observation;
 	}
-	Error write_error = OK;
-	{
-		Ref<FileAccess> source_file = FileAccess::open(path, FileAccess::WRITE, &write_error);
-		if (source_file.is_valid()) {
-			source_file->store_string(p_program.source);
-		}
-	}
-	if (write_error != OK) {
-		observation.dimensions["analysis"] = "reject";
-		observation.diagnostics.push_back(vformat("Could not write analyzer source: %d.", write_error));
-		return observation;
-	}
+
 	FSParser parser;
 	const Error parse_error = parser.parse(p_program.source, path, false);
 	Error analyzer_error = ERR_PARSE_ERROR;
@@ -212,7 +244,12 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 		FSAnalyzer analyzer(&parser);
 		analyzer_error = analyzer.analyze();
 	}
-	append_parser_diagnostics(parser, observation.diagnostics);
+	append_parser_diagnostics_in_source_order(parser, observation.diagnostics);
+	if (parse_error != OK && observation.diagnostics.is_empty()) {
+		observation.diagnostics.push_back(vformat("Parser failed without diagnostics (error %d).", parse_error));
+	} else if (parse_error == OK && analyzer_error != OK && observation.diagnostics.is_empty()) {
+		observation.diagnostics.push_back(vformat("Analyzer failed without diagnostics (error %d).", analyzer_error));
+	}
 	observation.dimensions["analysis"] = parse_error == OK && analyzer_error == OK ? "accept" : "reject";
 	return observation;
 }
