@@ -1946,6 +1946,22 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 
 } // namespace
 
+Error FSCompletenessRunner::publish_owned_document(const String &p_scratch_root,
+		const String &p_catalog_root, const String &p_document_path, const Dictionary &p_document) {
+	String canonical_scratch_root;
+	const Error scratch_error = resolve_or_create_owned_scratch_root(p_scratch_root, canonical_scratch_root);
+	if (scratch_error != OK) {
+		return scratch_error;
+	}
+	const Error path_error =
+			validate_owned_report_path(canonical_scratch_root, p_catalog_root, p_document_path);
+	if (path_error != OK) {
+		return path_error;
+	}
+	return write_report_atomically(
+			canonical_scratch_root, p_catalog_root, p_document_path, p_document, nullptr);
+}
+
 Error FSCompletenessRunner::run(
 		const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
 	const Error error = run_family(p_options, r_result);

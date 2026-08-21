@@ -413,7 +413,11 @@ int FSCompletenessBudgets::hard_timeout_seconds_for_tier(const String &p_tier) c
 void fs_completeness_skip(const char *p_reason) {
 	const String message = vformat("[type-completeness] SKIP %s", String::utf8(p_reason));
 	print_line(message);
-	MESSAGE(message);
+	// The command-line entry point drives the same helpers with no doctest context, where the
+	// reporting machinery is unusable; the printed line above is the record there.
+	if (doctest::is_running_in_test) {
+		MESSAGE(message);
+	}
 }
 
 } // namespace Completeness

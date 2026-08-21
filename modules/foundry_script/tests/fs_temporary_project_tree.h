@@ -71,12 +71,26 @@ namespace FSTests {
 struct TemporaryProjectTree {
 	String root;
 
+	// Reports a setup failure of the owned tree. Inside a doctest case it fails that case; the
+	// type-completeness command-line entry point drives these same helpers with no doctest context at
+	// all, where the assertion machinery is unusable, so there the failure is printed instead.
+	static void report_failure(bool p_ok, const String &p_message) {
+		if (p_ok) {
+			return;
+		}
+		if (doctest::is_running_in_test) {
+			CHECK_MESSAGE(p_ok, p_message);
+			return;
+		}
+		ERR_PRINT(p_message);
+	}
+
 	explicit TemporaryProjectTree(const String &p_name) {
 		// The root is captured once here so cleanup is validated against the very root this tree was
 		// created under, whatever the environment looks like at destruction time.
 		owned_scratch_root = get_test_scratch_root();
 		setup_error = owned_scratch_root.is_empty() ? ERR_UNCONFIGURED : resolve_owned_child(owned_scratch_root, p_name, root);
-		CHECK_MESSAGE(setup_error == OK, vformat("Cannot resolve an owned scratch path for '%s'", p_name));
+		report_failure(setup_error == OK, vformat("Cannot resolve an owned scratch path for '%s'", p_name));
 		if (setup_error != OK) {
 			root = String();
 			return;
@@ -84,7 +98,7 @@ struct TemporaryProjectTree {
 
 		// Start from a clean slate in case a previous aborted run left the tree behind.
 		setup_error = remove_validated_descendant(owned_scratch_root, root);
-		CHECK_MESSAGE(setup_error == OK, vformat("Cannot clear scratch path '%s'", root));
+		report_failure(setup_error == OK, vformat("Cannot clear scratch path '%s'", root));
 		if (setup_error != OK) {
 			root = String();
 			return;
@@ -93,12 +107,12 @@ struct TemporaryProjectTree {
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (dir.is_null()) {
 			setup_error = ERR_CANT_CREATE;
-			CHECK_MESSAGE(false, "Cannot access the filesystem to create a scratch project tree");
+			report_failure(false, "Cannot access the filesystem to create a scratch project tree");
 			root = String();
 			return;
 		}
 		setup_error = dir->make_dir_recursive(root);
-		CHECK_EQ(setup_error, OK);
+		report_failure(setup_error == OK, vformat("Cannot create the scratch project tree '%s'", root));
 		if (setup_error != OK) {
 			root = String();
 		}
@@ -124,19 +138,21 @@ struct TemporaryProjectTree {
 	void write_file(const String &p_relative_path, const String &p_contents) const {
 		String absolute_path;
 		const Error path_error = resolve_owned_child(root, p_relative_path, absolute_path);
-		CHECK_MESSAGE(path_error == OK, vformat("Refusing to write '%s' outside the owned scratch tree", p_relative_path));
+		report_failure(path_error == OK, vformat("Refusing to write '%s' outside the owned scratch tree", p_relative_path));
 		if (path_error != OK) {
 			return;
 		}
 
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (dir.is_null()) {
-			CHECK_MESSAGE(false, "Cannot access the filesystem to write a scratch file");
+			report_failure(false, "Cannot access the filesystem to write a scratch file");
 			return;
 		}
-		CHECK_EQ(dir->make_dir_recursive(absolute_path.get_base_dir()), OK);
+		const Error directory_error = dir->make_dir_recursive(absolute_path.get_base_dir());
+		report_failure(directory_error == OK,
+				vformat("Cannot create the directory of '%s'", absolute_path));
 		Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
-		CHECK_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", absolute_path));
+		report_failure(file.is_valid(), vformat("Cannot write '%s'", absolute_path));
 		if (file.is_null()) {
 			return;
 		}
@@ -336,7 +352,7 @@ struct TemporaryProjectTree {
 	static String stage_project_copy(const String &p_source_root, const String &p_name) {
 		Error err = OK;
 		Ref<DirAccess> source_dir = DirAccess::open(p_source_root, &err);
-		CHECK_MESSAGE(err == OK, vformat("Cannot open source project root '%s'", p_source_root));
+		report_failure(err == OK, vformat("Cannot open source project root '%s'", p_source_root));
 		if (source_dir.is_null()) {
 			return String();
 		}
@@ -344,7 +360,7 @@ struct TemporaryProjectTree {
 
 		const String source_root = source_dir->get_current_dir().simplify_path();
 		const String staged_root = get_test_scratch_path(p_name);
-		CHECK_MESSAGE(!staged_root.is_empty(), vformat("Cannot resolve an owned scratch path for '%s'", p_name));
+		report_failure(!staged_root.is_empty(), vformat("Cannot resolve an owned scratch path for '%s'", p_name));
 		if (staged_root.is_empty()) {
 			return String();
 		}
@@ -354,12 +370,12 @@ struct TemporaryProjectTree {
 		if (last_source_root != source_root || last_staged_root != staged_root ||
 				!FileAccess::exists(staged_root.path_join("project.foundry"))) {
 			const Error remove_error = remove_owned_path(staged_root);
-			CHECK_MESSAGE(remove_error == OK, vformat("Cannot clear staged project '%s'", staged_root));
+			report_failure(remove_error == OK, vformat("Cannot clear staged project '%s'", staged_root));
 			if (remove_error != OK) {
 				return String();
 			}
 			const Error copy_err = source_dir->copy_dir(source_root, staged_root);
-			CHECK_MESSAGE(copy_err == OK, vformat("Cannot stage test project '%s' at '%s'", source_root, staged_root));
+			report_failure(copy_err == OK, vformat("Cannot stage test project '%s' at '%s'", source_root, staged_root));
 			if (copy_err != OK) {
 				return String();
 			}

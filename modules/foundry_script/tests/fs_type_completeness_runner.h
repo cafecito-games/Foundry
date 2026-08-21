@@ -108,6 +108,13 @@ struct FSCompletenessRunResult {
 class FSCompletenessRunner {
 public:
 	static Error run(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result);
+
+	// Publishes a document that belongs to a run without being a family report - the index over a
+	// multi-family invocation - under exactly the contract a report is published with: the path must
+	// be owned by the scratch root, must not resolve through a link or into the catalog or the
+	// artifact tree, and the file is replaced atomically.
+	static Error publish_owned_document(const String &p_scratch_root, const String &p_catalog_root,
+			const String &p_document_path, const Dictionary &p_document);
 };
 
 } // namespace FSTests

@@ -93,6 +93,64 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		CHECK_EQ(String(report.get("published_surface", "missing")), "");
 	}
 
+	// The command runs outside any doctest context, so every helper it reaches must work without the
+	// assertion machinery. Only a real subprocess proves that; an in-process call always has a context.
+	TEST_CASE("TypeCompleteness CLI runs as a command without a doctest context") {
+		const String executable = OS::get_singleton()->get_executable_path();
+		if (executable.is_empty() || !FileAccess::exists(executable)) {
+			Completeness::fs_completeness_skip("the running executable is not available to re-invoke");
+			return;
+		}
+		const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
+		if (scratch_root.is_empty()) {
+			Completeness::fs_completeness_skip("the test scratch space is unavailable");
+			return;
+		}
+		TemporaryProjectTree tree(
+				vformat("type_completeness_cli_subprocess_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		// The child resolves its own scratch root from the environment, so it is pointed at the one
+		// this process owns; otherwise it would refuse a report path below a root it does not share.
+		const bool had_scratch_environment = OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH");
+		const String previous_scratch_environment =
+				had_scratch_environment ? OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH") : String();
+		OS::get_singleton()->set_environment("FOUNDRY_TEST_SCRATCH", scratch_root);
+
+		List<String> arguments;
+		arguments.push_back("--headless");
+		arguments.push_back("test");
+		arguments.push_back("completeness");
+		arguments.push_back("run");
+		arguments.push_back("--family");
+		arguments.push_back(completeness_cli_family);
+		arguments.push_back("--catalog");
+		arguments.push_back(tracked_catalog_root());
+		arguments.push_back("--scratch");
+		arguments.push_back(tree.root.path_join("scratch"));
+		arguments.push_back("--report");
+		arguments.push_back(tree.root.path_join("scratch/report.json"));
+		arguments.push_back("--tier");
+		arguments.push_back("presubmit");
+		String output;
+		int exit_code = -1;
+		const Error execute_error = OS::get_singleton()->execute(executable, arguments, &output, &exit_code, true);
+
+		if (had_scratch_environment) {
+			OS::get_singleton()->set_environment("FOUNDRY_TEST_SCRATCH", previous_scratch_environment);
+		} else {
+			OS::get_singleton()->unset_environment("FOUNDRY_TEST_SCRATCH");
+		}
+
+		REQUIRE_MESSAGE(execute_error == OK, output);
+		CHECK_MESSAGE(exit_code == FSCompletenessCLI::EXIT_PASSED, output);
+		const String report_path = tree.root.path_join("scratch/report.json");
+		REQUIRE_MESSAGE(FileAccess::exists(report_path), output);
+		const Dictionary report = completeness_cli_read_json(report_path);
+		CHECK_EQ(String(report.get("outcome", String())), "passed");
+		CHECK(report.has("timings_ms"));
+	}
+
 	TEST_CASE("TypeCompleteness CLI publishes only the selected surface") {
 		TemporaryProjectTree tree(
 				vformat("type_completeness_cli_surface_%d", OS::get_singleton()->get_process_id()));
@@ -181,6 +239,19 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 			CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
 			CHECK_FALSE(FileAccess::exists(options.report_path));
 		}
+		SUBCASE("a scratch root outside the test scratch space") {
+			FSCompletenessCLI::Options options = valid;
+			options.scratch_root = "relative/scratch";
+			options.report_path = "relative/scratch/report.json";
+			CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+			CHECK_FALSE(FileAccess::exists(options.report_path));
+		}
+		SUBCASE("a report path outside the test scratch space") {
+			FSCompletenessCLI::Options options = valid;
+			options.report_path = tree.root.get_base_dir().path_join("escaped.json");
+			CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+			CHECK_FALSE(FileAccess::exists(options.report_path));
+		}
 		SUBCASE("an absent budgets document") {
 			FSCompletenessCLI::Options options = valid;
 			options.budgets_path = tree.root.path_join("budgets/absent.json");
@@ -212,6 +283,45 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 	// Only the pilot family has an adapter today, so a multi-family invocation is exercised with one
 	// runnable family and one that cannot run. That is also the fail-closed case that matters: an
 	// index must never report a family it never published as if it had a verdict.
+	TEST_CASE("TypeCompleteness CLI refuses an index path that resolves through a link") {
+		TemporaryProjectTree tree(vformat("type_completeness_cli_link_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		TemporaryProjectTree outside(
+				vformat("type_completeness_cli_outside_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(outside.is_valid());
+		outside.write_file("stolen.json", "outside sentinel\n");
+
+		const String staged_root = tree.root.path_join("catalog");
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		REQUIRE_EQ(filesystem->copy_dir(tracked_catalog_root(), staged_root), OK);
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(
+				staged_root.path_join("rules").path_join(completeness_cli_family + ".json"), &read_error);
+		REQUIRE_EQ(read_error, OK);
+		tree.write_file("catalog/rules/cli_linked_index_family.json",
+				source.replace(vformat("\"family\": \"%s\"", completeness_cli_family),
+						"\"family\": \"cli_other_family\""));
+		REQUIRE_EQ(filesystem->make_dir_recursive(tree.root.path_join("scratch")), OK);
+		if (filesystem->create_link(outside.root.path_join("stolen.json"),
+					tree.root.path_join("scratch/report.json")) != OK) {
+			Completeness::fs_completeness_skip("this filesystem cannot create the symbolic link the test needs");
+			return;
+		}
+
+		FSCompletenessCLI::Options options;
+		options.families.push_back(completeness_cli_family);
+		options.families.push_back("cli_linked_index_family");
+		options.catalog_root = staged_root;
+		options.scratch_root = tree.root.path_join("scratch");
+		options.report_path = tree.root.path_join("scratch/report.json");
+		options.tier = "strict";
+		// Both families run, so the index write is attempted; it must be refused because the index path
+		// resolves through a link, and the file the link points at must be untouched.
+		CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+		CHECK_EQ(FileAccess::get_file_as_string(outside.root.path_join("stolen.json")), "outside sentinel\n");
+	}
+
 	TEST_CASE("TypeCompleteness CLI reports an unpublished family in its index") {
 		TemporaryProjectTree tree(
 				vformat("type_completeness_cli_unpublished_%d", OS::get_singleton()->get_process_id()));
@@ -230,6 +340,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 				source.replace(vformat("\"family\": \"%s\"", completeness_cli_family),
 						"\"family\": \"cli_other_family\""));
 
+		// A report left behind by an earlier invocation must never be counted as this run's evidence.
+		REQUIRE_EQ(filesystem->make_dir_recursive(tree.root.path_join("scratch")), OK);
+		tree.write_file("scratch/report.json.cli_broken_family.json", "{\"stale\": true}\n");
+
 		FSCompletenessCLI::Options options;
 		options.families.push_back(completeness_cli_family);
 		options.families.push_back("cli_broken_family");
@@ -245,7 +359,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		REQUIRE(FileAccess::exists(published_report_path));
 		CHECK_EQ(String(completeness_cli_read_json(published_report_path).get("family", String())),
 				completeness_cli_family);
-		CHECK_FALSE(FileAccess::exists(vformat("%s.cli_broken_family.json", options.report_path)));
+		// The stale file is still there; it is simply not evidence, and the index says so.
+		CHECK_EQ(FileAccess::get_file_as_string(vformat("%s.cli_broken_family.json", options.report_path)),
+				"{\"stale\": true}\n");
 
 		const Dictionary index = completeness_cli_read_json(options.report_path);
 		CHECK_EQ(int(index.get("schema_version", 0)), 1);

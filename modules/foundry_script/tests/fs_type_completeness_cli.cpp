@@ -34,7 +34,6 @@
 #include "fs_type_completeness_common.h"
 
 #include "core/io/file_access.h"
-#include "core/io/json.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
 
@@ -84,16 +83,6 @@ String family_report_path(const String &p_report_path, const String &p_family, b
 	return p_single_family ? p_report_path : vformat("%s.%s.json", p_report_path, p_family);
 }
 
-Error write_json_document(const String &p_path, const Dictionary &p_document) {
-	Error open_error = OK;
-	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &open_error);
-	if (file.is_null()) {
-		return open_error == OK ? ERR_CANT_CREATE : open_error;
-	}
-	file->store_string(JSON::stringify(p_document, "\t", false, true) + "\n");
-	return file->get_error();
-}
-
 } // namespace
 
 int FSCompletenessCLI::run(const Options &p_options) {
@@ -131,6 +120,21 @@ int FSCompletenessCLI::run(const Options &p_options) {
 	const int timeout_seconds =
 			p_options.timeout_seconds == 0 ? tier_timeout_seconds : p_options.timeout_seconds;
 
+	// The runner only writes inside the configured test scratch space. Naming that here turns an
+	// otherwise opaque per-family refusal into one actionable message about the invocation.
+	const String owned_scratch_root = TemporaryProjectTree::get_test_scratch_root();
+	if (owned_scratch_root.is_empty()) {
+		return refuse("the test scratch space is unavailable; set FOUNDRY_TEST_SCRATCH to an absolute path.");
+	}
+	if (!TemporaryProjectTree::is_strict_descendant(owned_scratch_root, p_options.scratch_root.simplify_path())) {
+		return refuse(vformat("--scratch %s must be an absolute path below the test scratch root %s.",
+				p_options.scratch_root, owned_scratch_root));
+	}
+	if (!TemporaryProjectTree::is_strict_descendant(owned_scratch_root, p_options.report_path.simplify_path())) {
+		return refuse(vformat("--report %s must be an absolute path below the test scratch root %s.",
+				p_options.report_path, owned_scratch_root));
+	}
+
 	Vector<String> families;
 	for (const String &family : p_options.families) {
 		if (families.has(family)) {
@@ -163,7 +167,10 @@ int FSCompletenessCLI::run(const Options &p_options) {
 		options.clock = p_options.clock;
 		FSCompletenessRunResult result;
 		const Error error = FSCompletenessRunner::run(options, result);
-		const bool published = FileAccess::exists(options.report_path);
+		// Publication is a property of this run, never of the destination: a report left behind by an
+		// earlier invocation must not be reported as evidence this one produced. The runner fills in
+		// the result's report only once the document has been written.
+		const bool published = !result.report.is_empty();
 		timed_out = timed_out || error == ERR_TIMEOUT;
 		unpublished = unpublished || !published;
 		worst = worse_outcome(worst, result.outcome);
@@ -183,21 +190,12 @@ int FSCompletenessCLI::run(const Options &p_options) {
 	}
 
 	if (!single_family) {
-		// The index is written by the CLI rather than the runner, so it repeats the runner's contract:
-		// nothing is written outside the scratch root the caller owns.
-		const String canonical_scratch_root =
-				TemporaryProjectTree::canonicalize_existing_path(p_options.scratch_root);
-		if (canonical_scratch_root.is_empty() ||
-				!TemporaryProjectTree::is_strict_descendant(
-						canonical_scratch_root, p_options.report_path.simplify_path())) {
-			return refuse(vformat("the report index path %s is not owned by the scratch root %s.",
-					p_options.report_path, p_options.scratch_root));
-		}
 		Dictionary index;
 		index["schema_version"] = 1.0;
 		index["families"] = family_entries;
 		index["outcome"] = worst;
-		const Error write_error = write_json_document(p_options.report_path, index);
+		const Error write_error = FSCompletenessRunner::publish_owned_document(
+				p_options.scratch_root, p_options.catalog_root, p_options.report_path, index);
 		if (write_error != OK) {
 			return refuse(vformat("could not write the report index at %s (error %d).",
 					p_options.report_path, write_error));
