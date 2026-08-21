@@ -98,7 +98,7 @@ def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
 
 def load_report(data: Mapping[str, Any]) -> Report:
     version = _require(data, "schema_version", "report")
-    if int(version) != SUPPORTED_SCHEMA_VERSION:
+    if isinstance(version, bool) or not isinstance(version, int) or version != SUPPORTED_SCHEMA_VERSION:
         raise ReportError(f"unsupported report schema_version {version!r}; expected {SUPPORTED_SCHEMA_VERSION}")
     family = str(_require(data, "family", "report"))
     raw_cases = _require(data, "cases", "report")
@@ -124,11 +124,14 @@ def load_report(data: Mapping[str, Any]) -> Report:
         if case_id in seen:
             raise ReportError(f"duplicate case_id {case_id!r} in report")
         seen.add(case_id)
+        passed = _require(raw_case, "passed", f"case {case_id!r}")
+        if not isinstance(passed, bool):
+            raise ReportError(f"case {case_id!r} member 'passed' must be a JSON boolean; got {passed!r}")
         observation = {field: raw_case[field] for field in OBSERVATION_FIELDS if field in raw_case}
         cases.append(
             CaseResult(
                 case_id=case_id,
-                passed=bool(_require(raw_case, "passed", f"case {case_id!r}")),
+                passed=passed,
                 coordinates=dict(raw_case.get("coordinates", {})),
                 observation=observation,
                 artifact_path=str(raw_case.get("artifact_path", "")),

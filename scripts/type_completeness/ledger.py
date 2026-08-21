@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -28,7 +27,6 @@ KNOWN_CLASSIFICATIONS = (
     "intentional_unsupported",
     "duplicate",
 )
-_SLUG = re.compile(r"[^a-z0-9_]+")
 
 
 def canonical_json(value: Any) -> str:
@@ -42,13 +40,6 @@ def record_digest(record: dict[str, Any]) -> str:
 IDENTITY_FIELDS = ("finding_id", "case_id", "family", "dimension")
 
 
-def finding_id(family: str, case_id: str, dimension: str) -> str:
-    """Stable ID for one finding: a case may fail along several dimensions, each its own finding."""
-    slug = _SLUG.sub("_", family.lower()).strip("_") or "finding"
-    digest = hashlib.sha256(canonical_json([family, case_id, dimension]).encode("utf-8")).hexdigest()[:16]
-    return f"{slug}-{digest}"
-
-
 def identity_digest(record: dict[str, Any]) -> str:
     return record_digest({field: record[field] for field in IDENTITY_FIELDS})
 
@@ -59,6 +50,7 @@ def payload_digest_without_classification(record: dict[str, Any]) -> str:
 
 
 def proposed_record(
+    finding_id: str,
     family: str,
     case_id: str,
     dimension: str,
@@ -69,6 +61,8 @@ def proposed_record(
 ) -> dict[str, Any]:
     if classification not in KNOWN_CLASSIFICATIONS:
         raise ValueError(f"unknown classification {classification!r}")
+    if not finding_id:
+        raise ValueError("finding_id must be the runner's stable finding ID; it is never recomputed here")
     paths: list[str] = []
     for path in permanent_test_paths:
         if path not in paths:
@@ -77,7 +71,7 @@ def proposed_record(
         raise ValueError("at least one permanent test path is required")
     return {
         "schema_version": LEDGER_SCHEMA_VERSION,
-        "finding_id": finding_id(family, case_id, dimension),
+        "finding_id": finding_id,
         "case_id": case_id,
         "family": family,
         "dimension": dimension,

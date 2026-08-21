@@ -60,8 +60,10 @@ class AutomationClient:
         return (int(entries[0]["number"]), str(entries[0]["url"])) if entries else None
 
     def open_or_update_ledger_pull_request(self, branch: str, title: str, body: str, base: str) -> str:
-        if branch in PROTECTED_BRANCHES:
-            raise ProtectedBranchError(f"refusing to open a ledger pull request from {branch!r}")
+        if branch in PROTECTED_BRANCHES or not branch.startswith(BOT_BRANCH_PREFIX):
+            raise ProtectedBranchError(
+                f"refusing to open or update a pull request for {branch!r}; only {BOT_BRANCH_PREFIX}* branches are allowed"
+            )
         existing = self._find_pull_request(branch)
         if existing is not None:
             number, url = existing

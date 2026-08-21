@@ -17,7 +17,8 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
   observations with their canonical SHA-256 digests, and a stable `comparison_id`. `--fail-on-regression`
   exits non-zero when any artifact is `new`, `worsened`, or `missing`. The same inputs always yield byte-identical output.
 - `propose --comparison comparison.json --case-id ID ...` writes the proposed per-finding ledger file
-  (`<finding_id>.json`, exactly the fields the runner validates), the machine-readable provisional record
+  (`<finding_id>.json`, exactly the fields the runner validates; the finding ID is the one the runner emitted
+  for that case and dimension, never recomputed), the machine-readable provisional record
   (`provisional.json`), and the tracking-issue body that embeds it. The deadline is 17:00 America/New_York on
   the second weekday after detection, skipping weekends; `--detected-at` makes it reproducible.
 - `reconcile --provisional provisional.json --ledger-dir <findings dir> --pull-request-state open|merged|closed`

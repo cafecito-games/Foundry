@@ -100,7 +100,8 @@ class ProvisionalRecord:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ProvisionalRecord:
         try:
-            if int(data["schema_version"]) != PROVISIONAL_SCHEMA_VERSION:
+            version = data["schema_version"]
+            if isinstance(version, bool) or not isinstance(version, int) or version != PROVISIONAL_SCHEMA_VERSION:
                 raise ProvisionalError("unsupported provisional schema_version")
             record = cls.create(
                 finding_id=str(data["finding_id"]),

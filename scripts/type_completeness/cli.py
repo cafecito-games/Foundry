@@ -35,7 +35,17 @@ def _propose(arguments: argparse.Namespace) -> int:
         print(f"comparison has no artifact for case {arguments.case_id!r}", file=sys.stderr)
         return 2
     artifact = matching[0]
+    findings = [
+        finding for finding in artifact.branch.get("findings") or [] if finding.get("dimension") == arguments.dimension
+    ]
+    if len(findings) != 1 or not findings[0].get("finding_id"):
+        print(
+            f"comparison artifact for case {arguments.case_id!r} has no finding for dimension {arguments.dimension!r}",
+            file=sys.stderr,
+        )
+        return 2
     payload = ledger.proposed_record(
+        finding_id=str(findings[0]["finding_id"]),
         family=artifact.family,
         case_id=artifact.case_id,
         dimension=arguments.dimension,

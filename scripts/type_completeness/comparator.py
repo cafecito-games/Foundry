@@ -189,6 +189,7 @@ def serialize_many(artifacts: list[ComparisonArtifact]) -> str:
 
 def deserialize_many(text: str) -> list[ComparisonArtifact]:
     data = json.loads(text)
-    if int(data.get("schema_version", 0)) != COMPARISON_SCHEMA_VERSION:
+    version = data.get("schema_version")
+    if isinstance(version, bool) or not isinstance(version, int) or version != COMPARISON_SCHEMA_VERSION:
         raise ReportError("unsupported comparison schema_version")
     return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]

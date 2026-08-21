@@ -127,6 +127,18 @@ class ReportLoadingTests(unittest.TestCase):
         with self.assertRaises(report.ReportError):
             report.load_report(bad)
 
+    def test_non_boolean_passed_is_rejected_rather_than_coerced(self) -> None:
+        bad_values: list[Any] = ["false", "true", 0, 1, None, []]
+        for bad in bad_values:
+            with self.assertRaises(report.ReportError, msg=repr(bad)):
+                report.load_report(_report([dict(_case("a"), passed=bad)]))
+
+    def test_string_schema_version_is_rejected(self) -> None:
+        bad = _report([_case()])
+        bad["schema_version"] = "1"
+        with self.assertRaises(report.ReportError):
+            report.load_report(bad)
+
     def test_default_category_is_product_finding_until_runner_emits_categories(self) -> None:
         loaded = report.load_report(_report([_case("b", passed=False)]))
         self.assertEqual(loaded.case("b").category, report.Category.PRODUCT_FINDING)
@@ -300,21 +312,31 @@ class DeadlineTests(unittest.TestCase):
 
 
 class LedgerTests(unittest.TestCase):
-    def test_finding_id_is_stable_for_family_and_case(self) -> None:
-        first = ledger.finding_id("union_destination_membership", "case-a", "destination")
-        second = ledger.finding_id("union_destination_membership", "case-a", "destination")
-        self.assertEqual(first, second)
-        self.assertNotEqual(first, ledger.finding_id("union_destination_membership", "case-b", "destination"))
-        self.assertRegex(first, r"^[a-z0-9_]+-[0-9a-f]{16}$")
-
-    def test_finding_id_distinguishes_dimensions_of_the_same_case(self) -> None:
-        self.assertNotEqual(
-            ledger.finding_id("f", "case-a", "destination"),
-            ledger.finding_id("f", "case-a", "source_proof"),
+    def test_proposed_record_preserves_the_runner_finding_id(self) -> None:
+        record = ledger.proposed_record(
+            finding_id="fstcf-v1-0123456789abcdef0123",
+            family="f",
+            case_id="c",
+            dimension="d",
+            issue_url="https://x/1",
+            closure_packet_url="https://x/2",
+            permanent_test_paths=["p"],
         )
+        self.assertEqual(record["finding_id"], "fstcf-v1-0123456789abcdef0123")
+        with self.assertRaises(ValueError):
+            ledger.proposed_record(
+                finding_id="",
+                family="f",
+                case_id="c",
+                dimension="d",
+                issue_url="https://x/1",
+                closure_packet_url="https://x/2",
+                permanent_test_paths=["p"],
+            )
 
     def test_proposed_record_matches_runner_ledger_schema(self) -> None:
         record = ledger.proposed_record(
+            finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
             family="union_destination_membership",
             case_id="case-a",
             dimension="destination",
@@ -341,6 +363,7 @@ class LedgerTests(unittest.TestCase):
 
     def test_validate_record_rejects_what_the_runner_rejects(self) -> None:
         valid = ledger.proposed_record(
+            finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
             family="f",
             case_id="c",
             dimension="d",
@@ -371,6 +394,7 @@ class LedgerTests(unittest.TestCase):
     def test_write_and_read_ledger_file_round_trips(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             record = ledger.proposed_record(
+                finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
                 family="f",
                 case_id="c",
                 dimension="d",
@@ -387,6 +411,7 @@ class LedgerTests(unittest.TestCase):
 class ProvisionalRecordTests(unittest.TestCase):
     def _record(self, **overrides: Any) -> Any:
         payload = ledger.proposed_record(
+            finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
             family="f",
             case_id="c",
             dimension="d",
@@ -444,6 +469,7 @@ class ProvisionalRecordTests(unittest.TestCase):
 class ReconciliationTests(unittest.TestCase):
     def _provisional(self, **overrides: Any) -> Any:
         payload = ledger.proposed_record(
+            finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
             family="f",
             case_id="c",
             dimension="d",
@@ -621,6 +647,13 @@ class GitHubAutomationTests(unittest.TestCase):
                 client.push_ledger_branch(branch, Path("/nowhere"))
         self.assertEqual(runner.calls, [])
 
+    def test_refuses_to_open_or_update_a_pull_request_from_a_non_bot_branch(self) -> None:
+        runner = FakeCommandRunner({"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3}])})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        with self.assertRaises(github.ProtectedBranchError):
+            client.open_or_update_ledger_pull_request("feature/unrelated", title="t", body="b", base="develop")
+        self.assertEqual(runner.calls, [])
+
     def test_bot_branch_name_is_stable_per_finding(self) -> None:
         self.assertEqual(github.bot_branch_name("abc-0123"), "bot/type-completeness/abc-0123")
 
@@ -716,8 +749,9 @@ class CliTests(unittest.TestCase):
     def test_propose_command_emits_ledger_payload_and_provisional_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            branch = report.load_report(_report([_case("a", passed=False)]))
-            develop = report.load_report(_report([_case("a", passed=False)]))
+            findings = [_finding("a", "destination")]
+            branch = report.load_report(_report([_case("a", passed=False)], findings=findings))
+            develop = report.load_report(_report([_case("a", passed=False)], findings=findings))
             artifact = comparator.compare_reports(branch, develop, configuration="text")[0]
             (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
             exit_code = cli.main(
@@ -755,13 +789,50 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(record.due_at, _ny(2026, 8, 19, 17))
             self.assertEqual(record.origin, "manual")
+            self.assertEqual(record.finding_id, "a-destination")
             ledger_file = root / "out" / (record.finding_id + ".json")
             self.assertEqual(ledger.read_record(ledger_file), record.payload)
+
+    def test_propose_command_refuses_a_dimension_the_report_did_not_find(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            findings = [_finding("a", "destination")]
+            branch = report.load_report(_report([_case("a", passed=False)], findings=findings))
+            artifact = comparator.compare_reports(branch, branch, configuration="text")[0]
+            (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
+            exit_code = cli.main(
+                [
+                    "propose",
+                    "--comparison",
+                    str(root / "comparison.json"),
+                    "--case-id",
+                    "a",
+                    "--dimension",
+                    "source_proof",
+                    "--issue-url",
+                    "https://x/1",
+                    "--closure-packet-url",
+                    "https://x/2",
+                    "--permanent-test-path",
+                    "p",
+                    "--capability-path",
+                    "c.cpp",
+                    "--workstream-owner",
+                    "o",
+                    "--detection-artifact",
+                    "d",
+                    "--output-dir",
+                    str(root / "out"),
+                ]
+            )
+            self.assertEqual(exit_code, 2)
+            self.assertFalse((root / "out").exists())
 
     def test_reconcile_command_reports_state_and_exit_code(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             payload = ledger.proposed_record(
+                finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
                 family="f",
                 case_id="c",
                 dimension="d",
