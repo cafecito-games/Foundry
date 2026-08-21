@@ -8,7 +8,10 @@ from datetime import datetime
 from typing import Any, Iterable, Optional
 
 from . import deadline, ledger
+from .comparator import NO_LONGER_FAILING_STATUSES
 from .provisional import ProvisionalRecord
+
+NO_LONGER_FAILING_VALUES = frozenset(status.value for status in NO_LONGER_FAILING_STATUSES)
 
 
 class State(str, enum.Enum):
@@ -122,7 +125,7 @@ def reconcile_finding(
     assert pull_request is not None
     if pull_request.state == "merged":
         return result(State.CONFLICTING, "pull request is merged but no ledger entry exists for the finding")
-    if comparison_status == "resolved" and pull_request.state == "closed":
+    if comparison_status in NO_LONGER_FAILING_VALUES and pull_request.state == "closed":
         return result(State.RESOLVED, "case passes on the branch and the ledger proposal was withdrawn unmerged")
     if pull_request.state != "open":
         return result(State.CONFLICTING, f"ledger pull request is {pull_request.state} without a merged entry")

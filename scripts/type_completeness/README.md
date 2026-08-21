@@ -30,8 +30,8 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
   the finding stays `pending_merge` (or `overdue`) and keeps blocking release until the merge is confirmed.
 
 The `github` module wraps the `gh` CLI for the bot path: stable `bot/type-completeness/<finding_id>` branches,
-one tracking issue per finding (label `type-completeness-finding`), and one ledger pull request that is
-updated rather than duplicated. It refuses protected branches and never passes `--auto` or merges.
+one tracking issue per finding (label `type-completeness-finding`; a closed one is reopened and updated, never
+duplicated), and one ledger pull request that is updated rather than duplicated. It refuses protected branches and never passes `--auto` or merges.
 
 ## Obtaining the `develop` report
 

@@ -24,6 +24,8 @@ class Status(str, enum.Enum):
 
 # A known develop failure that vanishes without passing is treated as a regression, not as progress.
 REGRESSION_STATUSES = (Status.NEW, Status.WORSENED, Status.MISSING)
+# Statuses meaning the case no longer fails on the branch; reconciliation uses this set so it cannot drift.
+NO_LONGER_FAILING_STATUSES = (Status.RESOLVED, Status.PASSING)
 
 
 def canonical_json(value: Any) -> str:

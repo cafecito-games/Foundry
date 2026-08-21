@@ -845,6 +845,24 @@ class ReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.state, reconcile.State.CONFLICTING)
 
+    def test_passing_case_with_withdrawn_ledger_pr_is_resolved(self) -> None:
+        record = self._provisional()
+        for status in comparator.NO_LONGER_FAILING_STATUSES:
+            result = reconcile.reconcile_finding(
+                finding_id=record.finding_id,
+                provisional_record=record,
+                merged_record=None,
+                pull_request=reconcile.PullRequest(url="https://x/2", state="closed"),
+                now=_ny(2026, 8, 18, 9),
+                comparison_status=status.value,
+            )
+            self.assertEqual(result.state, reconcile.State.RESOLVED, status)
+            self.assertFalse(result.blocks_slice)
+            self.assertFalse(result.blocks_release)
+        self.assertEqual(
+            set(comparator.NO_LONGER_FAILING_STATUSES), {comparator.Status.RESOLVED, comparator.Status.PASSING}
+        )
+
     def test_manual_records_reconcile_identically(self) -> None:
         manual = self._provisional(origin="manual")
         result = self._reconcile(manual, None, "open", _ny(2026, 8, 19, 17, 0, 1))
@@ -953,6 +971,34 @@ class GitHubAutomationTests(unittest.TestCase):
         search = list_call[list_call.index("--search") + 1]
         self.assertIn("finding-1", search)
         self.assertIn("in:title", search)
+
+    def test_closed_tracking_issue_is_reopened_and_updated_not_duplicated(self) -> None:
+        listing = json.dumps([{"url": "https://github.com/x/issues/7", "number": 7, "state": "CLOSED"}])
+        runner = FakeCommandRunner({"issue list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.create_or_update_tracking_issue("finding-1", title="t", body="b")
+        self.assertEqual(url, "https://github.com/x/issues/7")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertTrue(any("issue list" in call and "--state all" in call for call in joined))
+        self.assertTrue(any("issue reopen 7" in call for call in joined))
+        self.assertTrue(any("issue edit 7" in call for call in joined))
+        self.assertFalse(any("issue create" in call for call in joined))
+
+    def test_open_tracking_issue_is_preferred_over_closed_duplicates(self) -> None:
+        listing = json.dumps(
+            [
+                {"url": "https://github.com/x/issues/7", "number": 7, "state": "CLOSED"},
+                {"url": "https://github.com/x/issues/9", "number": 9, "state": "OPEN"},
+            ]
+        )
+        runner = FakeCommandRunner({"issue list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        self.assertEqual(
+            client.create_or_update_tracking_issue("finding-1", title="t", body="b"), "https://github.com/x/issues/9"
+        )
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertTrue(any("issue edit 9" in call for call in joined))
+        self.assertFalse(any("reopen" in call for call in joined))
 
     def test_tracking_issue_is_created_once_and_then_updated(self) -> None:
         runner = FakeCommandRunner({"issue list": "[]", "issue create": "https://github.com/x/issues/5"})

@@ -84,7 +84,8 @@ class AutomationClient:
             body,
         ).strip()
 
-    def _find_tracking_issue(self, finding_id: str) -> Optional[tuple[int, str]]:
+    def _find_tracking_issue(self, finding_id: str) -> Optional[Tuple[int, str, bool]]:
+        """Find the one tracking issue for a finding in any state; an open one wins over closed duplicates."""
         output = self._gh(
             "issue",
             "list",
@@ -93,14 +94,18 @@ class AutomationClient:
             "--label",
             TRACKING_LABEL,
             "--state",
-            "open",
+            "all",
             "--search",
             f'"{finding_id}" in:title',
             "--json",
-            "url,number",
+            "url,number,state",
         )
         entries = json.loads(output or "[]")
-        return (int(entries[0]["number"]), str(entries[0]["url"])) if entries else None
+        if not entries:
+            return None
+        entries.sort(key=lambda entry: (str(entry.get("state", "")).upper() != "OPEN", int(entry["number"])))
+        chosen = entries[0]
+        return int(chosen["number"]), str(chosen["url"]), str(chosen.get("state", "")).upper() == "OPEN"
 
     def create_or_update_tracking_issue(self, finding_id: str, title: str, body: str) -> str:
         # Lookup searches the title for the finding ID, so creation must always embed it there.
@@ -108,7 +113,10 @@ class AutomationClient:
             title = f"{title} [{finding_id}]"
         existing = self._find_tracking_issue(finding_id)
         if existing is not None:
-            number, url = existing
+            number, url, is_open = existing
+            if not is_open:
+                # One tracking issue per finding: a closed one is reopened rather than duplicated.
+                self._gh("issue", "reopen", str(number), "--repo", self._repository)
             self._gh("issue", "edit", str(number), "--repo", self._repository, "--title", title, "--body", body)
             return url
         return self._gh(
