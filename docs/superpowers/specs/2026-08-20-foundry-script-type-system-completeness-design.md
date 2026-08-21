@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-20
 **Revised:** 2026-08-20
-**Status:** Revised — review requested
+**Status:** Approved
 
 ## Problem
 
@@ -100,19 +100,24 @@ Expectations attach in two ways:
   or apply a fixed transformation to selected observable dimensions, such as preserving static acceptance while
   adding a runtime membership obligation.
 
-Derivation is a bounded acyclic chain. The initial global maximum is three relation steps, matching the selected
+Derivation is a bounded simple chain. The initial global maximum is three relation steps, matching the selected
 depth-three composition bound; a rule family may choose a lower maximum. Every step records its source cell, relation
 or exception ID, input dimension values, and output dimension values in the generated case's provenance. A relation
-must advance the family's declared derivation rank, so cycles are validation errors. Anchor sufficiency validation
-proves that every generated cell is reachable within the family's chain bound rather than discovering unreachable
-cells during execution. A family that cannot cover its declared domain in three steps must add anchors or narrow that
-domain; raising the global bound requires a design amendment.
+ID may appear at most once in a chain, and a chain may not revisit an intermediate or final cell. The validator
+enumerates these finite simple paths, so peer transformations may compose without a global rank order while cycles
+remain invalid. Anchor sufficiency validation proves that every generated cell is reachable within the family's
+chain bound rather than discovering unreachable cells during execution. A family that cannot cover its declared
+domain in three steps must add anchors or narrow that domain; raising the global bound requires a design amendment.
 
 Relations use bounded predicates over normalized axis coordinates and anchor results. A predicate may compare an
 axis to named values, test membership in a named equivalence class, and combine those checks with conjunction or
 disjunction. It may not inspect generated source or ASTs, call production type-relation code, recurse over arbitrary
 types, or synthesize a new outcome algorithm. This is deliberately a small, scoped decision procedure rather than a
 second type checker.
+
+A relation's `from` clause selects source cells. Its `to` clause is a coordinate patch: the target differs only in
+the coordinates named by `to`, and every unnamed coordinate is held fixed. Observable dimensions follow their own
+explicit `derive` transformations and are not part of this coordinate frame condition.
 
 Each adapter registers the observable dimensions it can produce. A relation propagates or transforms only dimensions
 it names. A required dimension not named by a declared anchor or any step in the selected chain is uncovered for that
@@ -142,7 +147,8 @@ mutation validation exactly like ordinary rules.
 Every exception has at least one positive witness proving that the exceptional behavior occurs and one boundary
 witness proving that a neighboring ordinary cell still follows the parent relation. Adding or widening an exception
 is a specification change. Free-form clauses such as "unless union semantics intervene" have no executable meaning
-and are forbidden. An exception inherits its parent relation's derivation rank and cannot add a chain step by itself.
+and are forbidden. An exception replaces its parent application for the matching cells and does not add a chain step
+by itself.
 
 ## Architecture
 
@@ -204,15 +210,32 @@ without weakening the declared/derived/exception constraints:
 ```json
 {
   "family": "union_destination_membership",
+  "domain": {
+    "destination": ["plain", "union"],
+    "source_proof": ["static_member", "numeric_constant", "gradual", "erased", "variant"],
+    "boundary": ["argument_binding", "reflective_write"],
+    "surface": ["text", "bytecode"]
+  },
+  "required_dimensions": [
+    { "dimension": "analysis", "when": {} },
+    {
+      "dimension": "runtime_obligation",
+      "when": { "source_proof": { "class": "unproven" } }
+    },
+    {
+      "dimension": "stored_carrier",
+      "when": { "source_proof": "numeric_constant" }
+    }
+  ],
   "anchors": [
     {
       "id": "plain_static_member",
       "coordinates": {
         "destination": "plain",
         "source_proof": "static_member",
-        "boundary": "parameter"
+        "boundary": "argument_binding"
       },
-      "expect": { "analysis": "accept", "runtime_obligation": "none" },
+      "expect": { "analysis": "accept" },
       "surfaces": ["text", "bytecode"]
     },
     {
@@ -220,7 +243,7 @@ without weakening the declared/derived/exception constraints:
       "coordinates": {
         "destination": "plain",
         "source_proof": "gradual",
-        "boundary": "parameter"
+        "boundary": "argument_binding"
       },
       "expect": { "analysis": "accept", "runtime_obligation": "typed_destination_check" },
       "surfaces": ["text", "bytecode"]
@@ -230,7 +253,7 @@ without weakening the declared/derived/exception constraints:
       "coordinates": {
         "destination": "union",
         "source_proof": "numeric_constant",
-        "boundary": "parameter"
+        "boundary": "argument_binding"
       },
       "expect": { "analysis": "accept", "stored_carrier": "admitting_alternative" },
       "surfaces": ["text", "bytecode"],
@@ -239,37 +262,47 @@ without weakening the declared/derived/exception constraints:
   ],
   "relations": [
     {
+      "id": "plain_numeric_constant_parity",
+      "from": { "destination": "plain", "source_proof": "static_member" },
+      "to": { "source_proof": "numeric_constant" },
+      "derive": { "analysis": "same", "stored_carrier": "plain_destination" }
+    },
+    {
       "id": "gradual_to_erased_parity",
-      "rank": 1,
       "from": { "source_proof": "gradual" },
       "to": { "source_proof": "erased" },
       "derive": { "analysis": "same", "runtime_obligation": "same" }
     },
     {
       "id": "gradual_to_variant_parity",
-      "rank": 1,
       "from": { "source_proof": "gradual" },
       "to": { "source_proof": "variant" },
       "derive": { "analysis": "same", "runtime_obligation": "same" }
     },
     {
       "id": "union_wrapper_parity",
-      "rank": 2,
       "from": { "destination": "plain" },
       "to": { "destination": "union" },
-      "derive": { "analysis": "same", "runtime_obligation": "same" }
+      "derive": { "analysis": "same" }
     },
     {
       "id": "reflective_boundary_parity",
-      "rank": 3,
-      "from": { "boundary": "parameter" },
+      "from": { "boundary": "argument_binding" },
       "to": { "boundary": "reflective_write" },
-      "derive": { "analysis": "same", "runtime_obligation": "same" }
+      "derive": { "analysis": "same" }
+    },
+    {
+      "id": "reflective_runtime_parity",
+      "from": {
+        "boundary": "argument_binding",
+        "source_proof": { "class": "unproven" }
+      },
+      "to": { "boundary": "reflective_write" },
+      "derive": { "runtime_obligation": "same" }
     },
     {
       "id": "reflective_carrier_parity",
-      "rank": 3,
-      "from": { "boundary": "parameter", "source_proof": "numeric_constant" },
+      "from": { "boundary": "argument_binding", "source_proof": "numeric_constant" },
       "to": { "boundary": "reflective_write" },
       "derive": { "stored_carrier": "same" }
     }
@@ -282,8 +315,8 @@ without weakening the declared/derived/exception constraints:
       "derive": { "analysis": "same", "runtime_obligation": "union_membership_check" },
       "rationale": "A union destination must prove membership when the source cannot.",
       "witnesses": {
-        "positive": ["text_gradual_parameter", "bytecode_erased_reflective_write"],
-        "boundary": ["text_static_member_parameter"]
+        "positive": ["text_gradual_argument_binding", "bytecode_erased_reflective_write"],
+        "boundary": ["text_static_member_argument_binding"]
       }
     }
   ]
@@ -292,11 +325,11 @@ without weakening the declared/derived/exception constraints:
 
 This example makes the pilot precise: wrapper parity applies to static admission, while the union-specific runtime
 membership obligation is an audited transformation with its own text and bytecode witnesses. The numeric-constant
-anchor proves that #2471 restores admission parity and preserves the carrier chosen by the admitting alternative.
-An erased reflective union cell derives from `plain_gradual` through the rank-one proof relation, rank-two wrapper
-relation, and rank-three boundary relation; its provenance records all three steps. The numeric reflective cell's
-carrier dimension is covered separately by `reflective_carrier_parity`; the broader boundary relation does not
-silently claim that dimension.
+anchor and `plain_numeric_constant_parity` relation state the #2471 law for both union and plain destinations. The
+domain and required-dimension declarations make runtime obligation unnecessary for provably admitted constants while
+requiring their stored carrier. An erased reflective union cell derives from `plain_gradual` through the proof,
+wrapper, and boundary relations; its provenance records all three steps. Runtime and carrier dimensions travel
+through their narrower relations, so the broader boundary relation does not silently claim them.
 
 ### Type-shape generator
 
@@ -350,7 +383,7 @@ Metamorphic rules compare related programs without needing an independent full t
 #### Cross-surface parity
 
 Parity comparisons include text versus bytecode, ordinary versus reflective writes, direct versus proxy crossings,
-parameter versus return enforcement, initial load versus reload, analyzer diagnostics versus editor/LSP type
+argument binding versus return enforcement, initial load versus reload, analyzer diagnostics versus editor/LSP type
 information, and equivalent native/script boundaries.
 
 #### Historical regression families
@@ -404,7 +437,8 @@ so a green non-tools run cannot be mistaken for tooling parity evidence.
 A source-controlled findings-ledger directory maps stable case IDs and rule families to their disposition, permanent
 tests, GitHub issue, closure packet, and pull request. Each finding is a separate JSON file named by finding ID; no
 closure packet edits a shared ledger file. The report generator validates and aggregates the directory. GitHub
-provides the workflow view; the repository data remains the versioned source of truth.
+provides the workflow view; the repository data remains the versioned source of truth for merged entries, while the
+temporary authority for an unmerged provisional entry follows the reconciliation protocol below.
 
 Every failure has exactly one classification:
 
@@ -442,19 +476,29 @@ the stabilization campaign repairs it.
 Phase 1 delivers the baseline comparator and deadline service required by this policy. For a new presubmit mismatch,
 the comparator runs the stable case against the matching `develop` configuration, records whether the result is
 unchanged, and emits a proposed per-finding JSON file as a CI artifact. Automation opens or updates a GitHub tracking
-issue and a bot branch/PR for the ledger entry; CI never writes directly to the protected branch. The entry records
-the producing capability slice, workstream owner, detection artifact, `develop` comparison, and classification due
-time.
+issue and a bot branch/PR for the ledger entry; CI never writes directly to the protected branch. Until that pull
+request merges, the tracking issue's machine-readable provisional record is authoritative. It contains the stable
+finding ID, proposed ledger payload and digest, producing capability slice, workstream owner, detection artifact,
+`develop` comparison, due time, bot-PR link, and `pending_merge` state. The comparator, deadline service, coverage
+report, and blocking checks reconcile the merged ledger with these open provisional records, so an unmerged bot pull
+request cannot make a finding disappear.
+
+Bot ledger pull requests follow the repository's normal review convention: automation may create and update them but
+never enables auto-merge or merges them before human review. Once a reviewed ledger pull request merges, its
+per-finding JSON file becomes the versioned source of truth and automation updates the tracking issue to reference
+the merged record. Conflicting issue, pull-request, and merged-ledger states fail reconciliation for the affected
+capability slice.
 
 The deadline is 17:00 America/New_York on the second following weekday after detection; weekends are skipped. A daily
 deadline job marks an expired entry `classification_overdue`, notifies the workstream owner, and blocks subsequent
 pull requests mapped to the producing capability slice until classification. It does not block unrelated repository
 work. Every overdue provisional finding also blocks release and epic closure.
 
-Until the automation is operational, the presubmit check remains blocking unless a human attaches the equivalent
-`develop` rerun artifact, adds the provisional per-finding file through the current pull request or a linked pull
-request, assigns the workstream owner and deadline, and receives review of that classification. This manual path has
-the same data and expiry consequences as the automated path.
+Until the automation is operational, the presubmit check remains blocking unless a human opens the equivalent
+machine-readable tracking issue, attaches the `develop` rerun artifact and proposed ledger payload, opens the
+current or a linked pull request for the per-finding file, assigns the workstream owner and deadline, and receives
+review before that ledger change merges. The tracking issue is the provisional source of truth until merge. This
+manual path has the same reconciliation, review, data, and expiry consequences as the automated path.
 
 ## Execution Flow
 
@@ -551,25 +595,31 @@ item complete.
 
 ### Budget semantics
 
-Percentile budgets are service-level objectives, not per-run verdicts. Each p95 is calculated over the latest 30
-successful `develop` runs of the same gate and build configuration on the reference four-job agent environment. The
-report shows the sample set and cache state. Presubmit has a three-minute per-run hard timeout, strict shards have a
-ten-minute hard timeout, and scheduled/release shards have a 40-minute hard timeout. Hitting a hard timeout fails that
-job; a p95 trend breach opens a gate-performance closure packet and prevents adding more generated coverage to the
-affected tier until it returns within budget or receives an explicit design amendment.
+Percentile budgets are service-level objectives for fixed calibration workloads, not verdicts inferred from unlike
+per-change slices. Presubmit calibrates against the fixed broad-core fallback slice, strict validation against its
+fixed never-demote floor, and scheduled/release campaigns against each versioned fixed shard. Each p95 uses the
+latest 30 successful nightly `develop` calibration runs for that workload and build configuration on the reference
+four-job agent environment. Reports show the workload version, sample set, and cache state. Per-pull-request selected
+slice timings remain visible and informational; only a workload's matching calibration series determines its p95.
+
+Presubmit has a three-minute per-run hard timeout, strict shards have a ten-minute hard timeout, and
+scheduled/release shards have a 40-minute hard timeout. Hitting a hard timeout fails that job. A calibration p95
+trend breach opens a gate-performance closure packet and prevents adding more generated coverage to the affected
+tier until it returns within budget or receives an explicit design amendment.
 
 ### Presubmit gate
 
 Pull requests run deterministic cases selected from the capabilities they change, all directly dependent
 metamorphic relations, historical seeds for those families, and a compact cross-feature parity set. The selector is
 based on manifest dependencies and registered capabilities, not source-text matching. The matrix portion targets a
-90-second p95 wall time after binary launch on the reference four-job agent environment.
+three-minute hard timeout after binary launch. Its variable per-change runtime is reported but does not contribute to
+the presubmit p95.
 
 The selector owns an explicit production-path-to-capability map. An unmapped production change under
-`modules/foundry_script/` runs a fixed broad-core fallback calibrated to the same 90-second target and three-minute
-hard timeout, and fails selector validation until the path is mapped or declared irrelevant under the expiring policy
-below. Manifest validation also proves that every rule family is reachable from at least one path mapping. This
-fail-closed fallback makes mapping rot noisy rather than silently reducing coverage.
+`modules/foundry_script/` runs a fixed broad-core fallback calibrated to a 90-second nightly p95 target and a
+three-minute hard timeout, and fails selector validation until the path is mapped or declared irrelevant under the
+expiring policy below. Manifest validation also proves that every rule family is reachable from at least one path
+mapping. This fail-closed fallback makes mapping rot noisy rather than silently reducing coverage.
 
 A production path may be declared irrelevant only with a rationale, owner, and `reviewed_at` date. Any content change
 to that path invalidates the declaration before selection, and an unchanged declaration expires after 90 days unless
@@ -809,8 +859,9 @@ coverage metric.
 
 ### Derivation and dimension blind spots
 
-Cap chains at three rank-ordered steps, retain complete provenance, reject incompatible paths, and report coverage by
-chain length and observable dimension. An unnamed required dimension is uncovered, never an implicit pass.
+Cap chains at three simple steps, forbid repeated relation IDs and revisited cells, retain complete provenance,
+reject incompatible paths, and report coverage by chain length and observable dimension. An unnamed required
+dimension is uncovered, never an implicit pass.
 
 ### Selector and triage automation rot
 
