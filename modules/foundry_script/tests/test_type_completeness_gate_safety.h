@@ -705,6 +705,32 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 					"\tif flag:\n"
 					"\t\t\n"
 					"\t\tvar unused_local = 1\n" },
+			// An annotation is not always the first thing on its line.
+			{ "annotation_after_another",
+					"extends Node\n"
+					"@onready @warning_ignore(\"onready_with_export\") @export var value: int = 42\n",
+					"extends Node\n"
+					"@onready @export var value: int = 42\n" },
+			{ "annotation_before_another",
+					"extends Node\n"
+					"@warning_ignore(\"onready_with_export\") @onready @export var value: int = 42\n",
+					"extends Node\n"
+					"@onready @export var value: int = 42\n" },
+			{ "three_annotations_one_line",
+					"extends Node\n"
+					"@onready @warning_ignore(\"onready_with_export\") @warning_ignore(\"untyped_declaration\") @export var value: int = 42\n",
+					"extends Node\n"
+					"@onready @export var value: int = 42\n" },
+			// Only the lexer can tell an annotation from text that merely looks like one.
+			{ "inside_triple_quoted_string",
+					"func test() -> String:\n"
+					"\treturn \"\"\"\n"
+					"@warning_ignore(\"unused_variable\")\n"
+					"\"\"\"\n",
+					"func test() -> String:\n"
+					"\treturn \"\"\"\n"
+					"@warning_ignore(\"unused_variable\")\n"
+					"\"\"\"\n" },
 			{ "target_string_with_parens",
 					"func test() -> void:\n"
 					"\t@warning_ignore(\"unused_variable\") var unused_local = \")(\"\n",
@@ -719,9 +745,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			REQUIRE_EQ(original_parser.parse(shape.source, path, false), OK);
 			REQUIRE(original_parser.get_errors().is_empty());
 
+			// The expected text is authoritative: it states exactly which annotations were removed, and
+			// a shape whose annotation only looks like one keeps it verbatim.
 			const FSCompletenessProbeSource probe = make_unsuppressed_probe_source(shape.source);
 			CHECK_EQ(probe.text, shape.expected);
-			CHECK_FALSE(probe.text.contains("@warning_ignore"));
 
 			FSParser probe_parser;
 			CHECK_EQ(probe_parser.parse(probe.text, path, false), OK);

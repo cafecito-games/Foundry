@@ -38,6 +38,7 @@
 #include "../fs_cache.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
+#include "../fs_tokenizer.h"
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -173,45 +174,110 @@ static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, 
 	}
 }
 
-static bool is_annotation_name_character(char32_t p_character) {
-	return (p_character >= U'a' && p_character <= U'z') || (p_character >= U'A' && p_character <= U'Z') ||
-			(p_character >= U'0' && p_character <= U'9') || p_character == U'_';
-}
-
-// Index just past the argument list that opens at `p_open_parenthesis`, or -1 when it never closes.
-static int find_annotation_arguments_end(const String &p_line, int p_open_parenthesis) {
-	int depth = 0;
-	bool inside_string = false;
-	char32_t quote = 0;
-	for (int index = p_open_parenthesis; index < p_line.length(); index++) {
-		const char32_t character = p_line[index];
-		if (inside_string) {
-			if (character == U'\\') {
-				index++;
-			} else if (character == quote) {
-				inside_string = false;
-			}
-			continue;
-		}
-		if (character == U'#') {
-			// A comment runs to the end of the line and carries no syntax, so an unbalanced
-			// parenthesis inside one must not close the argument list.
-			while (index < p_line.length() && p_line[index] != U'\n') {
-				index++;
-			}
-		} else if (character == U'"' || character == U'\'') {
-			inside_string = true;
-			quote = character;
-		} else if (character == U'(') {
-			depth++;
-		} else if (character == U')') {
-			depth--;
-			if (depth == 0) {
-				return index + 1;
-			}
+// Offset of the first character of every line, so a token's (line, column) can be turned into an
+// index into the source.
+static Vector<int> line_start_offsets(const String &p_source) {
+	Vector<int> offsets;
+	offsets.push_back(0);
+	for (int index = 0; index < p_source.length(); index++) {
+		if (p_source[index] == U'\n') {
+			offsets.push_back(index + 1);
 		}
 	}
-	return -1;
+	return offsets;
+}
+
+// The tokenizer reports display columns: a tab advances the column by its configured tab size, which
+// an editor setting can change. Asking the tokenizer what it does to a known tab keeps the mapping
+// from column back to character index correct without duplicating that setting here.
+static int tokenizer_tab_size() {
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("func calibrate():\n\t@calibrate\n");
+	for (FSTokenizer::Token token = tokenizer.scan();
+			token.type != FSTokenizer::Token::TK_EOF && token.type != FSTokenizer::Token::ERROR;
+			token = tokenizer.scan()) {
+		if (token.type == FSTokenizer::Token::ANNOTATION) {
+			return MAX(1, token.start_column - 1);
+		}
+	}
+	return 4;
+}
+
+static int offset_for_column(
+		const String &p_source, int p_line_begin, int p_target_column, int p_tab_size) {
+	int column = 1;
+	int index = p_line_begin;
+	while (index < p_source.length() && p_source[index] != U'\n') {
+		if (column >= p_target_column) {
+			return index;
+		}
+		column += p_source[index] == U'\t' ? p_tab_size : 1;
+		index++;
+	}
+	return index;
+}
+
+static int token_offset(const String &p_source, const Vector<int> &p_line_offsets, int p_line,
+		int p_column, int p_tab_size) {
+	const int line_index = p_line - 1;
+	if (line_index < 0 || line_index >= p_line_offsets.size() || p_column < 1) {
+		return -1;
+	}
+	return offset_for_column(p_source, p_line_offsets[line_index], p_column, p_tab_size);
+}
+
+struct WarningIgnoreAnnotationSpan {
+	int start = 0;
+	int end = 0;
+	int start_line = 0;
+};
+
+// Locates every warning-suppression annotation through the front-end's own lexer, so string
+// literals, comments, and multiline argument lists are recognized the way the language defines them
+// rather than by re-deriving them here, and an annotation is found wherever it may legally appear.
+static Vector<WarningIgnoreAnnotationSpan> find_warning_ignore_annotations(
+		const String &p_source, const Vector<int> &p_line_offsets) {
+	Vector<WarningIgnoreAnnotationSpan> spans;
+	const int tab_size = tokenizer_tab_size();
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code(p_source);
+	FSTokenizer::Token token = tokenizer.scan();
+	while (token.type != FSTokenizer::Token::TK_EOF && token.type != FSTokenizer::Token::ERROR) {
+		if (token.type != FSTokenizer::Token::ANNOTATION || !token.source.begins_with("@warning_ignore")) {
+			token = tokenizer.scan();
+			continue;
+		}
+		WarningIgnoreAnnotationSpan span;
+		span.start = token_offset(p_source, p_line_offsets, token.start_line, token.start_column, tab_size);
+		span.end = token_offset(p_source, p_line_offsets, token.end_line, token.end_column, tab_size);
+		span.start_line = token.start_line;
+
+		FSTokenizer::Token next = tokenizer.scan();
+		if (next.type == FSTokenizer::Token::PARENTHESIS_OPEN) {
+			int depth = 1;
+			while (depth > 0) {
+				next = tokenizer.scan();
+				if (next.type == FSTokenizer::Token::TK_EOF || next.type == FSTokenizer::Token::ERROR) {
+					break;
+				}
+				if (next.type == FSTokenizer::Token::PARENTHESIS_OPEN) {
+					depth++;
+				} else if (next.type == FSTokenizer::Token::PARENTHESIS_CLOSE) {
+					depth--;
+					if (depth == 0) {
+						span.end = token_offset(
+								p_source, p_line_offsets, next.end_line, next.end_column, tab_size);
+					}
+				}
+			}
+			next = tokenizer.scan();
+		}
+		if (span.start >= 0 && span.end > span.start) {
+			spans.push_back(span);
+		}
+		token = next;
+	}
+	return spans;
 }
 
 // Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
@@ -1287,15 +1353,6 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 	return OK;
 }
 
-static bool is_whitespace_run(const String &p_text) {
-	for (int index = 0; index < p_text.length(); index++) {
-		if (p_text[index] != U' ' && p_text[index] != U'\t') {
-			return false;
-		}
-	}
-	return true;
-}
-
 // Removes exactly the characters a warning-suppression annotation owns: its name, its argument list
 // however many lines that spans, and the whitespace separating it from what follows on that line.
 // Whitespace that belongs to the target statement is never removed. The annotation's own indentation
@@ -1304,89 +1361,63 @@ static bool is_whitespace_run(const String &p_text) {
 // newline is re-emitted, so line numbers survive, and the characters removed before the surviving
 // content of a line are recorded so a column can be mapped back to the original program.
 FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source) {
-	static const String ANNOTATION_PREFIX = "@warning_ignore";
 	FSCompletenessProbeSource probe;
+	probe.text = p_source;
+	const Vector<int> line_offsets = line_start_offsets(p_source);
+	const Vector<WarningIgnoreAnnotationSpan> spans =
+			find_warning_ignore_annotations(p_source, line_offsets);
+	if (spans.is_empty()) {
+		return probe;
+	}
+
 	String stripped;
 	int copied_from = 0;
-	int index = 0;
-	int line = 1;
-	int line_start = 0;
-	String statement_indentation;
-	bool at_line_content_start = true;
-	while (index < p_source.length()) {
-		const char32_t character = p_source[index];
-		if (character == U'\n') {
-			at_line_content_start = true;
-			line++;
-			index++;
-			line_start = index;
+	for (const WarningIgnoreAnnotationSpan &span : spans) {
+		if (span.start < copied_from) {
 			continue;
-		}
-		if (character == U' ' || character == U'\t') {
-			index++;
-			continue;
-		}
-		if (!at_line_content_start || p_source.substr(index, ANNOTATION_PREFIX.length()) != ANNOTATION_PREFIX) {
-			at_line_content_start = false;
-			index++;
-			continue;
-		}
-
-		// After a span that already crossed lines, the text before this annotation is no longer the
-		// original indentation, so the statement keeps the indentation of the first annotation.
-		const String candidate_indentation = p_source.substr(line_start, index - line_start);
-		if (is_whitespace_run(candidate_indentation)) {
-			statement_indentation = candidate_indentation;
-		}
-
-		int name_end = index + 1;
-		while (name_end < p_source.length() && is_annotation_name_character(p_source[name_end])) {
-			name_end++;
-		}
-		int cursor = name_end;
-		while (cursor < p_source.length() && (p_source[cursor] == U' ' || p_source[cursor] == U'\t')) {
-			cursor++;
-		}
-		int span_end = name_end;
-		if (cursor < p_source.length() && p_source[cursor] == U'(') {
-			const int arguments_end = find_annotation_arguments_end(p_source, cursor);
-			if (arguments_end < 0) {
-				// An unterminated argument list would leave a fragment behind; keep the source as written.
-				at_line_content_start = false;
-				index = name_end;
-				continue;
-			}
-			span_end = arguments_end;
 		}
 		// The separator belongs to the annotation, not to the target: leaving it would append spaces
 		// to a tab indent and make the indentation of the probe source inconsistent.
+		int span_end = span.end;
 		while (span_end < p_source.length() && (p_source[span_end] == U' ' || p_source[span_end] == U'\t')) {
 			span_end++;
 		}
 
-		stripped += p_source.substr(copied_from, index - copied_from);
-		int span_line = line;
-		int final_line_start = index;
-		for (int scan = index; scan < span_end; scan++) {
+		const int line_index = span.start_line - 1;
+		const int line_begin = line_index >= 0 && line_index < line_offsets.size()
+				? line_offsets[line_index]
+				: 0;
+		int indentation_width = 0;
+		while (line_begin + indentation_width < span.start &&
+				(p_source[line_begin + indentation_width] == U' ' ||
+						p_source[line_begin + indentation_width] == U'\t')) {
+			indentation_width++;
+		}
+		const String statement_indentation = p_source.substr(line_begin, indentation_width);
+
+		stripped += p_source.substr(copied_from, span.start - copied_from);
+		int removed_newlines = 0;
+		int final_line_start = span.start;
+		for (int scan = span.start; scan < span_end; scan++) {
 			if (p_source[scan] == U'\n') {
-				stripped += "\n";
-				span_line++;
+				removed_newlines++;
 				final_line_start = scan + 1;
 			}
 		}
-		const bool crossed_lines = span_line != line;
+		for (int emitted = 0; emitted < removed_newlines; emitted++) {
+			stripped += "\n";
+		}
+		const bool crossed_lines = removed_newlines > 0;
 		if (crossed_lines) {
 			stripped += statement_indentation;
 		}
+		const int final_line = span.start_line + removed_newlines;
 		const int removed = span_end - final_line_start;
 		const int reinserted = crossed_lines ? statement_indentation.length() : 0;
-		const int *previous_shift = probe.column_shift_by_line.getptr(span_line);
-		probe.column_shift_by_line[span_line] =
+		const int *previous_shift = probe.column_shift_by_line.getptr(final_line);
+		probe.column_shift_by_line[final_line] =
 				(previous_shift == nullptr ? 0 : *previous_shift) + removed - reinserted;
-		line = span_line;
-		line_start = final_line_start;
 		copied_from = span_end;
-		index = span_end;
 	}
 	stripped += p_source.substr(copied_from);
 	probe.text = stripped;
