@@ -479,6 +479,36 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			CHECK_EQ(int(record.get("line", 0)), 4);
 		}
 		CHECK(found_multiline_suppressed);
+
+		// A comment inside the argument list can carry an unbalanced parenthesis. Treating it as
+		// syntax would truncate the annotation, leave its real closing parenthesis in the probe
+		// source, and turn the resulting parse error into false error-severity evidence.
+		FSCompletenessProgram commented_suppressed;
+		commented_suppressed.case_id = "gate_safety_unused_variable_commented";
+		commented_suppressed.surface = "text";
+		commented_suppressed.source =
+				"func test() -> void:\n"
+				"\t@warning_ignore(\n"
+				"\t\t\"unused_variable\" # see foo(bar)) below\n"
+				"\t)\n"
+				"\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation commented_observation =
+				FSUnionCompletenessAdapter::analyze(commented_suppressed, "text");
+		CHECK_EQ(String(commented_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(commented_observation.diagnostics.is_empty());
+		bool found_commented_suppressed = false;
+		for (int index = 0; index < commented_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = commented_observation.diagnostic_records[index];
+			CHECK_NE(String(record.get("severity", String())), "error");
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_commented_suppressed = true;
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 5);
+		}
+		CHECK(found_commented_suppressed);
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety records a suppressed error-level diagnostic") {

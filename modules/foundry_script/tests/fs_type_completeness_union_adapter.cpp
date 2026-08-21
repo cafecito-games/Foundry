@@ -193,7 +193,13 @@ static int find_annotation_arguments_end(const String &p_line, int p_open_parent
 			}
 			continue;
 		}
-		if (character == U'"' || character == U'\'') {
+		if (character == U'#') {
+			// A comment runs to the end of the line and carries no syntax, so an unbalanced
+			// parenthesis inside one must not close the argument list.
+			while (index < p_line.length() && p_line[index] != U'\n') {
+				index++;
+			}
+		} else if (character == U'"' || character == U'\'') {
 			inside_string = true;
 			quote = character;
 		} else if (character == U'(') {
