@@ -46,12 +46,13 @@ static const String synthetic_completeness_family = "synthetic_identity";
 static const String synthetic_completeness_adapter_id = "synthetic_pair_identity";
 
 // The test-only family's catalog inputs. The shape axis is data: adding a leaf to the partition and
-// to the rule domain is the only thing that changes how large the matrix is.
+// to the rule domain is the only thing that changes how large the matrix is. The axis also declares
+// one leaf the adapter deliberately cannot render, so a domain that selects it can be refused.
 static String synthetic_partition_document(bool p_with_triple) {
 	return vformat(R"JSON({
   "schema_version": 1,
   "axis": "synthetic_shape",
-  "leaves": ["scalar", "pair"%s],
+  "leaves": ["scalar", "pair", "unrenderable"%s],
   "classes": {}
 }
 )JSON",
@@ -380,12 +381,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 
 		SUBCASE("a leaf the adapter cannot render") {
 			const String document = synthetic_rule_document(false).replace(
-					"\"synthetic_shape\": [\"scalar\", \"pair\"]", "\"synthetic_shape\": [\"scalar\", \"union\"]");
+					"\"synthetic_shape\": [\"scalar\", \"pair\"]",
+					"\"synthetic_shape\": [\"scalar\", \"unrenderable\"]");
 			const String catalog_root =
 					stage_synthetic_completeness_catalog(tree, "leaf", false, document);
 			Vector<String> errors;
 			CHECK_EQ(load_synthetic_catalog_errors(catalog_root, errors), ERR_INVALID_DATA);
-			CHECK_MESSAGE(completeness_error_reported(errors, "$.domain.synthetic_shape[1]"),
+			CHECK_MESSAGE(completeness_error_reported(errors,
+								  "$.domain.synthetic_shape[1]: adapter 'synthetic_pair_identity' cannot render "
+								  "leaf 'unrenderable'"),
 					String(" | ").join(errors));
 		}
 
@@ -412,6 +416,85 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 			CHECK_MESSAGE(
 					completeness_error_reported(errors, "$.domain.surface: required domain axis is missing"),
 					String(" | ").join(errors));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Adapters witness binding names every way a witness fails to resolve") {
+		FSCompletenessManifest manifest;
+		manifest.family = synthetic_completeness_family;
+		manifest.adapter = synthetic_completeness_adapter_id;
+		manifest.domain["synthetic_shape"] = Vector<String>({ "scalar", "pair" });
+		manifest.domain["surface"] = Vector<String>({ "text", "bytecode" });
+		FSCompletenessException exception;
+		exception.id = "exception";
+		exception.parent = "relation";
+		manifest.exceptions.push_back(exception);
+
+		const auto declare = [&manifest](const String &p_id, const Dictionary &p_coordinates) {
+			FSCompletenessWitness witness;
+			witness.id = p_id;
+			witness.coordinates = p_coordinates;
+			manifest.exceptions.write[0].positive_witnesses.push_back(witness);
+		};
+		const auto coordinates_of = [](const String &p_shape, const String &p_surface) {
+			Dictionary coordinates;
+			coordinates["synthetic_shape"] = p_shape;
+			coordinates["surface"] = p_surface;
+			return coordinates;
+		};
+		const auto stage_of = [](const Vector<FSCompletenessStructuralFailure> &p_failures,
+									  const String &p_witness_id) {
+			for (const FSCompletenessStructuralFailure &failure : p_failures) {
+				if (failure.witness_id == p_witness_id) {
+					return failure.stage;
+				}
+			}
+			return String();
+		};
+
+		FSCompletenessResolution resolution;
+		FSCompletenessResolvedCell scalar_text;
+		scalar_text.case_id = "scalar_text";
+		scalar_text.coordinates = coordinates_of("scalar", "text");
+		resolution.cells.push_back(scalar_text);
+		FSCompletenessResolvedCell ambiguous_first;
+		ambiguous_first.case_id = "pair_text_first";
+		ambiguous_first.coordinates = coordinates_of("pair", "text");
+		resolution.cells.push_back(ambiguous_first);
+		FSCompletenessResolvedCell ambiguous_second;
+		ambiguous_second.case_id = "pair_text_second";
+		ambiguous_second.coordinates = coordinates_of("pair", "text");
+		resolution.cells.push_back(ambiguous_second);
+		resolution.build_indices();
+
+		Dictionary partial;
+		partial["surface"] = "text";
+		declare("incomplete_coordinates", partial);
+		Dictionary outside;
+		outside["synthetic_shape"] = "scalar";
+		outside["surface"] = "assembly";
+		declare("leaf_outside_domain", outside);
+		declare("missing_cell", coordinates_of("scalar", "bytecode"));
+		declare("ambiguous_cell", coordinates_of("pair", "text"));
+		declare("duplicate_coordinates", coordinates_of("pair", "text"));
+
+		Vector<FSCompletenessWitnessBinding> bindings;
+		Vector<FSCompletenessStructuralFailure> failures;
+		CHECK_EQ(collect_witness_bindings(manifest, resolution, bindings, failures), ERR_INVALID_DATA);
+		CHECK(bindings.is_empty());
+		CHECK_EQ(stage_of(failures, "incomplete_coordinates"),
+				FSCompletenessStructuralStage::WITNESS_ID_UNKNOWN);
+		CHECK_EQ(stage_of(failures, "leaf_outside_domain"),
+				FSCompletenessStructuralStage::WITNESS_ID_UNKNOWN);
+		CHECK_EQ(stage_of(failures, "missing_cell"), FSCompletenessStructuralStage::WITNESS_CELL_MISSING);
+		CHECK_EQ(stage_of(failures, "ambiguous_cell"),
+				FSCompletenessStructuralStage::WITNESS_CELL_AMBIGUOUS);
+		CHECK_EQ(stage_of(failures, "duplicate_coordinates"),
+				FSCompletenessStructuralStage::WITNESS_DECLARED_TWICE);
+		for (const FSCompletenessStructuralFailure &failure : failures) {
+			CAPTURE(failure.witness_id);
+			CHECK_EQ(failure.exception_id, "exception");
+			CHECK_FALSE(failure.detail.is_empty());
 		}
 	}
 

@@ -210,6 +210,15 @@ static const FSCompletenessFinding *gate_safety_find_finding(
 	return nullptr;
 }
 
+static bool gate_safety_errors_contain(const Vector<String> &p_errors, const String &p_expected) {
+	for (const String &error : p_errors) {
+		if (error.contains(p_expected)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool gate_safety_has_structural_stage(
 		const FSCompletenessRunResult &p_result, const String &p_stage) {
 	for (const FSCompletenessStructuralFailure &failure : p_result.structural_failures) {
@@ -1019,29 +1028,44 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		gate_safety_severity_case_id.clear();
 	}
 
-	TEST_CASE("TypeCompleteness GateSafety names unknown and duplicated witness declarations") {
+	TEST_CASE("TypeCompleteness GateSafety refuses witness coordinates outside the manifest domain") {
 		TemporaryProjectTree tree(
-				vformat("type_completeness_gate_witness_id_%d", OS::get_singleton()->get_process_id()));
+				vformat("type_completeness_gate_witness_leaf_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
-		const String unknown_catalog = stage_union_pilot_completeness_catalog_at(tree, "unknown_catalog");
-		Vector<String> unknown_replacements;
-		unknown_replacements.push_back("\"text_gradual_argument_binding\"");
-		unknown_replacements.push_back("\"not_a_declared_witness\"");
-		gate_safety_rewrite_staged_rules(unknown_catalog, unknown_replacements);
+		const String catalog_root = stage_union_pilot_completeness_catalog_at(tree, "leaf_catalog");
+		Vector<String> replacements;
+		// Twelve spaces of indentation belong only to a witness coordinate, so the anchors and relations
+		// that carry the same leaf on the same axis are left alone.
+		replacements.push_back("            \"source_proof\": \"gradual\",");
+		replacements.push_back("            \"source_proof\": \"parameter\",");
+		gate_safety_rewrite_staged_rules(catalog_root, replacements);
+
+		const FSCompletenessCatalogRecord *record = nullptr;
+		Vector<String> errors;
+		CHECK_EQ(FSCompletenessCatalogCache::get(
+						 TemporaryProjectTree::canonicalize_existing_path(catalog_root),
+						 "union_destination_membership", record, errors),
+				ERR_INVALID_DATA);
+		CHECK_MESSAGE(gate_safety_errors_contain(errors,
+							  "$.exceptions[0].positive_witnesses[0].coordinates.source_proof: leaf 'parameter' "
+							  "is not declared in the manifest domain"),
+				String(" | ").join(errors));
 
 		FSCompletenessRunOptions options;
-		options.catalog_root = unknown_catalog;
+		options.catalog_root = catalog_root;
 		options.family = "union_destination_membership";
-		options.scratch_root = tree.root.path_join("unknown_scratch");
+		options.scratch_root = tree.root.path_join("leaf_scratch");
 		options.report_path = options.scratch_root.path_join("report.json");
 		FSCompletenessRunResult result;
 		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
 		CHECK_EQ(result.outcome, "structural_failure");
-		CHECK(gate_safety_has_structural_stage(result, "witness_id_unknown"));
-		CHECK_EQ(result.structural_failures[0].witness_id, "not_a_declared_witness");
-		CHECK_EQ(result.structural_failures[0].exception_id, "unproven_source_requires_membership");
 		CHECK_FALSE(FileAccess::exists(options.report_path));
+	}
 
+	TEST_CASE("TypeCompleteness GateSafety names duplicated witness declarations") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_witness_id_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
 		const String duplicate_catalog = stage_union_pilot_completeness_catalog_at(tree, "duplicate_catalog");
 		Vector<String> duplicate_replacements;
 		duplicate_replacements.push_back("\"text_static_member_argument_binding\"");
@@ -1057,6 +1081,27 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		CHECK_EQ(FSCompletenessRunner::run(duplicate_options, duplicate_result), ERR_INVALID_DATA);
 		CHECK_EQ(duplicate_result.outcome, "structural_failure");
 		CHECK(gate_safety_has_structural_stage(duplicate_result, "witness_declared_twice"));
+		CHECK_FALSE(FileAccess::exists(duplicate_options.report_path));
+
+		const String twin_catalog = stage_union_pilot_completeness_catalog_at(tree, "twin_catalog");
+		Vector<String> twin_replacements;
+		twin_replacements.push_back("            \"source_proof\": \"static_member\",");
+		twin_replacements.push_back("            \"source_proof\": \"gradual\",");
+		gate_safety_rewrite_staged_rules(twin_catalog, twin_replacements);
+
+		FSCompletenessRunOptions twin_options;
+		twin_options.catalog_root = twin_catalog;
+		twin_options.family = "union_destination_membership";
+		twin_options.scratch_root = tree.root.path_join("twin_scratch");
+		twin_options.report_path = twin_options.scratch_root.path_join("report.json");
+		FSCompletenessRunResult twin_result;
+		CHECK_EQ(FSCompletenessRunner::run(twin_options, twin_result), ERR_INVALID_DATA);
+		CHECK_EQ(twin_result.outcome, "structural_failure");
+		CHECK(gate_safety_has_structural_stage(twin_result, "witness_declared_twice"));
+		REQUIRE_FALSE(twin_result.structural_failures.is_empty());
+		CHECK_EQ(twin_result.structural_failures[0].witness_id, "text_static_member_argument_binding");
+		CHECK_EQ(twin_result.structural_failures[0].detail,
+				"Witness 'text_gradual_argument_binding' declares the same coordinates.");
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety names a witness that never observes its exception") {
@@ -1065,12 +1110,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		REQUIRE(tree.is_valid());
 		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
 		Vector<String> replacements;
-		replacements.push_back("\"text_gradual_argument_binding\"");
-		replacements.push_back("\"gate_safety_swap_placeholder\"");
-		replacements.push_back("\"text_static_member_argument_binding\"");
-		replacements.push_back("\"text_gradual_argument_binding\"");
-		replacements.push_back("\"gate_safety_swap_placeholder\"");
-		replacements.push_back("\"text_static_member_argument_binding\"");
+		// The positive witness keeps its identity and moves to a cell the exception cannot reach: the
+		// exception derives at the union destination, so the plain one observes only the parent relation.
+		replacements.push_back(
+				"\"id\": \"text_gradual_argument_binding\",\n          \"coordinates\": {\n"
+				"            \"destination\": \"union\",");
+		replacements.push_back(
+				"\"id\": \"text_gradual_argument_binding\",\n          \"coordinates\": {\n"
+				"            \"destination\": \"plain\",");
 		gate_safety_rewrite_staged_rules(catalog_root, replacements);
 
 		FSCompletenessRunOptions options;
@@ -1086,7 +1133,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			if (failure.stage != "witness_exception_provenance_missing") {
 				continue;
 			}
-			CHECK_EQ(failure.witness_id, "text_static_member_argument_binding");
+			CHECK_EQ(failure.witness_id, "text_gradual_argument_binding");
 			CHECK_FALSE(failure.case_id.is_empty());
 		}
 	}
