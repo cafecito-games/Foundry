@@ -183,12 +183,20 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		}
 
 		REQUIRE_MESSAGE(execute_error == OK, output);
-		CHECK_MESSAGE(exit_code == FSCompletenessCLI::EXIT_PASSED, output);
 		const String report_path = tree.root.path_join("scratch/report.json");
+#ifdef TOOLS_ENABLED
+		CHECK_MESSAGE(exit_code == FSCompletenessCLI::EXIT_PASSED, output);
 		REQUIRE_MESSAGE(FileAccess::exists(report_path), output);
 		const Dictionary report = completeness_cli_read_json(report_path);
 		CHECK_EQ(String(report.get("outcome", String())), "passed");
 		CHECK(report.has("timings_ms"));
+#else
+		// The harness the command drives is part of an editor build. A build without it must say so
+		// and fail, never exit as though it had measured anything, and never leave a report behind.
+		CHECK_MESSAGE(exit_code != FSCompletenessCLI::EXIT_PASSED, output);
+		CHECK_MESSAGE(output.contains("requires an editor build"), output);
+		CHECK_MESSAGE(!FileAccess::exists(report_path), output);
+#endif
 
 		// The command owns the user-data root it creates: evidence that lives outside it means the root
 		// is removed, and the report it was asked for survives that removal.

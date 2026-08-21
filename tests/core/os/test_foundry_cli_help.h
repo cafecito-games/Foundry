@@ -181,21 +181,44 @@ TEST_CASE("[FoundryCLIHelp] A multi-word verb resolves from a deeper scope") {
 	scope.push_back("test");
 	scope.push_back("completeness");
 	scope.push_back("run");
+
+	// The registry stores a multi-word verb as one label and the command line spells it one token per
+	// word, in every configuration: the table is built the same way whatever the build can run, so
+	// `foundry test completeness run --help` explains the command even where it is unavailable.
 	bool valid = false;
 	const String text = FoundryCLIHelp::get_scoped_help_text("foundry", scope, valid);
 	CHECK(valid);
 	CHECK(text.contains("--tier"));
 
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *registry = FoundryCLIHelp::get_commands(command_count);
+	const FoundryCLIHelp::CommandSpec *spec = nullptr;
+	for (int i = 0; i < command_count; i++) {
+		if (String(registry[i].noun) == "test" && String(registry[i].verb) == "completeness run") {
+			spec = &registry[i];
+			break;
+		}
+	}
+	REQUIRE_MESSAGE(spec != nullptr, "every configuration registers the multi-word verb");
+
 	JSON json;
 	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
 	const Dictionary root = json.get_data();
 	const Array commands = root["commands"];
-	REQUIRE_EQ(commands.size(), 1);
-	const Dictionary command = commands[0];
-	const Array path = command["path"];
-	REQUIRE_EQ(path.size(), 2);
-	CHECK_EQ(String(path[0]), "test");
-	CHECK_EQ(String(path[1]), "completeness run");
+	// The machine-readable listing carries a command exactly when this build includes it, so an
+	// editor-only command is documented in text and omitted from the listing of a template build.
+	// Deciding that through the same predicate the filter uses keeps this test honest if the
+	// command's availability ever changes.
+	if (FoundryCLIHelp::is_command_in_build(*spec)) {
+		REQUIRE_EQ(commands.size(), 1);
+		const Dictionary command = commands[0];
+		const Array path = command["path"];
+		REQUIRE_EQ(path.size(), 2);
+		CHECK_EQ(String(path[0]), "test");
+		CHECK_EQ(String(path[1]), "completeness run");
+	} else {
+		CHECK(commands.is_empty());
+	}
 }
 
 TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
