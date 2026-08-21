@@ -495,7 +495,54 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	return OK;
 }
 
-static Error write_report_atomically(const String &p_report_path, const Dictionary &p_report) {
+static Error validate_owned_report_path(
+		const String &p_canonical_scratch_root, const String &p_report_path) {
+	if (p_report_path.simplify_path() != p_report_path ||
+			!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, p_report_path)) {
+		return ERR_UNAUTHORIZED;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_UNAVAILABLE;
+	}
+
+	String current = p_report_path;
+	bool is_report_target = true;
+	while (current != p_canonical_scratch_root) {
+		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, current)) {
+			return ERR_UNAUTHORIZED;
+		}
+		const bool is_directory = filesystem->dir_exists(current);
+		const bool exists = is_directory || filesystem->file_exists(current);
+		if (filesystem->is_link(current)) {
+			return ERR_UNAUTHORIZED;
+		}
+		if (exists) {
+			String canonical_path;
+			if (TemporaryProjectTree::resolve_existing_owned_path(current, canonical_path) != OK ||
+					canonical_path != current) {
+				return ERR_UNAUTHORIZED;
+			}
+			if (is_report_target && is_directory) {
+				return ERR_CANT_CREATE;
+			}
+		}
+		const String parent = current.get_base_dir();
+		if (parent.is_empty() || parent == current) {
+			return ERR_UNAUTHORIZED;
+		}
+		current = parent;
+		is_report_target = false;
+	}
+	return OK;
+}
+
+static Error write_report_atomically(const String &p_canonical_scratch_root,
+		const String &p_report_path, const Dictionary &p_report) {
+	Error validation_error = validate_owned_report_path(p_canonical_scratch_root, p_report_path);
+	if (validation_error != OK) {
+		return validation_error;
+	}
 	const String contents = JSON::stringify(p_report, "\t", false, true) + "\n";
 	String temporary_path;
 	Ref<FileAccess> temporary;
@@ -514,12 +561,30 @@ static Error write_report_atomically(const String &p_report_path, const Dictiona
 	if (temporary.is_null()) {
 		return ERR_ALREADY_EXISTS;
 	}
+	String canonical_temporary_path;
+	if (TemporaryProjectTree::resolve_existing_owned_path(
+				temporary_path, canonical_temporary_path) != OK ||
+			canonical_temporary_path != temporary_path) {
+		temporary.unref();
+		return ERR_UNAUTHORIZED;
+	}
 	temporary->store_string(contents);
 	const Error write_error = temporary->get_error();
 	temporary.unref();
 	if (write_error != OK) {
 		DirAccess::remove_absolute(temporary_path);
 		return write_error;
+	}
+	validation_error = validate_owned_report_path(p_canonical_scratch_root, p_report_path);
+	if (validation_error != OK) {
+		DirAccess::remove_absolute(temporary_path);
+		return validation_error;
+	}
+	canonical_temporary_path.clear();
+	if (TemporaryProjectTree::resolve_existing_owned_path(
+				temporary_path, canonical_temporary_path) != OK ||
+			canonical_temporary_path != temporary_path) {
+		return ERR_UNAUTHORIZED;
 	}
 	const Error rename_error = DirAccess::rename_absolute(temporary_path, p_report_path);
 	if (rename_error != OK) {
@@ -647,9 +712,10 @@ Error FSCompletenessRunner::run(
 	if (scratch_error != OK) {
 		return scratch_error;
 	}
-	if (p_options.report_path.simplify_path() != p_options.report_path ||
-			!TemporaryProjectTree::is_strict_descendant(canonical_scratch_root, p_options.report_path)) {
-		return ERR_UNAUTHORIZED;
+	const Error report_path_error = validate_owned_report_path(
+			canonical_scratch_root, p_options.report_path);
+	if (report_path_error != OK) {
+		return report_path_error;
 	}
 
 	Vector<String> errors;
@@ -909,12 +975,9 @@ Error FSCompletenessRunner::run(
 		cases.push_back(case_report);
 	}
 	Array report_findings;
-	bool success = true;
+	const bool success = findings.is_empty();
 	for (const FSCompletenessFinding &finding : findings) {
 		report_findings.push_back(finding_report(finding));
-		if (finding.classification == "unclassified") {
-			success = false;
-		}
 	}
 
 	Dictionary report;
@@ -929,7 +992,7 @@ Error FSCompletenessRunner::run(
 	report["text_bytecode_parity_failures"] = double(parity_failures);
 	report["findings"] = report_findings;
 	report["cases"] = cases;
-	error = write_report_atomically(p_options.report_path, report);
+	error = write_report_atomically(canonical_scratch_root, p_options.report_path, report);
 	if (error != OK) {
 		return error;
 	}

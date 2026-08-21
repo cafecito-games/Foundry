@@ -498,6 +498,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	TEST_CASE("TypeCompleteness UnionPilot runner publishes complete deterministic coverage") {
 		TemporaryProjectTree tree(vformat("type_completeness_union_report_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
+		tree.write_file("report.json", "previous regular report\n");
 
 		FSCompletenessRunOptions options;
 		options.catalog_root = type_completeness_union_pilot_root;
@@ -577,6 +578,75 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(result.executed_cells, 40);
 		CHECK(DirAccess::dir_exists_absolute(options.scratch_root));
 		CHECK(FileAccess::exists(options.report_path));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects a report path through an outside symlink") {
+		TemporaryProjectTree tree(vformat("type_completeness_union_report_link_%d", OS::get_singleton()->get_process_id()));
+		TemporaryProjectTree neighbor(vformat("type_completeness_union_report_neighbor_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		REQUIRE(neighbor.is_valid());
+		neighbor.write_file("report.json", "caller report sentinel\n");
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		const String report_link = tree.root.path_join("report-link");
+		if (filesystem->create_link(neighbor.root, report_link) != OK) {
+			return;
+		}
+		const PackedStringArray neighbor_entries_before = union_pilot_directory_entries(neighbor.root);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_link.path_join("report.json");
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.findings.push_back(FSCompletenessFinding());
+		result.report["stale"] = true;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("report.json")),
+				"caller report sentinel\n");
+		CHECK_EQ(union_pilot_directory_entries(neighbor.root), neighbor_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects a symlinked report file") {
+		TemporaryProjectTree tree(vformat("type_completeness_union_report_file_link_%d", OS::get_singleton()->get_process_id()));
+		TemporaryProjectTree neighbor(vformat("type_completeness_union_report_file_neighbor_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		REQUIRE(neighbor.is_valid());
+		neighbor.write_file("caller-report.json", "caller report sentinel\n");
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		const String report_path = tree.root.path_join("report.json");
+		if (filesystem->create_link(neighbor.root.path_join("caller-report.json"), report_path) != OK) {
+			return;
+		}
+		const PackedStringArray neighbor_entries_before = union_pilot_directory_entries(neighbor.root);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.findings.push_back(FSCompletenessFinding());
+		result.report["stale"] = true;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK(filesystem->is_link(report_path));
+		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("caller-report.json")),
+				"caller report sentinel\n");
+		CHECK_EQ(union_pilot_directory_entries(neighbor.root), neighbor_entries_before);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner reconciles a direct mismatch with parity evidence") {
@@ -663,7 +733,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
 		tree.write_file("catalog/findings/known.json",
 				union_pilot_finding_record(
-						finding_id, union_pilot_mutated_case_id, "intentional_unsupported"));
+						finding_id, union_pilot_mutated_case_id, "product_defect"));
 
 		FSCompletenessRunOptions options;
 		options.catalog_root = catalog_root;
@@ -672,21 +742,33 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		options.report_path = tree.root.path_join("report.json");
 		options.observation_mutator = corrupt_union_pilot_stored_carrier;
 		FSCompletenessRunResult result;
-		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
-		CHECK(result.success);
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
 		CHECK_EQ(result.executed_cells, 40);
 		REQUIRE_EQ(result.findings.size(), 1);
 		if (result.findings.size() != 1) {
 			return;
 		}
 		CHECK_EQ(result.findings[0].finding_id, finding_id);
-		CHECK_EQ(result.findings[0].classification, "intentional_unsupported");
+		CHECK_EQ(result.findings[0].classification, "product_defect");
 		CHECK_EQ(result.findings[0].issue_url, "https://example.invalid/issues/1");
 		CHECK_EQ(result.findings[0].closure_packet_url, "https://example.invalid/closure/1");
 		CHECK_EQ(result.findings[0].permanent_test_paths.size(), 1);
 		CHECK_FALSE(result.findings[0].parity_evidence.is_empty());
 		CHECK_EQ(Array(result.report.get("findings", Array())).size(), 1);
+		CHECK_EQ(bool(result.report.get("success", true)), false);
 		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+		CHECK(FileAccess::exists(options.report_path));
+		Error read_error = OK;
+		const String report_source = FileAccess::get_file_as_string(options.report_path, &read_error);
+		REQUIRE_EQ(read_error, OK);
+		JSON json;
+		REQUIRE_EQ(json.parse(report_source), OK);
+		const Dictionary report = json.get_data();
+		CHECK_EQ(bool(report.get("success", true)), false);
+		const Array report_findings = report.get("findings", Array());
+		REQUIRE_EQ(report_findings.size(), 1);
+		CHECK_EQ(String(Dictionary(report_findings[0]).get("classification", String())), "product_defect");
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects malformed unresolved and duplicate ledger records atomically") {
