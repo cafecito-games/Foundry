@@ -43,6 +43,10 @@
 #include "core/templates/hash_set.h"
 #include "tests/test_utils.h"
 
+#ifdef UNIX_ENABLED
+#include <cstdlib>
+#endif
+
 #ifdef WINDOWS_ENABLED
 #include <windows.h>
 #endif
@@ -483,6 +487,40 @@ static Error validate_permanent_test_path(const String &p_path) {
 	return OK;
 }
 
+static String canonicalize_existing_ledger_path(const String &p_path) {
+#ifdef UNIX_ENABLED
+	char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
+	if (resolved == nullptr) {
+		return String();
+	}
+	String canonical;
+	const Error parse_error = canonical.append_utf8(resolved);
+	::free(resolved);
+	return parse_error == OK ? canonical.simplify_path() : String();
+#elif defined(WINDOWS_ENABLED)
+	HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+			FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	if (handle == INVALID_HANDLE_VALUE) {
+		return String();
+	}
+	WCHAR buffer[4096];
+	const DWORD length = ::GetFinalPathNameByHandleW(
+			handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	::CloseHandle(handle);
+	if (length == 0 || length > 4095) {
+		return String();
+	}
+	buffer[length] = 0;
+	return String::utf16((const char16_t *)buffer, (int)length)
+			.trim_prefix("\\\\?\\")
+			.replace("\\", "/")
+			.simplify_path();
+#else
+	return p_path.simplify_path();
+#endif
+}
+
 static Error load_findings_ledger(const String &p_directory, const String &p_family,
 		const FSCompletenessResolution &p_resolution, const HashSet<String> &p_current_ids,
 		const FSCompletenessMigrations &p_migrations,
@@ -493,6 +531,15 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	if (directory.is_null()) {
 		return open_error == OK ? ERR_CANT_OPEN : open_error;
 	}
+	const String lexical_directory = directory->get_current_dir().replace("\\", "/").simplify_path();
+	const String canonical_directory = canonicalize_existing_ledger_path(lexical_directory);
+	if (canonical_directory.is_empty() || canonical_directory != lexical_directory) {
+		return ERR_UNAUTHORIZED;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_UNAVAILABLE;
+	}
 	if (directory->list_dir_begin() != OK) {
 		return ERR_CANT_OPEN;
 	}
@@ -501,11 +548,16 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 		if (entry == "." || entry == ".." || entry == ".gitkeep") {
 			continue;
 		}
+		const String file_path = lexical_directory.path_join(entry);
+		if (directory->is_link(entry) || filesystem->is_link(file_path)) {
+			directory->list_dir_end();
+			return ERR_UNAUTHORIZED;
+		}
 		if (directory->current_is_dir() || entry.get_extension().to_lower() != "json") {
 			directory->list_dir_end();
 			return ERR_INVALID_DATA;
 		}
-		files.push_back(p_directory.path_join(entry));
+		files.push_back(file_path);
 	}
 	directory->list_dir_end();
 	files.sort();
@@ -523,6 +575,12 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	};
 	HashSet<String> finding_ids;
 	for (const String &file_path : files) {
+		const String canonical_file_path = canonicalize_existing_ledger_path(file_path);
+		if (filesystem->is_link(file_path) || canonical_file_path.is_empty() ||
+				canonical_file_path != file_path || canonical_file_path.get_base_dir() != canonical_directory ||
+				!TemporaryProjectTree::is_strict_descendant(canonical_directory, canonical_file_path)) {
+			return ERR_UNAUTHORIZED;
+		}
 		Error read_error = OK;
 		const String source = FileAccess::get_file_as_string(file_path, &read_error);
 		if (read_error != OK) {
@@ -699,6 +757,41 @@ class ReportArtifactScope {
 		return OK;
 	}
 
+	Error validate_artifact_target(const String &p_canonical_scratch_root,
+			const FSCompletenessResolvedCell &p_cell, const String &p_path) const {
+		const String surface = p_cell.coordinates.get("surface", String());
+		if (surface != "text" && surface != "bytecode") {
+			return ERR_INVALID_DATA;
+		}
+		const String surface_root = artifact_root.path_join(surface);
+		if (p_path.simplify_path() != p_path || p_path.get_base_dir() != surface_root ||
+				!TemporaryProjectTree::is_strict_descendant(surface_root, p_path) ||
+				!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, p_path)) {
+			return ERR_UNAUTHORIZED;
+		}
+		String canonical_surface_root;
+		if (TemporaryProjectTree::resolve_existing_owned_path(
+					surface_root, canonical_surface_root) != OK ||
+				canonical_surface_root != surface_root) {
+			return ERR_UNAUTHORIZED;
+		}
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (filesystem.is_null()) {
+			return ERR_UNAVAILABLE;
+		}
+		if (filesystem->is_link(p_path)) {
+			return ERR_UNAUTHORIZED;
+		}
+		if (filesystem->file_exists(p_path) || filesystem->dir_exists(p_path)) {
+			String canonical_path;
+			if (TemporaryProjectTree::resolve_existing_owned_path(p_path, canonical_path) != OK ||
+					canonical_path != p_path || canonical_path.get_base_dir() != canonical_surface_root) {
+				return ERR_UNAUTHORIZED;
+			}
+		}
+		return OK;
+	}
+
 public:
 	~ReportArtifactScope() {
 		if (committed) {
@@ -712,7 +805,7 @@ public:
 		}
 	}
 
-	Error stage(const String &p_canonical_scratch_root,
+	Error stage(const String &p_canonical_scratch_root, const FSCompletenessResolution &p_resolution,
 			const Vector<FSCompletenessProgram> &p_programs) {
 		artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
 		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, artifact_root)) {
@@ -733,20 +826,29 @@ public:
 		if (filesystem.is_null()) {
 			return ERR_UNAVAILABLE;
 		}
-		for (const FSCompletenessProgram &program : p_programs) {
-			const String path = artifact_path(program);
-			if (filesystem->is_link(path)) {
-				return ERR_UNAUTHORIZED;
+		for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
+			const FSCompletenessProgram *program = find_program_by_id(p_programs, cell.case_id);
+			if (program == nullptr) {
+				return ERR_INVALID_DATA;
+			}
+			const String path = artifact_path(cell);
+			error = validate_artifact_target(p_canonical_scratch_root, cell, path);
+			if (error != OK) {
+				return error;
 			}
 			if (filesystem->file_exists(path)) {
 				String canonical_path;
 				Error read_error = OK;
 				const String source = FileAccess::get_file_as_string(path, &read_error);
 				if (TemporaryProjectTree::resolve_existing_owned_path(path, canonical_path) != OK ||
-						canonical_path != path || read_error != OK || source != program.source) {
+						canonical_path != path || read_error != OK || source != program->source) {
 					return ERR_ALREADY_EXISTS;
 				}
 				continue;
+			}
+			error = validate_artifact_target(p_canonical_scratch_root, cell, path);
+			if (error != OK) {
+				return error;
 			}
 			Error open_error = OK;
 			Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE | FileAccess::WRITE_EXCL, &open_error);
@@ -754,7 +856,7 @@ public:
 				return open_error == OK ? ERR_CANT_CREATE : open_error;
 			}
 			created_files.push_back(path);
-			if (!file->store_string(program.source)) {
+			if (!file->store_string(program->source)) {
 				file.unref();
 				return ERR_CANT_CREATE;
 			}
@@ -773,8 +875,8 @@ public:
 		return OK;
 	}
 
-	String artifact_path(const FSCompletenessProgram &p_program) const {
-		return artifact_root.path_join(p_program.surface).path_join(p_program.case_id + ".fs");
+	String artifact_path(const FSCompletenessResolvedCell &p_cell) const {
+		return artifact_root.path_join(p_cell.coordinates.get("surface", String())).path_join(p_cell.case_id + ".fs");
 	}
 
 	void commit() { committed = true; }
@@ -1055,14 +1157,20 @@ Error FSCompletenessRunner::run(
 		if (error != OK) {
 			return error;
 		}
+		const FSCompletenessProgram rendered_program = program;
 		if (p_options.program_mutator != nullptr) {
 			p_options.program_mutator(program);
+		}
+		if (program.case_id != rendered_program.case_id || program.surface != rendered_program.surface ||
+				program.coordinates != rendered_program.coordinates ||
+				program.expected_output != rendered_program.expected_output) {
+			return ERR_INVALID_DATA;
 		}
 		(void)FSUnionCompletenessAdapter::analyze(program, program.surface);
 		programs.push_back(program);
 	}
 	ReportArtifactScope artifact_scope;
-	error = artifact_scope.stage(canonical_scratch_root, programs);
+	error = artifact_scope.stage(canonical_scratch_root, resolution, programs);
 	if (error != OK) {
 		return error;
 	}
@@ -1102,7 +1210,7 @@ Error FSCompletenessRunner::run(
 		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
-		const String artifact_path = artifact_scope.artifact_path(*program);
+		const String artifact_path = artifact_scope.artifact_path(cell);
 		if (!actual->passed || actual->status != "ok") {
 			append_finding(findings, p_options.family, cell.case_id, "runtime_status",
 					runtime_status(true, "ok"), runtime_status(actual->passed, actual->status), artifact_path);
@@ -1197,7 +1305,7 @@ Error FSCompletenessRunner::run(
 			if (text_program == nullptr) {
 				return ERR_INVALID_DATA;
 			}
-			finding.artifact_path = artifact_scope.artifact_path(*text_program);
+			finding.artifact_path = artifact_scope.artifact_path(*pair.text);
 			findings.push_back(finding);
 		}
 	}
@@ -1277,7 +1385,7 @@ Error FSCompletenessRunner::run(
 		case_report["diagnostics"] = diagnostics;
 		case_report["produced_output"] = actual->produced_output;
 		case_report["expected_output"] = program->expected_output;
-		case_report["artifact_path"] = artifact_scope.artifact_path(*program);
+		case_report["artifact_path"] = artifact_scope.artifact_path(*cell);
 		cases.push_back(case_report);
 	}
 	Array report_findings;
