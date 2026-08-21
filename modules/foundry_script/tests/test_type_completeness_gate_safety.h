@@ -96,6 +96,20 @@ static void gate_safety_inject_text_only_warning_record(FSCompletenessObservatio
 	}
 }
 
+static String gate_safety_indentation(const String &p_line) {
+	int width = 0;
+	while (width < p_line.length() && (p_line[width] == U' ' || p_line[width] == U'\t')) {
+		width++;
+	}
+	return p_line.substr(0, width);
+}
+
+struct GateSafetyAnnotationShape {
+	const char *name = nullptr;
+	String source;
+	String expected;
+};
+
 static String gate_safety_finding_id(const String &p_case_id, const String &p_dimension) {
 	return "fstcf-v1-" + (p_case_id + "|" + p_dimension).sha256_text().substr(0, 20);
 }
@@ -607,6 +621,126 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			CHECK_EQ(bool(record.get("suppressed", false)), true);
 		}
 		CHECK(found_suppressed_error);
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety strips every annotation shape without disturbing the program") {
+		// An annotation owns its name, its argument list, and the whitespace separating it from what
+		// follows. Everything else survives: the line count, the block level of the target, and the
+		// indentation of every line that still has content. A probe source that loses any of those
+		// parses differently from the program it stands for, and the errors it invents are recorded
+		// as suppressed error-severity evidence that fails an accepted case on the severity gate.
+		const GateSafetyAnnotationShape shapes[] = {
+			{ "own_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\")\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "inline_same_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\") var unused_local = 1\n",
+					"func test() -> void:\n"
+					"\tvar unused_local = 1\n" },
+			{ "multiline_own_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\")\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			// The target shares the annotation's closing line, so it takes the block level the
+			// annotation introduced rather than the continuation line's deeper indentation.
+			{ "multiline_closing_on_target_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\") var unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "argument_line_comment_with_parens",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\" # see foo(bar)) below\n"
+					"\t)\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "argument_line_comment_with_quote",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\" # a lone \" and a )\n"
+					"\t)\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "consecutive_annotations",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\")\n"
+					"\t@warning_ignore(\"untyped_declaration\")\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "two_annotations_one_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\") @warning_ignore(\"untyped_declaration\") var unused_local = 1\n",
+					"func test() -> void:\n"
+					"\tvar unused_local = 1\n" },
+			{ "inside_indented_block",
+					"func test(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\t@warning_ignore(\"unused_variable\")\n"
+					"\t\tvar unused_local = 1\n",
+					"func test(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\t\n"
+					"\t\tvar unused_local = 1\n" },
+			{ "target_string_with_parens",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\") var unused_local = \")(\"\n",
+					"func test() -> void:\n"
+					"\tvar unused_local = \")(\"\n" },
+		};
+
+		for (const GateSafetyAnnotationShape &shape : shapes) {
+			CAPTURE(String(shape.name));
+			const String path = "res://gate_safety_annotation_shape.fs";
+			FSParser original_parser;
+			REQUIRE_EQ(original_parser.parse(shape.source, path, false), OK);
+			REQUIRE(original_parser.get_errors().is_empty());
+
+			const FSCompletenessProbeSource probe = make_unsuppressed_probe_source(shape.source);
+			CHECK_EQ(probe.text, shape.expected);
+			CHECK_FALSE(probe.text.contains("@warning_ignore"));
+
+			FSParser probe_parser;
+			CHECK_EQ(probe_parser.parse(probe.text, path, false), OK);
+			CHECK(probe_parser.get_errors().is_empty());
+
+			const PackedStringArray original_lines = shape.source.split("\n", true);
+			const PackedStringArray probe_lines = probe.text.split("\n", true);
+			REQUIRE_EQ(probe_lines.size(), original_lines.size());
+			for (int line = 0; line < probe_lines.size(); line++) {
+				CAPTURE(line);
+				if (probe_lines[line].strip_edges().is_empty()) {
+					continue;
+				}
+				// A statement that was inside a block must never come back at file scope.
+				const bool block_level_kept = gate_safety_indentation(probe_lines[line]).is_empty() ==
+						gate_safety_indentation(original_lines[line]).is_empty();
+				CHECK(block_level_kept);
+			}
+		}
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety records same-code diagnostics on one line separately") {

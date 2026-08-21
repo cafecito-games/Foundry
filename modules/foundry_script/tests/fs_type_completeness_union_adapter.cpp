@@ -214,94 +214,6 @@ static int find_annotation_arguments_end(const String &p_line, int p_open_parent
 	return -1;
 }
 
-// A source with its warning-suppression annotations removed, plus the number of characters removed
-// before the surviving content of each line. Line numbers are preserved outright; the shift maps a
-// column observed in the stripped source back to the column it occupies in the original.
-struct UnsuppressedProbeSource {
-	String text;
-	HashMap<int, int> column_shift_by_line;
-
-	int original_column(int p_line, int p_column) const {
-		const int *shift = column_shift_by_line.getptr(p_line);
-		return shift == nullptr ? p_column : p_column + *shift;
-	}
-};
-
-// Removes leading warning-suppression annotations, including ones whose argument list spans several
-// physical lines, and keeps the newlines they occupied so every following line number is preserved.
-// A statement written on the same line as its annotation survives, shifted left by the recorded
-// column shift for that line.
-static UnsuppressedProbeSource strip_warning_ignore_annotations(const String &p_source) {
-	static const String ANNOTATION_PREFIX = "@warning_ignore";
-	UnsuppressedProbeSource result;
-	String stripped;
-	int copied_from = 0;
-	int index = 0;
-	int line = 1;
-	bool at_line_content_start = true;
-	while (index < p_source.length()) {
-		const char32_t character = p_source[index];
-		if (character == U'\n') {
-			at_line_content_start = true;
-			line++;
-			index++;
-			continue;
-		}
-		if (character == U' ' || character == U'\t') {
-			index++;
-			continue;
-		}
-		if (!at_line_content_start || p_source.substr(index, ANNOTATION_PREFIX.length()) != ANNOTATION_PREFIX) {
-			at_line_content_start = false;
-			index++;
-			continue;
-		}
-
-		int name_end = index + 1;
-		while (name_end < p_source.length() && is_annotation_name_character(p_source[name_end])) {
-			name_end++;
-		}
-		int cursor = name_end;
-		while (cursor < p_source.length() && (p_source[cursor] == U' ' || p_source[cursor] == U'\t')) {
-			cursor++;
-		}
-		int span_end = name_end;
-		if (cursor < p_source.length() && p_source[cursor] == U'(') {
-			const int arguments_end = find_annotation_arguments_end(p_source, cursor);
-			if (arguments_end < 0) {
-				// An unterminated argument list would leave a fragment behind; keep the source as written.
-				at_line_content_start = false;
-				index = name_end;
-				continue;
-			}
-			span_end = arguments_end;
-		}
-		while (span_end < p_source.length() && (p_source[span_end] == U' ' || p_source[span_end] == U'\t')) {
-			span_end++;
-		}
-
-		stripped += p_source.substr(copied_from, index - copied_from);
-		int span_line = line;
-		int final_line_start = index;
-		for (int scan = index; scan < span_end; scan++) {
-			if (p_source[scan] == U'\n') {
-				stripped += "\n";
-				span_line++;
-				final_line_start = scan + 1;
-			}
-		}
-		const int *previous_shift = result.column_shift_by_line.getptr(span_line);
-		result.column_shift_by_line[span_line] =
-				(previous_shift == nullptr ? 0 : *previous_shift) + (span_end - final_line_start);
-		line = span_line;
-		copied_from = span_end;
-		index = span_end;
-	}
-	stripped += p_source.substr(copied_from);
-	result.text = stripped;
-	return result;
-}
-
 // Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
 // warning promoted to error level never reaches the warning list, so errors are collected too:
 // otherwise a diagnostic that a `@warning_ignore` hides would leave no severity evidence at all.
@@ -368,7 +280,7 @@ static void append_unsuppressed_diagnostic_records(
 	Vector<ObservedDiagnostic> emitted;
 	collect(p_source, p_path, emitted);
 	Vector<ObservedDiagnostic> unsuppressed;
-	const UnsuppressedProbeSource probe = strip_warning_ignore_annotations(p_source);
+	const FSCompletenessProbeSource probe = make_unsuppressed_probe_source(p_source);
 	if (probe.text == p_source) {
 		unsuppressed = emitted;
 	} else {
@@ -1373,6 +1285,112 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 	}
 	r_batch = completed;
 	return OK;
+}
+
+static bool is_whitespace_run(const String &p_text) {
+	for (int index = 0; index < p_text.length(); index++) {
+		if (p_text[index] != U' ' && p_text[index] != U'\t') {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Removes exactly the characters a warning-suppression annotation owns: its name, its argument list
+// however many lines that spans, and the whitespace separating it from what follows on that line.
+// Whitespace that belongs to the target statement is never removed. The annotation's own indentation
+// is re-established on the line its last character sits on, so a target that shares that line stays
+// at the block level the annotation introduced instead of collapsing to file scope. Every removed
+// newline is re-emitted, so line numbers survive, and the characters removed before the surviving
+// content of a line are recorded so a column can be mapped back to the original program.
+FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source) {
+	static const String ANNOTATION_PREFIX = "@warning_ignore";
+	FSCompletenessProbeSource probe;
+	String stripped;
+	int copied_from = 0;
+	int index = 0;
+	int line = 1;
+	int line_start = 0;
+	String statement_indentation;
+	bool at_line_content_start = true;
+	while (index < p_source.length()) {
+		const char32_t character = p_source[index];
+		if (character == U'\n') {
+			at_line_content_start = true;
+			line++;
+			index++;
+			line_start = index;
+			continue;
+		}
+		if (character == U' ' || character == U'\t') {
+			index++;
+			continue;
+		}
+		if (!at_line_content_start || p_source.substr(index, ANNOTATION_PREFIX.length()) != ANNOTATION_PREFIX) {
+			at_line_content_start = false;
+			index++;
+			continue;
+		}
+
+		// After a span that already crossed lines, the text before this annotation is no longer the
+		// original indentation, so the statement keeps the indentation of the first annotation.
+		const String candidate_indentation = p_source.substr(line_start, index - line_start);
+		if (is_whitespace_run(candidate_indentation)) {
+			statement_indentation = candidate_indentation;
+		}
+
+		int name_end = index + 1;
+		while (name_end < p_source.length() && is_annotation_name_character(p_source[name_end])) {
+			name_end++;
+		}
+		int cursor = name_end;
+		while (cursor < p_source.length() && (p_source[cursor] == U' ' || p_source[cursor] == U'\t')) {
+			cursor++;
+		}
+		int span_end = name_end;
+		if (cursor < p_source.length() && p_source[cursor] == U'(') {
+			const int arguments_end = find_annotation_arguments_end(p_source, cursor);
+			if (arguments_end < 0) {
+				// An unterminated argument list would leave a fragment behind; keep the source as written.
+				at_line_content_start = false;
+				index = name_end;
+				continue;
+			}
+			span_end = arguments_end;
+		}
+		// The separator belongs to the annotation, not to the target: leaving it would append spaces
+		// to a tab indent and make the indentation of the probe source inconsistent.
+		while (span_end < p_source.length() && (p_source[span_end] == U' ' || p_source[span_end] == U'\t')) {
+			span_end++;
+		}
+
+		stripped += p_source.substr(copied_from, index - copied_from);
+		int span_line = line;
+		int final_line_start = index;
+		for (int scan = index; scan < span_end; scan++) {
+			if (p_source[scan] == U'\n') {
+				stripped += "\n";
+				span_line++;
+				final_line_start = scan + 1;
+			}
+		}
+		const bool crossed_lines = span_line != line;
+		if (crossed_lines) {
+			stripped += statement_indentation;
+		}
+		const int removed = span_end - final_line_start;
+		const int reinserted = crossed_lines ? statement_indentation.length() : 0;
+		const int *previous_shift = probe.column_shift_by_line.getptr(span_line);
+		probe.column_shift_by_line[span_line] =
+				(previous_shift == nullptr ? 0 : *previous_shift) + removed - reinserted;
+		line = span_line;
+		line_start = final_line_start;
+		copied_from = span_end;
+		index = span_end;
+	}
+	stripped += p_source.substr(copied_from);
+	probe.text = stripped;
+	return probe;
 }
 
 FSCompletenessSurfaceEvidenceMismatch compare_surface_evidence(

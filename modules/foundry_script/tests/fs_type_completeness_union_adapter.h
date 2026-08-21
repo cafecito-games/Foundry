@@ -61,6 +61,23 @@ struct FSCompletenessRuntimeResult : FSCompletenessObservation {
 	String status;
 };
 
+// The source the unsuppressed-diagnostic probe analyzes: the same program with its warning
+// suppression annotations removed. Removal replaces exactly the annotation's own characters, so the
+// result keeps the original line count, keeps the indentation of every line that still has content,
+// and shifts columns after a removed span only by `column_shift_by_line`.
+struct FSCompletenessProbeSource {
+	String text;
+	HashMap<int, int> column_shift_by_line;
+
+	// The column `p_column` on `p_line` of this probe source occupies in the original program.
+	int original_column(int p_line, int p_column) const {
+		const int *shift = column_shift_by_line.getptr(p_line);
+		return shift == nullptr ? p_column : p_column + *shift;
+	}
+};
+
+FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source);
+
 // Evidence that must agree between the two surfaces of one semantic case because it does not depend
 // on the surface. The adapter's pair counter and the runner's parity report both derive their
 // verdict from this, so a surface disagreement can never be counted in one and missed in the other.
