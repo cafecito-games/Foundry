@@ -39,7 +39,7 @@ def observation_digest(case: Mapping[str, Any]) -> str:
 
 
 def _case_digest(case: CaseResult) -> str:
-    return digest_of(case.observation)
+    return digest_of({"observation": case.observation, "findings": list(case.findings)})
 
 
 def _side(case: Optional[CaseResult]) -> dict[str, Any]:
@@ -52,6 +52,7 @@ def _side(case: Optional[CaseResult]) -> dict[str, Any]:
         "observation": case.observation,
         "artifact_path": case.artifact_path,
         "category": case.category.value,
+        "findings": list(case.findings),
     }
 
 

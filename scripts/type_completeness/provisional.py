@@ -21,6 +21,12 @@ class ProvisionalError(ValueError):
     """Raised when a provisional record is missing or malformed."""
 
 
+def _path_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise ProvisionalError("capability_slice must be a JSON array of paths")
+    return [path if isinstance(path, str) else "" for path in value]
+
+
 @dataclass(frozen=True)
 class ProvisionalRecord:
     finding_id: str
@@ -54,13 +60,16 @@ class ProvisionalRecord:
             raise ProvisionalError(f"origin must be one of {ORIGINS}; got {origin!r}")
         record = dict(payload)
         ledger.validate_record(record)
+        paths = tuple(capability_slice)
+        if not paths or any(not isinstance(path, str) or not path for path in paths):
+            raise ProvisionalError("capability_slice must be a non-empty list of non-empty path strings")
         if record["finding_id"] != finding_id:
             raise ProvisionalError("finding_id does not match the proposed ledger payload")
         return cls(
             finding_id=finding_id,
             payload=record,
             payload_digest=ledger.record_digest(record),
-            capability_slice=tuple(capability_slice),
+            capability_slice=paths,
             workstream_owner=workstream_owner,
             detection_artifact=detection_artifact,
             develop_comparison=dict(develop_comparison),
@@ -96,7 +105,7 @@ class ProvisionalRecord:
             record = cls.create(
                 finding_id=str(data["finding_id"]),
                 payload=data["payload"],
-                capability_slice=[str(path) for path in data["capability_slice"]],
+                capability_slice=_path_list(data["capability_slice"]),
                 workstream_owner=str(data["workstream_owner"]),
                 detection_artifact=str(data["detection_artifact"]),
                 develop_comparison=data["develop_comparison"],

@@ -69,7 +69,30 @@ def _case(case_id: str = "case-a", passed: bool = True, **overrides: Any) -> dic
     return base
 
 
-def _report(cases: list[dict[str, Any]], family: str = "union_destination_membership") -> dict[str, Any]:
+def _finding(case_id: str, dimension: str) -> dict[str, Any]:
+    return {
+        "finding_id": f"{case_id}-{dimension}",
+        "case_id": case_id,
+        "family": "union_destination_membership",
+        "dimension": dimension,
+        "expected": "accept",
+        "actual": "reject",
+        "classification": "unclassified",
+        "artifact_path": f"scratch/{case_id}.fs",
+        "parity_evidence": {},
+        "issue_url": "",
+        "closure_packet_url": "",
+        "permanent_test_paths": [],
+        "migrated_from": "",
+        "resolved_case_ids": [],
+    }
+
+
+def _report(
+    cases: list[dict[str, Any]],
+    family: str = "union_destination_membership",
+    findings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "family": family,
@@ -80,7 +103,7 @@ def _report(cases: list[dict[str, Any]], family: str = "union_destination_member
         "coverage_by_dimension": {},
         "uncovered_required_dimensions": 0,
         "text_bytecode_parity_failures": 0,
-        "findings": [],
+        "findings": findings or [],
         "cases": cases,
     }
 
@@ -190,6 +213,18 @@ class ComparatorTests(unittest.TestCase):
             [(artifact.case_id, artifact.status) for artifact in artifacts], [("a", comparator.Status.MISSING)]
         )
         self.assertFalse(artifacts[0].branch["present"])
+
+    def test_artifact_lists_every_finding_dimension_for_the_case(self) -> None:
+        findings = [_finding("a", "destination"), _finding("a", "source_proof")]
+        branch = report.load_report(_report([_case("a", passed=False)], findings=findings))
+        develop = report.load_report(_report([_case("a", passed=False)], findings=findings[:1]))
+        artifact = comparator.compare_case(branch, develop, "a", configuration="text")
+        self.assertEqual(
+            [finding["dimension"] for finding in artifact.branch["findings"]], ["destination", "source_proof"]
+        )
+        self.assertEqual([finding["dimension"] for finding in artifact.develop["findings"]], ["destination"])
+        self.assertEqual(artifact.status, comparator.Status.WORSENED)
+        self.assertEqual(artifact.to_dict()["branch"]["findings"][1]["finding_id"], "a-source_proof")
 
     def test_compare_report_emits_one_artifact_per_branch_failure(self) -> None:
         branch = report.load_report(
@@ -361,6 +396,15 @@ class ProvisionalRecordTests(unittest.TestCase):
     def test_parse_rejects_body_without_record(self) -> None:
         with self.assertRaises(provisional.ProvisionalError):
             provisional.parse_issue_body("no machine-readable block here")
+
+    def test_parse_rejects_malformed_capability_slice(self) -> None:
+        record = self._record()
+        for bad_slice in ("modules/foundry_script/fs_analyzer.cpp", [], [""], [1], None):
+            data = dict(record.to_dict(), capability_slice=bad_slice)
+            with self.assertRaises(provisional.ProvisionalError, msg=repr(bad_slice)):
+                provisional.ProvisionalRecord.from_dict(data)
+        with self.assertRaises(provisional.ProvisionalError):
+            self._record(capability_slice=[])
 
     def test_manual_record_carries_manual_origin_with_same_fields(self) -> None:
         manual = self._record(origin="manual")

@@ -59,6 +59,8 @@ class CaseResult:
     observation: dict[str, Any]
     artifact_path: str
     category: Category
+    # The runner's top-level findings for this case, one per independently scoped dimension, sorted by dimension.
+    findings: tuple[dict[str, Any], ...] = ()
 
     @property
     def failed(self) -> bool:
@@ -102,6 +104,17 @@ def load_report(data: Mapping[str, Any]) -> Report:
     raw_cases = _require(data, "cases", "report")
     if not isinstance(raw_cases, list):
         raise ReportError("report member 'cases' must be an array")
+    raw_findings = data.get("findings", [])
+    if not isinstance(raw_findings, list):
+        raise ReportError("report member 'findings' must be an array")
+    findings_by_case: dict[str, list[dict[str, Any]]] = {}
+    for raw_finding in raw_findings:
+        if not isinstance(raw_finding, Mapping):
+            raise ReportError("every report finding must be an object")
+        finding = dict(raw_finding)
+        finding_case_id = str(_require(finding, "case_id", "finding"))
+        _require(finding, "dimension", f"finding for case {finding_case_id!r}")
+        findings_by_case.setdefault(finding_case_id, []).append(finding)
     cases: list[CaseResult] = []
     seen = set()
     for raw_case in raw_cases:
@@ -120,6 +133,9 @@ def load_report(data: Mapping[str, Any]) -> Report:
                 observation=observation,
                 artifact_path=str(raw_case.get("artifact_path", "")),
                 category=_category_for(raw_case),
+                findings=tuple(
+                    sorted(findings_by_case.get(case_id, []), key=lambda finding: str(finding["dimension"]))
+                ),
             )
         )
     cases.sort(key=lambda case: case.case_id)
