@@ -30,10 +30,14 @@
 
 #include "fs_type_completeness_graph.h"
 
+#include "fs_type_completeness_common.h"
+
 #include "core/templates/hash_set.h"
 #include "core/variant/array.h"
 
 namespace FSTests {
+
+using namespace Completeness;
 
 namespace {
 
@@ -85,57 +89,15 @@ struct SelectedApplication {
 	Dictionary output_dimensions;
 };
 
-static Vector<String> sorted_dictionary_keys(const Dictionary &p_dictionary) {
-	Vector<String> keys;
-	const Array raw_keys = p_dictionary.keys();
-	keys.reserve(raw_keys.size());
-	for (int i = 0; i < raw_keys.size(); i++) {
-		keys.push_back(raw_keys[i]);
-	}
-	keys.sort();
-	return keys;
-}
-
-static String length_encoded(const String &p_value) {
-	return vformat("%d:%s", p_value.length(), p_value);
-}
-
-static String canonical_variant_identity(const Variant &p_value);
-
-static String canonical_dictionary_identity(const Dictionary &p_dictionary) {
-	String identity = "{";
-	for (const String &key : sorted_dictionary_keys(p_dictionary)) {
-		identity += length_encoded(key);
-		identity += length_encoded(canonical_variant_identity(p_dictionary[key]));
-	}
-	return identity + "}";
-}
-
-static String canonical_variant_identity(const Variant &p_value) {
-	if (p_value.get_type() == Variant::DICTIONARY) {
-		return "D" + canonical_dictionary_identity(p_value);
-	}
-	if (p_value.get_type() == Variant::ARRAY) {
-		String identity = "A[";
-		const Array values = p_value;
-		for (int i = 0; i < values.size(); i++) {
-			identity += length_encoded(canonical_variant_identity(values[i]));
-		}
-		return identity + "]";
-	}
-	const String representation = p_value.stringify();
-	return vformat("T%d:%s", p_value.get_type(), length_encoded(representation));
-}
-
 static String provenance_identity(const Vector<FSCompletenessProvenanceStep> &p_provenance) {
 	String identity;
 	for (const FSCompletenessProvenanceStep &step : p_provenance) {
 		identity += length_encoded(step.relation_id);
 		identity += length_encoded(step.exception_id);
-		identity += length_encoded(canonical_dictionary_identity(step.source_coordinates));
-		identity += length_encoded(canonical_dictionary_identity(step.target_coordinates));
-		identity += length_encoded(canonical_dictionary_identity(step.input_dimensions));
-		identity += length_encoded(canonical_dictionary_identity(step.output_dimensions));
+		identity += length_encoded(canonical_variant_identity(step.source_coordinates));
+		identity += length_encoded(canonical_variant_identity(step.target_coordinates));
+		identity += length_encoded(canonical_variant_identity(step.input_dimensions));
+		identity += length_encoded(canonical_variant_identity(step.output_dimensions));
 	}
 	return identity;
 }
@@ -151,8 +113,8 @@ static Vector<String> sorted_set_members(const HashSet<String> &p_set) {
 }
 
 static String derivation_state_identity(const DerivationState &p_state) {
-	String identity = length_encoded(canonical_dictionary_identity(p_state.coordinates));
-	identity += length_encoded(canonical_dictionary_identity(p_state.dimensions));
+	String identity = length_encoded(canonical_variant_identity(p_state.coordinates));
+	identity += length_encoded(canonical_variant_identity(p_state.dimensions));
 	for (const String &relation_id : sorted_set_members(p_state.used_relation_ids)) {
 		identity += length_encoded(relation_id);
 	}
@@ -404,6 +366,39 @@ static void sort_provenance_paths(Vector<Vector<FSCompletenessProvenanceStep>> &
 
 const FSCompletenessResolvedDimension *FSCompletenessResolvedCell::find_dimension(const String &p_dimension) const {
 	return dimensions.getptr(p_dimension);
+}
+
+void FSCompletenessResolution::build_indices() {
+	cell_index_by_id.clear();
+	cell_indices_by_coordinate_key.clear();
+	for (int index = 0; index < cells.size(); index++) {
+		cell_index_by_id.insert(cells[index].case_id, index);
+		cell_indices_by_coordinate_key[canonical_variant_identity(cells[index].coordinates)].push_back(index);
+	}
+}
+
+const FSCompletenessResolvedCell *FSCompletenessResolution::find_cell_by_id(const String &p_case_id) const {
+	const int *index = cell_index_by_id.getptr(p_case_id);
+	return index == nullptr ? nullptr : &cells[*index];
+}
+
+const FSCompletenessResolvedCell *FSCompletenessResolution::find_cell_by_coordinates(
+		const Dictionary &p_coordinates, int &r_matches) const {
+	r_matches = 0;
+	const Vector<int> *candidates = cell_indices_by_coordinate_key.getptr(canonical_variant_identity(p_coordinates));
+	if (candidates == nullptr) {
+		return nullptr;
+	}
+	const FSCompletenessResolvedCell *match = nullptr;
+	// The identity encoding groups the candidates; Dictionary equality is what decides a match, so a
+	// hypothetical encoding collision cannot widen the result.
+	for (const int index : *candidates) {
+		if (cells[index].coordinates == p_coordinates) {
+			r_matches++;
+			match = &cells[index];
+		}
+	}
+	return match;
 }
 
 bool FSCompletenessGraph::predicate_matches(const Dictionary &p_predicate, const Dictionary &p_coordinates,
@@ -858,6 +853,7 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 	if (!r_errors.is_empty()) {
 		return ERR_INVALID_DATA;
 	}
+	resolved.build_indices();
 	r_resolution = resolved;
 	return OK;
 }

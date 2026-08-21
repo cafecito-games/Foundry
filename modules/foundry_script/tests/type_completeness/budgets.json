@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "presubmit_hard_timeout_seconds": 180,
+  "strict_shard_hard_timeout_seconds": 600,
+  "scheduled_shard_target_seconds": 1800,
+  "scheduled_shard_hard_timeout_seconds": 2400,
+  "second_family_smoke_seconds": 60
+}

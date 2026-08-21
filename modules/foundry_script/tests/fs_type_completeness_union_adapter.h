@@ -32,6 +32,7 @@
 
 #include "fs_type_completeness_graph.h"
 
+#include "core/os/mutex.h"
 #include "core/variant/variant.h"
 
 namespace FSTests {
@@ -109,11 +110,14 @@ using PersistedWriteTestHook = void (*)(const String &);
 
 void set_persisted_write_test_hook(PersistedWriteTestHook p_hook);
 
+// Serializes the whole lifetime of one synthetic source file: the tree, the cache overrides keyed by
+// its path, and its removal. The lock is a member so it is released exactly when the scope ends,
+// whichever way the constructor left the scope unusable.
 class SyntheticSourceScope {
+	MutexLock<Mutex> lock;
 	String path;
 	TemporaryProjectTree *tree = nullptr;
 	bool source_available = false;
-	bool lock_held = false;
 
 public:
 	SyntheticSourceScope(const String &p_identity, const String &p_source);

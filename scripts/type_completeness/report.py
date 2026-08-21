@@ -33,6 +33,10 @@ OBSERVATION_FIELDS = (
 # lacks one is malformed rather than a report with defaults.
 CASE_REQUIRED_FIELDS = OBSERVATION_FIELDS + ("coordinates", "artifact_path")
 FINDING_REQUIRED_FIELDS = ("finding_id", "case_id", "family", "dimension", "expected", "actual", "classification")
+# Members the runner writes for observability only. They vary run to run on identical evidence, so they are
+# dropped at load and can never reach a digest, a comparison, or a fixture.
+NON_EVIDENCE_MEMBERS = ("timings_ms",)
+
 KNOWN_CLASSIFICATIONS = (
     "unclassified",
     "product_defect",
@@ -190,7 +194,8 @@ def load_report(data: Mapping[str, Any]) -> Report:
     contradictory = [case.case_id for case in cases if case.passed and case.findings]
     if contradictory:
         raise ReportError(f"report marks cases passed although findings target them: {contradictory}")
-    return Report(family=family, success=success, cases=tuple(cases), raw=dict(data))
+    evidence = {member: value for member, value in data.items() if member not in NON_EVIDENCE_MEMBERS}
+    return Report(family=family, success=success, cases=tuple(cases), raw=evidence)
 
 
 def load_report_file(path: Path) -> Report:

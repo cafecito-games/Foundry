@@ -111,8 +111,19 @@ def _report(
         "coverage_by_dimension": {},
         "uncovered_required_dimensions": 0,
         "text_bytecode_parity_failures": 0,
+        "published_surface": "",
         "findings": findings or [],
         "cases": cases,
+        # Observability only: every consumer must ignore it, so every synthetic report carries it.
+        "timings_ms": {
+            "load": 1.0,
+            "resolve": 2.0,
+            "render": 3.0,
+            "analyze": 4.0,
+            "execute": 5.0,
+            "report": 6.0,
+            "total": 21.0,
+        },
     }
 
 
@@ -228,9 +239,19 @@ RUNNER_REPORT_TEXT = """{
 \t\t\t"resolved_case_ids": []
 \t\t}
 \t],
+\t"published_surface": "",
 \t"schema_version": 1.0,
 \t"success": false,
 \t"text_bytecode_parity_failures": 0.0,
+\t"timings_ms": {
+\t\t"analyze": 3.5,
+\t\t"execute": 812.25,
+\t\t"load": 11.75,
+\t\t"render": 4.0,
+\t\t"report": 1.5,
+\t\t"resolve": 6.25,
+\t\t"total": 839.5
+\t},
 \t"uncovered_required_dimensions": 0.0
 }
 """ % hashlib.sha256(b"case_union_store_variable|destination").hexdigest()[:20]
@@ -410,6 +431,18 @@ class ReportLoadingTests(unittest.TestCase):
         loaded = report.load_report(_report([_case("b", passed=False, category="structural_failure")]))
         self.assertEqual(loaded.case("b").category, report.Category.STRUCTURAL_FAILURE)
 
+    def test_timings_are_dropped_from_the_loaded_evidence(self) -> None:
+        loaded = report.load_report(json.loads(RUNNER_REPORT_TEXT))
+        self.assertIn("timings_ms", json.loads(RUNNER_REPORT_TEXT))
+        self.assertNotIn("timings_ms", loaded.raw)
+        for case in loaded.cases:
+            self.assertNotIn("timings_ms", case.observation)
+
+    def test_a_report_without_timings_loads_identically(self) -> None:
+        timed = json.loads(RUNNER_REPORT_TEXT)
+        untimed = {member: value for member, value in timed.items() if member != "timings_ms"}
+        self.assertEqual(report.load_report(timed).raw, report.load_report(untimed).raw)
+
     def test_capability_slice_is_resolved_from_capabilities_manifest(self) -> None:
         manifest = {
             "schema_version": 1,
@@ -470,6 +503,26 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(comparator.observation_digest(ordered), comparator.observation_digest(reordered))
         changed = _case("a", passed=False, produced_output="different")
         self.assertNotEqual(comparator.observation_digest(ordered), comparator.observation_digest(changed))
+
+    def test_digests_and_comparison_ignore_timings(self) -> None:
+        timed = _case("a", passed=False)
+        branch = report.load_report(_report([timed]))
+        untimed_report = {member: value for member, value in _report([timed]).items() if member != "timings_ms"}
+        untimed = report.load_report(untimed_report)
+        timed_artifact = comparator.compare_case(branch, branch, "a", configuration="text")
+        untimed_artifact = comparator.compare_case(untimed, untimed, "a", configuration="text")
+        self.assertEqual(timed_artifact.branch_digest, untimed_artifact.branch_digest)
+        self.assertEqual(timed_artifact.comparison_id, untimed_artifact.comparison_id)
+        self.assertEqual(timed_artifact.to_dict(), untimed_artifact.to_dict())
+
+    def test_a_run_that_only_differs_in_timings_is_unchanged(self) -> None:
+        slow = _report([_case("a", passed=False)])
+        fast = _report([_case("a", passed=False)])
+        fast["timings_ms"] = {member: value * 17.0 for member, value in fast["timings_ms"].items()}
+        artifact = comparator.compare_case(
+            report.load_report(slow), report.load_report(fast), "a", configuration="text"
+        )
+        self.assertEqual(artifact.status, comparator.Status.UNCHANGED)
 
     def test_artifact_preserves_full_evidence_and_slice(self) -> None:
         artifact = self._compare(_case("a", passed=False), _case("a", passed=False))

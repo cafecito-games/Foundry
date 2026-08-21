@@ -370,6 +370,42 @@ struct TemporaryProjectTree {
 		return staged_root;
 	}
 
+	// Absolute filesystem path of an existing file or directory with symlinks and aliases resolved.
+	// Empty when the path does not exist or cannot be resolved.
+	static String canonicalize_existing_path(const String &p_path) {
+#ifdef UNIX_ENABLED
+		char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
+		if (resolved == nullptr) {
+			return String();
+		}
+		String canonical;
+		const Error parse_error = canonical.append_utf8(resolved);
+		::free(resolved);
+		if (parse_error != OK) {
+			return String();
+		}
+		return canonical.simplify_path();
+#elif defined(WINDOWS_ENABLED)
+		HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		if (handle == INVALID_HANDLE_VALUE) {
+			return String();
+		}
+		WCHAR buffer[4096];
+		const DWORD length = ::GetFinalPathNameByHandleW(handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+		::CloseHandle(handle);
+		if (length == 0 || length > 4095) {
+			return String();
+		}
+		buffer[length] = 0;
+		const String canonical = String::utf16((const char16_t *)buffer, (int)length);
+		return canonical.trim_prefix("\\\\?\\").replace("\\", "/").simplify_path();
+#else
+		return p_path.simplify_path();
+#endif
+	}
+
 private:
 	String owned_scratch_root;
 	Error setup_error = OK;
@@ -495,42 +531,6 @@ private:
 			result = remove_error;
 		}
 		return result;
-	}
-
-	// Absolute filesystem path of an existing file or directory with symlinks and aliases resolved.
-	// Empty when the path does not exist or cannot be resolved.
-	static String canonicalize_existing_path(const String &p_path) {
-#ifdef UNIX_ENABLED
-		char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
-		if (resolved == nullptr) {
-			return String();
-		}
-		String canonical;
-		const Error parse_error = canonical.append_utf8(resolved);
-		::free(resolved);
-		if (parse_error != OK) {
-			return String();
-		}
-		return canonical.simplify_path();
-#elif defined(WINDOWS_ENABLED)
-		HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
-				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-				FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-		if (handle == INVALID_HANDLE_VALUE) {
-			return String();
-		}
-		WCHAR buffer[4096];
-		const DWORD length = ::GetFinalPathNameByHandleW(handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-		::CloseHandle(handle);
-		if (length == 0 || length > 4095) {
-			return String();
-		}
-		buffer[length] = 0;
-		const String canonical = String::utf16((const char16_t *)buffer, (int)length);
-		return canonical.trim_prefix("\\\\?\\").replace("\\", "/").simplify_path();
-#else
-		return p_path.simplify_path();
-#endif
 	}
 
 	// A grace period before a `foundry-tests-<pid>` directory is even considered for

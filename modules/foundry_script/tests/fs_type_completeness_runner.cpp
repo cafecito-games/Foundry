@@ -31,7 +31,9 @@
 #include "fs_type_completeness_runner.h"
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_cache.h"
 #include "fs_type_completeness_case_id.h"
+#include "fs_type_completeness_common.h"
 #include "fs_type_completeness_graph.h"
 #include "fs_type_completeness_json.h"
 #include "fs_type_completeness_manifest.h"
@@ -42,28 +44,11 @@
 #include "core/os/os.h"
 #include "core/templates/hash_set.h"
 
-#ifdef UNIX_ENABLED
-#include <cstdlib>
-#endif
-
-#ifdef WINDOWS_ENABLED
-#include <windows.h>
-#endif
-
 namespace FSTests {
 
-namespace {
+using namespace Completeness;
 
-static Vector<String> sorted_dictionary_keys(const Dictionary &p_dictionary) {
-	Vector<String> keys;
-	const Array raw_keys = p_dictionary.keys();
-	keys.reserve(raw_keys.size());
-	for (int i = 0; i < raw_keys.size(); i++) {
-		keys.push_back(raw_keys[i]);
-	}
-	keys.sort();
-	return keys;
-}
+namespace {
 
 static Vector<String> sorted_dimension_keys(
 		const HashMap<String, FSCompletenessResolvedDimension> &p_dimensions) {
@@ -110,19 +95,6 @@ static Array agreeing_provenance_report(
 		report.push_back(provenance_report(path));
 	}
 	return report;
-}
-
-static const FSCompletenessResolvedCell *find_cell_by_coordinates(
-		const FSCompletenessResolution &p_resolution, const Dictionary &p_coordinates, int &r_matches) {
-	r_matches = 0;
-	const FSCompletenessResolvedCell *match = nullptr;
-	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
-		if (cell.coordinates == p_coordinates) {
-			r_matches++;
-			match = &cell;
-		}
-	}
-	return match;
 }
 
 static bool provenance_has_exception_parent(const FSCompletenessResolvedDimension &p_dimension,
@@ -186,17 +158,15 @@ static String structural_failure_sort_key(const FSCompletenessStructuralFailure 
 			p_failure.case_id + "|" + p_failure.detail;
 }
 
-static void sort_structural_failures(Vector<FSCompletenessStructuralFailure> &r_failures) {
-	for (int i = 1; i < r_failures.size(); i++) {
-		const FSCompletenessStructuralFailure failure = r_failures[i];
-		const String key = structural_failure_sort_key(failure);
-		int position = i;
-		while (position > 0 && key < structural_failure_sort_key(r_failures[position - 1])) {
-			r_failures.write[position] = r_failures[position - 1];
-			position--;
-		}
-		r_failures.write[position] = failure;
+struct StructuralFailureSortsBefore {
+	bool operator()(const FSCompletenessStructuralFailure &p_left,
+			const FSCompletenessStructuralFailure &p_right) const {
+		return structural_failure_sort_key(p_left) < structural_failure_sort_key(p_right);
 	}
+};
+
+static void sort_structural_failures(Vector<FSCompletenessStructuralFailure> &r_failures) {
+	r_failures.sort_custom<StructuralFailureSortsBefore>();
 }
 
 // Resolves every declared witness to exactly one cell that actually observes the exception (or, for
@@ -238,7 +208,7 @@ static Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
 				}
 				int matches = 0;
 				const FSCompletenessResolvedCell *cell =
-						find_cell_by_coordinates(p_resolution, coordinates, matches);
+						p_resolution.find_cell_by_coordinates(coordinates, matches);
 				if (cell == nullptr || matches == 0) {
 					r_failures.push_back(make_structural_failure("witness_cell_missing",
 							"No resolved cell carries the witness coordinates.", String(), witness_id,
@@ -297,12 +267,6 @@ static bool runtime_result_identity_matches(
 			p_result.surface == String(p_cell.coordinates.get("surface", String()));
 }
 
-static String semantic_pair_key(const Dictionary &p_coordinates) {
-	Dictionary semantic_coordinates = p_coordinates.duplicate();
-	semantic_coordinates.erase("surface");
-	return FSCompletenessCaseID::canonical_coordinates(semantic_coordinates);
-}
-
 static String make_finding_id(const String &p_case_id, const String &p_dimension) {
 	return "fstcf-v1-" + (p_case_id + "|" + p_dimension).sha256_text().substr(0, 20);
 }
@@ -344,16 +308,22 @@ static Dictionary finding_report(const FSCompletenessFinding &p_finding) {
 	return report;
 }
 
-static void sort_findings(Vector<FSCompletenessFinding> &r_findings) {
-	for (int i = 1; i < r_findings.size(); i++) {
-		const FSCompletenessFinding finding = r_findings[i];
-		int position = i;
-		while (position > 0 && (finding.finding_id < r_findings[position - 1].finding_id || (finding.finding_id == r_findings[position - 1].finding_id && (finding.case_id < r_findings[position - 1].case_id || (finding.case_id == r_findings[position - 1].case_id && finding.dimension < r_findings[position - 1].dimension))))) {
-			r_findings.write[position] = r_findings[position - 1];
-			position--;
+// Findings are ordered by their identity first so the report is stable across runs; the case and
+// dimension keys only break ties between findings that share a finding ID.
+struct FindingSortsBefore {
+	bool operator()(const FSCompletenessFinding &p_left, const FSCompletenessFinding &p_right) const {
+		if (p_left.finding_id != p_right.finding_id) {
+			return p_left.finding_id < p_right.finding_id;
 		}
-		r_findings.write[position] = finding;
+		if (p_left.case_id != p_right.case_id) {
+			return p_left.case_id < p_right.case_id;
+		}
+		return p_left.dimension < p_right.dimension;
 	}
+};
+
+static void sort_findings(Vector<FSCompletenessFinding> &r_findings) {
+	r_findings.sort_custom<FindingSortsBefore>();
 }
 
 // A bound witness must be observed by a runtime result that really is the witness cell's result.
@@ -382,15 +352,26 @@ static Error validate_witness_runtime_identity(const Vector<FSCompletenessWitnes
 	return failed ? ERR_INVALID_DATA : OK;
 }
 
-static const FSCompletenessProgram *find_program_by_id(
-		const Vector<FSCompletenessProgram> &p_programs, const String &p_case_id) {
-	for (const FSCompletenessProgram &program : p_programs) {
-		if (program.case_id == p_case_id) {
-			return &program;
+// Case-ID lookup over the programs rendered for one run. Built once, so resolving a cell's program
+// stays constant-time however large the matrix grows.
+class ProgramIndex {
+	const Vector<FSCompletenessProgram> *programs = nullptr;
+	HashMap<String, int> index_by_case_id;
+
+public:
+	void build(const Vector<FSCompletenessProgram> &p_programs) {
+		programs = &p_programs;
+		index_by_case_id.clear();
+		for (int index = 0; index < p_programs.size(); index++) {
+			index_by_case_id.insert(p_programs[index].case_id, index);
 		}
 	}
-	return nullptr;
-}
+
+	const FSCompletenessProgram *find(const String &p_case_id) const {
+		const int *index = index_by_case_id.getptr(p_case_id);
+		return index == nullptr || programs == nullptr ? nullptr : &(*programs)[*index];
+	}
+};
 
 static Dictionary runtime_status(bool p_passed, const String &p_status) {
 	Dictionary status;
@@ -471,14 +452,6 @@ static Dictionary aggregate_parity_evidence(const FSCompletenessResolvedCell &p_
 	return evidence;
 }
 
-static bool parse_schema_version(const Variant &p_value) {
-	if (p_value.get_type() != Variant::INT && p_value.get_type() != Variant::FLOAT) {
-		return false;
-	}
-	const double value = p_value;
-	return value == 1.0;
-}
-
 static bool classification_is_known(const String &p_classification) {
 	return p_classification == "unclassified" || p_classification == "product_defect" ||
 			p_classification == "specification_defect" || p_classification == "harness_defect" ||
@@ -497,16 +470,6 @@ static bool object_has_exact_fields(const Dictionary &p_object, const Vector<Str
 	return true;
 }
 
-static const FSCompletenessResolvedCell *find_cell_by_id(
-		const FSCompletenessResolution &p_resolution, const String &p_case_id) {
-	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
-		if (cell.case_id == p_case_id) {
-			return &cell;
-		}
-	}
-	return nullptr;
-}
-
 static bool ledger_dimension_is_known(
 		const FSCompletenessResolvedCell &p_cell, const String &p_dimension) {
 	return p_cell.dimensions.has(p_dimension) || p_dimension == "output" ||
@@ -514,10 +477,8 @@ static bool ledger_dimension_is_known(
 			p_dimension == "runtime_status" || p_dimension == "text_bytecode_parity";
 }
 
-static String canonicalize_existing_input_path(const String &p_path);
-
 static String find_repository_root_ancestor(const String &p_start_path) {
-	const String canonical_start_path = canonicalize_existing_input_path(p_start_path);
+	const String canonical_start_path = TemporaryProjectTree::canonicalize_existing_path(p_start_path);
 	if (canonical_start_path.is_empty() || !DirAccess::dir_exists_absolute(canonical_start_path)) {
 		return String();
 	}
@@ -551,9 +512,9 @@ static String find_repository_root(const String &p_catalog_root) {
 		return current_repository_root;
 	}
 
-	const String canonical_catalog_root = canonicalize_existing_input_path(p_catalog_root);
+	const String canonical_catalog_root = TemporaryProjectTree::canonicalize_existing_path(p_catalog_root);
 	const String canonical_current_directory =
-			canonicalize_existing_input_path(filesystem->get_current_dir());
+			TemporaryProjectTree::canonicalize_existing_path(filesystem->get_current_dir());
 	if (canonical_current_directory == canonical_catalog_root ||
 			TemporaryProjectTree::is_strict_descendant(
 					canonical_current_directory, canonical_catalog_root)) {
@@ -633,8 +594,8 @@ static Error validate_permanent_test_path(const String &p_path, const String &p_
 			return ERR_UNAUTHORIZED;
 		}
 	}
-	const String canonical_repository_root = canonicalize_existing_input_path(p_repository_root);
-	const String canonical_absolute_path = canonicalize_existing_input_path(absolute_path);
+	const String canonical_repository_root = TemporaryProjectTree::canonicalize_existing_path(p_repository_root);
+	const String canonical_absolute_path = TemporaryProjectTree::canonicalize_existing_path(absolute_path);
 	if (canonical_repository_root.is_empty() || canonical_absolute_path.is_empty() ||
 			canonical_repository_root != p_repository_root || canonical_absolute_path != absolute_path ||
 			!TemporaryProjectTree::is_strict_descendant(canonical_repository_root, canonical_absolute_path)) {
@@ -664,38 +625,30 @@ static Error validate_permanent_test_path(const String &p_path, const String &p_
 	return OK;
 }
 
-static String canonicalize_existing_input_path(const String &p_path) {
-#ifdef UNIX_ENABLED
-	char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
-	if (resolved == nullptr) {
-		return String();
+// The ledger's directory refusals are fatal, so each one is mapped to the error the run aborts with.
+// A visible unexpected entry also prints, because an operator who put a file there needs to know why
+// the whole run stopped.
+static Error findings_directory_error(const String &p_directory, const Vector<JsonDirectoryError> &p_errors) {
+	if (p_errors.is_empty()) {
+		return ERR_INVALID_DATA;
 	}
-	String canonical;
-	const Error parse_error = canonical.append_utf8(resolved);
-	::free(resolved);
-	return parse_error == OK ? canonical.simplify_path() : String();
-#elif defined(WINDOWS_ENABLED)
-	HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
-			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-			FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-	if (handle == INVALID_HANDLE_VALUE) {
-		return String();
+	const JsonDirectoryError &error = p_errors[0];
+	switch (error.kind) {
+		case JsonDirectoryErrorKind::DIRECTORY_UNOPENABLE:
+		case JsonDirectoryErrorKind::DIRECTORY_UNLISTABLE:
+			return error.error_code;
+		case JsonDirectoryErrorKind::FILESYSTEM_UNAVAILABLE:
+			return ERR_UNAVAILABLE;
+		case JsonDirectoryErrorKind::SUBDIRECTORY_ENTRY:
+			ERR_PRINT(vformat("%s: unexpected findings directory entry '%s'", p_directory, error.entry));
+			return ERR_INVALID_DATA;
+		case JsonDirectoryErrorKind::NON_JSON_ENTRY:
+			ERR_PRINT(vformat("%s: unexpected non-JSON findings entry '%s'", p_directory, error.entry));
+			return ERR_INVALID_DATA;
+		default:
+			break;
 	}
-	WCHAR buffer[4096];
-	const DWORD length = ::GetFinalPathNameByHandleW(
-			handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-	::CloseHandle(handle);
-	if (length == 0 || length > 4095) {
-		return String();
-	}
-	buffer[length] = 0;
-	return String::utf16((const char16_t *)buffer, (int)length)
-			.trim_prefix("\\\\?\\")
-			.replace("\\", "/")
-			.simplify_path();
-#else
-	return p_path.simplify_path();
-#endif
+	return ERR_UNAUTHORIZED;
 }
 
 static Error load_findings_ledger(const String &p_directory, const String &p_family,
@@ -704,47 +657,18 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 		FSCompletenessTrackedFileProbe p_tracked_file_probe,
 		HashMap<String, FSCompletenessFinding> &r_findings) {
 	r_findings.clear();
-	Error open_error = OK;
-	Ref<DirAccess> directory = DirAccess::open(p_directory, &open_error);
-	if (directory.is_null()) {
-		return open_error == OK ? ERR_CANT_OPEN : open_error;
-	}
-	const String lexical_directory = directory->get_current_dir().replace("\\", "/").simplify_path();
-	const String canonical_directory = canonicalize_existing_input_path(lexical_directory);
-	if (canonical_directory.is_empty() || canonical_directory != lexical_directory) {
-		return ERR_UNAUTHORIZED;
-	}
-	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (filesystem.is_null()) {
-		return ERR_UNAVAILABLE;
-	}
-	if (directory->list_dir_begin() != OK) {
-		return ERR_CANT_OPEN;
-	}
 	Vector<String> files;
-	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
-		if (entry.begins_with(".")) {
-			continue;
-		}
-		const String file_path = lexical_directory.path_join(entry);
-		if (directory->is_link(entry) || filesystem->is_link(file_path)) {
-			directory->list_dir_end();
-			return ERR_UNAUTHORIZED;
-		}
-		if (directory->current_is_dir()) {
-			ERR_PRINT(vformat("%s: unexpected findings directory entry '%s'", p_directory, entry));
-			directory->list_dir_end();
-			return ERR_INVALID_DATA;
-		}
-		if (entry.get_extension().to_lower() != "json") {
-			ERR_PRINT(vformat("%s: unexpected non-JSON findings entry '%s'", p_directory, entry));
-			directory->list_dir_end();
-			return ERR_INVALID_DATA;
-		}
-		files.push_back(file_path);
+	Vector<JsonDirectoryError> directory_errors;
+	JsonDirectoryPolicy policy;
+	policy.require_canonical_directory = true;
+	policy.require_canonical_children = true;
+	policy.require_non_empty = false;
+	// The ledger is an all-or-nothing input: the first refused entry aborts the run, so enumerating
+	// the rest would only produce diagnostics for a run that is already over.
+	policy.stop_at_first_error = true;
+	if (enumerate_json_directory(p_directory, policy, files, directory_errors) != OK) {
+		return findings_directory_error(p_directory, directory_errors);
 	}
-	directory->list_dir_end();
-	files.sort();
 
 	const Vector<String> required_fields = {
 		"schema_version",
@@ -759,12 +683,6 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	};
 	HashSet<String> finding_ids;
 	for (const String &file_path : files) {
-		const String canonical_file_path = canonicalize_existing_input_path(file_path);
-		if (filesystem->is_link(file_path) || canonical_file_path.is_empty() ||
-				canonical_file_path != file_path || canonical_file_path.get_base_dir() != canonical_directory ||
-				!TemporaryProjectTree::is_strict_descendant(canonical_directory, canonical_file_path)) {
-			return ERR_UNAUTHORIZED;
-		}
 		Error read_error = OK;
 		const String source = FileAccess::get_file_as_string(file_path, &read_error);
 		if (read_error != OK) {
@@ -780,8 +698,10 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 			return ERR_INVALID_DATA;
 		}
 		const Dictionary record = data;
+		int record_schema_version = 0;
 		if (!object_has_exact_fields(record, required_fields) ||
-				!parse_schema_version(record["schema_version"])) {
+				!parse_json_integer(record["schema_version"], record_schema_version) ||
+				record_schema_version != 1) {
 			return ERR_INVALID_DATA;
 		}
 		for (const String &field : { String("finding_id"), String("case_id"), String("family"),
@@ -850,7 +770,7 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 			finding.resolved_case_ids.push_back(resolved_case_id);
 		}
 		for (const String &resolved_case_id : resolved_case_ids) {
-			const FSCompletenessResolvedCell *cell = find_cell_by_id(p_resolution, resolved_case_id);
+			const FSCompletenessResolvedCell *cell = p_resolution.find_cell_by_id(resolved_case_id);
 			if (cell == nullptr || !ledger_dimension_is_known(*cell, finding.dimension)) {
 				return ERR_INVALID_DATA;
 			}
@@ -887,7 +807,7 @@ static Error canonicalize_owned_future_path(const String &p_canonical_root,
 		}
 		existing_ancestor = parent;
 	}
-	const String canonical_ancestor = canonicalize_existing_input_path(existing_ancestor);
+	const String canonical_ancestor = TemporaryProjectTree::canonicalize_existing_path(existing_ancestor);
 	if (filesystem->is_link(existing_ancestor) || canonical_ancestor.is_empty() ||
 			canonical_ancestor != existing_ancestor) {
 		return ERR_UNAUTHORIZED;
@@ -916,7 +836,7 @@ static Error validate_owned_report_path(const String &p_canonical_scratch_root,
 	}
 	const String lexical_catalog_root =
 			catalog_directory->get_current_dir().replace("\\", "/").simplify_path();
-	const String canonical_catalog_root = canonicalize_existing_input_path(lexical_catalog_root);
+	const String canonical_catalog_root = TemporaryProjectTree::canonicalize_existing_path(lexical_catalog_root);
 	if (canonical_catalog_root.is_empty() || canonical_catalog_root != lexical_catalog_root) {
 		return ERR_UNAUTHORIZED;
 	}
@@ -1053,7 +973,7 @@ public:
 	}
 
 	Error stage(const String &p_canonical_scratch_root, const FSCompletenessResolution &p_resolution,
-			const Vector<FSCompletenessProgram> &p_programs,
+			const ProgramIndex &p_program_index,
 			FSCompletenessPersistedWriteHook p_persisted_write_hook) {
 		artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
 		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, artifact_root)) {
@@ -1075,7 +995,7 @@ public:
 			return ERR_UNAVAILABLE;
 		}
 		for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
-			const FSCompletenessProgram *program = find_program_by_id(p_programs, cell.case_id);
+			const FSCompletenessProgram *program = p_program_index.find(cell.case_id);
 			if (program == nullptr) {
 				return ERR_INVALID_DATA;
 			}
@@ -1367,20 +1287,95 @@ static bool observed_expected_dimensions(
 	return true;
 }
 
-static void sort_cells_by_id(Vector<const FSCompletenessResolvedCell *> &r_cells) {
-	for (int i = 1; i < r_cells.size(); i++) {
-		const FSCompletenessResolvedCell *cell = r_cells[i];
-		int position = i;
-		while (position > 0 && cell->case_id < r_cells[position - 1]->case_id) {
-			r_cells.write[position] = r_cells[position - 1];
-			position--;
-		}
-		r_cells.write[position] = cell;
+struct CellSortsBeforeByID {
+	bool operator()(const FSCompletenessResolvedCell *p_left, const FSCompletenessResolvedCell *p_right) const {
+		return p_left->case_id < p_right->case_id;
 	}
+};
+
+static void sort_cells_by_id(Vector<const FSCompletenessResolvedCell *> &r_cells) {
+	r_cells.sort_custom<CellSortsBeforeByID>();
+}
+
+// Wall-clock cost of each stage of one run, in microseconds. Reported as milliseconds so a budget can
+// be read off the report directly. The report stage covers assembling the report document; the atomic
+// write that publishes it cannot be part of the numbers the document itself carries.
+struct StageTimings {
+	uint64_t load = 0;
+	uint64_t resolve = 0;
+	uint64_t render = 0;
+	uint64_t analyze = 0;
+	uint64_t execute = 0;
+	uint64_t report = 0;
+	uint64_t total = 0;
+
+	static uint64_t now() {
+		return OS::get_singleton() == nullptr ? 0 : OS::get_singleton()->get_ticks_usec();
+	}
+
+	// Microseconds elapsed since p_start, clamped at zero so a clock that moves backwards can never
+	// publish a negative duration.
+	static uint64_t since(uint64_t p_start) {
+		const uint64_t current = now();
+		return current < p_start ? 0 : current - p_start;
+	}
+
+	Dictionary to_report() const {
+		Dictionary milliseconds;
+		milliseconds["load"] = double(load) / 1000.0;
+		milliseconds["resolve"] = double(resolve) / 1000.0;
+		milliseconds["render"] = double(render) / 1000.0;
+		milliseconds["analyze"] = double(analyze) / 1000.0;
+		milliseconds["execute"] = double(execute) / 1000.0;
+		milliseconds["report"] = double(report) / 1000.0;
+		milliseconds["total"] = double(total) / 1000.0;
+		return milliseconds;
+	}
+};
+
+// A run that outlives its budget is a harness-level failure, not a product observation: the evidence
+// it would have published is incomplete, so it publishes a partial report naming the stage it was in
+// and nothing that could be read as a verdict about the product.
+static Dictionary timeout_report(const String &p_family, const StageTimings &p_timings,
+		const Vector<FSCompletenessStructuralFailure> &p_failures) {
+	Dictionary report;
+	report["schema_version"] = 1.0;
+	report["family"] = p_family;
+	report["success"] = false;
+	report["cell_count"] = 0.0;
+	Dictionary executed_by_surface;
+	executed_by_surface["text"] = 0.0;
+	executed_by_surface["bytecode"] = 0.0;
+	report["executed_by_surface"] = executed_by_surface;
+	report["coverage_by_chain_length"] = Dictionary();
+	report["coverage_by_dimension"] = Dictionary();
+	report["uncovered_required_dimensions"] = 0.0;
+	report["text_bytecode_parity_failures"] = 0.0;
+	report["outcome"] = "structural_failure";
+	report["findings"] = Array();
+	Array structural_failures;
+	for (const FSCompletenessStructuralFailure &failure : p_failures) {
+		structural_failures.push_back(structural_failure_report(failure));
+	}
+	report["structural_failures"] = structural_failures;
+	Dictionary ledger;
+	ledger["reconciled"] = Array();
+	ledger["stale"] = Array();
+	report["ledger"] = ledger;
+	report["exceptions"] = Array();
+	report["cases"] = Array();
+	report["timings_ms"] = p_timings.to_report();
+	return report;
 }
 
 static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
 	r_result = FSCompletenessRunResult();
+	StageTimings timings;
+	const uint64_t run_started_at = StageTimings::now();
+	const FSCompletenessClock clock = p_options.clock == nullptr ? StageTimings::now : p_options.clock;
+	const auto deadline_exceeded = [&]() {
+		return p_options.deadline_usec != 0 && clock() >= p_options.deadline_usec;
+	};
 	if (p_options.catalog_root.is_empty() || p_options.family.is_empty() ||
 			p_options.scratch_root.is_empty() || p_options.report_path.is_empty() ||
 			p_options.family != "union_destination_membership") {
@@ -1397,40 +1392,58 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	if (report_path_error != OK) {
 		return report_path_error;
 	}
+	// Publishing the partial report is what keeps a gate from reading an abandoned run as a clean one,
+	// so the deadline is only enforced once the report path is known to be writable.
+	const auto abort_after_timeout = [&](const char *p_stage) -> bool {
+		if (!deadline_exceeded()) {
+			return false;
+		}
+		timings.total = StageTimings::since(run_started_at);
+		Vector<FSCompletenessStructuralFailure> failures;
+		failures.push_back(make_structural_failure("run_timeout",
+				vformat("The run exceeded its wall-clock budget during the %s stage.", p_stage), String(),
+				String(), String(), ERR_TIMEOUT));
+		const Dictionary partial_report = timeout_report(p_options.family, timings, failures);
+		write_report_atomically(canonical_scratch_root, p_options.catalog_root, p_options.report_path,
+				partial_report, p_options.persisted_write_hook);
+		r_result.success = false;
+		r_result.outcome = "structural_failure";
+		r_result.structural_failures = failures;
+		r_result.report = partial_report;
+		return true;
+	};
+	if (abort_after_timeout("start")) {
+		return ERR_TIMEOUT;
+	}
 
+	uint64_t stage_started_at = StageTimings::now();
+	// The catalog, its rule manifest, the resolved matrix, and the migrations are immutable inputs, so
+	// they are loaded once per process per catalog root and family. The canonical root is the key: a
+	// staged copy of the catalog is a different input and must never read back the tracked one.
+	const String canonical_catalog_root =
+			TemporaryProjectTree::canonicalize_existing_path(p_options.catalog_root);
+	if (canonical_catalog_root.is_empty()) {
+		return ERR_CANT_RESOLVE;
+	}
 	Vector<String> errors;
-	FSCompletenessCatalog catalog;
-	Error error = catalog.load(p_options.catalog_root, errors);
-	if (error != OK) {
-		return error;
+	const FSCompletenessCatalogRecord *catalog_record = nullptr;
+	Error error =
+			FSCompletenessCatalogCache::get(canonical_catalog_root, p_options.family, catalog_record, errors);
+	if (error != OK || catalog_record == nullptr) {
+		return error == OK ? ERR_INVALID_DATA : error;
 	}
-	FSCompletenessManifest manifest;
-	error = FSCompletenessManifest::load(
-			p_options.catalog_root.path_join("rules").path_join(p_options.family + ".json"), manifest, errors);
-	if (error != OK) {
-		return error;
-	}
-	if (manifest.family != p_options.family) {
-		return ERR_INVALID_DATA;
-	}
-	error = validate_manifest_vocabulary(manifest, catalog, errors);
-	if (error != OK) {
-		return error;
-	}
-	FSCompletenessResolution resolution;
-	error = FSCompletenessGraph::resolve(manifest, catalog, resolution, errors);
-	if (error != OK) {
-		return error;
+	const FSCompletenessManifest &manifest = catalog_record->manifest;
+	const FSCompletenessResolution &resolution = catalog_record->resolution;
+	const FSCompletenessMigrations &migrations = catalog_record->migrations;
+	timings.load += StageTimings::since(stage_started_at);
+	if (abort_after_timeout("load")) {
+		return ERR_TIMEOUT;
 	}
 
+	stage_started_at = StageTimings::now();
 	HashSet<String> current_ids;
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 		current_ids.insert(cell.case_id);
-	}
-	FSCompletenessMigrations migrations;
-	error = migrations.load(p_options.catalog_root.path_join("migrations"), current_ids, errors);
-	if (error != OK) {
-		return error;
 	}
 	const String repository_root = find_repository_root(p_options.catalog_root);
 	if (repository_root.is_empty()) {
@@ -1442,9 +1455,16 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	if (error != OK) {
 		return error;
 	}
+	timings.load += StageTimings::since(stage_started_at);
+
+	stage_started_at = StageTimings::now();
 	Vector<FSCompletenessStructuralFailure> structural_failures;
 	Vector<FSCompletenessWitnessBinding> witness_bindings;
 	error = collect_witness_bindings(manifest, resolution, witness_bindings, structural_failures);
+	timings.resolve += StageTimings::since(stage_started_at);
+	if (abort_after_timeout("resolve")) {
+		return ERR_TIMEOUT;
+	}
 	if (error != OK) {
 		sort_structural_failures(structural_failures);
 		r_result.outcome = "structural_failure";
@@ -1452,6 +1472,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return error;
 	}
 
+	stage_started_at = StageTimings::now();
 	Vector<FSCompletenessProgram> programs;
 	programs.reserve(resolution.cells.size());
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
@@ -1477,17 +1498,30 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		programs.push_back(program);
 	}
 	ReportArtifactScope artifact_scope;
+	ProgramIndex program_index;
+	program_index.build(programs);
 	error = artifact_scope.stage(
-			canonical_scratch_root, resolution, programs, p_options.persisted_write_hook);
+			canonical_scratch_root, resolution, program_index, p_options.persisted_write_hook);
 	if (error != OK) {
 		return error;
 	}
 
+	timings.render += StageTimings::since(stage_started_at);
+	if (abort_after_timeout("render")) {
+		return ERR_TIMEOUT;
+	}
+
+	stage_started_at = StageTimings::now();
 	FSCompletenessRuntimeBatch batch;
 	error = FSUnionCompletenessAdapter::execute(canonical_scratch_root, programs, batch);
+	timings.execute += StageTimings::since(stage_started_at);
+	if (abort_after_timeout("execute")) {
+		return ERR_TIMEOUT;
+	}
 	if (error != OK) {
 		return error;
 	}
+	stage_started_at = StageTimings::now();
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
 		if (actual == nullptr || !runtime_result_identity_matches(cell, *actual)) {
@@ -1530,7 +1564,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	Vector<FSCompletenessFinding> findings;
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
-		const FSCompletenessProgram *program = find_program_by_id(programs, cell.case_id);
+		const FSCompletenessProgram *program = program_index.find(cell.case_id);
 		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
@@ -1576,7 +1610,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	};
 	HashMap<String, SurfacePair> pairs;
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-		const String pair_key = semantic_pair_key(cell.coordinates);
+		const String pair_key = semantic_pair_key(cell.coordinates, "surface");
 		SurfacePair *pair = pairs.getptr(pair_key);
 		if (pair == nullptr) {
 			pairs[pair_key] = SurfacePair();
@@ -1644,7 +1678,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			finding.expected = "matching_surface_observations";
 			finding.parity_evidence = evidence;
 			finding.actual = finding.parity_evidence;
-			const FSCompletenessProgram *text_program = find_program_by_id(programs, pair.text->case_id);
+			const FSCompletenessProgram *text_program = program_index.find(pair.text->case_id);
 			if (text_program == nullptr) {
 				return ERR_INVALID_DATA;
 			}
@@ -1776,7 +1810,12 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		exceptions_report.push_back(exception_reports[exception_id]);
 	}
 	sort_structural_failures(structural_failures);
+	timings.analyze += StageTimings::since(stage_started_at);
+	if (abort_after_timeout("analyze")) {
+		return ERR_TIMEOUT;
+	}
 
+	stage_started_at = StageTimings::now();
 	Dictionary executed_by_surface;
 	executed_by_surface["text"] = double(batch.text.size());
 	executed_by_surface["bytecode"] = double(batch.bytecode.size());
@@ -1800,9 +1839,15 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 	sort_cells_by_id(sorted_cells);
 	Array cases;
+	HashSet<String> published_case_ids;
 	for (const FSCompletenessResolvedCell *cell : sorted_cells) {
+		if (!p_options.published_surface.is_empty() &&
+				String(cell->coordinates.get("surface", String())) != p_options.published_surface) {
+			continue;
+		}
+		published_case_ids.insert(cell->case_id);
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(*cell, batch);
-		const FSCompletenessProgram *program = find_program_by_id(programs, cell->case_id);
+		const FSCompletenessProgram *program = program_index.find(cell->case_id);
 		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
@@ -1844,6 +1889,11 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	Array report_findings;
 	const bool success = findings.is_empty() && structural_failures.is_empty();
 	for (const FSCompletenessFinding &finding : findings) {
+		// A published document must stay self-consistent: a finding may only name a case the document
+		// reports. The run-level verdict below still counts every finding the run produced.
+		if (!published_case_ids.has(finding.case_id)) {
+			continue;
+		}
 		report_findings.push_back(finding_report(finding));
 	}
 	Array structural_failures_report;
@@ -1869,6 +1919,10 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["ledger"] = ledger_report;
 	report["exceptions"] = exceptions_report;
 	report["cases"] = cases;
+	report["published_surface"] = p_options.published_surface;
+	timings.report += StageTimings::since(stage_started_at);
+	timings.total = StageTimings::since(run_started_at);
+	report["timings_ms"] = timings.to_report();
 	error = write_report_atomically(
 			canonical_scratch_root, p_options.catalog_root, p_options.report_path, report,
 			p_options.persisted_write_hook);

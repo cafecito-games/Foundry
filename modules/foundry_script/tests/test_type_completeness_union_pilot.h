@@ -766,6 +766,31 @@ struct UnionPilotWarningRecorder {
 	String messages;
 };
 
+// The evidence half of a report: everything a second run of the same inputs must reproduce exactly.
+// Timings measure this machine on this run and are the one member that legitimately differs.
+static Dictionary union_pilot_report_evidence(const Dictionary &p_report) {
+	Dictionary evidence = p_report.duplicate(true);
+	evidence.erase("timings_ms");
+	return evidence;
+}
+
+// Every stage the runner times, in report order.
+static PackedStringArray union_pilot_timing_stages() {
+	return PackedStringArray({ "load", "resolve", "render", "analyze", "execute", "report", "total" });
+}
+
+static void check_union_pilot_timings(const Dictionary &p_report) {
+	REQUIRE(p_report.has("timings_ms"));
+	const Dictionary timings = p_report["timings_ms"];
+	CHECK_EQ(timings.size(), union_pilot_timing_stages().size());
+	for (const String &stage : union_pilot_timing_stages()) {
+		CAPTURE(stage);
+		REQUIRE(timings.has(stage));
+		CHECK_EQ(Variant(timings[stage]).get_type(), Variant::FLOAT);
+		CHECK(double(timings[stage]) >= 0.0);
+	}
+}
+
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	TEST_CASE("TypeCompleteness UnionPilot runner publishes complete deterministic coverage") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
@@ -867,13 +892,22 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		CHECK_EQ(durable_artifacts, 40);
 
+		check_union_pilot_timings(report);
+		check_union_pilot_timings(result.report);
+
 		FSCompletenessRunResult repeated_result;
 		REQUIRE_EQ(FSCompletenessRunner::run(options, repeated_result), OK);
 		Error repeated_read_error = OK;
 		const String repeated_source = FileAccess::get_file_as_string(options.report_path, &repeated_read_error);
 		REQUIRE_EQ(repeated_read_error, OK);
-		CHECK_EQ(repeated_source, report_source);
-		CHECK_EQ(repeated_result.report, report);
+		JSON repeated_json;
+		REQUIRE_EQ(repeated_json.parse(repeated_source), OK);
+		REQUIRE_EQ(repeated_json.get_data().get_type(), Variant::DICTIONARY);
+		// Two runs of the same inputs publish the same evidence; only the timings differ, and they are
+		// excluded from every digest and comparison downstream.
+		CHECK_EQ(union_pilot_report_evidence(repeated_json.get_data()), union_pilot_report_evidence(report));
+		CHECK_EQ(union_pilot_report_evidence(repeated_result.report), union_pilot_report_evidence(report));
+		check_union_pilot_timings(repeated_result.report);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner creates an owned scratch root before execution") {

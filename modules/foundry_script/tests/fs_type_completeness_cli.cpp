@@ -1,0 +1,215 @@
+/**************************************************************************/
+/*  fs_type_completeness_cli.cpp                                          */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                              GODOT ENGINE                              */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#include "fs_type_completeness_cli.h"
+
+#include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_common.h"
+
+#include "core/io/file_access.h"
+#include "core/io/json.h"
+#include "core/os/os.h"
+#include "core/string/print_string.h"
+
+namespace FSTests {
+
+using namespace Completeness;
+
+namespace {
+
+// Worst-first, so an index over several families reports the strongest verdict any of them reached.
+int outcome_rank(const String &p_outcome) {
+	if (p_outcome == "structural_failure") {
+		return 2;
+	}
+	if (p_outcome == "product_mismatch") {
+		return 1;
+	}
+	return 0;
+}
+
+String worse_outcome(const String &p_left, const String &p_right) {
+	return outcome_rank(p_left) >= outcome_rank(p_right) ? p_left : p_right;
+}
+
+int exit_code_for_outcome(const String &p_outcome) {
+	if (p_outcome == "structural_failure") {
+		return FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE;
+	}
+	return p_outcome == "product_mismatch" ? FSCompletenessCLI::EXIT_PRODUCT_MISMATCH
+										   : FSCompletenessCLI::EXIT_PASSED;
+}
+
+void print_failure(const String &p_message) {
+	print_error(vformat("[type-completeness] %s", p_message));
+}
+
+int refuse(const String &p_message) {
+	print_failure(p_message);
+	return FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE;
+}
+
+uint64_t default_clock() {
+	return OS::get_singleton()->get_ticks_usec();
+}
+
+String family_report_path(const String &p_report_path, const String &p_family, bool p_single_family) {
+	return p_single_family ? p_report_path : vformat("%s.%s.json", p_report_path, p_family);
+}
+
+Error write_json_document(const String &p_path, const Dictionary &p_document) {
+	Error open_error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &open_error);
+	if (file.is_null()) {
+		return open_error == OK ? ERR_CANT_CREATE : open_error;
+	}
+	file->store_string(JSON::stringify(p_document, "\t", false, true) + "\n");
+	return file->get_error();
+}
+
+} // namespace
+
+int FSCompletenessCLI::run(const Options &p_options) {
+	if (p_options.families.is_empty()) {
+		return refuse("at least one --family is required.");
+	}
+	if (p_options.catalog_root.is_empty() || p_options.scratch_root.is_empty() ||
+			p_options.report_path.is_empty()) {
+		return refuse("--catalog, --scratch, and --report are all required.");
+	}
+	if (!p_options.surface.is_empty() && p_options.surface != "text" && p_options.surface != "bytecode") {
+		return refuse(vformat("unknown --surface '%s'; expected text or bytecode.", p_options.surface));
+	}
+	const String budgets_path =
+			p_options.budgets_path.is_empty() ? FSCompletenessBudgets::tracked_path() : p_options.budgets_path;
+	FSCompletenessBudgets budgets;
+	Vector<String> budget_errors;
+	if (FSCompletenessBudgets::load(budgets_path, budgets, budget_errors) != OK) {
+		for (const String &error : budget_errors) {
+			print_failure(error);
+		}
+		return EXIT_STRUCTURAL_FAILURE;
+	}
+	const int tier_timeout_seconds = budgets.hard_timeout_seconds_for_tier(p_options.tier);
+	if (tier_timeout_seconds < 0) {
+		return refuse(vformat("unknown --tier '%s'; expected presubmit, strict, or scheduled.", p_options.tier));
+	}
+	if (p_options.timeout_seconds < 0) {
+		return refuse("--timeout-seconds must be a positive number of seconds.");
+	}
+	if (p_options.timeout_seconds > tier_timeout_seconds) {
+		return refuse(vformat("--timeout-seconds %d exceeds the %s budget of %d seconds.",
+				p_options.timeout_seconds, p_options.tier, tier_timeout_seconds));
+	}
+	const int timeout_seconds =
+			p_options.timeout_seconds == 0 ? tier_timeout_seconds : p_options.timeout_seconds;
+
+	Vector<String> families;
+	for (const String &family : p_options.families) {
+		if (families.has(family)) {
+			return refuse(vformat("--family %s was given more than once.", family));
+		}
+		const String rule_path = p_options.catalog_root.path_join("rules").path_join(family + ".json");
+		if (!FileAccess::exists(rule_path)) {
+			return refuse(vformat("family '%s' has no rule manifest at %s.", family, rule_path));
+		}
+		families.push_back(family);
+	}
+
+	const FSCompletenessClock clock = p_options.clock == nullptr ? default_clock : p_options.clock;
+	const uint64_t deadline_usec = clock() + uint64_t(timeout_seconds) * 1000000ULL;
+
+	const bool single_family = families.size() == 1;
+	String worst = "passed";
+	bool timed_out = false;
+	bool unpublished = false;
+	Array family_entries;
+	for (const String &family : families) {
+		FSCompletenessRunOptions options;
+		options.catalog_root = p_options.catalog_root;
+		options.family = family;
+		options.scratch_root = p_options.scratch_root;
+		options.report_path = family_report_path(p_options.report_path, family, single_family);
+		options.published_surface = p_options.surface;
+		options.deadline_usec = deadline_usec;
+		options.observation_mutator = p_options.observation_mutator;
+		options.clock = p_options.clock;
+		FSCompletenessRunResult result;
+		const Error error = FSCompletenessRunner::run(options, result);
+		const bool published = FileAccess::exists(options.report_path);
+		timed_out = timed_out || error == ERR_TIMEOUT;
+		unpublished = unpublished || !published;
+		worst = worse_outcome(worst, result.outcome);
+		if (!published) {
+			print_failure(vformat("family '%s' aborted before its report could be published (error %d).",
+					family, error));
+		}
+		Dictionary entry;
+		entry["family"] = family;
+		entry["report_path"] = options.report_path;
+		entry["outcome"] = result.outcome;
+		entry["published"] = published;
+		family_entries.push_back(entry);
+	}
+	if (unpublished) {
+		worst = "structural_failure";
+	}
+
+	if (!single_family) {
+		// The index is written by the CLI rather than the runner, so it repeats the runner's contract:
+		// nothing is written outside the scratch root the caller owns.
+		const String canonical_scratch_root =
+				TemporaryProjectTree::canonicalize_existing_path(p_options.scratch_root);
+		if (canonical_scratch_root.is_empty() ||
+				!TemporaryProjectTree::is_strict_descendant(
+						canonical_scratch_root, p_options.report_path.simplify_path())) {
+			return refuse(vformat("the report index path %s is not owned by the scratch root %s.",
+					p_options.report_path, p_options.scratch_root));
+		}
+		Dictionary index;
+		index["schema_version"] = 1.0;
+		index["families"] = family_entries;
+		index["outcome"] = worst;
+		const Error write_error = write_json_document(p_options.report_path, index);
+		if (write_error != OK) {
+			return refuse(vformat("could not write the report index at %s (error %d).",
+					p_options.report_path, write_error));
+		}
+	}
+	// Missing evidence outranks every other verdict: a family that never published cannot be judged at
+	// all. Otherwise a timeout gets its own exit code, so a scheduler can tell an over-budget run from
+	// a broken one even though the partial report calls it a structural failure.
+	if (unpublished) {
+		return EXIT_STRUCTURAL_FAILURE;
+	}
+	return timed_out ? int(EXIT_TIMEOUT) : exit_code_for_outcome(worst);
+}
+
+} // namespace FSTests

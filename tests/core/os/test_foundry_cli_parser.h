@@ -84,6 +84,146 @@ TEST_CASE("[FoundryCLIParser] Version query accepts JSON in either option order"
 	CHECK(after.json);
 }
 
+TEST_CASE("[FoundryCLIParser] Test completeness run collects families and required inputs") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"completeness",
+			"run",
+			"--family",
+			"union_destination_membership",
+			"--family=second_family",
+			"--catalog",
+			"catalog",
+			"--scratch",
+			"scratch",
+			"--report",
+			"scratch/report.json",
+			"--surface",
+			"text",
+			"--tier",
+			"presubmit",
+			"--timeout-seconds",
+			"90",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_COMPLETENESS_RUN);
+	CHECK_EQ(result.invocation.completeness_families,
+			make_args({ "union_destination_membership", "second_family" }));
+	CHECK_EQ(result.invocation.completeness_catalog, "catalog");
+	CHECK_EQ(result.invocation.completeness_scratch, "scratch");
+	CHECK_EQ(result.invocation.completeness_report, "scratch/report.json");
+	CHECK_EQ(result.invocation.completeness_surface, "text");
+	CHECK_EQ(result.invocation.completeness_tier, "presubmit");
+	CHECK_EQ(result.invocation.completeness_timeout_seconds, 90);
+	CHECK_EQ(result.command_path, make_args({ "test", "completeness run" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Test completeness run defaults the timeout to the tier budget") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"completeness",
+			"run",
+			"--family",
+			"union_destination_membership",
+			"--catalog",
+			"catalog",
+			"--scratch",
+			"scratch",
+			"--report",
+			"scratch/report.json",
+			"--tier",
+			"scheduled",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.completeness_timeout_seconds, 0);
+	CHECK(result.invocation.completeness_surface.is_empty());
+}
+
+TEST_CASE("[FoundryCLIParser] Test completeness run names every missing required input") {
+	struct MissingCase {
+		const char *omitted;
+		const char *expected_error;
+	};
+	const MissingCase cases[] = {
+		{ "--family", "requires at least one --family" },
+		{ "--catalog", "requires --catalog" },
+		{ "--scratch", "requires --scratch" },
+		{ "--report", "requires --report" },
+		{ "--tier", "requires --tier" },
+	};
+	for (const MissingCase &missing : cases) {
+		CAPTURE(missing.omitted);
+		PackedStringArray args = make_args({ "foundry", "test", "completeness", "run" });
+		const String omitted = missing.omitted;
+		if (omitted != "--family") {
+			args.push_back("--family");
+			args.push_back("union_destination_membership");
+		}
+		if (omitted != "--catalog") {
+			args.push_back("--catalog");
+			args.push_back("catalog");
+		}
+		if (omitted != "--scratch") {
+			args.push_back("--scratch");
+			args.push_back("scratch");
+		}
+		if (omitted != "--report") {
+			args.push_back("--report");
+			args.push_back("scratch/report.json");
+		}
+		if (omitted != "--tier") {
+			args.push_back("--tier");
+			args.push_back("presubmit");
+		}
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(args);
+		CHECK_FALSE(result.ok);
+		CHECK(result.error.contains(missing.expected_error));
+	}
+}
+
+TEST_CASE("[FoundryCLIParser] Test completeness run rejects unusable option values") {
+	const String base[] = { "--catalog", "catalog", "--scratch", "scratch", "--report", "scratch/report.json" };
+	struct RejectedCase {
+		const char *option;
+		const char *value;
+		const char *expected_error;
+	};
+	const RejectedCase cases[] = {
+		{ "--surface", "both", "--surface expects text or bytecode" },
+		{ "--tier", "nightly", "--tier expects presubmit, strict, or scheduled" },
+		{ "--timeout-seconds", "0", "--timeout-seconds expects a positive number" },
+		{ "--timeout-seconds", "-5", "--timeout-seconds expects a positive number" },
+		{ "--timeout-seconds", "soon", "--timeout-seconds expects a positive number" },
+	};
+	for (const RejectedCase &rejected : cases) {
+		CAPTURE(rejected.option);
+		CAPTURE(rejected.value);
+		PackedStringArray args = make_args({ "foundry", "test", "completeness", "run", "--family",
+				"union_destination_membership", "--tier", "presubmit" });
+		for (const String &argument : base) {
+			args.push_back(argument);
+		}
+		args.push_back(rejected.option);
+		args.push_back(rejected.value);
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(args);
+		CHECK_FALSE(result.ok);
+		CHECK(result.error.contains(rejected.expected_error));
+	}
+}
+
+TEST_CASE("[FoundryCLIParser] Unknown test completeness command is rejected") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"completeness",
+			"compare",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("Unknown test completeness command"));
+}
+
 TEST_CASE("[FoundryCLIParser] Version query rejects command arguments") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",

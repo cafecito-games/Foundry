@@ -1034,6 +1034,157 @@ static void parse_test_run(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+static void parse_test_completeness_run(CLIParseState &r_state) {
+	set_command_path(r_state.result, "test", "completeness run");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_COMPLETENESS_RUN;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--family" || arg.begins_with("--family=")) {
+			String family;
+			if (arg == "--family") {
+				if (!require_value(r_state, arg, family)) {
+					return;
+				}
+			} else {
+				family = inline_option_value(arg);
+				r_state.index++;
+			}
+			append(r_state.result.invocation.completeness_families, family);
+		} else if (arg == "--catalog" || arg.begins_with("--catalog=")) {
+			if (arg == "--catalog") {
+				if (!require_value(r_state, arg, r_state.result.invocation.completeness_catalog)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.completeness_catalog = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--scratch" || arg.begins_with("--scratch=")) {
+			if (arg == "--scratch") {
+				if (!require_value(r_state, arg, r_state.result.invocation.completeness_scratch)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.completeness_scratch = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--report" || arg.begins_with("--report=")) {
+			if (arg == "--report") {
+				if (!require_value(r_state, arg, r_state.result.invocation.completeness_report)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.completeness_report = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--surface" || arg.begins_with("--surface=")) {
+			String surface;
+			if (arg == "--surface") {
+				if (!require_value(r_state, arg, surface)) {
+					return;
+				}
+			} else {
+				surface = inline_option_value(arg);
+				r_state.index++;
+			}
+			if (surface != "text" && surface != "bytecode") {
+				fail(r_state.result, "test completeness run --surface expects text or bytecode.");
+				return;
+			}
+			r_state.result.invocation.completeness_surface = surface;
+		} else if (arg == "--tier" || arg.begins_with("--tier=")) {
+			String tier;
+			if (arg == "--tier") {
+				if (!require_value(r_state, arg, tier)) {
+					return;
+				}
+			} else {
+				tier = inline_option_value(arg);
+				r_state.index++;
+			}
+			if (tier != "presubmit" && tier != "strict" && tier != "scheduled") {
+				fail(r_state.result, "test completeness run --tier expects presubmit, strict, or scheduled.");
+				return;
+			}
+			r_state.result.invocation.completeness_tier = tier;
+		} else if (arg == "--timeout-seconds" || arg.begins_with("--timeout-seconds=")) {
+			String timeout;
+			if (arg == "--timeout-seconds") {
+				if (!require_value(r_state, arg, timeout)) {
+					return;
+				}
+			} else {
+				timeout = inline_option_value(arg);
+				r_state.index++;
+			}
+			if (!timeout.is_valid_int() || timeout.to_int() <= 0) {
+				fail(r_state.result,
+						"test completeness run --timeout-seconds expects a positive number of seconds.");
+				return;
+			}
+			r_state.result.invocation.completeness_timeout_seconds = timeout.to_int();
+		} else {
+			fail(r_state.result, "Unknown option for test completeness run: " + arg + ".");
+			return;
+		}
+	}
+
+	// Every required input is named here rather than defaulted: a completeness run that silently
+	// invents its own catalog, scratch root, report path, or budget tier is unusable as a gate.
+	if (r_state.result.invocation.completeness_families.is_empty()) {
+		fail(r_state.result, "test completeness run requires at least one --family.");
+		return;
+	}
+	if (r_state.result.invocation.completeness_catalog.is_empty()) {
+		fail(r_state.result, "test completeness run requires --catalog <dir>.");
+		return;
+	}
+	if (r_state.result.invocation.completeness_scratch.is_empty()) {
+		fail(r_state.result, "test completeness run requires --scratch <dir>.");
+		return;
+	}
+	if (r_state.result.invocation.completeness_report.is_empty()) {
+		fail(r_state.result, "test completeness run requires --report <path>.");
+		return;
+	}
+	if (r_state.result.invocation.completeness_tier.is_empty()) {
+		fail(r_state.result, "test completeness run requires --tier <presubmit|strict|scheduled>.");
+		return;
+	}
+
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
+}
+
+static void parse_test_completeness(CLIParseState &r_state) {
+	if (r_state.index >= r_state.args.size()) {
+		fail(r_state.result, "test completeness requires a command.");
+		return;
+	}
+	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
+	if (command != "run") {
+		fail(r_state.result, "Unknown test completeness command: " + command + ".");
+		return;
+	}
+	parse_test_completeness_run(r_state);
+}
+
 static void parse_test(CLIParseState &r_state) {
 	if (r_state.index >= r_state.args.size()) {
 		fail(r_state.result, "test requires a command.");
@@ -1054,6 +1205,8 @@ static void parse_test(CLIParseState &r_state) {
 		parse_test_benchmark(r_state);
 	} else if (command == "fixtures") {
 		parse_test_fixtures(r_state);
+	} else if (command == "completeness") {
+		parse_test_completeness(r_state);
 	} else {
 		fail(r_state.result, "Unknown test command: " + command + ".");
 	}

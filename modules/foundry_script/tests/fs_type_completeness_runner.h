@@ -59,6 +59,10 @@ using FSCompletenessTrackedFileProbe = Error (*)(const String &p_repository_root
 		String &r_output, int &r_exit_code);
 using FSCompletenessPersistedWriteHook = void (*)(const String &p_path);
 
+// Monotonic microsecond clock the deadline is measured on. Injectable so a timeout can be proven
+// deterministically instead of by racing a real wall clock.
+using FSCompletenessClock = uint64_t (*)();
+
 struct FSCompletenessRunOptions {
 	String catalog_root;
 	String family;
@@ -69,6 +73,15 @@ struct FSCompletenessRunOptions {
 	void (*runtime_result_mutator)(FSCompletenessRuntimeResult &) = nullptr;
 	FSCompletenessTrackedFileProbe tracked_file_probe = nullptr;
 	FSCompletenessPersistedWriteHook persisted_write_hook = nullptr;
+
+	// Surface whose cases the published report carries; empty publishes every case. The run always
+	// executes both surfaces, because parity evidence is only meaningful when both were observed;
+	// this only narrows the published document for a consumer that compares one configuration.
+	String published_surface;
+
+	// Absolute deadline on `clock`, in microseconds. Zero runs without a deadline.
+	uint64_t deadline_usec = 0;
+	FSCompletenessClock clock = nullptr;
 };
 
 // A defect in the harness, the catalog, or the evidence contract rather than an observation about

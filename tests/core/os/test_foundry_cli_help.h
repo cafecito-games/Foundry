@@ -163,6 +163,41 @@ TEST_CASE("[FoundryCLIHelp] Test fixtures help documents pattern scoping and the
 	CHECK(text.contains("foundry --headless test fixtures trait_argument_binding"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Test completeness run help documents its required inputs") {
+	const String text = FoundryCLIHelp::get_command_help_text("test", "completeness run");
+	CHECK(text.contains("--family"));
+	CHECK(text.contains("--catalog"));
+	CHECK(text.contains("--scratch"));
+	CHECK(text.contains("--report"));
+	CHECK(text.contains("--tier"));
+	CHECK(text.contains("--surface"));
+	CHECK(text.contains("--timeout-seconds"));
+	CHECK(text.contains("(required)"));
+	CHECK(text.contains("foundry --headless test completeness run"));
+}
+
+TEST_CASE("[FoundryCLIHelp] A multi-word verb resolves from a deeper scope") {
+	PackedStringArray scope;
+	scope.push_back("test");
+	scope.push_back("completeness");
+	scope.push_back("run");
+	bool valid = false;
+	const String text = FoundryCLIHelp::get_scoped_help_text("foundry", scope, valid);
+	CHECK(valid);
+	CHECK(text.contains("--tier"));
+
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
+	const Dictionary root = json.get_data();
+	const Array commands = root["commands"];
+	REQUIRE_EQ(commands.size(), 1);
+	const Dictionary command = commands[0];
+	const Array path = command["path"];
+	REQUIRE_EQ(path.size(), 2);
+	CHECK_EQ(String(path[0]), "test");
+	CHECK_EQ(String(path[1]), "completeness run");
+}
+
 TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	bool valid = false;
 
@@ -340,7 +375,11 @@ static PackedStringArray drift_base_args(const FoundryCLIHelp::CommandSpec &p_sp
 	PackedStringArray args;
 	args.push_back("foundry");
 	args.push_back(p_spec.noun);
-	args.push_back(p_spec.verb);
+	// A verb may be several words (`test completeness run`); the registry stores it as one label and
+	// the command line takes one token per word.
+	for (const String &word : String(p_spec.verb).split(" ", false)) {
+		args.push_back(word);
+	}
 	for (int i = 0; i < p_spec.option_count; i++) {
 		const FoundryCLIHelp::CommandOption &option = p_spec.options[i];
 		if (!option.required) {
