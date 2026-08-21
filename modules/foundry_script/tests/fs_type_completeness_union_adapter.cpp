@@ -106,12 +106,139 @@ static String boundary_body_for(const String &p_boundary) {
 		   "\tvar stored: Variant = holder.value";
 }
 
-static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, PackedStringArray &r_diagnostics) {
+static const char *DIAGNOSTIC_SEVERITY_ERROR = "error";
+static const char *DIAGNOSTIC_SEVERITY_WARNING = "warning";
+
+static Dictionary make_diagnostic_record(const String &p_severity, const String &p_category,
+		const String &p_code, int p_line, int p_column, const String &p_message, bool p_suppressed) {
+	Dictionary record;
+	record["severity"] = p_severity;
+	record["category"] = p_category;
+	record["code"] = p_code;
+	record["line"] = double(p_line);
+	record["column"] = double(p_column);
+	record["message"] = p_message;
+	record["suppressed"] = p_suppressed;
+	return record;
+}
+
+static void append_error_diagnostic(FSCompletenessObservation &r_observation, const String &p_code,
+		const String &p_message) {
+	r_observation.diagnostics.push_back(p_message);
+	r_observation.diagnostic_records.push_back(make_diagnostic_record(
+			DIAGNOSTIC_SEVERITY_ERROR, "harness", p_code, 0, 0, p_message, false));
+}
+
+// Every diagnostic string must own an error record so the severity profile derived from
+// `diagnostic_records` can never understate what the observation already reported.
+static void cover_diagnostics_with_records(FSCompletenessObservation &r_observation) {
+	HashMap<String, int> recorded_messages;
+	for (int index = 0; index < r_observation.diagnostic_records.size(); index++) {
+		const Dictionary record = r_observation.diagnostic_records[index];
+		if (String(record.get("severity", String())) != DIAGNOSTIC_SEVERITY_ERROR) {
+			continue;
+		}
+		const String message = record.get("message", String());
+		recorded_messages[message] = recorded_messages.has(message) ? recorded_messages[message] + 1 : 1;
+	}
+	for (const String &diagnostic : r_observation.diagnostics) {
+		int *remaining = recorded_messages.getptr(diagnostic);
+		if (remaining != nullptr && *remaining > 0) {
+			(*remaining)--;
+			continue;
+		}
+		r_observation.diagnostic_records.push_back(make_diagnostic_record(
+				DIAGNOSTIC_SEVERITY_ERROR, "harness", "harness_diagnostic", 0, 0, diagnostic, false));
+	}
+}
+
+static void append_parser_diagnostics_in_source_order(
+		const FSParser &p_parser, PackedStringArray &r_diagnostics) {
 	for (const FSParser::ParserError *error : p_parser.get_errors_in_source_order()) {
 		if (error != nullptr) {
 			r_diagnostics.push_back(vformat("%d:%d: %s", error->line, error->column, error->message));
 		}
 	}
+}
+
+static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, const String &p_code,
+		FSCompletenessObservation &r_observation) {
+	for (const FSParser::ParserError *error : p_parser.get_errors_in_source_order()) {
+		if (error != nullptr) {
+			const String message = vformat("%d:%d: %s", error->line, error->column, error->message);
+			r_observation.diagnostics.push_back(message);
+			r_observation.diagnostic_records.push_back(make_diagnostic_record(DIAGNOSTIC_SEVERITY_ERROR,
+					"analysis", p_code, error->line, error->column, message, false));
+		}
+	}
+}
+
+// Blanking the annotation preserves every following line number, so a warning recovered from the
+// unsuppressed pass keeps the position it would have had in the analyzed source.
+static String blank_warning_ignore_annotations(const String &p_source) {
+	const PackedStringArray lines = p_source.split("\n", true);
+	PackedStringArray blanked;
+	blanked.resize(lines.size());
+	for (int index = 0; index < lines.size(); index++) {
+		const String stripped = lines[index].strip_edges();
+		blanked.write[index] = stripped.begins_with("@warning_ignore") ? String() : lines[index];
+	}
+	return String("\n").join(blanked);
+}
+
+static void append_warning_diagnostic_records(
+		const String &p_source, const String &p_path, FSCompletenessObservation &r_observation) {
+#ifdef DEBUG_ENABLED
+	struct ObservedWarning {
+		String code;
+		int line = 0;
+		int column = 0;
+		String message;
+	};
+	auto collect = [](const String &p_analyzed_source, const String &p_analyzed_path,
+						   Vector<ObservedWarning> &r_warnings) {
+		FSParser parser;
+		if (parser.parse(p_analyzed_source, p_analyzed_path, false) == OK) {
+			FSAnalyzer analyzer(&parser);
+			analyzer.analyze();
+		}
+		for (const FSWarning &warning : parser.get_warnings()) {
+			ObservedWarning observed;
+			observed.code = FSWarning::get_name_from_code(warning.code);
+			observed.line = warning.start_line;
+			observed.column = warning.start_column;
+			observed.message = warning.get_message();
+			r_warnings.push_back(observed);
+		}
+	};
+
+	Vector<ObservedWarning> emitted;
+	collect(p_source, p_path, emitted);
+	Vector<ObservedWarning> unsuppressed;
+	const String unsuppressed_source = blank_warning_ignore_annotations(p_source);
+	if (unsuppressed_source == p_source) {
+		unsuppressed = emitted;
+	} else {
+		collect(unsuppressed_source, p_path, unsuppressed);
+	}
+
+	for (const ObservedWarning &warning : unsuppressed) {
+		bool suppressed = true;
+		for (const ObservedWarning &visible : emitted) {
+			if (visible.code == warning.code && visible.line == warning.line &&
+					visible.column == warning.column) {
+				suppressed = false;
+				break;
+			}
+		}
+		r_observation.diagnostic_records.push_back(make_diagnostic_record(DIAGNOSTIC_SEVERITY_WARNING,
+				"analysis", warning.code, warning.line, warning.column, warning.message, suppressed));
+	}
+#else
+	(void)p_source;
+	(void)p_path;
+	(void)r_observation;
+#endif // DEBUG_ENABLED
 }
 
 static Mutex &synthetic_source_mutex() {
@@ -130,7 +257,7 @@ static FSCompletenessObservation rejected_observation(
 	observation.case_id = p_program.case_id;
 	observation.surface = p_surface;
 	observation.dimensions["analysis"] = "reject";
-	observation.diagnostics.push_back(p_diagnostic);
+	append_error_diagnostic(observation, "harness_rejected_program", p_diagnostic);
 	return observation;
 }
 
@@ -716,7 +843,8 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		observation.dimensions["analysis"] = "reject";
-		observation.diagnostics.push_back("In-memory analyzer identity is unavailable.");
+		append_error_diagnostic(
+				observation, "harness_identity_unavailable", "In-memory analyzer identity is unavailable.");
 		return observation;
 	}
 	const String &path = synthetic_source.get_path();
@@ -728,17 +856,22 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 		FSAnalyzer analyzer(&parser);
 		analyzer_error = analyzer.analyze();
 	}
-	append_parser_diagnostics_in_source_order(parser, observation.diagnostics);
+	append_parser_diagnostics_in_source_order(
+			parser, parse_error == OK ? "analyzer_error" : "parse_error", observation);
 	if (parse_error != OK && observation.diagnostics.is_empty()) {
-		observation.diagnostics.push_back(vformat("Parser failed without diagnostics (error %d).", parse_error));
+		append_error_diagnostic(observation, "parse_error",
+				vformat("Parser failed without diagnostics (error %d).", parse_error));
 	} else if (parse_error == OK && analyzer_error != OK && observation.diagnostics.is_empty()) {
-		observation.diagnostics.push_back(vformat("Analyzer failed without diagnostics (error %d).", analyzer_error));
+		append_error_diagnostic(observation, "analyzer_error",
+				vformat("Analyzer failed without diagnostics (error %d).", analyzer_error));
 	}
+	append_warning_diagnostic_records(p_program.source, path, observation);
 	observation.dimensions["analysis"] = parse_error == OK && analyzer_error == OK ? "accept" : "reject";
+	cover_diagnostics_with_records(observation);
 	return observation;
 }
 
-static FSCompletenessObservation inspect_runtime_contract_internal(
+static FSCompletenessObservation inspect_runtime_contract_body(
 		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
 	r_structural_error = OK;
 	FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(p_program, p_program.surface);
@@ -843,6 +976,14 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 		observation.dimensions["stored_carrier"] =
 				destination == "union" ? "admitting_alternative" : "plain_destination";
 	}
+	return observation;
+}
+
+static FSCompletenessObservation inspect_runtime_contract_internal(
+		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
+	FSCompletenessObservation observation =
+			inspect_runtime_contract_body(p_program, p_runtime_context, r_structural_error);
+	cover_diagnostics_with_records(observation);
 	return observation;
 }
 

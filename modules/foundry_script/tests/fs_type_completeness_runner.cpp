@@ -149,61 +149,134 @@ static bool provenance_has_parent_without_exception(
 	return false;
 }
 
-static Error validate_witness_resolution(const FSCompletenessManifest &p_manifest,
-		const FSCompletenessResolution &p_resolution) {
-	HashSet<String> witness_ids;
-	for (const FSCompletenessException &exception : p_manifest.exceptions) {
-		for (const String &witness_id : exception.positive_witnesses) {
-			if (witness_ids.has(witness_id)) {
-				return ERR_INVALID_DATA;
-			}
-			witness_ids.insert(witness_id);
-			Dictionary coordinates;
-			if (FSUnionCompletenessAdapter::witness_coordinates(witness_id, coordinates) != OK) {
-				return ERR_INVALID_DATA;
-			}
-			int matches = 0;
-			const FSCompletenessResolvedCell *cell =
-					find_cell_by_coordinates(p_resolution, coordinates, matches);
-			if (matches != 1 || cell == nullptr) {
-				return ERR_INVALID_DATA;
-			}
-			bool observes_exception = false;
-			for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
-				observes_exception = observes_exception ||
-						provenance_has_exception_parent(dimension.value, exception.id, exception.parent);
-			}
-			if (!observes_exception) {
-				return ERR_INVALID_DATA;
-			}
-		}
+struct FSCompletenessWitnessBinding {
+	String witness_id;
+	String exception_id;
+	String parent_relation_id;
+	bool boundary = false;
+	const FSCompletenessResolvedCell *cell = nullptr;
+};
 
-		for (const String &witness_id : exception.boundary_witnesses) {
-			if (witness_ids.has(witness_id)) {
-				return ERR_INVALID_DATA;
-			}
-			witness_ids.insert(witness_id);
-			Dictionary coordinates;
-			if (FSUnionCompletenessAdapter::witness_coordinates(witness_id, coordinates) != OK) {
-				return ERR_INVALID_DATA;
-			}
-			int matches = 0;
-			const FSCompletenessResolvedCell *cell =
-					find_cell_by_coordinates(p_resolution, coordinates, matches);
-			if (matches != 1 || cell == nullptr) {
-				return ERR_INVALID_DATA;
-			}
-			bool observes_parent = false;
-			for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
-				observes_parent = observes_parent ||
-						provenance_has_parent_without_exception(dimension.value, exception.parent);
-			}
-			if (!observes_parent) {
-				return ERR_INVALID_DATA;
+static FSCompletenessStructuralFailure make_structural_failure(const String &p_stage,
+		const String &p_detail, const String &p_case_id, const String &p_witness_id,
+		const String &p_exception_id, Error p_error) {
+	FSCompletenessStructuralFailure failure;
+	failure.stage = p_stage;
+	failure.detail = p_detail;
+	failure.case_id = p_case_id;
+	failure.witness_id = p_witness_id;
+	failure.exception_id = p_exception_id;
+	failure.error_code = p_error;
+	return failure;
+}
+
+static Dictionary structural_failure_report(const FSCompletenessStructuralFailure &p_failure) {
+	Dictionary report;
+	report["stage"] = p_failure.stage;
+	report["detail"] = p_failure.detail;
+	report["case_id"] = p_failure.case_id;
+	report["witness_id"] = p_failure.witness_id;
+	report["exception_id"] = p_failure.exception_id;
+	report["error_code"] = double(int(p_failure.error_code));
+	return report;
+}
+
+static String structural_failure_sort_key(const FSCompletenessStructuralFailure &p_failure) {
+	return p_failure.stage + "|" + p_failure.exception_id + "|" + p_failure.witness_id + "|" +
+			p_failure.case_id + "|" + p_failure.detail;
+}
+
+static void sort_structural_failures(Vector<FSCompletenessStructuralFailure> &r_failures) {
+	for (int i = 1; i < r_failures.size(); i++) {
+		const FSCompletenessStructuralFailure failure = r_failures[i];
+		const String key = structural_failure_sort_key(failure);
+		int position = i;
+		while (position > 0 && key < structural_failure_sort_key(r_failures[position - 1])) {
+			r_failures.write[position] = r_failures[position - 1];
+			position--;
+		}
+		r_failures.write[position] = failure;
+	}
+}
+
+// Resolves every declared witness to exactly one cell that actually observes the exception (or, for
+// a boundary witness, the unexcepted parent relation). Each way a witness can fail to bind reports a
+// distinct stage so a comparator can tell an unknown witness from an ambiguous or unobserving one.
+static Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
+		const FSCompletenessResolution &p_resolution,
+		Vector<FSCompletenessWitnessBinding> &r_bindings,
+		Vector<FSCompletenessStructuralFailure> &r_failures) {
+	r_bindings.clear();
+	HashSet<String> witness_ids;
+	bool failed = false;
+	for (const FSCompletenessException &exception : p_manifest.exceptions) {
+		for (int pass = 0; pass < 2; pass++) {
+			const bool boundary = pass == 1;
+			const Vector<String> &declared =
+					boundary ? exception.boundary_witnesses : exception.positive_witnesses;
+			for (const String &witness_id : declared) {
+				FSCompletenessWitnessBinding binding;
+				binding.witness_id = witness_id;
+				binding.exception_id = exception.id;
+				binding.parent_relation_id = exception.parent;
+				binding.boundary = boundary;
+				if (witness_ids.has(witness_id)) {
+					r_failures.push_back(make_structural_failure("witness_declared_twice",
+							"A witness ID is declared more than once.", String(), witness_id, exception.id,
+							ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				witness_ids.insert(witness_id);
+				Dictionary coordinates;
+				if (FSUnionCompletenessAdapter::witness_coordinates(witness_id, coordinates) != OK) {
+					r_failures.push_back(make_structural_failure("witness_id_unknown",
+							"The adapter does not resolve coordinates for this witness ID.", String(),
+							witness_id, exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				int matches = 0;
+				const FSCompletenessResolvedCell *cell =
+						find_cell_by_coordinates(p_resolution, coordinates, matches);
+				if (cell == nullptr || matches == 0) {
+					r_failures.push_back(make_structural_failure("witness_cell_missing",
+							"No resolved cell carries the witness coordinates.", String(), witness_id,
+							exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				if (matches != 1) {
+					r_failures.push_back(make_structural_failure("witness_cell_ambiguous",
+							vformat("%d resolved cells carry the witness coordinates.", matches), String(),
+							witness_id, exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				bool observes = false;
+				for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
+					observes = observes ||
+							(boundary ? provenance_has_parent_without_exception(
+												dimension.value, exception.parent)
+									  : provenance_has_exception_parent(
+												dimension.value, exception.id, exception.parent));
+				}
+				if (!observes) {
+					r_failures.push_back(make_structural_failure(
+							boundary ? "witness_boundary_provenance_missing"
+									 : "witness_exception_provenance_missing",
+							boundary ? "No dimension derives through the parent relation without the exception."
+									 : "No dimension derives through the exception.",
+							cell->case_id, witness_id, exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				binding.cell = cell;
+				r_bindings.push_back(binding);
 			}
 		}
 	}
-	return OK;
+	return failed ? ERR_INVALID_DATA : OK;
 }
 
 static const FSCompletenessRuntimeResult *runtime_result_for(
@@ -283,60 +356,30 @@ static void sort_findings(Vector<FSCompletenessFinding> &r_findings) {
 	}
 }
 
-static Error validate_witness_observations(const FSCompletenessManifest &p_manifest,
-		const FSCompletenessResolution &p_resolution, const FSCompletenessRuntimeBatch &p_batch) {
-	for (const FSCompletenessException &exception : p_manifest.exceptions) {
-		for (const String &witness_id : exception.positive_witnesses) {
-			Dictionary coordinates;
-			if (FSUnionCompletenessAdapter::witness_coordinates(witness_id, coordinates) != OK) {
-				return ERR_INVALID_DATA;
-			}
-			int matches = 0;
-			const FSCompletenessResolvedCell *cell =
-					find_cell_by_coordinates(p_resolution, coordinates, matches);
-			const FSCompletenessRuntimeResult *actual =
-					cell == nullptr ? nullptr : runtime_result_for(*cell, p_batch);
-			if (matches != 1 || cell == nullptr || actual == nullptr) {
-				return ERR_INVALID_DATA;
-			}
-			bool observed_exception_dimension = false;
-			for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
-				if (!provenance_has_exception_parent(dimension.value, exception.id, exception.parent)) {
-					continue;
-				}
-				observed_exception_dimension = true;
-			}
-			if (!observed_exception_dimension) {
-				return ERR_INVALID_DATA;
-			}
+// A bound witness must be observed by a runtime result that really is the witness cell's result.
+// A missing or misidentified result is a harness defect: it would otherwise let a witness pass on
+// evidence produced for a different case or surface.
+static Error validate_witness_runtime_identity(const Vector<FSCompletenessWitnessBinding> &p_bindings,
+		const FSCompletenessRuntimeBatch &p_batch, Vector<FSCompletenessStructuralFailure> &r_failures) {
+	bool failed = false;
+	for (const FSCompletenessWitnessBinding &binding : p_bindings) {
+		const FSCompletenessRuntimeResult *actual = runtime_result_for(*binding.cell, p_batch);
+		if (actual == nullptr) {
+			r_failures.push_back(make_structural_failure("witness_runtime_result_missing",
+					"No runtime result was produced for the witness cell.", binding.cell->case_id,
+					binding.witness_id, binding.exception_id, ERR_INVALID_DATA));
+			failed = true;
+			continue;
 		}
-
-		for (const String &witness_id : exception.boundary_witnesses) {
-			Dictionary coordinates;
-			if (FSUnionCompletenessAdapter::witness_coordinates(witness_id, coordinates) != OK) {
-				return ERR_INVALID_DATA;
-			}
-			int matches = 0;
-			const FSCompletenessResolvedCell *cell =
-					find_cell_by_coordinates(p_resolution, coordinates, matches);
-			const FSCompletenessRuntimeResult *actual =
-					cell == nullptr ? nullptr : runtime_result_for(*cell, p_batch);
-			if (matches != 1 || cell == nullptr || actual == nullptr) {
-				return ERR_INVALID_DATA;
-			}
-			bool observed_parent_dimension = false;
-			for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
-				if (!provenance_has_parent_without_exception(dimension.value, exception.parent)) {
-					continue;
-				}
-				observed_parent_dimension = true;
-			}
-			if (!observed_parent_dimension) {
-				return ERR_INVALID_DATA;
-			}
+		if (!runtime_result_identity_matches(*binding.cell, *actual)) {
+			r_failures.push_back(make_structural_failure("witness_runtime_identity_mismatch",
+					vformat("The runtime result reports case '%s' on surface '%s'.", actual->case_id,
+							actual->surface),
+					binding.cell->case_id, binding.witness_id, binding.exception_id, ERR_INVALID_DATA));
+			failed = true;
 		}
 	}
-	return OK;
+	return failed ? ERR_INVALID_DATA : OK;
 }
 
 static const FSCompletenessProgram *find_program_by_id(
@@ -388,6 +431,10 @@ static Dictionary aggregate_parity_evidence(const FSCompletenessResolvedCell &p_
 	if (p_text.diagnostics != p_bytecode.diagnostics) {
 		evidence["diagnostics"] = parity_evidence(
 				p_text.diagnostics, p_bytecode.diagnostics, p_text.case_id, p_bytecode.case_id);
+	}
+	if (p_text.diagnostic_records != p_bytecode.diagnostic_records) {
+		evidence["diagnostic_records"] = parity_evidence(p_text.diagnostic_records,
+				p_bytecode.diagnostic_records, p_text.case_id, p_bytecode.case_id);
 	}
 	if (p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status) {
 		evidence["runtime_status"] = parity_evidence(
@@ -460,8 +507,8 @@ static const FSCompletenessResolvedCell *find_cell_by_id(
 static bool ledger_dimension_is_known(
 		const FSCompletenessResolvedCell &p_cell, const String &p_dimension) {
 	return p_cell.dimensions.has(p_dimension) || p_dimension == "output" ||
-			p_dimension == "diagnostics" || p_dimension == "runtime_status" ||
-			p_dimension == "text_bytecode_parity";
+			p_dimension == "diagnostics" || p_dimension == "diagnostic_severity" ||
+			p_dimension == "runtime_status" || p_dimension == "text_bytecode_parity";
 }
 
 static String canonicalize_existing_input_path(const String &p_path);
@@ -1289,6 +1336,24 @@ static Dictionary all_agreeing_provenance(const FSCompletenessResolvedCell &p_ce
 	return provenance;
 }
 
+// The strongest severity the adapter recorded, independent of whether an annotation kept the
+// diagnostic out of the reported list. A case expected to be rejected that only carries warnings has
+// regressed even when the analyzer still reports something.
+static String diagnostic_severity_profile(const FSCompletenessObservation &p_observation) {
+	bool has_warning = false;
+	for (int index = 0; index < p_observation.diagnostic_records.size(); index++) {
+		const Dictionary record = p_observation.diagnostic_records[index];
+		const String severity = record.get("severity", String());
+		if (severity == "error") {
+			return "error";
+		}
+		if (severity == "warning") {
+			has_warning = true;
+		}
+	}
+	return has_warning ? "warning" : "none";
+}
+
 static bool observed_expected_dimensions(
 		const FSCompletenessResolvedCell &p_cell, const FSCompletenessRuntimeResult &p_actual) {
 	for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : p_cell.dimensions) {
@@ -1311,10 +1376,7 @@ static void sort_cells_by_id(Vector<const FSCompletenessResolvedCell *> &r_cells
 	}
 }
 
-} // namespace
-
-Error FSCompletenessRunner::run(
-		const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
+static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
 	r_result = FSCompletenessRunResult();
 	if (p_options.catalog_root.is_empty() || p_options.family.is_empty() ||
 			p_options.scratch_root.is_empty() || p_options.report_path.is_empty() ||
@@ -1377,8 +1439,13 @@ Error FSCompletenessRunner::run(
 	if (error != OK) {
 		return error;
 	}
-	error = validate_witness_resolution(manifest, resolution);
+	Vector<FSCompletenessStructuralFailure> structural_failures;
+	Vector<FSCompletenessWitnessBinding> witness_bindings;
+	error = collect_witness_bindings(manifest, resolution, witness_bindings, structural_failures);
 	if (error != OK) {
+		sort_structural_failures(structural_failures);
+		r_result.outcome = "structural_failure";
+		r_result.structural_failures = structural_failures;
 		return error;
 	}
 
@@ -1448,9 +1515,13 @@ Error FSCompletenessRunner::run(
 			}
 		}
 	}
-	error = validate_witness_observations(manifest, resolution, batch);
-	if (error != OK) {
-		return error;
+	const Error witness_identity_error =
+			validate_witness_runtime_identity(witness_bindings, batch, structural_failures);
+	if (witness_identity_error != OK) {
+		sort_structural_failures(structural_failures);
+		r_result.outcome = "structural_failure";
+		r_result.structural_failures = structural_failures;
+		return witness_identity_error;
 	}
 
 	Vector<FSCompletenessFinding> findings;
@@ -1472,6 +1543,18 @@ Error FSCompletenessRunner::run(
 		if (actual->produced_output != program->expected_output) {
 			append_finding(findings, p_options.family, cell.case_id, "output",
 					program->expected_output, actual->produced_output, artifact_path);
+		}
+		const FSCompletenessResolvedDimension *analysis_dimension = cell.dimensions.getptr("analysis");
+		if (analysis_dimension != nullptr) {
+			const String expected_analysis = analysis_dimension->expected;
+			const String severity_profile = diagnostic_severity_profile(*actual);
+			if (expected_analysis == "reject" && severity_profile != "error") {
+				append_finding(findings, p_options.family, cell.case_id, "diagnostic_severity", "error",
+						severity_profile, artifact_path);
+			} else if (expected_analysis == "accept" && severity_profile == "error") {
+				append_finding(findings, p_options.family, cell.case_id, "diagnostic_severity",
+						"at_most_warning", severity_profile, artifact_path);
+			}
 		}
 		for (const String &dimension_name : sorted_dimension_keys(cell.dimensions)) {
 			const FSCompletenessResolvedDimension &dimension = cell.dimensions[dimension_name];
@@ -1515,6 +1598,7 @@ Error FSCompletenessRunner::run(
 	pair_keys.sort();
 	int parity_failures = 0;
 	HashSet<String> parity_case_ids;
+	HashMap<String, Dictionary> parity_evidence_by_case;
 	for (const String &pair_key : pair_keys) {
 		const SurfacePair &pair = pairs[pair_key];
 		if (pair.text == nullptr || pair.bytecode == nullptr) {
@@ -1528,13 +1612,16 @@ Error FSCompletenessRunner::run(
 
 		const Dictionary evidence = aggregate_parity_evidence(*pair.text, *pair.bytecode, *text, *bytecode);
 		const bool pair_failed = evidence.has("output") || evidence.has("diagnostics") ||
-				evidence.has("runtime_status") || !Dictionary(evidence.get("dimensions", Dictionary())).is_empty();
+				evidence.has("diagnostic_records") || evidence.has("runtime_status") ||
+				!Dictionary(evidence.get("dimensions", Dictionary())).is_empty();
 		if (!pair_failed) {
 			continue;
 		}
 		parity_failures++;
 		parity_case_ids.insert(pair.text->case_id);
 		parity_case_ids.insert(pair.bytecode->case_id);
+		parity_evidence_by_case[pair.text->case_id] = evidence;
+		parity_evidence_by_case[pair.bytecode->case_id] = evidence;
 		bool parity_attached = false;
 		for (FSCompletenessFinding &finding : findings) {
 			if (finding.case_id == pair.text->case_id || finding.case_id == pair.bytecode->case_id) {
@@ -1566,6 +1653,8 @@ Error FSCompletenessRunner::run(
 		if (known == nullptr) {
 			continue;
 		}
+		// Classification carries disposition and ownership only. The finding stays in the report and
+		// keeps its evidence, so a classified mismatch still fails the run.
 		finding.finding_id = known->finding_id;
 		finding.classification = known->classification;
 		finding.issue_url = known->issue_url;
@@ -1575,10 +1664,92 @@ Error FSCompletenessRunner::run(
 		finding.resolved_case_ids = known->resolved_case_ids;
 		reconciled_ledger_entries.insert(reconciliation_key);
 	}
-	if (reconciled_ledger_entries.size() != ledger.size()) {
-		return ERR_INVALID_DATA;
+	Vector<String> reconciled_keys;
+	Vector<String> stale_keys;
+	for (const KeyValue<String, FSCompletenessFinding> &entry : ledger) {
+		if (reconciled_ledger_entries.has(entry.key)) {
+			reconciled_keys.push_back(entry.key);
+		} else {
+			stale_keys.push_back(entry.key);
+		}
 	}
+	reconciled_keys.sort();
+	stale_keys.sort();
+	Array reconciled_report;
+	for (const String &key : reconciled_keys) {
+		const FSCompletenessFinding &entry = ledger[key];
+		Dictionary record;
+		record["reconciliation_key"] = key;
+		record["finding_id"] = entry.finding_id;
+		record["case_id"] = entry.case_id;
+		record["dimension"] = entry.dimension;
+		record["classification"] = entry.classification;
+		reconciled_report.push_back(record);
+	}
+	Array stale_report;
+	for (const String &key : stale_keys) {
+		const FSCompletenessFinding &entry = ledger[key];
+		Dictionary record;
+		record["reconciliation_key"] = key;
+		record["finding_id"] = entry.finding_id;
+		record["case_id"] = entry.case_id;
+		record["dimension"] = entry.dimension;
+		record["classification"] = entry.classification;
+		stale_report.push_back(record);
+		structural_failures.push_back(make_structural_failure("ledger_entry_stale",
+				vformat("Ledger entry '%s' classifies dimension '%s', which no longer reproduces.",
+						entry.finding_id, entry.dimension),
+				entry.case_id, String(), String(), ERR_INVALID_DATA));
+	}
+	Dictionary ledger_report;
+	ledger_report["reconciled"] = reconciled_report;
+	ledger_report["stale"] = stale_report;
 	sort_findings(findings);
+
+	HashMap<String, Array> blocking_finding_ids_by_case;
+	for (const FSCompletenessFinding &finding : findings) {
+		Array *blocking = blocking_finding_ids_by_case.getptr(finding.case_id);
+		if (blocking == nullptr) {
+			blocking_finding_ids_by_case[finding.case_id] = Array();
+			blocking = blocking_finding_ids_by_case.getptr(finding.case_id);
+		}
+		blocking->push_back(finding.finding_id);
+	}
+	HashMap<String, Dictionary> exception_reports;
+	Vector<String> exception_ids;
+	for (const FSCompletenessException &exception : manifest.exceptions) {
+		Dictionary exception_report;
+		exception_report["exception_id"] = exception.id;
+		exception_report["parent"] = exception.parent;
+		exception_report["witnessed"] = true;
+		exception_report["positive_witnesses"] = Array();
+		exception_report["boundary_witnesses"] = Array();
+		exception_reports[exception.id] = exception_report;
+		exception_ids.push_back(exception.id);
+	}
+	for (const FSCompletenessWitnessBinding &binding : witness_bindings) {
+		Dictionary *exception_report = exception_reports.getptr(binding.exception_id);
+		if (exception_report == nullptr) {
+			return ERR_INVALID_DATA;
+		}
+		const Array *blocking = blocking_finding_ids_by_case.getptr(binding.cell->case_id);
+		Dictionary witness_report;
+		witness_report["witness_id"] = binding.witness_id;
+		witness_report["case_id"] = binding.cell->case_id;
+		witness_report["witnessed"] = blocking == nullptr;
+		witness_report["blocking_finding_ids"] = blocking == nullptr ? Array() : *blocking;
+		Array witnesses = (*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"];
+		witnesses.push_back(witness_report);
+		(*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"] = witnesses;
+		if (blocking != nullptr) {
+			(*exception_report)["witnessed"] = false;
+		}
+	}
+	Array exceptions_report;
+	for (const String &exception_id : exception_ids) {
+		exceptions_report.push_back(exception_reports[exception_id]);
+	}
+	sort_structural_failures(structural_failures);
 
 	Dictionary executed_by_surface;
 	executed_by_surface["text"] = double(batch.text.size());
@@ -1634,16 +1805,27 @@ Error FSCompletenessRunner::run(
 			diagnostics.push_back(diagnostic);
 		}
 		case_report["diagnostics"] = diagnostics;
+		case_report["diagnostic_records"] = actual->diagnostic_records;
+		case_report["diagnostic_severity"] = diagnostic_severity_profile(*actual);
 		case_report["produced_output"] = actual->produced_output;
 		case_report["expected_output"] = program->expected_output;
 		case_report["artifact_path"] = artifact_scope.artifact_path(*cell);
+		const Dictionary *case_parity_evidence = parity_evidence_by_case.getptr(cell->case_id);
+		case_report["parity_evidence"] =
+				case_parity_evidence == nullptr ? Dictionary() : *case_parity_evidence;
 		cases.push_back(case_report);
 	}
 	Array report_findings;
-	const bool success = findings.is_empty();
+	const bool success = findings.is_empty() && structural_failures.is_empty();
 	for (const FSCompletenessFinding &finding : findings) {
 		report_findings.push_back(finding_report(finding));
 	}
+	Array structural_failures_report;
+	for (const FSCompletenessStructuralFailure &failure : structural_failures) {
+		structural_failures_report.push_back(structural_failure_report(failure));
+	}
+	const String outcome = !structural_failures.is_empty() ? "structural_failure"
+														   : (findings.is_empty() ? "passed" : "product_mismatch");
 
 	Dictionary report;
 	report["schema_version"] = 1.0;
@@ -1655,7 +1837,11 @@ Error FSCompletenessRunner::run(
 	report["coverage_by_dimension"] = coverage_by_dimension;
 	report["uncovered_required_dimensions"] = double(resolution.uncovered_dimension_count);
 	report["text_bytecode_parity_failures"] = double(parity_failures);
+	report["outcome"] = outcome;
 	report["findings"] = report_findings;
+	report["structural_failures"] = structural_failures_report;
+	report["ledger"] = ledger_report;
+	report["exceptions"] = exceptions_report;
 	report["cases"] = cases;
 	error = write_report_atomically(
 			canonical_scratch_root, p_options.catalog_root, p_options.report_path, report,
@@ -1668,9 +1854,38 @@ Error FSCompletenessRunner::run(
 	completed.success = success;
 	completed.executed_cells = resolution.cells.size();
 	completed.findings = findings;
+	completed.structural_failures = structural_failures;
+	completed.outcome = outcome;
 	completed.report = report;
 	r_result = completed;
-	return success ? OK : FAILED;
+	if (!structural_failures.is_empty()) {
+		return ERR_INVALID_DATA;
+	}
+	return findings.is_empty() ? OK : FAILED;
+}
+
+} // namespace
+
+Error FSCompletenessRunner::run(
+		const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
+	const Error error = run_family(p_options, r_result);
+	if (error == OK) {
+		r_result.outcome = "passed";
+		return error;
+	}
+	if (error == FAILED) {
+		r_result.outcome = "product_mismatch";
+		return error;
+	}
+	// Anything else aborted before evidence could be published. Naming the outcome keeps a broken run
+	// from reading like a clean one, and keeps it out of the product-mismatch channel.
+	r_result.outcome = "structural_failure";
+	if (r_result.structural_failures.is_empty()) {
+		r_result.structural_failures.push_back(make_structural_failure("run_aborted",
+				"The run aborted before completeness evidence could be published.", String(), String(),
+				String(), error));
+	}
+	return error;
 }
 
 } // namespace FSTests

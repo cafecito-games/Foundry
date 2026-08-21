@@ -49,6 +49,10 @@ struct FSCompletenessObservation {
 	String surface;
 	Dictionary dimensions;
 	PackedStringArray diagnostics;
+	// One dictionary per observed diagnostic carrying "severity", "category", "code", "line",
+	// "column", "message", and "suppressed". Warnings are recorded even when an annotation keeps
+	// them out of `diagnostics`, so a severity regression cannot hide behind warning suppression.
+	Array diagnostic_records;
 	String produced_output;
 };
 
