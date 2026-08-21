@@ -41,7 +41,10 @@ duplicated), and one ledger pull request per bot branch looked up in any state. 
 title and the bot branch name are the idempotency keys; GitHub cannot enforce them atomically, so after every
 create the client re-lists and converges concurrent duplicates onto the lowest-numbered open one (closing the
 others with a comment naming the survivor). Duplicates are converged, not prevented. For pull requests: an open one is updated, otherwise a merged one is
-authoritative and left alone, and only when neither exists is a closed unmerged one reopened and updated. It refuses protected branches and never passes `--auto` or merges.
+authoritative and left alone, and only when neither exists is a closed unmerged one reopened and updated. It refuses protected branches and never passes `--auto` or merges. Pushes to a bot branch carry an explicit
+lease: the automation records the branch's remote SHA with `observe_remote_branch` before it starts (absent
+for a new branch) and pushes with `--force-with-lease=<ref>:<that SHA>`, so a stale run can never replace a
+newer reviewed commit; a rejected lease is an error naming both SHAs and is not retried.
 
 ## Obtaining the `develop` report
 

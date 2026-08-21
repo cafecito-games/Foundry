@@ -55,14 +55,40 @@ class AutomationClient:
                 raise RuntimeError(f"automation must never invoke gh with {forbidden!r}")
         return self._run(command)
 
-    def push_ledger_branch(self, branch: str, repository_root: Path) -> None:
+    def _require_bot_branch(self, branch: str) -> str:
         if branch in PROTECTED_BRANCHES or not branch.startswith(BOT_BRANCH_PREFIX):
-            raise ProtectedBranchError(
-                f"refusing to push to {branch!r}; only {BOT_BRANCH_PREFIX}* branches are allowed"
-            )
-        self._run(
-            ["git", "-C", str(repository_root), "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}"]
-        )
+            raise ProtectedBranchError(f"refusing to touch {branch!r}; only {BOT_BRANCH_PREFIX}* branches are allowed")
+        return f"refs/heads/{branch}"
+
+    def observe_remote_branch(self, branch: str, repository_root: Path) -> Optional[str]:
+        """The SHA the bot branch has on origin right now, or None when it does not exist yet.
+
+        Record this before doing any work and hand it to push_ledger_branch as the lease so a push can only
+        replace the commit the automation actually observed.
+        """
+        ref = self._require_bot_branch(branch)
+        output = self._run(["git", "-C", str(repository_root), "ls-remote", "--heads", "origin", ref])
+        for line in output.splitlines():
+            sha, _, listed_ref = line.strip().partition("\t")
+            if listed_ref == ref and sha:
+                return sha
+        return None
+
+    def push_ledger_branch(self, branch: str, repository_root: Path, *, expected_sha: Optional[str]) -> None:
+        """Push HEAD to the bot branch only if origin still holds ``expected_sha`` (None: the branch must not
+        exist). A rejected lease is an error; it is never retried after re-fetching, because a newer reviewed
+        commit may have landed on the branch."""
+        ref = self._require_bot_branch(branch)
+        lease = f"--force-with-lease={ref}:{expected_sha or ''}"
+        try:
+            self._run(["git", "-C", str(repository_root), "push", lease, "origin", f"HEAD:{ref}"])
+        except subprocess.CalledProcessError as error:
+            current = self.observe_remote_branch(branch, repository_root)
+            raise AutomationError(
+                f"push to {branch!r} rejected: expected origin at {expected_sha or '<absent>'} but it is now at "
+                f"{current or '<absent>'}; not retrying because a newer commit may be a reviewed one "
+                f"({(error.stderr or '').strip()})"
+            ) from error
 
     def _find_pull_request(self, branch: str) -> Optional[tuple[int, str, str]]:
         """Find the one ledger pull request for a bot branch in any state; an open one wins over closed ones."""

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1419,13 +1420,72 @@ class ConcurrentCreateTests(unittest.TestCase):
         self.assertFalse(any("merge" in call or "--auto" in call for call in joined))
 
 
+class FakeGit:
+    """Fake git: answers ls-remote with a configured SHA (or nothing) and optionally rejects the push."""
+
+    def __init__(self, remote_sha: str | None, reject_push: bool = False) -> None:
+        self.calls: list[list[str]] = []
+        self.remote_sha = remote_sha
+        self.reject_push = reject_push
+
+    def __call__(self, arguments: list[str]) -> str:
+        self.calls.append(list(arguments))
+        if "ls-remote" in arguments:
+            return f"{self.remote_sha}\trefs/heads/bot/type-completeness/abc\n" if self.remote_sha else ""
+        if "push" in arguments and self.reject_push:
+            raise subprocess.CalledProcessError(1, arguments, stderr="! [rejected] stale info")
+        return ""
+
+
+class LeasePushTests(unittest.TestCase):
+    BRANCH = "bot/type-completeness/abc"
+
+    def test_observed_remote_sha_is_carried_into_the_lease(self) -> None:
+        git = FakeGit("a" * 40)
+        client = github.AutomationClient(run=git, repository="cafecito-games/Foundry")
+        observed = client.observe_remote_branch(self.BRANCH, Path("/repo"))
+        self.assertEqual(observed, "a" * 40)
+        client.push_ledger_branch(self.BRANCH, Path("/repo"), expected_sha=observed)
+        push = next(call for call in git.calls if "push" in call)
+        self.assertIn(f"--force-with-lease=refs/heads/{self.BRANCH}:{'a' * 40}", push)
+        self.assertNotIn("--force-with-lease", push)
+        self.assertNotIn("--force", push)
+
+    def test_new_branch_expects_an_empty_lease(self) -> None:
+        git = FakeGit(None)
+        client = github.AutomationClient(run=git, repository="cafecito-games/Foundry")
+        observed = client.observe_remote_branch(self.BRANCH, Path("/repo"))
+        self.assertIsNone(observed)
+        client.push_ledger_branch(self.BRANCH, Path("/repo"), expected_sha=observed)
+        push = next(call for call in git.calls if "push" in call)
+        self.assertIn(f"--force-with-lease=refs/heads/{self.BRANCH}:", push)
+
+    def test_rejected_lease_is_an_error_with_no_retry(self) -> None:
+        git = FakeGit("b" * 40, reject_push=True)
+        client = github.AutomationClient(run=git, repository="cafecito-games/Foundry")
+        with self.assertRaises(github.AutomationError) as context:
+            client.push_ledger_branch(self.BRANCH, Path("/repo"), expected_sha="a" * 40)
+        message = str(context.exception)
+        self.assertIn("a" * 40, message)
+        self.assertIn("b" * 40, message)
+        self.assertEqual(sum("push" in call for call in git.calls), 1)
+        self.assertFalse(any("fetch" in call for call in git.calls))
+
+    def test_push_requires_an_explicit_lease_decision(self) -> None:
+        git = FakeGit("a" * 40)
+        client = github.AutomationClient(run=git, repository="cafecito-games/Foundry")
+        with self.assertRaises(TypeError):
+            client.push_ledger_branch(self.BRANCH, Path("/repo"))  # type: ignore[call-arg]
+        self.assertEqual(git.calls, [])
+
+
 class GitHubAutomationTests(unittest.TestCase):
     def test_refuses_to_push_to_protected_branch(self) -> None:
         runner = FakeCommandRunner()
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         for branch in ("develop", "main", "master"):
             with self.assertRaises(github.ProtectedBranchError):
-                client.push_ledger_branch(branch, Path("/nowhere"))
+                client.push_ledger_branch(branch, Path("/nowhere"), expected_sha=None)
         self.assertEqual(runner.calls, [])
 
     def test_refuses_to_open_or_update_a_pull_request_from_a_non_bot_branch(self) -> None:
