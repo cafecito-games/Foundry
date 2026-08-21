@@ -588,6 +588,15 @@ static Vector<String> sorted_dictionary_keys(const Dictionary &p_dictionary) {
 	return keys;
 }
 
+static void validate_allowed_fields(const Dictionary &p_object, const Vector<String> &p_allowed_fields,
+		const String &p_path, Vector<String> &r_errors) {
+	for (const String &field : sorted_dictionary_keys(p_object)) {
+		if (!p_allowed_fields.has(field)) {
+			append_error(r_errors, append_json_path_member(p_path, field), vformat("unknown field '%s'", field));
+		}
+	}
+}
+
 static bool collect_catalog_files(const String &p_directory, Vector<String> &r_files, Vector<String> &r_errors) {
 	Error open_error = OK;
 	Ref<DirAccess> directory = DirAccess::open(p_directory, &open_error);
@@ -640,6 +649,7 @@ static void parse_partition_file(const String &p_path, HashSet<String> &r_seen_a
 		append_catalog_errors(r_errors, p_path, file_errors);
 		return;
 	}
+	validate_allowed_fields(root, Vector<String>({ "schema_version", "axis", "leaves", "classes" }), "$", file_errors);
 
 	FSCompletenessPartition partition;
 	parse_catalog_schema_version(root, partition.schema_version, file_errors);
@@ -705,6 +715,7 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 		append_catalog_errors(r_errors, p_path, file_errors);
 		return;
 	}
+	validate_allowed_fields(root, Vector<String>({ "schema_version", "adapter", "dimensions" }), "$", file_errors);
 
 	int schema_version = 0;
 	parse_catalog_schema_version(root, schema_version, file_errors);
@@ -724,6 +735,7 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 			if (!require_dictionary(records[i], record_path, record_object, file_errors)) {
 				continue;
 			}
+			validate_allowed_fields(record_object, Vector<String>({ "id", "outcomes" }), record_path, file_errors);
 			FSCompletenessDimension dimension;
 			const bool has_id = require_string(record_object, SNAME("id"), record_path + ".id", dimension.id, file_errors);
 			if (has_id) {
@@ -849,6 +861,27 @@ static void validate_selector(const Dictionary &p_selector, const String &p_cont
 	}
 }
 
+static void validate_coordinate_patch(const Dictionary &p_patch, const String &p_context,
+		const HashMap<String, FSCompletenessPartition> &p_partitions, Vector<String> &r_errors) {
+	for (const String &axis : sorted_dictionary_keys(p_patch)) {
+		const FSCompletenessPartition *partition = p_partitions.getptr(axis);
+		if (partition == nullptr) {
+			r_errors.push_back(vformat("%s coordinate uses unknown axis '%s'", p_context, axis));
+			continue;
+		}
+
+		const Variant value = p_patch[axis];
+		if (value.get_type() != Variant::STRING || String(value).is_empty()) {
+			r_errors.push_back(vformat("%s coordinate for axis '%s' must be a non-empty string leaf", p_context, axis));
+			continue;
+		}
+		const String leaf = value;
+		if (!partition->leaves.has(leaf)) {
+			r_errors.push_back(vformat("%s coordinate for axis '%s' uses unknown leaf '%s'", p_context, axis, leaf));
+		}
+	}
+}
+
 static void validate_dimension_outcomes(const Dictionary &p_outcomes, const String &p_record,
 		const String &p_verb, bool p_allow_same, const HashMap<String, FSCompletenessDimension> &p_dimensions,
 		Vector<String> &r_errors) {
@@ -927,14 +960,14 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 	for (const FSCompletenessRelation &relation : p_manifest.relations) {
 		const String record = vformat("relation '%s'", relation.id);
 		validate_selector(relation.from, record + " from", p_catalog.partitions, r_errors);
-		validate_selector(relation.to, record + " to", p_catalog.partitions, r_errors);
+		validate_coordinate_patch(relation.to, record + " to", p_catalog.partitions, r_errors);
 		validate_dimension_outcomes(relation.derive, record, "derives", true, p_catalog.dimensions, r_errors);
 	}
 
 	for (const FSCompletenessException &exception : p_manifest.exceptions) {
 		const String record = vformat("exception '%s'", exception.id);
 		validate_selector(exception.when, record + " when", p_catalog.partitions, r_errors);
-		validate_dimension_outcomes(exception.derive, record, "derives", false, p_catalog.dimensions, r_errors);
+		validate_dimension_outcomes(exception.derive, record, "derives", true, p_catalog.dimensions, r_errors);
 	}
 
 	return r_errors.is_empty() ? OK : ERR_INVALID_DATA;

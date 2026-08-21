@@ -547,7 +547,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		manifest.relations.write[0].to["source_proof"] = "not_registered";
 		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
 		CHECK(completeness_errors_contain(errors,
-				"relation 'unproven_to_union' to selector for axis 'source_proof' uses unknown leaf 'not_registered'"));
+				"relation 'unproven_to_union' to coordinate for axis 'source_proof' uses unknown leaf 'not_registered'"));
 
 		manifest = valid_manifest;
 		Dictionary extra_field;
@@ -557,6 +557,33 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
 		CHECK(completeness_errors_contain(errors,
 				"required dimension 'runtime_obligation' when selector for axis 'source_proof' must be a string leaf or an object containing only 'class'"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest vocabulary requires concrete relation destination patches") {
+		TemporaryProjectTree tree("type_completeness_vocabulary_relation_to");
+		REQUIRE(tree.is_valid());
+		const FSCompletenessManifest valid_manifest = load_representative_completeness_manifest(tree);
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE(catalog.load(type_completeness_catalog_root, errors) == OK);
+		CHECK(validate_manifest_vocabulary(valid_manifest, catalog, errors) == OK);
+
+		FSCompletenessManifest manifest = valid_manifest;
+		Dictionary class_predicate;
+		class_predicate["class"] = "unproven";
+		manifest.relations.write[0].to["source_proof"] = class_predicate;
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"relation 'unproven_to_union' to coordinate for axis 'source_proof' must be a non-empty string leaf"));
+
+		manifest = valid_manifest;
+		manifest.relations.write[0].to["surface"] = 7;
+		manifest.relations.write[0].to["destination"] = "";
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"relation 'unproven_to_union' to coordinate for axis 'destination' must be a non-empty string leaf"));
+		CHECK(completeness_errors_contain(errors,
+				"relation 'unproven_to_union' to coordinate for axis 'surface' must be a non-empty string leaf"));
 	}
 
 	TEST_CASE("TypeCompleteness Manifest vocabulary validates dimensions and outcomes") {
@@ -577,7 +604,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		manifest.required_dimensions.write[0].dimension = "diagnostic";
 		manifest.anchors.write[0].expect["diagnostic"] = "accept";
 		manifest.relations.write[0].derive["analysis"] = "maybe";
-		manifest.exceptions.write[0].derive["runtime_obligation"] = "same";
+		manifest.exceptions.write[0].derive["runtime_obligation"] = "deferred";
 		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == ERR_INVALID_DATA);
 		CHECK(completeness_errors_contain(errors,
 				"required dimension references unknown dimension 'diagnostic'"));
@@ -586,7 +613,20 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK(completeness_errors_contain(errors,
 				"relation 'unproven_to_union' derives unknown analysis outcome 'maybe'"));
 		CHECK(completeness_errors_contain(errors,
-				"exception 'reflective_rejection' derives unknown runtime_obligation outcome 'same'"));
+				"exception 'reflective_rejection' derives unknown runtime_obligation outcome 'deferred'"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest vocabulary allows exceptions to preserve dimensions") {
+		TemporaryProjectTree tree("type_completeness_vocabulary_exception_same");
+		REQUIRE(tree.is_valid());
+		FSCompletenessManifest manifest = load_representative_completeness_manifest(tree);
+		manifest.exceptions.write[0].derive["runtime_obligation"] = "same";
+
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE(catalog.load(type_completeness_catalog_root, errors) == OK);
+		CHECK(validate_manifest_vocabulary(manifest, catalog, errors) == OK);
+		CHECK(errors.is_empty());
 	}
 
 	TEST_CASE("TypeCompleteness Manifest catalog rejects duplicate axes and dimensions across files") {
@@ -658,6 +698,71 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK(completeness_errors_contain_text(errors, "dimensions/bad.json: $.schema_version: expected an integer"));
 		CHECK(completeness_errors_contain_text(errors, "dimensions/bad.json: $.adapter: must be non-empty"));
 		CHECK(completeness_errors_contain_text(errors, "dimensions/bad.json: $.dimensions: expected an array"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest catalog rejects unknown registry fields deterministically") {
+		TemporaryProjectTree tree("type_completeness_catalog_unknown_fields");
+		REQUIRE(tree.is_valid());
+		tree.write_file("partitions/z.json",
+				R"JSON({"schema_version":1,"axis":"z_shape","leaves":["plain"],"classes":{},"z_typo":true})JSON");
+		tree.write_file("partitions/a.json",
+				R"JSON({"schema_version":1,"axis":"a_shape","leaves":["plain"],"classes":{},"a_typo":true})JSON");
+		tree.write_file("dimensions/core.json", R"JSON({
+  "schema_version": 1,
+  "adapter": "core",
+  "dimensions": [{"id": "analysis", "outcomes": ["accept"], "outcome": "accept"}],
+  "dimensionz": []
+})JSON");
+
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		CHECK(catalog.load(tree.root, errors) == ERR_INVALID_DATA);
+		CHECK_EQ(errors.size(), 4);
+		if (errors.size() == 4) {
+			CHECK(errors[0].contains("partitions/a.json: $.a_typo: unknown field 'a_typo'"));
+			CHECK(errors[1].contains("partitions/z.json: $.z_typo: unknown field 'z_typo'"));
+			CHECK(errors[2].contains("dimensions/core.json: $.dimensionz: unknown field 'dimensionz'"));
+			CHECK(errors[3].contains(
+					"dimensions/core.json: $.dimensions[0].outcome: unknown field 'outcome'"));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest catalog rejects duplicate JSON members and clears loaded state") {
+		TemporaryProjectTree tree("type_completeness_catalog_duplicate_members");
+		REQUIRE(tree.is_valid());
+		tree.write_file("partitions/duplicate.json", R"JSON({
+  "schema_version": 1,
+  "axis": "shape",
+  "a\u0078is": "other_shape",
+  "leaves": ["plain"],
+  "classes": {}
+})JSON");
+		tree.write_file("dimensions/duplicate.json", R"JSON({
+  "schema_version": 1,
+  "adapter": "core",
+  "dimensions": [{
+    "id": "analysis",
+    "outcomes": ["accept"],
+    "outco\u006des": ["reject"]
+  }]
+})JSON");
+
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE(catalog.load(type_completeness_catalog_root, errors) == OK);
+		REQUIRE(catalog.axis_has_leaf("source_proof", "variant"));
+		REQUIRE(catalog.dimension_has_outcome("analysis", "accept"));
+
+		CHECK(catalog.load(tree.root, errors) == ERR_INVALID_DATA);
+		CHECK_EQ(errors.size(), 2);
+		if (errors.size() == 2) {
+			CHECK(errors[0].contains("partitions/duplicate.json: $.axis: duplicate object member 'axis'"));
+			CHECK(errors[1].contains(
+					"dimensions/duplicate.json: $.dimensions[0].outcomes: duplicate object member 'outcomes'"));
+		}
+		CHECK_FALSE(catalog.axis_has_leaf("source_proof", "variant"));
+		CHECK_FALSE(catalog.dimension_has_outcome("analysis", "accept"));
+		CHECK_FALSE(catalog.axis_has_leaf("other_shape", "plain"));
 	}
 }
 
