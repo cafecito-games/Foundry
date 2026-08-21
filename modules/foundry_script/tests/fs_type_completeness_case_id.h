@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_graph.h                                          */
+/*  fs_type_completeness_case_id.h                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,50 +30,27 @@
 
 #pragma once
 
-#include "fs_type_completeness_case_id.h"
-#include "fs_type_completeness_manifest.h"
-
-#include "core/variant/variant.h"
+#include "core/error/error_list.h"
+#include "core/string/ustring.h"
+#include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
+#include "core/templates/vector.h"
+#include "core/variant/dictionary.h"
 
 namespace FSTests {
 
-struct FSCompletenessProvenanceStep {
-	String relation_id;
-	String exception_id;
-	Dictionary source_coordinates;
-	Dictionary target_coordinates;
-	Dictionary input_dimensions;
-	Dictionary output_dimensions;
-};
-
-struct FSCompletenessResolvedDimension {
-	String dimension;
-	Variant expected;
-	Vector<FSCompletenessProvenanceStep> canonical_provenance;
-	Vector<Vector<FSCompletenessProvenanceStep>> agreeing_provenance;
-};
-
-struct FSCompletenessResolvedCell {
-	String case_id;
-	Dictionary coordinates;
-	HashMap<String, FSCompletenessResolvedDimension> dimensions;
-
-	const FSCompletenessResolvedDimension *find_dimension(const String &p_dimension) const;
-};
-
-struct FSCompletenessResolution {
-	Vector<FSCompletenessResolvedCell> cells;
-	int max_observed_chain_length = 0;
-	int uncovered_dimension_count = 0;
-	int ambiguous_dimension_count = 0;
-};
-
-class FSCompletenessGraph {
+class FSCompletenessCaseID {
 public:
-	static bool predicate_matches(const Dictionary &p_predicate, const Dictionary &p_coordinates,
-			const FSCompletenessCatalog &p_catalog, Vector<String> *r_errors = nullptr);
-	static Error resolve(const FSCompletenessManifest &p_manifest, const FSCompletenessCatalog &p_catalog,
-			FSCompletenessResolution &r_resolution, Vector<String> &r_errors);
+	static String canonical_coordinates(const Dictionary &p_coordinates);
+	static String make(const String &p_family, const Dictionary &p_coordinates);
+};
+
+class FSCompletenessMigrations {
+	HashMap<String, Vector<String>> aliases;
+
+public:
+	Error load(const String &p_directory, const HashSet<String> &p_current_ids, Vector<String> &r_errors);
+	Vector<String> resolve(const String &p_old_id) const;
 };
 
 } // namespace FSTests

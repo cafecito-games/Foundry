@@ -30,9 +30,12 @@
 
 #pragma once
 
+#include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_case_id.h"
 #include "fs_type_completeness_graph.h"
 #include "fs_type_completeness_manifest.h"
 
+#include "core/os/os.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -80,7 +83,219 @@ static void load_type_completeness_graph_inputs(FSCompletenessCatalog &r_catalog
 	REQUIRE_MESSAGE(validate_manifest_vocabulary(r_manifest, r_catalog, r_errors) == OK, String(" | ").join(r_errors));
 }
 
+static String completeness_migration_tree_name(const String &p_name) {
+	return vformat("%s_%d", p_name, OS::get_singleton()->get_process_id());
+}
+
+static HashSet<String> completeness_current_ids(std::initializer_list<const char *> p_ids) {
+	HashSet<String> ids;
+	for (const char *id : p_ids) {
+		ids.insert(id);
+	}
+	return ids;
+}
+
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
+	TEST_CASE("TypeCompleteness Graph case IDs are canonical and collision resistant") {
+		Dictionary first;
+		first["surface"] = "text";
+		first["destination"] = "union";
+		Dictionary reversed;
+		reversed["destination"] = "union";
+		reversed["surface"] = "text";
+
+		const String first_id = FSCompletenessCaseID::make("assignment_compatibility", first);
+		const String reversed_id = FSCompletenessCaseID::make("assignment_compatibility", reversed);
+		CHECK_EQ(first_id, reversed_id);
+		CHECK(first_id.begins_with("fstc-v1-"));
+		CHECK_EQ(first_id.length(), 28);
+		for (int i = 8; i < first_id.length(); i++) {
+			const char32_t character = first_id[i];
+			CHECK(((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')));
+		}
+
+		CHECK_NE(FSCompletenessCaseID::make("another_family", first), first_id);
+		Dictionary changed = first.duplicate();
+		changed["surface"] = "bytecode";
+		CHECK_NE(FSCompletenessCaseID::make("assignment_compatibility", changed), first_id);
+
+		Dictionary escaped;
+		escaped["a|"] = "%=|";
+		escaped["a"] = "|=%";
+		CHECK_EQ(FSCompletenessCaseID::canonical_coordinates(escaped), "a=%7C%3D%25|a%7C=%25%3D%7C");
+		Dictionary collision_attempt;
+		collision_attempt["a"] = "|=%|a|=%=|";
+		CHECK_NE(FSCompletenessCaseID::canonical_coordinates(escaped),
+				FSCompletenessCaseID::canonical_coordinates(collision_attempt));
+
+		Dictionary unexpected_number;
+		unexpected_number["coordinate"] = 1;
+		Dictionary unexpected_string;
+		unexpected_string["coordinate"] = "1";
+		CHECK_EQ(FSCompletenessCaseID::canonical_coordinates(unexpected_number),
+				FSCompletenessCaseID::canonical_coordinates(unexpected_number));
+		CHECK_NE(FSCompletenessCaseID::canonical_coordinates(unexpected_number),
+				FSCompletenessCaseID::canonical_coordinates(unexpected_string));
+
+		Dictionary nested_first;
+		nested_first["z"] = 2;
+		nested_first["a"] = 1;
+		Dictionary nested_reversed;
+		nested_reversed["a"] = 1;
+		nested_reversed["z"] = 2;
+		Dictionary unexpected_nested_first;
+		unexpected_nested_first["coordinate"] = nested_first;
+		Dictionary unexpected_nested_reversed;
+		unexpected_nested_reversed["coordinate"] = nested_reversed;
+		CHECK_EQ(FSCompletenessCaseID::canonical_coordinates(unexpected_nested_first),
+				FSCompletenessCaseID::canonical_coordinates(unexpected_nested_reversed));
+	}
+
+	TEST_CASE("TypeCompleteness Graph assigns distinct stable IDs to the union pilot") {
+		FSCompletenessCatalog catalog;
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		load_type_completeness_graph_inputs(catalog, manifest, errors);
+
+		FSCompletenessResolution resolution;
+		REQUIRE_MESSAGE(FSCompletenessGraph::resolve(manifest, catalog, resolution, errors) == OK,
+				String(" | ").join(errors));
+		REQUIRE_EQ(resolution.cells.size(), 40);
+		HashSet<String> ids;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			CHECK(cell.case_id.begins_with("fstc-v1-"));
+			CHECK_EQ(cell.case_id, FSCompletenessCaseID::make(manifest.family, cell.coordinates));
+			CHECK_FALSE(ids.has(cell.case_id));
+			ids.insert(cell.case_id);
+		}
+		CHECK_EQ(ids.size(), 40);
+	}
+
+	TEST_CASE("TypeCompleteness Graph migration aliases load and resolve atomically") {
+		TemporaryProjectTree tree(completeness_migration_tree_name("type_completeness_migration_split"));
+		REQUIRE(tree.is_valid());
+		tree.write_file("migrations/v1.json", R"JSON({
+  "schema_version": 1,
+  "migrations": [{"old_id": "a", "new_ids": ["b", "c"], "reason": "The case split."}]
+})JSON");
+
+		FSCompletenessMigrations migrations;
+		Vector<String> errors;
+		CHECK_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "b", "c" }), errors), OK);
+		CHECK(errors.is_empty());
+		CHECK_EQ(migrations.resolve("a"), Vector<String>({ "b", "c" }));
+		CHECK(migrations.resolve("unknown").is_empty());
+
+		tree.write_file("migrations/v1.json", R"JSON({
+  "schema_version": 1,
+  "migrations": [{"old_id": "a", "new_ids": ["missing"], "reason": "Invalid reload."}]
+})JSON");
+		errors.push_back("stale");
+		CHECK_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "b", "c" }), errors),
+				ERR_INVALID_DATA);
+		CHECK_FALSE(errors.has("stale"));
+		CHECK(migrations.resolve("a").is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Graph migration aliases reject cycles") {
+		TemporaryProjectTree tree(completeness_migration_tree_name("type_completeness_migration_cycle"));
+		REQUIRE(tree.is_valid());
+		tree.write_file("migrations/v1.json", R"JSON({
+  "schema_version": 1,
+  "migrations": [
+    {"old_id": "a", "new_ids": ["b"], "reason": "Forward."},
+    {"old_id": "b", "new_ids": ["a"], "reason": "Backward."}
+  ]
+})JSON");
+
+		FSCompletenessMigrations migrations;
+		Vector<String> errors;
+		CHECK_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "a", "b" }), errors),
+				ERR_INVALID_DATA);
+		CHECK(graph_errors_contain(errors, "migration alias cycle"));
+		CHECK(migrations.resolve("a").is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Graph migration aliases aggregate deterministic validation errors") {
+		TemporaryProjectTree tree(completeness_migration_tree_name("type_completeness_migration_invalid"));
+		REQUIRE(tree.is_valid());
+		tree.write_file("migrations/z.json", R"JSON({
+  "schema_version": 1,
+  "migrations": [{"old_id": "dup", "new_ids": ["current"], "reason": "Second file."}]
+})JSON");
+		tree.write_file("migrations/a.json", R"JSON({
+  "schema_version": 1,
+  "migrations": [
+    {"old_id": "dup", "new_ids": ["current"], "reason": "First file."},
+    {"old_id": "self", "new_ids": ["self"], "reason": "Self."},
+    {"old_id": "orphan", "new_ids": ["missing"], "reason": "Orphan."},
+    {"old_id": "empty", "new_ids": [], "reason": "Empty."},
+    {"old_id": "duplicates", "new_ids": ["current", "current", ""], "reason": "Duplicates."},
+    {"old_id": "no_reason", "new_ids": ["current"], "reason": ""}
+  ]
+})JSON");
+
+		FSCompletenessMigrations migrations;
+		Vector<String> errors;
+		CHECK_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "current", "self" }), errors),
+				ERR_INVALID_DATA);
+		REQUIRE(errors.size() >= 8);
+		Vector<String> sorted_errors = errors;
+		sorted_errors.sort();
+		CHECK_EQ(errors, sorted_errors);
+		CHECK(graph_errors_contain(errors, "duplicate old_id 'dup'"));
+		CHECK(graph_errors_contain(errors, "must not alias itself"));
+		CHECK(graph_errors_contain(errors, "replacement ID 'missing' is not a current case ID"));
+		CHECK(graph_errors_contain(errors, "new_ids must not be empty"));
+		CHECK(graph_errors_contain(errors, "duplicate replacement ID 'current'"));
+		CHECK(graph_errors_contain(errors, "replacement ID must not be empty"));
+		CHECK(graph_errors_contain(errors, "reason must not be empty"));
+		CHECK(migrations.resolve("dup").is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Graph migration aliases reject schema and type mismatches") {
+		struct InvalidMigrationDocument {
+			const char *name;
+			const char *contents;
+			const char *expected;
+		};
+		const InvalidMigrationDocument documents[] = {
+			{ "root.json", "[]", "$: expected object" },
+			{ "schema_type.json", R"JSON({"schema_version":"1","migrations":[]})JSON", "$.schema_version: expected integer" },
+			{ "schema_value.json", R"JSON({"schema_version":2,"migrations":[]})JSON", "$.schema_version: expected 1" },
+			{ "migrations_type.json", R"JSON({"schema_version":1,"migrations":{}})JSON", "$.migrations: expected array" },
+			{ "record_type.json", R"JSON({"schema_version":1,"migrations":[false]})JSON", "$.migrations[0]: expected object" },
+			{ "field_types.json", R"JSON({"schema_version":1,"migrations":[{"old_id":1,"new_ids":"b","reason":false}]})JSON", "$.migrations[0].old_id: expected string" },
+			{ "root_extra.json", R"JSON({"schema_version":1,"migrations":[],"extra":true})JSON", "$: unknown field 'extra'" },
+			{ "record_extra.json", R"JSON({"schema_version":1,"migrations":[{"old_id":"a","new_ids":["b"],"reason":"x","extra":true}]})JSON", "$.migrations[0]: unknown field 'extra'" },
+		};
+
+		for (const InvalidMigrationDocument &document : documents) {
+			CAPTURE(document.name);
+			TemporaryProjectTree tree(completeness_migration_tree_name(String("type_completeness_migration_") + document.name));
+			REQUIRE(tree.is_valid());
+			tree.write_file(String("migrations/") + document.name, document.contents);
+			FSCompletenessMigrations migrations;
+			Vector<String> errors;
+			CHECK_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "b" }), errors),
+					ERR_INVALID_DATA);
+			CHECK(graph_errors_contain(errors, String(document.name) + ": " + document.expected));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Graph migration aliases report filesystem and JSON failures") {
+		TemporaryProjectTree tree(completeness_migration_tree_name("type_completeness_migration_io"));
+		REQUIRE(tree.is_valid());
+		FSCompletenessMigrations migrations;
+		Vector<String> errors;
+		CHECK_NE(migrations.load(tree.root.path_join("missing"), HashSet<String>(), errors), OK);
+		CHECK(graph_errors_contain(errors, tree.root.path_join("missing")));
+
+		tree.write_file("migrations/bad.json", "{not json");
+		CHECK_EQ(migrations.load(tree.root.path_join("migrations"), HashSet<String>(), errors), ERR_PARSE_ERROR);
+		CHECK(graph_errors_contain(errors, tree.root.path_join("migrations/bad.json")));
+	}
+
 	TEST_CASE("TypeCompleteness Graph resolves the union pilot with semantic provenance") {
 		FSCompletenessCatalog catalog;
 		FSCompletenessManifest manifest;

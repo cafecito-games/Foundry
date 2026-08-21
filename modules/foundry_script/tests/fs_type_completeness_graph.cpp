@@ -775,6 +775,7 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 	for (int cell_index = 0; cell_index < dispositions.size(); cell_index++) {
 		const CellDispositions &cell_dispositions = dispositions[cell_index];
 		FSCompletenessResolvedCell &resolved_cell = resolved.cells.write[cell_index];
+		resolved_cell.case_id = FSCompletenessCaseID::make(p_manifest.family, cell_dispositions.coordinates);
 		resolved_cell.coordinates = cell_dispositions.coordinates;
 
 		Vector<String> dimension_names;
