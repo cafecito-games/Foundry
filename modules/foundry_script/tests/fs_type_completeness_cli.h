@@ -71,6 +71,9 @@ public:
 		// Test seam: forwarded to every family run, so a test can produce a deterministic product
 		// mismatch without a catalog whose expectations are deliberately wrong.
 		void (*observation_mutator)(FSCompletenessObservation &) = nullptr;
+		// Test seam: forwarded to every family run, so a test can act at the moment evidence is
+		// persisted - the window between assembling a report and publishing it.
+		FSCompletenessPersistedWriteHook persisted_write_hook = nullptr;
 	};
 
 	// Runs the invocation and returns its exit code. Diagnostics are printed as they are produced.

@@ -42,6 +42,7 @@
 #include "core/math/math_funcs.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
+#include "core/templates/safe_refcount.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -89,6 +90,22 @@ static String completeness_budgets_document(const String &p_overrides) {
 
 static void completeness_inject_diagnostic(FSCompletenessObservation &r_observation) {
 	r_observation.diagnostics.push_back("injected completeness harness diagnostic");
+}
+
+// A clock that only advances when the run publishes its report: the write hook below moves it past the
+// deadline exactly during publication, which is the one window no stage boundary covers.
+static SafeNumeric<uint64_t> completeness_publication_clock_usec;
+
+static uint64_t completeness_publication_clock() {
+	return completeness_publication_clock_usec.get();
+}
+
+static void completeness_advance_clock_on_report_write(const String &p_path) {
+	// Rendered programs are staged before publication; only the report write must move the clock.
+	if (p_path.get_extension() == "fs") {
+		return;
+	}
+	completeness_publication_clock_usec.set(1000000000ULL);
 }
 
 // Always past any deadline a caller can set, so a timeout is proven by the contract rather than by
@@ -503,6 +520,53 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 		CHECK_EQ(resolution.find_cell_by_coordinates(Dictionary(), missing_matches), nullptr);
 		CHECK_EQ(missing_matches, 0);
 		CHECK_EQ(resolution.find_cell_by_id("absent"), nullptr);
+	}
+
+	TEST_CASE("TypeCompleteness Harness a budget crossed while publishing is still a timeout") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_publish_timeout_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		completeness_publication_clock_usec.set(0);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = tracked_catalog_root();
+		options.family = completeness_family;
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.deadline_usec = 1000;
+		options.clock = completeness_publication_clock;
+		options.persisted_write_hook = completeness_advance_clock_on_report_write;
+		FSCompletenessRunResult result;
+		// No stage boundary falls between assembling the report and writing it, so a run that crosses
+		// its budget there would otherwise be published as a clean, in-budget run.
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_TIMEOUT);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.outcome, "structural_failure");
+		bool named_the_timeout = false;
+		for (const FSCompletenessStructuralFailure &failure : result.structural_failures) {
+			named_the_timeout = named_the_timeout || failure.stage == "run_timeout";
+		}
+		CHECK(named_the_timeout);
+
+		REQUIRE(FileAccess::exists(options.report_path));
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(options.report_path, &read_error);
+		REQUIRE_EQ(read_error, OK);
+		JSON json;
+		REQUIRE_EQ(json.parse(source), OK);
+		const Dictionary published = json.get_data();
+		CHECK_EQ(String(published.get("outcome", String())), "structural_failure");
+		CHECK_EQ(bool(published.get("success", true)), false);
+		bool published_the_timeout = false;
+		const Array published_failures = published.get("structural_failures", Array());
+		for (int index = 0; index < published_failures.size(); index++) {
+			published_the_timeout = published_the_timeout ||
+					String(Dictionary(published_failures[index]).get("stage", String())) == "run_timeout";
+		}
+		CHECK(published_the_timeout);
+		// The evidence the run did gather stays in the document; only the verdict changes.
+		CHECK_FALSE(Array(published.get("cases", Array())).is_empty());
+		completeness_publication_clock_usec.set(0);
 	}
 
 	TEST_CASE("TypeCompleteness Harness a timeout that cannot publish carries no report") {

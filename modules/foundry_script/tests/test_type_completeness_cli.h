@@ -53,6 +53,21 @@ static uint64_t completeness_cli_advancing_clock() {
 	return ticks.add(3600ULL * 1000000ULL);
 }
 
+// A clock that only advances while the run publishes, so the deadline is crossed in the window
+// between assembling a report and writing it rather than at a stage boundary.
+static SafeNumeric<uint64_t> completeness_cli_publication_clock_usec;
+
+static uint64_t completeness_cli_publication_clock() {
+	return completeness_cli_publication_clock_usec.get();
+}
+
+static void completeness_cli_advance_clock_on_report_write(const String &p_path) {
+	if (p_path.get_extension() == "fs") {
+		return;
+	}
+	completeness_cli_publication_clock_usec.set(3600ULL * 1000000ULL);
+}
+
 static void completeness_cli_inject_diagnostic(FSCompletenessObservation &r_observation) {
 	r_observation.diagnostics.push_back("injected completeness CLI diagnostic");
 }
@@ -318,6 +333,33 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 	// Only the pilot family has an adapter today, so a multi-family invocation is exercised with one
 	// runnable family and one that cannot run. That is also the fail-closed case that matters: an
 	// index must never report a family it never published as if it had a verdict.
+	TEST_CASE("TypeCompleteness CLI exits three when the budget is crossed while publishing") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_cli_publish_timeout_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		completeness_cli_publication_clock_usec.set(0);
+
+		FSCompletenessCLI::Options options = completeness_cli_options(tree);
+		options.timeout_seconds = 1;
+		options.clock = completeness_cli_publication_clock;
+		options.persisted_write_hook = completeness_cli_advance_clock_on_report_write;
+		// The budget is crossed in the one window no stage boundary covers: while the report is being
+		// published. A gate must still see a timeout, not a clean run.
+		CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_TIMEOUT);
+
+		REQUIRE(FileAccess::exists(options.report_path));
+		const Dictionary report = completeness_cli_read_json(options.report_path);
+		CHECK_EQ(String(report.get("outcome", String())), "structural_failure");
+		bool published_the_timeout = false;
+		const Array failures = report.get("structural_failures", Array());
+		for (int index = 0; index < failures.size(); index++) {
+			published_the_timeout = published_the_timeout ||
+					String(Dictionary(failures[index]).get("stage", String())) == "run_timeout";
+		}
+		CHECK(published_the_timeout);
+		completeness_cli_publication_clock_usec.set(0);
+	}
+
 	TEST_CASE("TypeCompleteness CLI refuses a timeout whose partial report cannot be published") {
 		TemporaryProjectTree tree(
 				vformat("type_completeness_cli_unwritable_%d", OS::get_singleton()->get_process_id()));

@@ -1940,6 +1940,46 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return error;
 	}
 	artifact_scope.commit();
+
+	// The verdict is decided once more here, from a clock read taken after the last write. Assembling
+	// and publishing a report is the one span of a run with no stage boundary inside it, so a budget
+	// crossed there would otherwise be published as an in-budget run and read by a gate as a clean one.
+	// The evidence stays in the document; only the verdict it carries changes.
+	if (deadline_exceeded()) {
+		structural_failures.push_back(make_structural_failure("run_timeout",
+				"The run exceeded its wall-clock budget while publishing its report.", String(), String(),
+				String(), ERR_TIMEOUT));
+		sort_structural_failures(structural_failures);
+		Array timed_out_failures;
+		for (const FSCompletenessStructuralFailure &failure : structural_failures) {
+			timed_out_failures.push_back(structural_failure_report(failure));
+		}
+		report["success"] = false;
+		report["outcome"] = "structural_failure";
+		report["structural_failures"] = timed_out_failures;
+		timings.total = StageTimings::since(run_started_at);
+		report["timings_ms"] = timings.to_report();
+		const Error republish_error = write_report_atomically(canonical_scratch_root,
+				p_options.catalog_root, p_options.report_path, report, p_options.persisted_write_hook);
+		r_result.success = false;
+		r_result.executed_cells = resolution.cells.size();
+		r_result.findings = findings;
+		r_result.outcome = "structural_failure";
+		if (republish_error != OK) {
+			// The document on disk still claims the run was in budget and nothing replaced it, so the
+			// result must not carry a report a consumer would trust.
+			structural_failures.push_back(make_structural_failure("run_timeout_report_unwritable",
+					"The verdict of a run that exceeded its budget could not be republished.", String(),
+					String(), String(), republish_error));
+			sort_structural_failures(structural_failures);
+			r_result.structural_failures = structural_failures;
+			return ERR_TIMEOUT;
+		}
+		r_result.structural_failures = structural_failures;
+		r_result.report = report;
+		return ERR_TIMEOUT;
+	}
+
 	FSCompletenessRunResult completed;
 	completed.success = success;
 	completed.executed_cells = resolution.cells.size();

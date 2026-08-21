@@ -167,6 +167,7 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 		options.published_surface = p_options.surface;
 		options.deadline_usec = deadline_usec;
 		options.observation_mutator = p_options.observation_mutator;
+		options.persisted_write_hook = p_options.persisted_write_hook;
 		options.clock = p_options.clock;
 		FSCompletenessRunResult result;
 		const Error error = FSCompletenessRunner::run(options, result);
@@ -217,6 +218,11 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 			r_published_paths->push_back(p_options.report_path);
 		}
 	}
+
+	// One last read, after the last write this invocation performs. Each family run decides its own
+	// verdict after publishing its report, but the index is written afterwards and can carry the
+	// invocation past its budget on its own.
+	timed_out = timed_out || clock() >= deadline_usec;
 	// Missing evidence outranks every other verdict: a family that never published cannot be judged at
 	// all. Otherwise a timeout gets its own exit code, so a scheduler can tell an over-budget run from
 	// a broken one even though the partial report calls it a structural failure.
