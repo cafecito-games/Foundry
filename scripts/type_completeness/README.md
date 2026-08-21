@@ -40,8 +40,8 @@ one tracking issue per finding (label `type-completeness-finding`; a closed one 
 duplicated), and one ledger pull request per bot branch looked up in any state. The finding ID in the issue
 title and the bot branch name are the idempotency keys; GitHub cannot enforce them atomically, so after every
 create the client re-lists and converges concurrent duplicates onto the lowest-numbered open one (closing the
-others with a comment naming the survivor). Duplicates are converged, not prevented. For pull requests: an open one is updated, a closed
-unmerged one is reopened and updated, and a merged one is left alone. It refuses protected branches and never passes `--auto` or merges.
+others with a comment naming the survivor). Duplicates are converged, not prevented. For pull requests: an open one is updated, otherwise a merged one is
+authoritative and left alone, and only when neither exists is a closed unmerged one reopened and updated. It refuses protected branches and never passes `--auto` or merges.
 
 ## Obtaining the `develop` report
 

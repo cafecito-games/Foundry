@@ -14,6 +14,7 @@ PROTECTED_BRANCHES = ("develop", "main", "master")
 BOT_BRANCH_PREFIX = "bot/type-completeness/"
 TRACKING_LABEL = "type-completeness-finding"
 FORBIDDEN_ARGUMENTS = ("--auto", "merge")
+PULL_REQUEST_PRECEDENCE = {"OPEN": 0, "MERGED": 1, "CLOSED": 2}
 
 CommandRunner = Callable[[List[str]], str]
 
@@ -74,7 +75,8 @@ class AutomationClient:
         states = {
             int(entry["number"]): _state_of(entry, ("OPEN", "CLOSED", "MERGED"), "pull request") for entry in entries
         }
-        entries.sort(key=lambda entry: (states[int(entry["number"])] != "OPEN", int(entry["number"])))
+        # OPEN is the live proposal; MERGED is authoritative and must never be shadowed by an older CLOSED one.
+        entries.sort(key=lambda entry: (PULL_REQUEST_PRECEDENCE[states[int(entry["number"])]], int(entry["number"])))
         chosen = entries[0]
         return int(chosen["number"]), str(chosen["url"]), states[int(chosen["number"])]
 

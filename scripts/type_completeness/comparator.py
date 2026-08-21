@@ -124,11 +124,14 @@ class ComparisonArtifact:
 
     @property
     def comparison_id(self) -> str:
+        """Integrity digest binding every consumed identity field to the evidence digests."""
         return digest_of(
             {
                 "case_id": self.case_id,
                 "family": self.family,
                 "configuration": self.configuration,
+                "category": self.category,
+                "capability_slice": None if self.capability_slice is None else self.capability_slice.to_dict(),
                 "branch_digest": self.branch_digest,
                 "develop_digest": self.develop_digest,
             }
@@ -154,6 +157,11 @@ class ComparisonArtifact:
         re-derives from its two sides; a relabelled or tampered artifact is rejected."""
         _check_side(self.branch, "branch", self.case_id)
         _check_side(self.develop, "develop", self.case_id)
+        for name, side in (("branch", self.branch), ("develop", self.develop)):
+            for finding in side.get("findings") or []:
+                _check_finding_identity(finding, self.case_id, self.family, name)
+        if self.capability_slice is not None and self.capability_slice.family != self.family:
+            raise ReportError(f"artifact for case {self.case_id!r} carries a capability slice for another family")
         derived = classify(self.branch, self.develop)
         if derived is not self.status:
             raise ReportError(
@@ -181,6 +189,10 @@ class ComparisonArtifact:
             else None,
         )
         artifact.validate()
+        if str(data.get("comparison_id")) != artifact.comparison_id:
+            raise ReportError(
+                f"artifact for case {artifact.case_id!r} has a comparison_id that does not match its fields"
+            )
         return artifact
 
 
@@ -198,6 +210,25 @@ def classify(branch: Mapping[str, Any], develop: Mapping[str, Any]) -> Status:
     if branch.get("digest") == develop.get("digest"):
         return Status.UNCHANGED
     return Status.WORSENED
+
+
+def _check_finding_identity(finding: Mapping[str, Any], case_id: str, family: str, side: str) -> None:
+    """A finding's ID is a pure function of the case it was filed under and its dimension (make_finding_id in
+    the runner); a migrated finding echoes the historical entry, so it is filed under migrated_from."""
+    from .ledger import runner_finding_id
+
+    if finding.get("case_id") != case_id or finding.get("family") != family:
+        raise ReportError(f"{side} finding on artifact for case {case_id!r} names a different case or family")
+    dimension = finding.get("dimension")
+    if not isinstance(dimension, str) or not dimension:
+        raise ReportError(f"{side} finding on artifact for case {case_id!r} has no dimension")
+    filed_under = str(finding.get("migrated_from") or case_id)
+    expected_id = runner_finding_id(filed_under, dimension)
+    if finding.get("finding_id") != expected_id:
+        raise ReportError(
+            f"{side} finding on artifact for case {case_id!r} has finding_id {finding.get('finding_id')!r}; "
+            f"the runner formula gives {expected_id!r} for {filed_under!r}/{dimension!r}"
+        )
 
 
 def _check_side(side: Mapping[str, Any], name: str, case_id: str) -> None:

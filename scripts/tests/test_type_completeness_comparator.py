@@ -1281,6 +1281,57 @@ class EveryStatusConsumerTests(unittest.TestCase):
         with self.assertRaises(report.ReportError):
             comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
 
+    def _reject(self, artifact: dict[str, Any], label: str) -> None:
+        with self.subTest(edit=label):
+            with self.assertRaises(report.ReportError):
+                comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [artifact]}))
+
+    def test_every_identity_field_is_bound(self) -> None:
+        base = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
+        finding = base["branch"]["findings"][0]
+        self._reject(dict(base, case_id="other"), "artifact case_id")
+        self._reject(dict(base, family="other_family"), "artifact family")
+        self._reject(dict(base, configuration="bytecode"), "configuration")
+        self._reject(dict(base, category="structural_failure"), "category")
+        self._reject(dict(base, comparison_id="0" * 16), "comparison_id")
+        self._reject(
+            dict(base, capability_slice=dict(base["capability_slice"], paths=["editor/editor_node.cpp"])), "slice paths"
+        )
+        self._reject(dict(base, capability_slice=dict(base["capability_slice"], family="other")), "slice family")
+        self._reject(dict(base, capability_slice=dict(base["capability_slice"], broad_core=False)), "slice broad_core")
+        tampered_finding = dict(finding, finding_id="fstcf-v1-" + "0" * 20)
+        self._reject(
+            dict(base, branch=dict(base["branch"], findings=[tampered_finding])), "finding_id (digest still matches)"
+        )
+        self._reject(
+            dict(base, branch=dict(base["branch"], findings=[dict(finding, case_id="other")])), "finding case_id"
+        )
+        self._reject(
+            dict(base, branch=dict(base["branch"], findings=[dict(finding, family="other")])), "finding family"
+        )
+        self._reject(
+            dict(base, branch=dict(base["branch"], findings=[dict(finding, dimension="source_proof")])),
+            "finding dimension",
+        )
+
+    def test_migrated_finding_identity_uses_the_historical_case(self) -> None:
+        historical_id = _runner_finding_id("old", "destination")
+        echoed = dict(
+            _finding("new_a", "destination"),
+            finding_id=historical_id,
+            migrated_from="old",
+            resolved_case_ids=["new_a", "new_b"],
+        )
+        branch = report.load_report(_report([_case("new_a", passed=False)], findings=[echoed]))
+        artifact = comparator.compare_case(branch, branch, "new_a", configuration="text", capabilities=CAPABILITIES)
+        restored = comparator.deserialize_many(comparator.serialize_many([artifact]))[0]
+        self.assertEqual(restored.branch["findings"][0]["finding_id"], historical_id)
+        wrong = dict(echoed, migrated_from="someone_else")
+        branch = report.load_report(_report([_case("new_a", passed=False)], findings=[wrong]))
+        artifact = comparator.compare_case(branch, branch, "new_a", configuration="text", capabilities=CAPABILITIES)
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(comparator.serialize_many([artifact]))
+
     def test_every_reconcile_state_serializes(self) -> None:
         for state in reconcile.State:
             result = reconcile.Reconciliation("fstcf-v1-" + "0" * 20, state, "r", ("p",), None, True)
@@ -1424,6 +1475,21 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertEqual(url, "https://github.com/x/pull/3")
         joined = [" ".join(call) for call in runner.calls]
         self.assertEqual([call for call in joined if "pr list" not in call], [])
+
+    def test_merged_ledger_pr_outranks_an_older_closed_one(self) -> None:
+        listing = json.dumps(
+            [
+                {"url": "https://github.com/x/pull/5", "number": 5, "state": "CLOSED"},
+                {"url": "https://github.com/x/pull/9", "number": 9, "state": "MERGED"},
+            ]
+        )
+        runner = FakeCommandRunner({"pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/9")
+        self.assertEqual([call for call in runner.calls if call[1:3] != ["pr", "list"]], [])
 
     def test_open_ledger_pr_is_preferred_over_closed_ones(self) -> None:
         listing = json.dumps(
