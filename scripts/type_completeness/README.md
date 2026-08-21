@@ -13,9 +13,10 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
 - `compare --branch-report B --develop-report D --configuration text --output comparison.json`
   emits one deterministic artifact per branch failure (`new`, `worsened`, `unchanged`), per develop failure
   the branch fixed (`resolved`), and per develop failure whose case the branch report no longer contains
-  (`missing`). Each artifact carries the case ID, family, configuration, coordinates, both
+  (`missing`) or that the branch report no longer contains although it passed on develop (`vanished`, lost
+  coverage). Each artifact carries the case ID, family, configuration, coordinates, both
   observations with their canonical SHA-256 digests, and a stable `comparison_id`. `--fail-on-regression`
-  exits non-zero when any artifact is `new`, `worsened`, or `missing`. The same inputs always yield byte-identical output.
+  exits non-zero when any artifact is `new`, `worsened`, `missing`, or `vanished`. The same inputs always yield byte-identical output.
   Each artifact also carries the producing capability slice, resolved from the report's family through
   `modules/foundry_script/tests/type_completeness/capabilities.json` (`--capabilities` overrides the manifest).
 - `propose --comparison comparison.json --case-id ID ...` keeps the classification, issue URL, closure-packet
@@ -58,6 +59,12 @@ While the bot path is unavailable, a human follows the same contract:
    reviewed pull request; never auto-merge it.
 5. Run `reconcile` until it reports `merged`. Manual records carry `"origin": "manual"` and otherwise have the
    same fields, deadline, reconciliation, and blocking semantics as automated ones.
+
+`propose` accepts `--case-id` more than once. For a finding the ledger filed under a historical case ID that
+migrations now resolve to several cases, the historical entry is re-proposed verbatim unless every resolved
+child is listed in the same run, in which case one record per child is written (named by the runner's ID
+formula) and the provisional records carry `migrated_from`, `resolved_case_ids`, and `proposed_case_ids`. The
+historical entry is never replaced implicitly.
 
 `propose` takes the capability slice from the artifact; `--capability-path` may only narrow it and any path
 outside the producing slice is rejected, so a provisional record cannot block a capability that did not produce

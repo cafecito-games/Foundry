@@ -23,14 +23,20 @@ class ProvisionalError(ValueError):
 
 
 def _producing_slice(comparison: Mapping[str, Any]) -> Optional[frozenset[str]]:
-    """The capability slice the comparison artifact recorded, or None when the artifact carried none."""
+    """The capability slice the comparison artifact recorded.
+
+    ``None`` only when the artifact explicitly carried no slice (absent or null); anything else that is not a
+    well-formed slice is a parse error so a tampered record cannot bypass the containment check.
+    """
     recorded = comparison.get("capability_slice")
+    if recorded is None:
+        return None
     if not isinstance(recorded, Mapping):
-        return None
+        raise ProvisionalError("develop_comparison.capability_slice must be an object or null")
     paths = recorded.get("paths")
-    if not isinstance(paths, list) or not paths:
-        return None
-    return frozenset(str(path) for path in paths)
+    if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or not path for path in paths):
+        raise ProvisionalError("develop_comparison.capability_slice.paths must be a non-empty array of path strings")
+    return frozenset(paths)
 
 
 def _path_list(value: Any) -> list[str]:
@@ -53,6 +59,11 @@ class ProvisionalRecord:
     bot_pr_url: Optional[str]
     origin: str
     state: str
+    # Migration bookkeeping: the historical case ID the ledger entry was filed under, every case ID it resolves
+    # to today, and the subset this proposal covers. Empty for a finding that was never migrated.
+    migrated_from: Optional[str] = None
+    resolved_case_ids: tuple[str, ...] = ()
+    proposed_case_ids: tuple[str, ...] = ()
 
     @classmethod
     def create(
@@ -67,6 +78,9 @@ class ProvisionalRecord:
         bot_pr_url: Optional[str],
         origin: str,
         state: str = "pending_merge",
+        migrated_from: Optional[str] = None,
+        resolved_case_ids: Iterable[str] = (),
+        proposed_case_ids: Iterable[str] = (),
     ) -> ProvisionalRecord:
         if origin not in ORIGINS:
             raise ProvisionalError(f"origin must be one of {ORIGINS}; got {origin!r}")
@@ -98,6 +112,9 @@ class ProvisionalRecord:
             bot_pr_url=bot_pr_url,
             origin=origin,
             state=state,
+            migrated_from=migrated_from or None,
+            resolved_case_ids=tuple(resolved_case_ids),
+            proposed_case_ids=tuple(proposed_case_ids),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -115,6 +132,9 @@ class ProvisionalRecord:
             "bot_pr_url": self.bot_pr_url,
             "origin": self.origin,
             "state": self.state,
+            "migrated_from": self.migrated_from,
+            "resolved_case_ids": list(self.resolved_case_ids),
+            "proposed_case_ids": list(self.proposed_case_ids),
         }
 
     @classmethod
@@ -132,7 +152,10 @@ class ProvisionalRecord:
                 detected_at=deadline.parse_timestamp(str(data["detected_at"])),
                 bot_pr_url=None if data.get("bot_pr_url") is None else str(data["bot_pr_url"]),
                 origin=str(data["origin"]),
-                state=str(data.get("state", "pending_merge")),
+                state=str(data["state"]),
+                migrated_from=None if data["migrated_from"] is None else str(data["migrated_from"]),
+                resolved_case_ids=[str(case_id) for case_id in data["resolved_case_ids"]],
+                proposed_case_ids=[str(case_id) for case_id in data["proposed_case_ids"]],
             )
         except (KeyError, TypeError, ValueError) as error:
             raise ProvisionalError(f"malformed provisional record: {error}") from error

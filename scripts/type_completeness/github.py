@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 PROTECTED_BRANCHES = ("develop", "main", "master")
 BOT_BRANCH_PREFIX = "bot/type-completeness/"
@@ -20,6 +20,17 @@ CommandRunner = Callable[[List[str]], str]
 
 class ProtectedBranchError(RuntimeError):
     pass
+
+
+class AutomationError(RuntimeError):
+    pass
+
+
+def _state_of(entry: dict[str, Any], allowed: tuple[str, ...], kind: str) -> str:
+    state = str(entry.get("state", "")).upper()
+    if state not in allowed:
+        raise AutomationError(f"gh reported {kind} #{entry.get('number')} with unexpected state {state!r}")
+    return state
 
 
 def run_command(arguments: list[str]) -> str:
@@ -60,9 +71,12 @@ class AutomationClient:
         entries = json.loads(output or "[]")
         if not entries:
             return None
-        entries.sort(key=lambda entry: (str(entry.get("state", "")).upper() != "OPEN", int(entry["number"])))
+        states = {
+            int(entry["number"]): _state_of(entry, ("OPEN", "CLOSED", "MERGED"), "pull request") for entry in entries
+        }
+        entries.sort(key=lambda entry: (states[int(entry["number"])] != "OPEN", int(entry["number"])))
         chosen = entries[0]
-        return int(chosen["number"]), str(chosen["url"]), str(chosen.get("state", "")).upper()
+        return int(chosen["number"]), str(chosen["url"]), states[int(chosen["number"])]
 
     def open_or_update_ledger_pull_request(self, branch: str, title: str, body: str, base: str) -> str:
         if branch in PROTECTED_BRANCHES or not branch.startswith(BOT_BRANCH_PREFIX):
@@ -114,9 +128,10 @@ class AutomationClient:
         entries = json.loads(output or "[]")
         if not entries:
             return None
-        entries.sort(key=lambda entry: (str(entry.get("state", "")).upper() != "OPEN", int(entry["number"])))
+        states = {int(entry["number"]): _state_of(entry, ("OPEN", "CLOSED"), "issue") for entry in entries}
+        entries.sort(key=lambda entry: (states[int(entry["number"])] != "OPEN", int(entry["number"])))
         chosen = entries[0]
-        return int(chosen["number"]), str(chosen["url"]), str(chosen.get("state", "")).upper() == "OPEN"
+        return int(chosen["number"]), str(chosen["url"]), states[int(chosen["number"])] == "OPEN"
 
     def create_or_update_tracking_issue(self, finding_id: str, title: str, body: str) -> str:
         # Lookup searches the title for the finding ID, so creation must always embed it there.

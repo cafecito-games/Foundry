@@ -27,11 +27,13 @@ class Status(str, enum.Enum):
     UNCHANGED = "unchanged"
     RESOLVED = "resolved"
     MISSING = "missing"
+    VANISHED = "vanished"
     PASSING = "passing"
 
 
-# A known develop failure that vanishes without passing is treated as a regression, not as progress.
-REGRESSION_STATUSES = (Status.NEW, Status.WORSENED, Status.MISSING)
+# A develop case that vanishes from the branch report is a regression whether it failed (missing) or passed
+# (vanished: lost coverage) on develop; neither counts as progress.
+REGRESSION_STATUSES = (Status.NEW, Status.WORSENED, Status.MISSING, Status.VANISHED)
 # Statuses meaning the case no longer fails on the branch; reconciliation uses this set so it cannot drift.
 NO_LONGER_FAILING_STATUSES = (Status.RESOLVED, Status.PASSING)
 
@@ -69,6 +71,8 @@ def _semantic_view(value: Any) -> Any:
 
 
 def _finding_digest_view(finding: Mapping[str, Any]) -> dict[str, Any]:
+    # dimension/expected/actual are required by the report loader; parity_evidence is only written for parity
+    # findings, so its absence is itself part of the finding's semantic identity and digests as None.
     return {field: _semantic_view(finding.get(field)) for field in FINDING_DIGEST_FIELDS}
 
 
@@ -149,7 +153,7 @@ class ComparisonArtifact:
             configuration=str(data["configuration"]),
             status=Status(str(data["status"])),
             category=str(data["category"]),
-            coordinates=dict(data.get("coordinates", {})),
+            coordinates=dict(data["coordinates"]),
             branch=dict(data["branch"]),
             develop=dict(data["develop"]),
             capability_slice=CapabilitySlice.from_dict(data["capability_slice"])
@@ -183,7 +187,7 @@ def compare_case(
     if branch_case is None:
         if develop_case is None:
             raise KeyError(case_id)
-        status = Status.MISSING if develop_case.failed else Status.PASSING
+        status = Status.MISSING if develop_case.failed else Status.VANISHED
     else:
         status = _status(branch_case, develop_case)
     anchor = branch_case if branch_case is not None else develop_case

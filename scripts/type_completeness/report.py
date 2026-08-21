@@ -29,6 +29,20 @@ OBSERVATION_FIELDS = (
 )
 
 
+# Every member the runner writes per case (case_report block) and per finding (finding_report); a report that
+# lacks one is malformed rather than a report with defaults.
+CASE_REQUIRED_FIELDS = OBSERVATION_FIELDS + ("coordinates", "artifact_path")
+FINDING_REQUIRED_FIELDS = ("finding_id", "case_id", "family", "dimension", "expected", "actual", "classification")
+KNOWN_CLASSIFICATIONS = (
+    "unclassified",
+    "product_defect",
+    "specification_defect",
+    "harness_defect",
+    "intentional_unsupported",
+    "duplicate",
+)
+
+
 class ReportError(ValueError):
     """Raised when a runner report cannot be interpreted."""
 
@@ -121,7 +135,10 @@ def load_report(data: Mapping[str, Any]) -> Report:
     raw_cases = _require(data, "cases", "report")
     if not isinstance(raw_cases, list):
         raise ReportError("report member 'cases' must be an array")
-    raw_findings = data.get("findings", [])
+    success = _require(data, "success", "report")
+    if not isinstance(success, bool):
+        raise ReportError(f"report member 'success' must be a JSON boolean; got {success!r}")
+    raw_findings = _require(data, "findings", "report")
     if not isinstance(raw_findings, list):
         raise ReportError("report member 'findings' must be an array")
     findings_by_case: dict[str, list[dict[str, Any]]] = {}
@@ -130,7 +147,11 @@ def load_report(data: Mapping[str, Any]) -> Report:
             raise ReportError("every report finding must be an object")
         finding = dict(raw_finding)
         finding_case_id = str(_require(finding, "case_id", "finding"))
-        _require(finding, "dimension", f"finding for case {finding_case_id!r}")
+        context = f"finding for case {finding_case_id!r}"
+        for field in FINDING_REQUIRED_FIELDS:
+            _require(finding, field, context)
+        if finding["classification"] not in KNOWN_CLASSIFICATIONS:
+            raise ReportError(f"{context} has unknown classification {finding['classification']!r}")
         findings_by_case.setdefault(finding_case_id, []).append(finding)
     cases: list[CaseResult] = []
     seen = set()
@@ -144,14 +165,17 @@ def load_report(data: Mapping[str, Any]) -> Report:
         passed = _require(raw_case, "passed", f"case {case_id!r}")
         if not isinstance(passed, bool):
             raise ReportError(f"case {case_id!r} member 'passed' must be a JSON boolean; got {passed!r}")
-        observation = {field: raw_case[field] for field in OBSERVATION_FIELDS if field in raw_case}
+        context = f"case {case_id!r}"
+        for field in CASE_REQUIRED_FIELDS:
+            _require(raw_case, field, context)
+        observation = {field: raw_case[field] for field in OBSERVATION_FIELDS}
         cases.append(
             CaseResult(
                 case_id=case_id,
                 passed=passed,
-                coordinates=dict(raw_case.get("coordinates", {})),
+                coordinates=dict(raw_case["coordinates"]),
                 observation=observation,
-                artifact_path=str(raw_case.get("artifact_path", "")),
+                artifact_path=str(raw_case["artifact_path"]),
                 category=_category_for(raw_case),
                 findings=tuple(
                     sorted(findings_by_case.get(case_id, []), key=lambda finding: str(finding["dimension"]))
@@ -159,7 +183,7 @@ def load_report(data: Mapping[str, Any]) -> Report:
             )
         )
     cases.sort(key=lambda case: case.case_id)
-    return Report(family=family, success=bool(data.get("success", False)), cases=tuple(cases), raw=dict(data))
+    return Report(family=family, success=success, cases=tuple(cases), raw=dict(data))
 
 
 def load_report_file(path: Path) -> Report:
@@ -186,7 +210,10 @@ class CapabilitySlice:
         paths = data.get("paths")
         if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or not path for path in paths):
             raise ReportError("capability_slice.paths must be a non-empty array of path strings")
-        return cls(family=str(data["family"]), paths=tuple(paths), broad_core=bool(data.get("broad_core", False)))
+        broad_core = data.get("broad_core")
+        if "family" not in data or not isinstance(broad_core, bool):
+            raise ReportError("capability_slice must carry 'family' and a boolean 'broad_core'")
+        return cls(family=str(data["family"]), paths=tuple(paths), broad_core=broad_core)
 
 
 def load_capabilities_file(path: Path) -> dict[str, Any]:
@@ -200,13 +227,25 @@ def load_capabilities_file(path: Path) -> dict[str, Any]:
 
 
 def capability_slice_for_family(manifest: Mapping[str, Any], family: str) -> CapabilitySlice:
+    production = _require(manifest, "production", "capabilities manifest")
+    broad_core_families = _require(manifest, "broad_core_families", "capabilities manifest")
+    if not isinstance(production, list) or not isinstance(broad_core_families, list):
+        raise ReportError("capabilities manifest 'production' and 'broad_core_families' must be arrays")
     paths: list[str] = []
-    for entry in manifest.get("production", []):
-        if family in entry.get("families", []):
-            for path in entry.get("paths", []):
+    for entry in production:
+        if not isinstance(entry, Mapping):
+            raise ReportError("every capabilities manifest production entry must be an object")
+        entry_paths = _require(entry, "paths", "capabilities manifest production entry")
+        entry_families = _require(entry, "families", "capabilities manifest production entry")
+        if not isinstance(entry_paths, list) or not isinstance(entry_families, list):
+            raise ReportError("capabilities manifest production entry 'paths' and 'families' must be arrays")
+        if family in entry_families:
+            for path in entry_paths:
+                if not isinstance(path, str) or not path:
+                    raise ReportError("capabilities manifest paths must be non-empty strings")
                 if path not in paths:
                     paths.append(path)
     if not paths:
         raise ReportError(f"capabilities manifest does not map family {family!r} to any production path")
-    broad_core = family in manifest.get("broad_core_families", [])
+    broad_core = family in broad_core_families
     return CapabilitySlice(family=family, paths=tuple(sorted(paths)), broad_core=broad_core)

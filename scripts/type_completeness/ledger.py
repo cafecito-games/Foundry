@@ -45,6 +45,14 @@ IDENTITY_FIELDS = ("finding_id", "case_id", "family", "dimension")
 FINDING_ID_PATTERN = re.compile(r"^fstcf-v1-[0-9a-f]{20}$")
 
 
+def runner_finding_id(case_id: str, dimension: str) -> str:
+    """Mirror of make_finding_id in fs_type_completeness_runner.cpp, used only for the children of a migration
+    split, which have no runner-emitted ID of their own until their ledger entries exist. A test pins this
+    against an ID the runner actually emitted."""
+    digest = hashlib.sha256(f"{case_id}|{dimension}".encode("utf-8")).hexdigest()[:20]
+    return f"fstcf-v1-{digest}"
+
+
 def require_runner_finding_id(finding_id: Any) -> str:
     """The finding ID names a file, so it is validated against the runner's exact format before any path use."""
     if not isinstance(finding_id, str) or not FINDING_ID_PATTERN.match(finding_id):

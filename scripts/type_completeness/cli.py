@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from . import comparator, deadline, ledger, provisional, reconcile, report
 
@@ -38,49 +38,36 @@ def _compare(arguments: argparse.Namespace) -> int:
     return 1 if blocking and arguments.fail_on_regression else 0
 
 
-def _propose(arguments: argparse.Namespace) -> int:
-    artifacts = comparator.deserialize_many(Path(arguments.comparison).read_text(encoding="utf-8"))
-    matching = [artifact for artifact in artifacts if artifact.case_id == arguments.case_id]
-    if not matching:
-        print(f"comparison has no artifact for case {arguments.case_id!r}", file=sys.stderr)
-        return 2
-    artifact = matching[0]
-    findings = [
-        finding for finding in artifact.branch.get("findings") or [] if finding.get("dimension") == arguments.dimension
-    ]
-    if len(findings) != 1 or not findings[0].get("finding_id"):
-        print(
-            f"comparison artifact for case {arguments.case_id!r} has no finding for dimension {arguments.dimension!r}",
-            file=sys.stderr,
-        )
-        return 2
+def _finding_for(artifact: comparator.ComparisonArtifact, dimension: str) -> Optional[dict[str, Any]]:
+    findings = [finding for finding in artifact.branch["findings"] or [] if finding["dimension"] == dimension]
+    return findings[0] if len(findings) == 1 else None
+
+
+def _capability_paths(
+    artifact: comparator.ComparisonArtifact, requested: Optional[list[str]]
+) -> tuple[Optional[list[str]], Optional[str]]:
     if artifact.capability_slice is None:
-        if not arguments.capability_path:
-            print(
-                "comparison artifact carries no capability slice; pass --capability-path explicitly",
-                file=sys.stderr,
-            )
-            return 2
-        capability_paths = list(arguments.capability_path)
-    else:
-        producing = artifact.capability_slice.paths
-        capability_paths = list(arguments.capability_path or producing)
-        outside = sorted(set(capability_paths) - set(producing))
-        if outside:
-            print(
-                f"--capability-path {outside} lies outside the producing capability slice {list(producing)}",
-                file=sys.stderr,
-            )
-            return 2
-    # The runner echoes the ledger fields of a finding it already knows; a command-line value wins, an echoed
-    # value is kept, and only a genuinely new finding needs every field supplied.
-    echoed = findings[0]
+        if not requested:
+            return None, "comparison artifact carries no capability slice; pass --capability-path explicitly"
+        return list(requested), None
+    producing = artifact.capability_slice.paths
+    paths = list(requested or producing)
+    outside = sorted(set(paths) - set(producing))
+    if outside:
+        return None, f"--capability-path {outside} lies outside the producing capability slice {list(producing)}"
+    return paths, None
+
+
+def _ledger_fields(
+    echoed: dict[str, Any], arguments: argparse.Namespace
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    """Ledger fields for a proposal: a command-line value wins, an echoed ledger value is kept, and only a
+    genuinely new finding must supply every field."""
     issue_url = arguments.issue_url or str(echoed.get("issue_url") or "")
     closure_packet_url = arguments.closure_packet_url or str(echoed.get("closure_packet_url") or "")
     permanent_test_paths = list(
         arguments.permanent_test_path or [str(path) for path in echoed.get("permanent_test_paths") or []]
     )
-    classification = str(echoed.get("classification") or "unclassified")
     missing = [
         name
         for name, value in (
@@ -91,37 +78,99 @@ def _propose(arguments: argparse.Namespace) -> int:
         if not value
     ]
     if missing:
-        print(f"finding is not in the ledger yet; {', '.join(missing)} must be supplied", file=sys.stderr)
-        return 2
-    payload = ledger.proposed_record(
-        finding_id=str(echoed["finding_id"]),
-        family=artifact.family,
-        case_id=artifact.case_id,
-        dimension=arguments.dimension,
-        issue_url=issue_url,
-        closure_packet_url=closure_packet_url,
-        permanent_test_paths=permanent_test_paths,
-        classification=classification,
-    )
+        return None, f"finding is not in the ledger yet; {', '.join(missing)} must be supplied"
+    return {
+        "issue_url": issue_url,
+        "closure_packet_url": closure_packet_url,
+        "permanent_test_paths": permanent_test_paths,
+        "classification": str(echoed["classification"]),
+    }, None
+
+
+def _propose(arguments: argparse.Namespace) -> int:
+    artifacts = comparator.deserialize_many(Path(arguments.comparison).read_text(encoding="utf-8"))
+    by_case = {artifact.case_id: artifact for artifact in artifacts}
+    requested = list(dict.fromkeys(arguments.case_id))
+    selected: list[tuple[comparator.ComparisonArtifact, dict[str, Any]]] = []
+    for case_id in requested:
+        artifact = by_case.get(case_id)
+        if artifact is None:
+            print(f"comparison has no artifact for case {case_id!r}", file=sys.stderr)
+            return 2
+        finding = _finding_for(artifact, arguments.dimension)
+        if finding is None:
+            print(
+                f"comparison artifact for case {case_id!r} has no finding for dimension {arguments.dimension!r}",
+                file=sys.stderr,
+            )
+            return 2
+        selected.append((artifact, finding))
+
     detected_at = (
         deadline.parse_timestamp(arguments.detected_at) if arguments.detected_at else datetime.now(timezone.utc)
     )
-    record = provisional.ProvisionalRecord.create(
-        finding_id=payload["finding_id"],
-        payload=payload,
-        capability_slice=capability_paths,
-        workstream_owner=arguments.workstream_owner,
-        detection_artifact=arguments.detection_artifact,
-        develop_comparison=artifact.to_dict(),
-        detected_at=detected_at,
-        bot_pr_url=arguments.bot_pr_url,
-        origin=arguments.origin,
-    )
+    proposals: list[tuple[dict[str, Any], provisional.ProvisionalRecord]] = []
+    handled_finding_ids: set[str] = set()
+    for artifact, echoed in selected:
+        finding_id = str(echoed["finding_id"])
+        if finding_id in handled_finding_ids:
+            continue
+        capability_paths, error = _capability_paths(artifact, arguments.capability_path)
+        if error or capability_paths is None:
+            print(error, file=sys.stderr)
+            return 2
+        fields, error = _ledger_fields(echoed, arguments)
+        if error or fields is None:
+            print(error, file=sys.stderr)
+            return 2
+        migrated_from = str(echoed.get("migrated_from") or "")
+        resolved_case_ids = [str(case_id) for case_id in echoed.get("resolved_case_ids") or []]
+        group = [case_id for case_id in requested if case_id in (resolved_case_ids or [artifact.case_id])]
+        if migrated_from and not set(resolved_case_ids) <= set(group):
+            # A partial proposal for a migrated entry must not replace the historical record, or the siblings
+            # that still resolve through it would lose their classification: re-propose it verbatim.
+            targets = [(migrated_from, finding_id, artifact)]
+        elif migrated_from:
+            targets = [
+                (child, ledger.runner_finding_id(child, arguments.dimension), by_case[child])
+                for child in resolved_case_ids
+            ]
+        else:
+            targets = [(artifact.case_id, finding_id, artifact)]
+        for case_id, target_finding_id, target_artifact in targets:
+            payload = ledger.proposed_record(
+                finding_id=target_finding_id,
+                family=target_artifact.family,
+                case_id=case_id,
+                dimension=arguments.dimension,
+                **fields,
+            )
+            record = provisional.ProvisionalRecord.create(
+                finding_id=payload["finding_id"],
+                payload=payload,
+                capability_slice=capability_paths,
+                workstream_owner=arguments.workstream_owner,
+                detection_artifact=arguments.detection_artifact,
+                develop_comparison=target_artifact.to_dict(),
+                detected_at=detected_at,
+                bot_pr_url=arguments.bot_pr_url,
+                origin=arguments.origin,
+                migrated_from=migrated_from or None,
+                resolved_case_ids=resolved_case_ids,
+                proposed_case_ids=group if migrated_from else (),
+            )
+            proposals.append((payload, record))
+        handled_finding_ids.add(finding_id)
+
     output_dir = Path(arguments.output_dir)
-    ledger.write_record(output_dir, payload)
-    _write_json(output_dir / "provisional.json", json.dumps(record.to_dict(), sort_keys=True, indent=2) + "\n")
-    _write_json(output_dir / "tracking_issue_body.md", provisional.render_issue_body(record))
-    print(f"{record.finding_id} due {deadline.format_timestamp(record.due_at)}")
+    for payload, record in proposals:
+        ledger.write_record(output_dir, payload)
+        suffix = "" if len(proposals) == 1 else f"_{record.finding_id}"
+        _write_json(
+            output_dir / f"provisional{suffix}.json", json.dumps(record.to_dict(), sort_keys=True, indent=2) + "\n"
+        )
+        _write_json(output_dir / f"tracking_issue_body{suffix}.md", provisional.render_issue_body(record))
+        print(f"{record.finding_id} due {deadline.format_timestamp(record.due_at)}")
     return 0
 
 
@@ -168,7 +217,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     propose = commands.add_parser("propose", help="emit a proposed ledger entry and provisional record")
     propose.add_argument("--comparison", required=True)
-    propose.add_argument("--case-id", required=True)
+    propose.add_argument(
+        "--case-id",
+        action="append",
+        required=True,
+        help="repeatable; every resolved child of a migrated entry must be listed to split it",
+    )
     propose.add_argument("--dimension", required=True)
     propose.add_argument(
         "--issue-url", help="required for a new finding; defaults to the ledger value the runner echoes"

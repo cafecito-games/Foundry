@@ -345,6 +345,40 @@ class ReportLoadingTests(unittest.TestCase):
         with self.assertRaises(report.ReportError):
             report.load_report(bad)
 
+    def test_missing_runner_members_are_errors_not_defaults(self) -> None:
+        complete = _report([_case("a", passed=False)], findings=[_finding("a", "destination")])
+        for member in ("findings", "success"):
+            broken = dict(complete)
+            del broken[member]
+            with self.assertRaises(report.ReportError, msg=member):
+                report.load_report(broken)
+        for member in ("coordinates", "artifact_path", "expected", "actual", "diagnostics", "runtime_status"):
+            broken_case = dict(_case("a", passed=False))
+            del broken_case[member]
+            with self.assertRaises(report.ReportError, msg=member):
+                report.load_report(_report([broken_case]))
+        for member in ("finding_id", "case_id", "dimension", "expected", "actual", "classification"):
+            broken_finding = dict(_finding("a", "destination"))
+            del broken_finding[member]
+            with self.assertRaises(report.ReportError, msg=member):
+                report.load_report(_report([_case("a", passed=False)], findings=[broken_finding]))
+        with self.assertRaises(report.ReportError):
+            report.load_report(
+                _report(
+                    [_case("a", passed=False)], findings=[dict(_finding("a", "destination"), classification="bogus")]
+                )
+            )
+
+    def test_malformed_capabilities_manifest_is_an_error(self) -> None:
+        for manifest in (
+            {"schema_version": 1},
+            {"schema_version": 1, "production": "nope", "broad_core_families": []},
+            {"schema_version": 1, "production": [{"families": ["f"]}], "broad_core_families": []},
+            {"schema_version": 1, "production": [{"paths": ["p"], "families": ["f"]}]},
+        ):
+            with self.assertRaises(report.ReportError, msg=repr(manifest)):
+                report.capability_slice_for_family(manifest, "f")
+
     def test_default_category_is_product_finding_until_runner_emits_categories(self) -> None:
         loaded = report.load_report(_report([_case("b", passed=False)]))
         self.assertEqual(loaded.case("b").category, report.Category.PRODUCT_FINDING)
@@ -517,6 +551,16 @@ class ComparatorTests(unittest.TestCase):
         )
         round_trip = comparator.deserialize_many(comparator.serialize_many(artifacts))[0]
         self.assertEqual(round_trip.capability_slice, artifacts[0].capability_slice)
+
+    def test_develop_passing_case_absent_from_branch_report_is_vanished(self) -> None:
+        branch = report.load_report(_report([_case("b", passed=True)]))
+        develop = report.load_report(_report([_case("a", passed=True), _case("b", passed=True)]))
+        artifacts = comparator.compare_reports(branch, develop, configuration="text")
+        self.assertEqual(
+            [(artifact.case_id, artifact.status) for artifact in artifacts], [("a", comparator.Status.VANISHED)]
+        )
+        self.assertIn(comparator.Status.VANISHED, comparator.REGRESSION_STATUSES)
+        self.assertNotIn(comparator.Status.VANISHED, comparator.NO_LONGER_FAILING_STATUSES)
 
     def test_compare_report_emits_one_artifact_per_branch_failure(self) -> None:
         branch = report.load_report(
@@ -817,6 +861,12 @@ class ProvisionalRecordTests(unittest.TestCase):
         with self.assertRaises(provisional.ProvisionalError):
             provisional.parse_issue_body("no machine-readable block here")
 
+    def test_provisional_state_is_required_on_parse(self) -> None:
+        data = self._record().to_dict()
+        del data["state"]
+        with self.assertRaises(provisional.ProvisionalError):
+            provisional.ProvisionalRecord.from_dict(data)
+
     def test_parse_rejects_malformed_capability_slice(self) -> None:
         record = self._record()
         for bad_slice in ("modules/foundry_script/fs_analyzer.cpp", [], [""], [1], None):
@@ -848,6 +898,22 @@ class ProvisionalRecordTests(unittest.TestCase):
             provisional.ProvisionalRecord.from_dict(widened)
         with self.assertRaises(provisional.ProvisionalError):
             self._record(develop_comparison=comparison, capability_slice=["editor/editor_node.cpp"])
+
+    def test_malformed_embedded_capability_slice_is_a_parse_error(self) -> None:
+        malformed_values: list[Any] = [
+            "modules/foundry_script/fs_analyzer.cpp",
+            {"family": "f", "paths": [], "broad_core": True},
+            {"family": "f", "paths": "modules/foundry_script/fs_analyzer.cpp", "broad_core": True},
+            {"family": "f", "paths": [1], "broad_core": True},
+            {"family": "f", "broad_core": True},
+            [],
+        ]
+        for malformed in malformed_values:
+            comparison = {"status": "unchanged", "capability_slice": malformed}
+            with self.assertRaises(provisional.ProvisionalError, msg=repr(malformed)):
+                self._record(develop_comparison=comparison)
+        absent = self._record(develop_comparison={"status": "unchanged", "capability_slice": None})
+        self.assertEqual(absent.capability_slice, ("modules/foundry_script/fs_analyzer.cpp",))
 
     def test_manual_record_carries_manual_origin_with_same_fields(self) -> None:
         manual = self._record(origin="manual")
@@ -1068,7 +1134,9 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
     def test_refuses_to_open_or_update_a_pull_request_from_a_non_bot_branch(self) -> None:
-        runner = FakeCommandRunner({"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3}])})
+        runner = FakeCommandRunner(
+            {"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "OPEN"}])}
+        )
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         with self.assertRaises(github.ProtectedBranchError):
             client.open_or_update_ledger_pull_request("feature/unrelated", title="t", body="b", base="develop")
@@ -1131,7 +1199,9 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertFalse(any("reopen" in call for call in joined))
 
     def test_existing_pr_is_updated_not_duplicated(self) -> None:
-        runner = FakeCommandRunner({"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3}])})
+        runner = FakeCommandRunner(
+            {"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "OPEN"}])}
+        )
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         url = client.open_or_update_ledger_pull_request(
             "bot/type-completeness/abc", title="t", body="b", base="develop"
@@ -1181,12 +1251,25 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertTrue(any("issue edit 9" in call for call in joined))
         self.assertFalse(any("reopen" in call for call in joined))
 
+    def test_unknown_github_state_is_an_error_not_a_reopen(self) -> None:
+        listing = json.dumps([{"url": "https://github.com/x/issues/7", "number": 7}])
+        runner = FakeCommandRunner({"issue list": listing, "pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        with self.assertRaises(github.AutomationError):
+            client.create_or_update_tracking_issue("finding-1", title="t", body="b")
+        with self.assertRaises(github.AutomationError):
+            client.open_or_update_ledger_pull_request("bot/type-completeness/abc", title="t", body="b", base="develop")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertFalse(any("reopen" in call or "edit" in call or "create" in call for call in joined))
+
     def test_tracking_issue_is_created_once_and_then_updated(self) -> None:
         runner = FakeCommandRunner({"issue list": "[]", "issue create": "https://github.com/x/issues/5"})
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         url = client.create_or_update_tracking_issue("finding-1", title="t", body="b")
         self.assertEqual(url, "https://github.com/x/issues/5")
-        runner = FakeCommandRunner({"issue list": json.dumps([{"url": "https://github.com/x/issues/5", "number": 5}])})
+        runner = FakeCommandRunner(
+            {"issue list": json.dumps([{"url": "https://github.com/x/issues/5", "number": 5, "state": "OPEN"}])}
+        )
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
         self.assertEqual(
             client.create_or_update_tracking_issue("finding-1", title="t", body="b"), "https://github.com/x/issues/5"
@@ -1216,6 +1299,28 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             written = json.loads((root / "comparison.json").read_text())
             self.assertEqual(written["artifacts"][0]["status"], "new")
+
+    def test_compare_fail_on_regression_fails_for_vanished_passing_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "branch.json").write_text(json.dumps(_report([])))
+            (root / "develop.json").write_text(json.dumps(_report([_case("a", passed=True)])))
+            (root / "capabilities.json").write_text(json.dumps(CAPABILITIES))
+            arguments = [
+                "compare",
+                "--branch-report",
+                str(root / "branch.json"),
+                "--develop-report",
+                str(root / "develop.json"),
+                "--configuration",
+                "text",
+                "--capabilities",
+                str(root / "capabilities.json"),
+                "--output",
+                str(root / "comparison.json"),
+            ]
+            self.assertEqual(cli.main(arguments + ["--fail-on-regression"]), 1)
+            self.assertEqual(json.loads((root / "comparison.json").read_text())["artifacts"][0]["status"], "vanished")
 
     def test_compare_fail_on_regression_fails_for_missing_baseline_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1411,6 +1516,90 @@ class CliTests(unittest.TestCase):
             ]
             self.assertEqual(cli.main(arguments), 2)
             self.assertFalse((root / "out").exists())
+
+    def _split_comparison(self, root: Path) -> str:
+        """A historical ledger entry for case 'old' that migrations split into 'new_a' and 'new_b'.
+
+        The runner echoes the historical finding onto both children: same finding_id, migrated_from='old',
+        resolved_case_ids=['new_a', 'new_b'] (fs_type_completeness_runner.cpp:785-802, 1566-1575).
+        """
+        historical_id = _runner_finding_id("old", "destination")
+        echoed = {
+            "classification": "product_defect",
+            "issue_url": "https://github.com/x/issues/40",
+            "closure_packet_url": "https://github.com/x/pull/41",
+            "permanent_test_paths": ["modules/foundry_script/tests/scripts/known.fs"],
+            "migrated_from": "old",
+            "resolved_case_ids": ["new_a", "new_b"],
+        }
+        findings = [
+            dict(_finding("new_a", "destination"), finding_id=historical_id, **echoed),
+            dict(_finding("new_b", "destination"), finding_id=historical_id, **echoed),
+        ]
+        cases = [_case("new_a", passed=False), _case("new_b", passed=False)]
+        branch = report.load_report(_report(cases, findings=findings))
+        artifacts = comparator.compare_reports(branch, branch, configuration="text", capabilities=CAPABILITIES)
+        (root / "comparison.json").write_text(comparator.serialize_many(artifacts))
+        return historical_id
+
+    def _split_arguments(self, root: Path, *case_ids: str) -> list[str]:
+        arguments = ["propose", "--comparison", str(root / "comparison.json")]
+        for case_id in case_ids:
+            arguments += ["--case-id", case_id]
+        return arguments + [
+            "--dimension",
+            "destination",
+            "--workstream-owner",
+            "o",
+            "--detection-artifact",
+            "d",
+            "--detected-at",
+            "2026-08-17T10:00:00-04:00",
+            "--output-dir",
+            str(root / "out"),
+        ]
+
+    def test_proposing_one_child_of_a_split_keeps_the_historical_entry_intact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            historical_id = self._split_comparison(root)
+            self.assertEqual(cli.main(self._split_arguments(root, "new_a")), 0)
+            written = sorted(path.name for path in (root / "out").glob("fstcf-*.json"))
+            self.assertEqual(written, [f"{historical_id}.json"])
+            historical = ledger.read_record(root / "out" / f"{historical_id}.json")
+            self.assertEqual(historical["case_id"], "old")
+            self.assertEqual(historical["classification"], "product_defect")
+            record = provisional.ProvisionalRecord.from_dict(
+                json.loads((root / "out" / "provisional.json").read_text())
+            )
+            self.assertEqual(record.finding_id, historical_id)
+            self.assertEqual(record.migrated_from, "old")
+            self.assertEqual(record.resolved_case_ids, ("new_a", "new_b"))
+            self.assertEqual(record.proposed_case_ids, ("new_a",))
+
+    def test_proposing_every_child_of_a_split_writes_one_record_per_child(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            historical_id = self._split_comparison(root)
+            self.assertEqual(cli.main(self._split_arguments(root, "new_a", "new_b")), 0)
+            child_ids = [_runner_finding_id("new_a", "destination"), _runner_finding_id("new_b", "destination")]
+            written = sorted(path.name for path in (root / "out").glob("fstcf-*.json"))
+            self.assertEqual(written, sorted(f"{child_id}.json" for child_id in child_ids))
+            self.assertFalse((root / "out" / f"{historical_id}.json").exists())
+            for child_id, case_id in zip(child_ids, ("new_a", "new_b")):
+                child = ledger.read_record(root / "out" / f"{child_id}.json")
+                self.assertEqual(child["case_id"], case_id)
+                self.assertEqual(child["classification"], "product_defect")
+                record = provisional.ProvisionalRecord.from_dict(
+                    json.loads((root / "out" / f"provisional_{child_id}.json").read_text())
+                )
+                self.assertEqual(record.migrated_from, "old")
+                self.assertEqual(record.proposed_case_ids, ("new_a", "new_b"))
+            self.assertFalse((root / "out" / "provisional.json").exists())
+
+    def test_runner_finding_id_mirror_matches_the_runner_fixture(self) -> None:
+        runner_id = json.loads(RUNNER_REPORT_TEXT)["findings"][0]["finding_id"]
+        self.assertEqual(ledger.runner_finding_id("case_union_store_variable", "destination"), runner_id)
 
     def test_propose_command_refuses_a_dimension_the_report_did_not_find(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
