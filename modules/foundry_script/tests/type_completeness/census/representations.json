@@ -1,0 +1,467 @@
+{
+	"schema_version": 1,
+	"description": "Inventory of every production Foundry Script type representation, its live kind enums, and its semantic child slots. Kind ids and numeric values are validated against the live C++ enums by test_type_completeness_census.h, so a renumbered or appended enum value fails the census rather than silently diverging.",
+	"representations": [
+		{
+			"id": "parser_data_type",
+			"owner": "type_algebra",
+			"anchor": "modules/foundry_script/fs_parser.h:118",
+			"summary": "The analyzer's resolved type record. Carries the full declared shape: widths, bounds, callable signatures, enum payloads, provenance flags, and every recursive child in one structure.",
+			"production_paths": [
+				"modules/foundry_script/fs_parser.cpp",
+				"modules/foundry_script/fs_parser_data_type.cpp",
+				"modules/foundry_script/fs_analyzer.cpp",
+				"modules/foundry_script/fs_compiler.cpp",
+				"modules/foundry_script/fs_type.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": true,
+				"runtime_text": true,
+				"runtime_bytecode": false,
+				"bytecode_serialization": false,
+				"reflection": true,
+				"editor_tools": true
+			},
+			"kind_enums": [
+				{
+					"live_enum": "FSParser::DataType::Kind",
+					"anchor": "modules/foundry_script/fs_parser.h:122",
+					"kinds": [
+						{ "id": "builtin", "value": 0 },
+						{ "id": "native", "value": 1 },
+						{ "id": "script", "value": 2 },
+						{ "id": "class", "value": 3 },
+						{ "id": "enum", "value": 4 },
+						{ "id": "tuple", "value": 5 },
+						{ "id": "union", "value": 6 },
+						{ "id": "type_parameter", "value": 7 },
+						{ "id": "variant", "value": 8 },
+						{ "id": "resolving", "value": 9 },
+						{ "id": "unresolved", "value": 10 }
+					]
+				},
+				{
+					"live_enum": "FSParser::DataType::TypeParameterScope",
+					"anchor": "modules/foundry_script/fs_parser.h:138",
+					"kinds": [
+						{ "id": "none", "value": 0 },
+						{ "id": "class", "value": 1 },
+						{ "id": "enum", "value": 2 },
+						{ "id": "method", "value": 3 }
+					]
+				},
+				{
+					"live_enum": "FSParser::DataType::TypeSource",
+					"anchor": "modules/foundry_script/fs_parser.h:145",
+					"kinds": [
+						{ "id": "undetected", "value": 0 },
+						{ "id": "inferred", "value": 1 },
+						{ "id": "annotated_explicit", "value": 2 },
+						{ "id": "annotated_inferred", "value": 3 }
+					]
+				},
+				{
+					"live_enum": "NumericType",
+					"anchor": "core/variant/numeric_type.h:45",
+					"sentinel_note": "The MAX sentinel (value 9) is a bound, not a descriptor, and is excluded.",
+					"kinds": [
+						{ "id": "none", "value": 0 },
+						{ "id": "int8", "value": 1 },
+						{ "id": "uint8", "value": 2 },
+						{ "id": "int16", "value": 3 },
+						{ "id": "uint16", "value": 4 },
+						{ "id": "int32", "value": 5 },
+						{ "id": "uint32", "value": 6 },
+						{ "id": "int64", "value": 7 },
+						{ "id": "uint64", "value": 8 }
+					]
+				}
+			],
+			"child_slots": [
+				{
+					"id": "container_element_types",
+					"anchor": "modules/foundry_script/fs_parser.h:120",
+					"kinds": ["builtin", "tuple"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Typed Array/Dictionary element types and, for TUPLE, the element types in declaration order."
+				},
+				{
+					"id": "union_members",
+					"anchor": "modules/foundry_script/fs_parser.h:252",
+					"kinds": ["union"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"families": ["union_destination_membership"],
+					"summary": "Alternatives of a static type set, already normalized: aliases expanded, nested unions flattened, nullability hoisted, duplicates removed, order canonicalized."
+				},
+				{
+					"id": "type_arguments",
+					"anchor": "modules/foundry_script/fs_parser.h:261",
+					"kinds": ["class", "script", "native"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Type arguments of a specialized type handle, e.g. the int in Box[int]."
+				},
+				{
+					"id": "type_parameter_bound",
+					"anchor": "modules/foundry_script/fs_parser.h:258",
+					"kinds": ["type_parameter"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition"],
+					"summary": "Optional upper bound of a generic type parameter; zero or one element."
+				},
+				{
+					"id": "method_parameter_types",
+					"anchor": "modules/foundry_script/fs_parser.h:214",
+					"kinds": ["builtin"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Rich parameter types of a Callable/Signal signature, preserved beside MethodInfo which cannot store them."
+				},
+				{
+					"id": "method_return_type",
+					"anchor": "modules/foundry_script/fs_parser.h:215",
+					"kinds": ["builtin"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Return type of a Callable signature; empty for signals."
+				},
+				{
+					"id": "method_rest_parameter_type",
+					"anchor": "modules/foundry_script/fs_parser.h:220",
+					"kinds": ["builtin"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "The variadic rest tail of a Foundry Script signature; empty, or exactly one resolved Array element type."
+				},
+				{
+					"id": "enum_case_payload_field_types",
+					"anchor": "modules/foundry_script/fs_parser.h:231",
+					"kinds": ["enum"],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Payload field types of one tagged-union case, in declaration order."
+				},
+				{
+					"id": "enum_case_payload_field_names",
+					"anchor": "modules/foundry_script/fs_parser.h:230",
+					"kinds": ["enum"],
+					"child_representation": "none",
+					"axes": ["composition"],
+					"summary": "Payload field names of a tagged-union case; an analyzer-only convenience over the positional runtime carrier."
+				}
+			]
+		},
+		{
+			"id": "runtime_data_type",
+			"owner": "runtime_enforcement",
+			"anchor": "modules/foundry_script/fs_function.h:78",
+			"summary": "The compiled runtime type descriptor used by every runtime boundary: is tests, typed stores, member slots, and operands. Erases analyzer-only shape (enum/tagged-union identity, callable signatures, bounds) while keeping widths, container elements, type arguments, and union alternatives.",
+			"production_paths": [
+				"modules/foundry_script/fs_function.cpp",
+				"modules/foundry_script/fs_vm.cpp",
+				"modules/foundry_script/fs_compiler.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": false,
+				"runtime_text": true,
+				"runtime_bytecode": true,
+				"bytecode_serialization": true,
+				"reflection": true,
+				"editor_tools": true
+			},
+			"kind_enums": [
+				{
+					"live_enum": "FSDataType::Kind",
+					"anchor": "modules/foundry_script/fs_function.h:85",
+					"wire_note": "UNION must remain the highest value; the compiled-bytecode loader rejects a deserialized kind above it (modules/foundry_script/fs_function.h:82).",
+					"kinds": [
+						{ "id": "variant", "value": 0 },
+						{ "id": "builtin", "value": 1 },
+						{ "id": "native", "value": 2 },
+						{ "id": "script", "value": 3 },
+						{ "id": "foundry_script", "value": 4 },
+						{ "id": "tuple", "value": 5 },
+						{ "id": "type_parameter", "value": 6 },
+						{ "id": "union", "value": 7 }
+					]
+				},
+				{
+					"live_enum": "FSDataType::TypeParameterScope",
+					"anchor": "modules/foundry_script/fs_function.h:106",
+					"kinds": [
+						{ "id": "none", "value": 0 },
+						{ "id": "class", "value": 1 },
+						{ "id": "method", "value": 2 }
+					]
+				},
+				{
+					"live_enum": "NumericType",
+					"anchor": "core/variant/numeric_type.h:45",
+					"sentinel_note": "The MAX sentinel (value 9) is a bound, not a descriptor, and is excluded.",
+					"kinds": [
+						{ "id": "none", "value": 0 },
+						{ "id": "int8", "value": 1 },
+						{ "id": "uint8", "value": 2 },
+						{ "id": "int16", "value": 3 },
+						{ "id": "uint16", "value": 4 },
+						{ "id": "int32", "value": 5 },
+						{ "id": "uint32", "value": 6 },
+						{ "id": "int64", "value": 7 },
+						{ "id": "uint64", "value": 8 }
+					]
+				}
+			],
+			"child_slots": [
+				{
+					"id": "container_element_types",
+					"anchor": "modules/foundry_script/fs_function.h:80",
+					"kinds": ["builtin", "tuple"],
+					"child_representation": "runtime_data_type",
+					"axes": ["composition", "value_boundary", "execution_lifecycle"],
+					"summary": "Typed container element types and tuple element types; the tuple value itself erases to a read-only Array and only is tests keep the shape."
+				},
+				{
+					"id": "type_arguments",
+					"anchor": "modules/foundry_script/fs_function.h:133",
+					"kinds": ["script", "foundry_script"],
+					"child_representation": "runtime_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Reified type arguments of a specialized script or trait slot; part of the runtime type identity, not metadata."
+				},
+				{
+					"id": "union_alternatives",
+					"anchor": "modules/foundry_script/fs_function.h:140",
+					"kinds": ["union"],
+					"child_representation": "runtime_data_type",
+					"axes": ["composition", "value_boundary", "execution_lifecycle"],
+					"families": ["union_destination_membership"],
+					"summary": "Alternatives in the analyzer's canonical order; a union has no carrier of its own, so the membership test is their disjunction."
+				}
+			]
+		},
+		{
+			"id": "container_descriptor",
+			"owner": "runtime_enforcement",
+			"anchor": "core/variant/container_type_validate.h:38",
+			"summary": "The engine-level ContainerType record and its validating twin ContainerTypeValidate (core/variant/container_type_validate.h:59) — the shared currency of typed containers, reflection metadata, class-handle specialization, and compiled constants.",
+			"production_paths": [
+				"core/variant/container_type_validate.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": false,
+				"runtime_text": true,
+				"runtime_bytecode": true,
+				"bytecode_serialization": true,
+				"reflection": true,
+				"editor_tools": true
+			},
+			"kind_enums": [],
+			"child_slots": [
+				{
+					"id": "element_types",
+					"anchor": "core/variant/container_type_validate.h:45",
+					"kinds": [],
+					"child_representation": "container_descriptor",
+					"axes": ["composition", "value_boundary", "execution_lifecycle"],
+					"summary": "Recursive element types of a typed Array or Dictionary, each carrying its own numeric width descriptor."
+				},
+				{
+					"id": "type_arguments",
+					"anchor": "core/variant/container_type_validate.h:49",
+					"kinds": [],
+					"child_representation": "container_descriptor",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Reified type arguments of a specialized script element type or handle, distinct from element_types which describes container contents."
+				}
+			]
+		},
+		{
+			"id": "bytecode_serialized_type",
+			"owner": "serialization_lifecycle",
+			"anchor": "modules/foundry_script/fs_bytecode_export.cpp:340",
+			"summary": "The serialized FSDataType record inside a compiled .fsb, written by FSBytecodeExporter::encode_data_type and rebuilt by FSBytecodeLoader::decode_data_type (modules/foundry_script/fs_bytecode_loader.h:158). Script identity travels as (path, fully qualified class name), never as a pointer.",
+			"production_paths": [
+				"modules/foundry_script/fs_bytecode_export.cpp",
+				"modules/foundry_script/fs_bytecode_loader.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": false,
+				"runtime_text": false,
+				"runtime_bytecode": true,
+				"bytecode_serialization": true,
+				"reflection": false,
+				"editor_tools": false
+			},
+			"kind_enums": [
+				{
+					"live_enum": "FSDataType::Kind",
+					"anchor": "modules/foundry_script/fs_function.h:85",
+					"wire_note": "Serialized as one byte per record; the loader rejects a kind above UNION, so the serialized kind set is exactly the runtime kind set.",
+					"kinds": [
+						{ "id": "variant", "value": 0 },
+						{ "id": "builtin", "value": 1 },
+						{ "id": "native", "value": 2 },
+						{ "id": "script", "value": 3 },
+						{ "id": "foundry_script", "value": 4 },
+						{ "id": "tuple", "value": 5 },
+						{ "id": "type_parameter", "value": 6 },
+						{ "id": "union", "value": 7 }
+					]
+				}
+			],
+			"child_slots": [
+				{
+					"id": "serialized_container_element_types",
+					"anchor": "modules/foundry_script/fs_bytecode_export.cpp:380",
+					"kinds": ["builtin", "tuple"],
+					"child_representation": "bytecode_serialized_type",
+					"axes": ["composition", "execution_lifecycle"],
+					"summary": "Length-prefixed recursive element records; a width nested at any depth is written the same way as one at the root."
+				},
+				{
+					"id": "serialized_type_arguments",
+					"anchor": "modules/foundry_script/fs_bytecode_export.cpp:387",
+					"kinds": ["script", "foundry_script"],
+					"child_representation": "bytecode_serialized_type",
+					"axes": ["composition", "execution_lifecycle"],
+					"summary": "Length-prefixed recursive type-argument records of a specialized handle."
+				},
+				{
+					"id": "serialized_union_alternatives",
+					"anchor": "modules/foundry_script/fs_bytecode_export.cpp:394",
+					"kinds": ["union"],
+					"child_representation": "bytecode_serialized_type",
+					"axes": ["composition", "execution_lifecycle"],
+					"families": ["union_destination_membership"],
+					"summary": "Length-prefixed recursive alternative records; the union membership obligation survives reload intact."
+				}
+			]
+		},
+		{
+			"id": "member_binding_descriptor",
+			"owner": "runtime_enforcement",
+			"anchor": "modules/foundry_script/foundry_script.h:169",
+			"summary": "How a class-type-parameter member resolves its reified argument at runtime: FIXED bindings carry a concrete FSDataType that deliberately keeps TYPE_PARAMETER nodes at any depth, OPEN bindings carry a leaf ordinal. MemberInfo (modules/foundry_script/foundry_script.h:194) also carries tuple_slot_shape beside the erased data_type.",
+			"production_paths": [
+				"modules/foundry_script/foundry_script.cpp",
+				"modules/foundry_script/fs_vm.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": false,
+				"runtime_text": true,
+				"runtime_bytecode": true,
+				"bytecode_serialization": true,
+				"reflection": true,
+				"editor_tools": false
+			},
+			"kind_enums": [
+				{
+					"live_enum": "FoundryScript::TypeArgumentBinding::Kind",
+					"anchor": "modules/foundry_script/foundry_script.h:170",
+					"kinds": [
+						{ "id": "none", "value": 0 },
+						{ "id": "fixed", "value": 1 },
+						{ "id": "open", "value": 2 }
+					]
+				}
+			],
+			"child_slots": [
+				{
+					"id": "fixed",
+					"anchor": "modules/foundry_script/foundry_script.h:187",
+					"kinds": ["fixed"],
+					"child_representation": "runtime_data_type",
+					"axes": ["composition", "value_boundary", "execution_lifecycle"],
+					"summary": "The concrete argument of a FIXED binding as an FSDataType that keeps unresolved TYPE_PARAMETER nodes so each further extends step substitutes them recursively."
+				},
+				{
+					"id": "tuple_slot_shape",
+					"anchor": "modules/foundry_script/foundry_script.h:207",
+					"kinds": [],
+					"child_representation": "runtime_data_type",
+					"axes": ["composition", "value_boundary", "execution_lifecycle"],
+					"summary": "The declared shape of a tuple-typed member whose data_type erases to a bare untyped Array; the only input a reflective write has for tuple slots."
+				}
+			]
+		},
+		{
+			"id": "reflection_property_info",
+			"owner": "runtime_enforcement",
+			"anchor": "modules/foundry_script/fs_parser.h:356",
+			"summary": "The PropertyInfo projection: the engine-facing description of a member (FSParser::DataType::to_property_info) and its inverse (FSAnalyzer::type_from_property, modules/foundry_script/fs_analyzer.h:1010). PropertyInfo is also serialized into .fsb member records (modules/foundry_script/fs_bytecode_export.cpp:404). Its hint_string is a live child channel, not a terminal blob.",
+			"production_paths": [
+				"modules/foundry_script/fs_reflection.cpp",
+				"modules/foundry_script/fs_analyzer.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": true,
+				"runtime_text": true,
+				"runtime_bytecode": true,
+				"bytecode_serialization": true,
+				"reflection": true,
+				"editor_tools": true
+			},
+			"kind_enums": [],
+			"child_slots": [
+				{
+					"id": "hint_string",
+					"anchor": "modules/foundry_script/fs_parser_data_type.cpp:1069",
+					"kinds": [],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Type children encoded into hint_string: Callable/Signal signature suffixes (parameter, return, and rest slots) under PROPERTY_HINT_CALLABLE_TYPE and typed-array element hints under PROPERTY_HINT_ARRAY_TYPE, decoded back into parser slots by FSAnalyzer::type_from_property (modules/foundry_script/fs_analyzer.cpp:15706)."
+				}
+			]
+		},
+		{
+			"id": "rendered_source_name",
+			"owner": "tooling_parity",
+			"anchor": "modules/foundry_script/fs_function.h:149",
+			"summary": "The Foundry Script source spelling reconstructed from a stored descriptor alone: FSDataType::get_source_type_name, plus the analyzer-side renderers FSParser::DataType::to_string (modules/foundry_script/fs_parser.h:333) and to_string_diagnostic (modules/foundry_script/fs_parser.h:338). Recurses through containers, generic arguments, tuples, and nullability, so Array[int] and Array[long] stay distinguishable.",
+			"production_paths": [
+				"modules/foundry_script/fs_function.cpp",
+				"modules/foundry_script/fs_parser_data_type.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": true,
+				"runtime_text": true,
+				"runtime_bytecode": true,
+				"bytecode_serialization": false,
+				"reflection": true,
+				"editor_tools": true
+			},
+			"kind_enums": [],
+			"child_slots": []
+		},
+		{
+			"id": "specialization_evidence",
+			"owner": "runtime_enforcement",
+			"anchor": "modules/foundry_script/fs_function.h:65",
+			"summary": "What a runtime value knows about its own specialization: the leaf script plus the type arguments reified against that leaf, from an instance (modules/foundry_script/fs_function.h:71) or a class handle (modules/foundry_script/fs_function.h:75). Consumed by FSDataType::specialization_matches (modules/foundry_script/fs_function.h:185) under narrowing and gradual rules.",
+			"production_paths": [
+				"modules/foundry_script/fs_function.cpp"
+			],
+			"surface_applicability": {
+				"analyzer": false,
+				"runtime_text": true,
+				"runtime_bytecode": true,
+				"bytecode_serialization": false,
+				"reflection": true,
+				"editor_tools": false
+			},
+			"kind_enums": [],
+			"child_slots": [
+				{
+					"id": "evidence_type_arguments",
+					"anchor": "modules/foundry_script/fs_function.h:67",
+					"kinds": [],
+					"child_representation": "container_descriptor",
+					"axes": ["composition", "value_boundary"],
+					"summary": "The reified argument vector expressed against the value's own leaf parameters; an empty vector is absence of evidence, not a claim."
+				}
+			]
+		}
+	]
+}

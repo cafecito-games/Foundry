@@ -1,0 +1,44 @@
+{
+	"schema_version": 1,
+	"description": "Reconciliation between the census's production paths and the completeness capability map (capabilities.json). Every census production path is either mapped (the capability map owns it and selects a rule family for it) or explicitly declared unmapped with a rationale and an owning issue. The census validator fails when a mapped declaration stops matching the map or an unmapped declaration silently becomes mapped, so mapping rot is noisy in both directions.",
+	"mapped_production_paths": [
+		"modules/foundry_script/fs_analyzer.cpp",
+		"modules/foundry_script/fs_compiler.cpp",
+		"modules/foundry_script/fs_function.cpp",
+		"modules/foundry_script/fs_reflection.cpp",
+		"modules/foundry_script/fs_type.cpp",
+		"modules/foundry_script/fs_vm.cpp"
+	],
+	"unmapped_production_paths": [
+		{
+			"path": "modules/foundry_script/fs_parser.cpp",
+			"rationale": "Parser source is a production path the current capability map does not list; the selector's production-path map is owned by the presubmit-selector workstream.",
+			"owning_issue": 2477
+		},
+		{
+			"path": "modules/foundry_script/fs_parser_data_type.cpp",
+			"rationale": "Parser type-record source is a production path the current capability map does not list; the selector's production-path map is owned by the presubmit-selector workstream.",
+			"owning_issue": 2477
+		},
+		{
+			"path": "modules/foundry_script/foundry_script.cpp",
+			"rationale": "Script-class and member-binding source is a production path the current capability map does not list; the selector's production-path map is owned by the presubmit-selector workstream.",
+			"owning_issue": 2477
+		},
+		{
+			"path": "modules/foundry_script/fs_bytecode_export.cpp",
+			"rationale": "Compiled-bytecode export is a production path the current capability map does not list; serialization ownership is scoped by the serialization workstream.",
+			"owning_issue": 2478
+		},
+		{
+			"path": "modules/foundry_script/fs_bytecode_loader.cpp",
+			"rationale": "Compiled-bytecode load/reload is a production path the current capability map does not list; serialization ownership is scoped by the serialization workstream.",
+			"owning_issue": 2478
+		},
+		{
+			"path": "core/variant/container_type_validate.cpp",
+			"rationale": "The engine-level container descriptor lives outside the foundry_script module root the current capability map covers; extending the map beyond the module is a selector-workstream specification change.",
+			"owning_issue": 2477
+		}
+	]
+}

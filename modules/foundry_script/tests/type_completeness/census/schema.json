@@ -1,0 +1,65 @@
+{
+	"schema_version": 1,
+	"description": "Closed vocabularies for the Foundry Script type-representation census. The C++ census validator (modules/foundry_script/tests/test_type_completeness_census.h) rejects any census file that uses a value outside these vocabularies.",
+	"policies": [
+		"traverse",
+		"preserve",
+		"substitute",
+		"project",
+		"erase",
+		"not_applicable"
+	],
+	"policy_meanings": {
+		"traverse": "The operation must visit the child recursively; omitting the child from a traversal is the defect class the census exists to catch.",
+		"preserve": "The child is carried into the target unchanged without recursive inspection.",
+		"substitute": "The child is rebound against type arguments or receiver evidence before further use.",
+		"project": "The child is translated into another census representation.",
+		"erase": "The child is deliberately degraded; the information is not observable on that surface by design.",
+		"not_applicable": "The surface never sees this child; requires a rationale."
+	},
+	"surfaces": [
+		"analyzer",
+		"runtime_text",
+		"runtime_bytecode",
+		"bytecode_serialization",
+		"reflection",
+		"editor_tools"
+	],
+	"surface_meanings": {
+		"analyzer": "Static analysis only: parser and analyzer passes over source text.",
+		"runtime_text": "Text execution: the source-compiled path through the VM.",
+		"runtime_bytecode": "Bytecode execution: a script loaded from compiled .fsb and executed.",
+		"bytecode_serialization": "Compiled-bytecode export and reload: encode, decode, and loader validation.",
+		"reflection": "Reflective and proxy boundaries: PropertyInfo, Object.set/get, proxies, native/script crossings.",
+		"editor_tools": "Tools-only surface: diagnostics rendering, completion, hover, LSP, refactoring (TOOLS_ENABLED builds)."
+	},
+	"axes": [
+		"type_shape",
+		"composition",
+		"value_boundary",
+		"execution_lifecycle",
+		"tooling_surface"
+	],
+	"owners": [
+		"type_algebra",
+		"static_semantics",
+		"runtime_enforcement",
+		"serialization_lifecycle",
+		"tooling_parity"
+	],
+	"transition_kinds": [
+		"project",
+		"erase",
+		"substitute",
+		"preserve",
+		"reify"
+	],
+	"witness_kinds": [
+		"doctest_case",
+		"fixture"
+	],
+	"witness_statuses": [
+		"present",
+		"deferred"
+	]
+}

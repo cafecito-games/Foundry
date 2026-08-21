@@ -1,0 +1,91 @@
+{
+	"schema_version": 1,
+	"description": "Genuinely unsupported type-representation configurations. Every entry carries a rationale grounded in a production anchor and a witness reference; an entry whose witness status is deferred is an uncovered census cell, not a pass, and is owned by the negative-witness adapters of #2477/#2478. The census validator resolves every present fixture reference against the repository and shape-checks doctest_case references (suite-qualified names); binding those names to a registered TEST_CASE follows with the #2477 adapters.",
+	"entries": [
+		{
+			"id": "union_member_that_is_union_or_nullable",
+			"representation": "parser_data_type",
+			"configuration": "A UNION whose member is itself a UNION or a nullable type.",
+			"rationale": "Union normalization flattens nested unions, hoists nullability onto the union itself, removes duplicates, and canonicalizes order; a set that normalizes to a single alternative is not a union at all and collapses to that alternative (modules/foundry_script/fs_parser.h:247).",
+			"witnesses": [
+				{
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][TypeUnion] A single member collapses to that member",
+					"status": "present"
+				}
+			]
+		},
+		{
+			"id": "static_variable_typed_by_open_class_type_parameter",
+			"representation": "member_binding_descriptor",
+			"configuration": "A static member whose declared type stays open in its declaring class's own type parameters.",
+			"rationale": "A static member is never copied into subclasses, so an open slot has no sound per-specialization storage; the analyzer rejects the declaration (modules/foundry_script/foundry_script.h:215).",
+			"witnesses": [
+				{
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/analyzer/errors/static_variable_typed_by_class_type_parameter.fs",
+					"status": "present"
+				}
+			]
+		},
+		{
+			"id": "bare_generic_extends",
+			"representation": "parser_data_type",
+			"configuration": "A generic base or trait named without type arguments in an extends/uses clause.",
+			"rationale": "A raw generic receiver never binds its parameters, so the parameter is erased to Variant at run time and no argument decides what it holds; the analyzer rejects the bare form rather than binding silently (issue #2310).",
+			"witnesses": [
+				{
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/analyzer/errors/generic_inheritance_bare_base.fs",
+					"status": "present"
+				}
+			]
+		},
+		{
+			"id": "serialized_kind_above_union",
+			"representation": "bytecode_serialized_type",
+			"configuration": "A serialized data-type record whose kind byte exceeds FSDataType::UNION.",
+			"rationale": "UNION must remain the highest FSDataType::Kind value because the compiled-bytecode loader validates a deserialized kind with kind > UNION; appending a runtime kind requires raising that bound (modules/foundry_script/fs_function.h:82).",
+			"witnesses": [
+				{
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeHardening] Corrupt and truncated buffers never crash the loader",
+					"status": "deferred",
+					"deferred_reason": "The hardening suite covers corrupt buffers broadly; a dedicated kind-byte mutation witness belongs to the negative-witness adapters of #2477."
+				}
+			]
+		},
+		{
+			"id": "over_bound_callable_invocation",
+			"representation": "parser_data_type",
+			"configuration": "A transformed Callable whose bind()/bindv() bound more arguments than the fixed-arity target accepts.",
+			"rationale": "callable_is_over_bound marks such a Callable so that every invocation fails rather than reading past the fixed arity (modules/foundry_script/fs_parser.h:224).",
+			"witnesses": [
+				{
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][GenericTypeModel] Copy and assignment preserve every provenance and identity field",
+					"status": "deferred",
+					"deferred_reason": "The existing test proves only that the flag survives a copy; an executable invocation-failure witness belongs to the runtime adapters of #2477."
+				}
+			]
+		},
+		{
+			"id": "numeric_width_on_non_integer_carrier",
+			"representation": "bytecode_serialized_type",
+			"configuration": "A serialized data-type record whose width descriptor does not match its carrier's signedness, or exceeds the descriptor range.",
+			"rationale": "Widths are an explicit wire contract constrained to the INT/UINT carriers; a width the encoder cannot produce is corrupt input, not a type to accept (core/variant/numeric_type.h:39).",
+			"witnesses": [
+				{
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec][NumericType] Loader rejects out-of-range descriptors",
+					"status": "present"
+				},
+				{
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec][NumericType] Loader rejects carrier-inconsistent descriptors",
+					"status": "present"
+				}
+			]
+		}
+	]
+}
