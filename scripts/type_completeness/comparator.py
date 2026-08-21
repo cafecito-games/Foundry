@@ -18,6 +18,7 @@ class Status(str, enum.Enum):
     WORSENED = "worsened"
     UNCHANGED = "unchanged"
     RESOLVED = "resolved"
+    MISSING = "missing"
     PASSING = "passing"
 
 
@@ -124,25 +125,35 @@ def _status(branch_case: CaseResult, develop_case: Optional[CaseResult]) -> Stat
 def compare_case(branch: Report, develop: Report, case_id: str, configuration: str) -> ComparisonArtifact:
     if branch.family != develop.family:
         raise ReportError(f"branch family {branch.family!r} does not match develop family {develop.family!r}")
-    branch_case = branch.case(case_id)
+    branch_case = branch.find_case(case_id)
     develop_case = develop.find_case(case_id)
+    if branch_case is None:
+        if develop_case is None:
+            raise KeyError(case_id)
+        status = Status.MISSING if develop_case.failed else Status.PASSING
+    else:
+        status = _status(branch_case, develop_case)
+    anchor = branch_case if branch_case is not None else develop_case
+    assert anchor is not None
     return ComparisonArtifact(
         case_id=case_id,
         family=branch.family,
         configuration=configuration,
-        status=_status(branch_case, develop_case),
-        category=branch_case.category.value,
-        coordinates=branch_case.coordinates,
+        status=status,
+        category=anchor.category.value,
+        coordinates=anchor.coordinates,
         branch=_side(branch_case),
         develop=_side(develop_case),
     )
 
 
 def compare_reports(branch: Report, develop: Report, configuration: str) -> list[ComparisonArtifact]:
-    """Return one artifact per branch failure plus one per develop failure the branch resolved."""
+    """One artifact per branch failure, per develop failure the branch resolved, and per develop failure
+    whose case is absent from the branch report (a known mismatch must never vanish without passing)."""
     artifacts = []
-    for case in branch.cases:
-        artifact = compare_case(branch, develop, case.case_id, configuration)
+    case_ids = sorted({case.case_id for case in branch.cases} | {case.case_id for case in develop.cases})
+    for case_id in case_ids:
+        artifact = compare_case(branch, develop, case_id, configuration)
         if artifact.status is not Status.PASSING:
             artifacts.append(artifact)
     return artifacts

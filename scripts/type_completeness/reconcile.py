@@ -66,8 +66,18 @@ def reconcile_finding(
         return result(State.CONFLICTING, "no authority: neither a provisional record nor a merged ledger entry exists")
 
     if merged_record is not None:
-        if provisional_record is not None and ledger.record_digest(merged_record) != provisional_record.payload_digest:
-            return result(State.CONFLICTING, "merged ledger entry digest disagrees with the provisional payload")
+        if provisional_record is not None:
+            proposed = provisional_record.payload
+            if ledger.identity_digest(merged_record) != ledger.identity_digest(proposed):
+                return result(State.CONFLICTING, "merged ledger entry identity disagrees with the provisional payload")
+            if (
+                proposed["classification"] != "unclassified"
+                and merged_record["classification"] != proposed["classification"]
+            ):
+                return result(
+                    State.CONFLICTING,
+                    "merged ledger entry reclassifies a finding the provisional record already classified",
+                )
         if pull_request is not None and pull_request.state != "merged":
             return result(State.CONFLICTING, f"ledger entry is merged but its pull request is {pull_request.state}")
         if (

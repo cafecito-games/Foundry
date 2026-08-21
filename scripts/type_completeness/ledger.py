@@ -39,10 +39,18 @@ def record_digest(record: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(record).encode("utf-8")).hexdigest()
 
 
-def finding_id(family: str, case_id: str) -> str:
+IDENTITY_FIELDS = ("finding_id", "case_id", "family", "dimension")
+
+
+def finding_id(family: str, case_id: str, dimension: str) -> str:
+    """Stable ID for one finding: a case may fail along several dimensions, each its own finding."""
     slug = _SLUG.sub("_", family.lower()).strip("_") or "finding"
-    digest = hashlib.sha256(canonical_json([family, case_id]).encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha256(canonical_json([family, case_id, dimension]).encode("utf-8")).hexdigest()[:16]
     return f"{slug}-{digest}"
+
+
+def identity_digest(record: dict[str, Any]) -> str:
+    return record_digest({field: record[field] for field in IDENTITY_FIELDS})
 
 
 def proposed_record(
@@ -64,7 +72,7 @@ def proposed_record(
         raise ValueError("at least one permanent test path is required")
     return {
         "schema_version": LEDGER_SCHEMA_VERSION,
-        "finding_id": finding_id(family, case_id),
+        "finding_id": finding_id(family, case_id, dimension),
         "case_id": case_id,
         "family": family,
         "dimension": dimension,

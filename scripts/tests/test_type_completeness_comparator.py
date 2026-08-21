@@ -182,6 +182,15 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(payload["develop"]["observation"]["diagnostics"], ["Cannot assign"])
         self.assertEqual(payload["category"], "product_finding")
 
+    def test_develop_failure_absent_from_branch_report_is_missing(self) -> None:
+        branch = report.load_report(_report([_case("b", passed=True)]))
+        develop = report.load_report(_report([_case("a", passed=False), _case("b", passed=True)]))
+        artifacts = comparator.compare_reports(branch, develop, configuration="text")
+        self.assertEqual(
+            [(artifact.case_id, artifact.status) for artifact in artifacts], [("a", comparator.Status.MISSING)]
+        )
+        self.assertFalse(artifacts[0].branch["present"])
+
     def test_compare_report_emits_one_artifact_per_branch_failure(self) -> None:
         branch = report.load_report(
             _report([_case("a", passed=False), _case("b", passed=True), _case("c", passed=False)])
@@ -230,11 +239,17 @@ class DeadlineTests(unittest.TestCase):
 
 class LedgerTests(unittest.TestCase):
     def test_finding_id_is_stable_for_family_and_case(self) -> None:
-        first = ledger.finding_id("union_destination_membership", "case-a")
-        second = ledger.finding_id("union_destination_membership", "case-a")
+        first = ledger.finding_id("union_destination_membership", "case-a", "destination")
+        second = ledger.finding_id("union_destination_membership", "case-a", "destination")
         self.assertEqual(first, second)
-        self.assertNotEqual(first, ledger.finding_id("union_destination_membership", "case-b"))
+        self.assertNotEqual(first, ledger.finding_id("union_destination_membership", "case-b", "destination"))
         self.assertRegex(first, r"^[a-z0-9_]+-[0-9a-f]{16}$")
+
+    def test_finding_id_distinguishes_dimensions_of_the_same_case(self) -> None:
+        self.assertNotEqual(
+            ledger.finding_id("f", "case-a", "destination"),
+            ledger.finding_id("f", "case-a", "source_proof"),
+        )
 
     def test_proposed_record_matches_runner_ledger_schema(self) -> None:
         record = ledger.proposed_record(
@@ -373,13 +388,26 @@ class ReconciliationTests(unittest.TestCase):
         result = self._reconcile(record, record.payload, "merged", _ny(2026, 8, 18, 9))
         self.assertEqual(result.state, reconcile.State.MERGED)
 
-    def test_merged_record_digest_mismatch_is_conflicting(self) -> None:
+    def test_merged_record_identity_mismatch_is_conflicting(self) -> None:
+        record = self._provisional()
+        merged = dict(record.payload, case_id="other-case")
+        result = self._reconcile(record, merged, "merged", _ny(2026, 8, 18, 9))
+        self.assertEqual(result.state, reconcile.State.CONFLICTING)
+        self.assertIn("identity", result.reason)
+        self.assertTrue(result.blocks_slice)
+
+    def test_classifying_the_merged_record_is_merged_not_conflicting(self) -> None:
         record = self._provisional()
         merged = dict(record.payload, classification="product_defect")
         result = self._reconcile(record, merged, "merged", _ny(2026, 8, 18, 9))
+        self.assertEqual(result.state, reconcile.State.MERGED)
+
+    def test_reclassifying_an_already_classified_provisional_record_is_conflicting(self) -> None:
+        classified = dict(self._provisional().payload, classification="harness_defect")
+        record = self._provisional(payload=classified)
+        merged = dict(classified, classification="product_defect")
+        result = self._reconcile(record, merged, "merged", _ny(2026, 8, 18, 9))
         self.assertEqual(result.state, reconcile.State.CONFLICTING)
-        self.assertIn("digest", result.reason)
-        self.assertTrue(result.blocks_slice)
 
     def test_merged_pr_without_ledger_record_is_conflicting(self) -> None:
         result = self._reconcile(self._provisional(), None, "merged", _ny(2026, 8, 18, 9))

@@ -11,10 +11,11 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
 ## Commands
 
 - `compare --branch-report B --develop-report D --configuration text --output comparison.json`
-  emits one deterministic artifact per branch failure (`new`, `worsened`, `unchanged`) and per develop failure
-  the branch fixed (`resolved`). Each artifact carries the case ID, family, configuration, coordinates, both
+  emits one deterministic artifact per branch failure (`new`, `worsened`, `unchanged`), per develop failure
+  the branch fixed (`resolved`), and per develop failure whose case the branch report no longer contains
+  (`missing`). Each artifact carries the case ID, family, configuration, coordinates, both
   observations with their canonical SHA-256 digests, and a stable `comparison_id`. `--fail-on-regression`
-  exits non-zero when any artifact is `new` or `worsened`. The same inputs always yield byte-identical output.
+  exits non-zero when any artifact is `new`, `worsened`, or `missing`. The same inputs always yield byte-identical output.
 - `propose --comparison comparison.json --case-id ID ...` writes the proposed per-finding ledger file
   (`<finding_id>.json`, exactly the fields the runner validates), the machine-readable provisional record
   (`provisional.json`), and the tracking-issue body that embeds it. The deadline is 17:00 America/New_York on
@@ -22,7 +23,7 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
 - `reconcile --provisional provisional.json --ledger-dir <findings dir> --pull-request-state open|merged|closed`
   reports `pending_merge`, `merged`, `resolved`, `conflicting`, or `overdue` and exits non-zero when the state
   blocks the producing capability slice (`overdue`, `conflicting`). A finding with neither a provisional record
-  nor a merged ledger entry, a digest disagreement between the two, or a merged pull request with no ledger
+  nor a merged ledger entry, a disagreement in finding identity (or a reclassification of an already classified proposal) between the two, or a merged pull request with no ledger
   file is `conflicting`; nothing disappears silently.
 
 The `github` module wraps the `gh` CLI for the bot path: stable `bot/type-completeness/<finding_id>` branches,
