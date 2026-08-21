@@ -39,6 +39,7 @@ namespace FSTests {
 struct FSCompletenessProgram {
 	String case_id;
 	String surface;
+	Dictionary coordinates;
 	String source;
 	String expected_output;
 };
@@ -49,6 +50,17 @@ struct FSCompletenessObservation {
 	Dictionary dimensions;
 	PackedStringArray diagnostics;
 	String produced_output;
+};
+
+struct FSCompletenessRuntimeResult : FSCompletenessObservation {
+	bool passed = false;
+	String status;
+};
+
+struct FSCompletenessRuntimeBatch {
+	HashMap<String, FSCompletenessRuntimeResult> text;
+	HashMap<String, FSCompletenessRuntimeResult> bytecode;
+	int parity_failures = 0;
 };
 
 struct TemporaryProjectTree;
@@ -79,6 +91,8 @@ public:
 	static Error render(const FSCompletenessResolvedCell &, FSCompletenessProgram &);
 	static FSCompletenessObservation analyze(const FSCompletenessProgram &, const String &p_surface);
 	static FSCompletenessObservation inspect_runtime_contract(const FSCompletenessProgram &, const Dictionary &);
+	static Error execute(const String &p_scratch_root, const Vector<FSCompletenessProgram> &,
+			FSCompletenessRuntimeBatch &);
 	static Error witness_coordinates(const String &, Dictionary &);
 };
 

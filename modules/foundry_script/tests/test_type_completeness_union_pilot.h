@@ -39,6 +39,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
+#include "core/os/os.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -64,6 +65,7 @@ static FSCompletenessResolution load_union_pilot_completeness_resolution() {
 static void check_union_pilot_program_cleared(const FSCompletenessProgram &p_program) {
 	CHECK(p_program.case_id.is_empty());
 	CHECK(p_program.surface.is_empty());
+	CHECK(p_program.coordinates.is_empty());
 	CHECK(p_program.source.is_empty());
 	CHECK(p_program.expected_output.is_empty());
 }
@@ -75,6 +77,34 @@ static FSCompletenessProgram stale_union_pilot_program() {
 	program.source = "stale_source";
 	program.expected_output = "stale_output";
 	return program;
+}
+
+static Vector<FSCompletenessProgram> render_union_pilot_programs(const FSCompletenessResolution &p_resolution) {
+	Vector<FSCompletenessProgram> programs;
+	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+		programs.push_back(program);
+	}
+	return programs;
+}
+
+static void check_union_pilot_runtime_batch_cleared(const FSCompletenessRuntimeBatch &p_batch) {
+	CHECK(p_batch.text.is_empty());
+	CHECK(p_batch.bytecode.is_empty());
+	CHECK_EQ(p_batch.parity_failures, 0);
+}
+
+static FSCompletenessRuntimeBatch stale_union_pilot_runtime_batch() {
+	FSCompletenessRuntimeBatch batch;
+	FSCompletenessRuntimeResult result;
+	result.case_id = "stale";
+	result.surface = "text";
+	result.passed = true;
+	result.status = "stale";
+	batch.text[result.case_id] = result;
+	batch.parity_failures = 9;
+	return batch;
 }
 
 struct UnionPilotSemanticFingerprint {
@@ -408,6 +438,220 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 }
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
+	TEST_CASE("TypeCompleteness UnionPilot executes text and serialized bytecode with semantic parity") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		REQUIRE_EQ(resolution.cells.size(), 40);
+		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		const String tree_name = vformat("type_completeness_union_runtime_%d", OS::get_singleton()->get_process_id());
+		String owned_root;
+		{
+			TemporaryProjectTree tree(tree_name);
+			REQUIRE(tree.is_valid());
+			owned_root = tree.root;
+			const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
+			REQUIRE_FALSE(scratch_root.is_empty());
+			CHECK(TemporaryProjectTree::is_strict_descendant(scratch_root, tree.root));
+
+			FSCompletenessRuntimeBatch batch;
+			const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+			REQUIRE_EQ(execution_error, OK);
+			if (execution_error != OK) {
+				return;
+			}
+			CHECK_EQ(batch.text.size(), 20);
+			CHECK_EQ(batch.bytecode.size(), 20);
+			CHECK_EQ(batch.parity_failures, 0);
+
+			HashSet<String> semantic_pairs;
+			for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+				CAPTURE(cell.case_id);
+				const String surface = cell.coordinates.get("surface", String());
+				const HashMap<String, FSCompletenessRuntimeResult> &surface_results =
+						surface == "text" ? batch.text : batch.bytecode;
+				const FSCompletenessRuntimeResult *result = surface_results.getptr(cell.case_id);
+				REQUIRE(result != nullptr);
+				CHECK(result->passed);
+				CHECK_EQ(result->case_id, cell.case_id);
+				CHECK_EQ(result->surface, surface);
+				CHECK_EQ(result->produced_output, "uint 5\n");
+				CHECK_EQ(result->status, "ok");
+				CHECK(result->diagnostics.is_empty());
+				for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell.dimensions) {
+					CAPTURE(dimension.key);
+					CHECK_EQ(result->dimensions.get(dimension.key, Variant()), dimension.value.expected);
+				}
+				if (surface == "bytecode") {
+					CHECK_EQ(String(result->dimensions.get("descriptor_surface", String())), "serialized_reload");
+				}
+
+				const String pair_key = String(cell.coordinates.get("destination", String())) + "|" +
+						String(cell.coordinates.get("source_proof", String())) + "|" +
+						String(cell.coordinates.get("boundary", String()));
+				semantic_pairs.insert(pair_key);
+			}
+			CHECK_EQ(semantic_pairs.size(), 20);
+
+			CHECK(FileAccess::exists(tree.root.path_join("text/project.foundry")));
+			CHECK(FileAccess::exists(tree.root.path_join("bytecode/project.foundry")));
+			CHECK_EQ(DirAccess::get_files_at(tree.root.path_join("text")).size(), 41);
+			CHECK_EQ(DirAccess::get_files_at(tree.root.path_join("bytecode")).size(), 41);
+			CHECK_FALSE(FileAccess::exists(tree.root.get_base_dir().path_join(programs[0].case_id + ".fs")));
+		}
+		CHECK_FALSE(FileAccess::exists(owned_root));
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		CHECK_FALSE(filesystem->dir_exists(owned_root));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot rejects missing and duplicate surface pairs atomically") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
+		TemporaryProjectTree tree(vformat("type_completeness_union_pair_errors_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		Vector<FSCompletenessProgram> missing = valid;
+		missing.remove_at(missing.size() - 1);
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, missing, batch), ERR_INVALID_DATA);
+		check_union_pilot_runtime_batch_cleared(batch);
+
+		Vector<FSCompletenessProgram> duplicate = valid;
+		duplicate.push_back(valid[0]);
+		batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, duplicate, batch), ERR_ALREADY_IN_USE);
+		check_union_pilot_runtime_batch_cleared(batch);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot rejects unknown and duplicate case IDs atomically") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
+		TemporaryProjectTree tree(vformat("type_completeness_union_id_errors_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		Vector<FSCompletenessProgram> unknown = valid;
+		unknown.write[0].case_id = "unknown_case";
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_NE(FSUnionCompletenessAdapter::execute(tree.root, unknown, batch), OK);
+		check_union_pilot_runtime_batch_cleared(batch);
+
+		Vector<FSCompletenessProgram> duplicate = valid;
+		duplicate.write[1].case_id = duplicate[0].case_id;
+		batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, duplicate, batch), ERR_ALREADY_EXISTS);
+		check_union_pilot_runtime_batch_cleared(batch);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot publishes output mismatches but rejects an invalid carrier") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
+		TemporaryProjectTree mismatch_tree(vformat("type_completeness_union_output_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(mismatch_tree.is_valid());
+
+		Vector<FSCompletenessProgram> mismatch = valid;
+		mismatch.write[0].expected_output = "wrong output\n";
+		FSCompletenessRuntimeBatch batch;
+		const Error mismatch_error = FSUnionCompletenessAdapter::execute(mismatch_tree.root, mismatch, batch);
+		REQUIRE_EQ(mismatch_error, OK);
+		if (mismatch_error != OK) {
+			return;
+		}
+		const HashMap<String, FSCompletenessRuntimeResult> &surface_results =
+				mismatch[0].surface == "text" ? batch.text : batch.bytecode;
+		const FSCompletenessRuntimeResult *mismatch_result = surface_results.getptr(mismatch[0].case_id);
+		REQUIRE(mismatch_result != nullptr);
+		CHECK_FALSE(mismatch_result->passed);
+		CHECK_EQ(mismatch_result->produced_output, "uint 5\n");
+
+		TemporaryProjectTree carrier_tree(vformat("type_completeness_union_carrier_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(carrier_tree.is_valid());
+		Vector<FSCompletenessProgram> bad_carrier = valid;
+		bad_carrier.write[0].source = bad_carrier[0].source.replace("return \"uint \" + str(value)", "return \"bad \" + str(value)");
+		batch = stale_union_pilot_runtime_batch();
+		CHECK_NE(FSUnionCompletenessAdapter::execute(carrier_tree.root, bad_carrier, batch), OK);
+		check_union_pilot_runtime_batch_cleared(batch);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot rejects unsafe scratch roots and runner setup failure") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		const Vector<String> unsafe_roots = {
+			"relative/runtime",
+			"user://runtime",
+			OS::get_singleton()->get_executable_path().get_base_dir(),
+		};
+		for (const String &unsafe_root : unsafe_roots) {
+			CAPTURE(unsafe_root);
+			FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+			CHECK_NE(FSUnionCompletenessAdapter::execute(unsafe_root, programs, batch), OK);
+			check_union_pilot_runtime_batch_cleared(batch);
+		}
+
+		TemporaryProjectTree tree(vformat("type_completeness_union_setup_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("occupied", "not a directory");
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		ERR_PRINT_OFF;
+		const Error setup_error =
+				FSUnionCompletenessAdapter::execute(tree.root.path_join("occupied"), programs, batch);
+		ERR_PRINT_ON;
+		CHECK_NE(setup_error, OK);
+		check_union_pilot_runtime_batch_cleared(batch);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot refuses a symlinked surface before writing outside its tree") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		TemporaryProjectTree tree(vformat("type_completeness_union_symlink_%d", OS::get_singleton()->get_process_id()));
+		TemporaryProjectTree neighbor(vformat("type_completeness_union_neighbor_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		REQUIRE(neighbor.is_valid());
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		if (filesystem->create_link(neighbor.root, tree.root.path_join("text")) != OK) {
+			return;
+		}
+
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_UNAUTHORIZED);
+		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("project.foundry")));
+
+		if (filesystem->create_link(neighbor.root, tree.root.path_join("ancestor_link")) != OK) {
+			return;
+		}
+		batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(
+						 tree.root.path_join("ancestor_link/new_root"), programs, batch),
+				ERR_INVALID_PARAMETER);
+		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("new_root/text/project.foundry")));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runtime descriptor rejects RefCounted") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const FSCompletenessResolvedCell *union_gradual = nullptr;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("destination", String()) == "union" &&
+					cell.coordinates.get("source_proof", String()) == "gradual" &&
+					cell.coordinates.get("boundary", String()) == "argument_binding" &&
+					cell.coordinates.get("surface", String()) == "text") {
+				union_gradual = &cell;
+				break;
+			}
+		}
+		REQUIRE(union_gradual != nullptr);
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSUnionCompletenessAdapter::render(*union_gradual, program), OK);
+		program.source = program.source.replace("uint | String", "uint | String | RefCounted");
+		Dictionary runtime_context = union_gradual->coordinates.duplicate();
+		runtime_context["produced_output"] = "uint 5\n";
+
+		const FSCompletenessObservation observation =
+				FSUnionCompletenessAdapter::inspect_runtime_contract(program, runtime_context);
+		CHECK(observation.diagnostics.has("Runtime destination descriptor admits RefCounted.new()."));
+		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot scratch source identity resolves Holder and cleans its tree") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
