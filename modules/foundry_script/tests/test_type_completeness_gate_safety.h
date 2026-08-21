@@ -387,6 +387,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		unused_variable.code = FSWarning::UNUSED_VARIABLE;
 		unused_variable.level = FSWarning::WARN;
 		overrides.push_back(unused_variable);
+		WarningLevelOverride untyped_declaration;
+		untyped_declaration.code = FSWarning::UNTYPED_DECLARATION;
+		untyped_declaration.level = FSWarning::WARN;
+		overrides.push_back(untyped_declaration);
 		const WarningSettingsScope warning_settings(overrides);
 
 		FSCompletenessProgram warned;
@@ -509,6 +513,50 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			CHECK_EQ(int(record.get("line", 0)), 5);
 		}
 		CHECK(found_commented_suppressed);
+
+		// Stripping an inline annotation shifts the statement it precedes. A diagnostic the primary
+		// analysis still reported must keep `suppressed: false` despite that shift.
+		FSCompletenessProgram mixed_suppression;
+		mixed_suppression.case_id = "gate_safety_inline_mixed_suppression";
+		mixed_suppression.surface = "text";
+		mixed_suppression.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local = 1\n";
+
+		const FSCompletenessObservation mixed_observation =
+				FSUnionCompletenessAdapter::analyze(mixed_suppression, "text");
+		CHECK_EQ(String(mixed_observation.dimensions.get("analysis", String())), "accept");
+		bool found_emitted_untyped = false;
+		bool found_ignored_unused = false;
+		for (int index = 0; index < mixed_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = mixed_observation.diagnostic_records[index];
+			CHECK_NE(String(record.get("severity", String())), "error");
+			const String code = record.get("code", String());
+			if (code == "UNTYPED_DECLARATION") {
+				found_emitted_untyped = true;
+				CHECK_EQ(bool(record.get("suppressed", true)), false);
+				CHECK_EQ(int(record.get("line", 0)), 2);
+			} else if (code == "UNUSED_VARIABLE") {
+				found_ignored_unused = true;
+				CHECK_EQ(bool(record.get("suppressed", false)), true);
+				CHECK_EQ(int(record.get("line", 0)), 2);
+			}
+		}
+		CHECK(found_emitted_untyped);
+		CHECK(found_ignored_unused);
+		// Both codes describe the same declaration, so the shift correction must land them on the
+		// same column rather than merely on the same line.
+		int untyped_column = -1;
+		int unused_column = -2;
+		for (int index = 0; index < mixed_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = mixed_observation.diagnostic_records[index];
+			const String code = record.get("code", String());
+			if (code == "UNTYPED_DECLARATION") {
+				untyped_column = record.get("column", 0);
+			} else if (code == "UNUSED_VARIABLE") {
+				unused_column = record.get("column", 0);
+			}
+		}
+		CHECK_EQ(untyped_column, unused_column);
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety records a suppressed error-level diagnostic") {

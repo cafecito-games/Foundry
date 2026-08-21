@@ -214,19 +214,36 @@ static int find_annotation_arguments_end(const String &p_line, int p_open_parent
 	return -1;
 }
 
+// A source with its warning-suppression annotations removed, plus the number of characters removed
+// before the surviving content of each line. Line numbers are preserved outright; the shift maps a
+// column observed in the stripped source back to the column it occupies in the original.
+struct UnsuppressedProbeSource {
+	String text;
+	HashMap<int, int> column_shift_by_line;
+
+	int original_column(int p_line, int p_column) const {
+		const int *shift = column_shift_by_line.getptr(p_line);
+		return shift == nullptr ? p_column : p_column + *shift;
+	}
+};
+
 // Removes leading warning-suppression annotations, including ones whose argument list spans several
 // physical lines, and keeps the newlines they occupied so every following line number is preserved.
-// A statement written on the same line as its annotation survives.
-static String strip_warning_ignore_annotations(const String &p_source) {
+// A statement written on the same line as its annotation survives, shifted left by the recorded
+// column shift for that line.
+static UnsuppressedProbeSource strip_warning_ignore_annotations(const String &p_source) {
 	static const String ANNOTATION_PREFIX = "@warning_ignore";
+	UnsuppressedProbeSource result;
 	String stripped;
 	int copied_from = 0;
 	int index = 0;
+	int line = 1;
 	bool at_line_content_start = true;
 	while (index < p_source.length()) {
 		const char32_t character = p_source[index];
 		if (character == U'\n') {
 			at_line_content_start = true;
+			line++;
 			index++;
 			continue;
 		}
@@ -264,16 +281,25 @@ static String strip_warning_ignore_annotations(const String &p_source) {
 		}
 
 		stripped += p_source.substr(copied_from, index - copied_from);
+		int span_line = line;
+		int final_line_start = index;
 		for (int scan = index; scan < span_end; scan++) {
 			if (p_source[scan] == U'\n') {
 				stripped += "\n";
+				span_line++;
+				final_line_start = scan + 1;
 			}
 		}
+		const int *previous_shift = result.column_shift_by_line.getptr(span_line);
+		result.column_shift_by_line[span_line] =
+				(previous_shift == nullptr ? 0 : *previous_shift) + (span_end - final_line_start);
+		line = span_line;
 		copied_from = span_end;
 		index = span_end;
 	}
 	stripped += p_source.substr(copied_from);
-	return stripped;
+	result.text = stripped;
+	return result;
 }
 
 // Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
@@ -305,7 +331,7 @@ static void append_unsuppressed_diagnostic_records(
 			observed.code = "suppressed_analysis_error";
 			observed.line = error->line;
 			observed.column = error->column;
-			observed.message = vformat("%d:%d: %s", error->line, error->column, error->message);
+			observed.message = error->message;
 			r_diagnostics.push_back(observed);
 		}
 		for (const FSWarning &warning : parser.get_warnings()) {
@@ -332,22 +358,29 @@ static void append_unsuppressed_diagnostic_records(
 	Vector<ObservedDiagnostic> emitted;
 	collect(p_source, p_path, emitted);
 	Vector<ObservedDiagnostic> unsuppressed;
-	const String unsuppressed_source = strip_warning_ignore_annotations(p_source);
-	if (unsuppressed_source == p_source) {
+	const UnsuppressedProbeSource probe = strip_warning_ignore_annotations(p_source);
+	if (probe.text == p_source) {
 		unsuppressed = emitted;
 	} else {
-		collect(unsuppressed_source, p_path, unsuppressed);
+		collect(probe.text, p_path, unsuppressed);
 	}
 
 	for (const ObservedDiagnostic &diagnostic : unsuppressed) {
-		const bool suppressed = !contains(emitted, diagnostic);
+		// Removing an inline annotation shifts everything after it on that line, so the probe's
+		// coordinates are translated back to the original source before anything is matched or
+		// recorded. Without that, a diagnostic the primary analysis still reported would look new.
+		ObservedDiagnostic original = diagnostic;
+		original.column = probe.original_column(diagnostic.line, diagnostic.column);
+		const bool suppressed = !contains(emitted, original);
 		// An error the primary analysis already reported owns a record from the primary pass.
-		if (diagnostic.severity == DIAGNOSTIC_SEVERITY_ERROR && !suppressed) {
+		if (original.severity == DIAGNOSTIC_SEVERITY_ERROR && !suppressed) {
 			continue;
 		}
-		r_observation.diagnostic_records.push_back(
-				make_diagnostic_record(diagnostic.severity, "analysis", diagnostic.code, diagnostic.line,
-						diagnostic.column, diagnostic.message, suppressed));
+		const String message = original.severity == DIAGNOSTIC_SEVERITY_ERROR
+				? vformat("%d:%d: %s", original.line, original.column, original.message)
+				: original.message;
+		r_observation.diagnostic_records.push_back(make_diagnostic_record(original.severity, "analysis",
+				original.code, original.line, original.column, message, suppressed));
 	}
 #else
 	(void)p_source;
