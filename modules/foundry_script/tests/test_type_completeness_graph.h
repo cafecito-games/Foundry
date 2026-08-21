@@ -370,8 +370,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 		load_type_completeness_graph_inputs(catalog, manifest, errors);
 
 		FSCompletenessResolution resolution;
-		REQUIRE_MESSAGE(FSCompletenessGraph::resolve(manifest, catalog, resolution, errors) == OK,
-				String(" | ").join(errors));
+		const Error resolve_error = FSCompletenessGraph::resolve(manifest, catalog, resolution, errors);
+		INFO(String(" | ").join(errors));
+		REQUIRE_OR_RETURN(resolve_error == OK);
 		CHECK(errors.is_empty());
 		CHECK_EQ(resolution.cells.size(), 40);
 		CHECK_EQ(resolution.max_observed_chain_length, 3);
@@ -380,11 +381,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 
 		const FSCompletenessResolvedCell *plain_numeric = find_completeness_cell(
 				resolution, "plain", "numeric_constant", "argument_binding", "text");
-		REQUIRE(plain_numeric != nullptr);
+		REQUIRE_OR_RETURN(plain_numeric != nullptr);
 		const FSCompletenessResolvedDimension *plain_carrier = plain_numeric->find_dimension("stored_carrier");
-		REQUIRE(plain_carrier != nullptr);
+		REQUIRE_OR_RETURN(plain_carrier != nullptr);
 		CHECK_EQ(plain_carrier->expected, Variant("plain_destination"));
-		REQUIRE_EQ(plain_carrier->canonical_provenance.size(), 1);
+		REQUIRE_OR_RETURN(plain_carrier->canonical_provenance.size() == 1);
 		const FSCompletenessProvenanceStep &carrier_step = plain_carrier->canonical_provenance[0];
 		CHECK_EQ(carrier_step.relation_id, "plain_numeric_constant_parity");
 		CHECK_EQ(carrier_step.source_coordinates.get("source_proof", String()), Variant("static_member"));
@@ -395,21 +396,21 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 
 		const FSCompletenessResolvedCell *union_gradual = find_completeness_cell(
 				resolution, "union", "gradual", "argument_binding", "text");
-		REQUIRE(union_gradual != nullptr);
+		REQUIRE_OR_RETURN(union_gradual != nullptr);
 		const FSCompletenessResolvedDimension *membership = union_gradual->find_dimension("runtime_obligation");
-		REQUIRE(membership != nullptr);
+		REQUIRE_OR_RETURN(membership != nullptr);
 		CHECK_EQ(membership->expected, Variant("union_membership_check"));
-		REQUIRE_EQ(membership->canonical_provenance.size(), 1);
+		REQUIRE_OR_RETURN(membership->canonical_provenance.size() == 1);
 		CHECK_EQ(membership->canonical_provenance[0].relation_id, "union_wrapper_parity");
 		CHECK_EQ(membership->canonical_provenance[0].exception_id, "unproven_source_requires_membership");
 
 		const FSCompletenessResolvedCell *erased_reflective_union = find_completeness_cell(
 				resolution, "union", "erased", "reflective_write", "text");
-		REQUIRE(erased_reflective_union != nullptr);
+		REQUIRE_OR_RETURN(erased_reflective_union != nullptr);
 		const FSCompletenessResolvedDimension *erased_analysis = erased_reflective_union->find_dimension("analysis");
-		REQUIRE(erased_analysis != nullptr);
+		REQUIRE_OR_RETURN(erased_analysis != nullptr);
 		CHECK_EQ(erased_analysis->expected, Variant("accept"));
-		REQUIRE_EQ(erased_analysis->canonical_provenance.size(), 3);
+		REQUIRE_OR_RETURN(erased_analysis->canonical_provenance.size() == 3);
 		CHECK_EQ(erased_analysis->canonical_provenance[0].relation_id, "gradual_to_erased_parity");
 		CHECK_EQ(erased_analysis->canonical_provenance[1].relation_id, "reflective_boundary_parity");
 		CHECK_EQ(erased_analysis->canonical_provenance[2].relation_id, "union_wrapper_parity");

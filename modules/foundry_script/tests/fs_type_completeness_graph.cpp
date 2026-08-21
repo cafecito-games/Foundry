@@ -520,7 +520,7 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 		}
 	}
 	Vector<uint8_t> cycle_colors;
-	cycle_colors.resize(domain_cells.size());
+	cycle_colors.resize_initialized(domain_cells.size());
 	for (int cell_index = 0; cell_index < domain_cells.size(); cell_index++) {
 		if (cycle_colors[cell_index] == 0) {
 			detect_cycle_from(cell_index, possible_edges, domain_cells, p_manifest.domain_axis_order,
@@ -655,7 +655,7 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 			}
 
 			Vector<uint8_t> selected;
-			selected.resize(candidates.size());
+			selected.resize_initialized(candidates.size());
 			for (int candidate_index = 0; candidate_index < candidates.size(); candidate_index++) {
 				bool first_in_group = true;
 				for (int previous = 0; previous < candidate_index; previous++) {
