@@ -22,6 +22,17 @@ class ProvisionalError(ValueError):
     """Raised when a provisional record is missing or malformed."""
 
 
+def _producing_slice(comparison: Mapping[str, Any]) -> Optional[frozenset[str]]:
+    """The capability slice the comparison artifact recorded, or None when the artifact carried none."""
+    recorded = comparison.get("capability_slice")
+    if not isinstance(recorded, Mapping):
+        return None
+    paths = recorded.get("paths")
+    if not isinstance(paths, list) or not paths:
+        return None
+    return frozenset(str(path) for path in paths)
+
+
 def _path_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         raise ProvisionalError("capability_slice must be a JSON array of paths")
@@ -64,6 +75,14 @@ class ProvisionalRecord:
         paths = tuple(capability_slice)
         if not paths or any(not isinstance(path, str) or not path for path in paths):
             raise ProvisionalError("capability_slice must be a non-empty list of non-empty path strings")
+        producing = _producing_slice(develop_comparison)
+        if producing is not None:
+            outside = sorted(set(paths) - producing)
+            if outside:
+                raise ProvisionalError(
+                    f"capability_slice {outside} lies outside the producing slice {sorted(producing)} "
+                    "recorded in develop_comparison"
+                )
         if record["finding_id"] != finding_id:
             raise ProvisionalError("finding_id does not match the proposed ledger payload")
         return cls(

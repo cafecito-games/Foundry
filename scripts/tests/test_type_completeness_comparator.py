@@ -826,6 +826,29 @@ class ProvisionalRecordTests(unittest.TestCase):
         with self.assertRaises(provisional.ProvisionalError):
             self._record(capability_slice=[])
 
+    def test_capability_slice_outside_the_embedded_comparison_slice_is_rejected(self) -> None:
+        comparison = {
+            "status": "unchanged",
+            "capability_slice": {
+                "family": "f",
+                "paths": ["modules/foundry_script/fs_analyzer.cpp"],
+                "broad_core": True,
+            },
+        }
+        record = self._record(develop_comparison=comparison)
+        self.assertEqual(record.capability_slice, ("modules/foundry_script/fs_analyzer.cpp",))
+        tampered = dict(record.to_dict(), capability_slice=["editor/editor_node.cpp"])
+        with self.assertRaises(provisional.ProvisionalError):
+            provisional.ProvisionalRecord.from_dict(tampered)
+        widened = dict(
+            record.to_dict(),
+            capability_slice=["modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/fs_vm.cpp"],
+        )
+        with self.assertRaises(provisional.ProvisionalError):
+            provisional.ProvisionalRecord.from_dict(widened)
+        with self.assertRaises(provisional.ProvisionalError):
+            self._record(develop_comparison=comparison, capability_slice=["editor/editor_node.cpp"])
+
     def test_manual_record_carries_manual_origin_with_same_fields(self) -> None:
         manual = self._record(origin="manual")
         automatic = self._record()
@@ -1065,6 +1088,48 @@ class GitHubAutomationTests(unittest.TestCase):
         self.assertFalse(any("merge" in call for call in joined))
         self.assertFalse(any("--auto" in call for call in joined))
 
+    def test_closed_unmerged_ledger_pr_is_reopened_and_updated(self) -> None:
+        listing = json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "CLOSED"}])
+        runner = FakeCommandRunner({"pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/3")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertTrue(any("pr list" in call and "--state all" in call for call in joined))
+        self.assertTrue(any("pr reopen 3" in call for call in joined))
+        self.assertTrue(any("pr edit 3" in call for call in joined))
+        self.assertFalse(any("pr create" in call for call in joined))
+
+    def test_merged_ledger_pr_is_left_alone(self) -> None:
+        listing = json.dumps([{"url": "https://github.com/x/pull/3", "number": 3, "state": "MERGED"}])
+        runner = FakeCommandRunner({"pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/3")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertEqual([call for call in joined if "pr list" not in call], [])
+
+    def test_open_ledger_pr_is_preferred_over_closed_ones(self) -> None:
+        listing = json.dumps(
+            [
+                {"url": "https://github.com/x/pull/3", "number": 3, "state": "CLOSED"},
+                {"url": "https://github.com/x/pull/5", "number": 5, "state": "OPEN"},
+            ]
+        )
+        runner = FakeCommandRunner({"pr list": listing})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        url = client.open_or_update_ledger_pull_request(
+            "bot/type-completeness/abc", title="t", body="b", base="develop"
+        )
+        self.assertEqual(url, "https://github.com/x/pull/5")
+        joined = [" ".join(call) for call in runner.calls]
+        self.assertTrue(any("pr edit 5" in call for call in joined))
+        self.assertFalse(any("reopen" in call for call in joined))
+
     def test_existing_pr_is_updated_not_duplicated(self) -> None:
         runner = FakeCommandRunner({"pr list": json.dumps([{"url": "https://github.com/x/pull/3", "number": 3}])})
         client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
@@ -1284,6 +1349,67 @@ class CliTests(unittest.TestCase):
             artifact = comparator.compare_reports(branch, branch, configuration="text")[0]
             (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
             self.assertEqual(cli.main(self._propose_arguments(root)), 2)
+            self.assertFalse((root / "out").exists())
+
+    def test_propose_keeps_the_runner_echoed_classification_and_ledger_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            known = dict(
+                _finding("a", "destination"),
+                classification="product_defect",
+                issue_url="https://github.com/x/issues/40",
+                closure_packet_url="https://github.com/x/pull/41",
+                permanent_test_paths=["modules/foundry_script/tests/scripts/known.fs"],
+            )
+            branch = report.load_report(_report([_case("a", passed=False)], findings=[known]))
+            artifact = comparator.compare_reports(branch, branch, configuration="text", capabilities=CAPABILITIES)[0]
+            (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
+            arguments = [
+                "propose",
+                "--comparison",
+                str(root / "comparison.json"),
+                "--case-id",
+                "a",
+                "--dimension",
+                "destination",
+                "--workstream-owner",
+                "o",
+                "--detection-artifact",
+                "d",
+                "--detected-at",
+                "2026-08-17T10:00:00-04:00",
+                "--output-dir",
+                str(root / "out"),
+            ]
+            self.assertEqual(cli.main(arguments), 0)
+            record = provisional.ProvisionalRecord.from_dict(
+                json.loads((root / "out" / "provisional.json").read_text())
+            )
+            self.assertEqual(record.payload["classification"], "product_defect")
+            self.assertEqual(record.payload["issue_url"], "https://github.com/x/issues/40")
+            self.assertEqual(record.payload["closure_packet_url"], "https://github.com/x/pull/41")
+            self.assertEqual(record.payload["permanent_test_paths"], ["modules/foundry_script/tests/scripts/known.fs"])
+
+    def test_propose_requires_ledger_fields_for_a_genuinely_new_finding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._comparison_with_slice(root)
+            arguments = [
+                "propose",
+                "--comparison",
+                str(root / "comparison.json"),
+                "--case-id",
+                "a",
+                "--dimension",
+                "destination",
+                "--workstream-owner",
+                "o",
+                "--detection-artifact",
+                "d",
+                "--output-dir",
+                str(root / "out"),
+            ]
+            self.assertEqual(cli.main(arguments), 2)
             self.assertFalse((root / "out").exists())
 
     def test_propose_command_refuses_a_dimension_the_report_did_not_find(self) -> None:

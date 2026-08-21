@@ -18,7 +18,9 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
   exits non-zero when any artifact is `new`, `worsened`, or `missing`. The same inputs always yield byte-identical output.
   Each artifact also carries the producing capability slice, resolved from the report's family through
   `modules/foundry_script/tests/type_completeness/capabilities.json` (`--capabilities` overrides the manifest).
-- `propose --comparison comparison.json --case-id ID ...` writes the proposed per-finding ledger file
+- `propose --comparison comparison.json --case-id ID ...` keeps the classification, issue URL, closure-packet
+  URL, and permanent test paths the runner echoes for a finding already in the ledger (command-line values
+  override them); only a genuinely new finding defaults to `unclassified` and must supply those fields. It writes the proposed per-finding ledger file
   (`<finding_id>.json`, exactly the fields the runner validates; the finding ID is the one the runner emitted
   for that case and dimension, never recomputed), the machine-readable provisional record
   (`provisional.json`), and the tracking-issue body that embeds it. The deadline is 17:00 America/New_York on
@@ -34,7 +36,8 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
 
 The `github` module wraps the `gh` CLI for the bot path: stable `bot/type-completeness/<finding_id>` branches,
 one tracking issue per finding (label `type-completeness-finding`; a closed one is reopened and updated, never
-duplicated), and one ledger pull request that is updated rather than duplicated. It refuses protected branches and never passes `--auto` or merges.
+duplicated), and one ledger pull request per bot branch looked up in any state: an open one is updated, a closed
+unmerged one is reopened and updated, and a merged one is left alone. It refuses protected branches and never passes `--auto` or merges.
 
 ## Obtaining the `develop` report
 

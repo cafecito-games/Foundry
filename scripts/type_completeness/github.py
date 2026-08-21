@@ -52,12 +52,17 @@ class AutomationClient:
             ["git", "-C", str(repository_root), "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}"]
         )
 
-    def _find_pull_request(self, branch: str) -> Optional[tuple[int, str]]:
+    def _find_pull_request(self, branch: str) -> Optional[tuple[int, str, str]]:
+        """Find the one ledger pull request for a bot branch in any state; an open one wins over closed ones."""
         output = self._gh(
-            "pr", "list", "--repo", self._repository, "--head", branch, "--state", "open", "--json", "url,number"
+            "pr", "list", "--repo", self._repository, "--head", branch, "--state", "all", "--json", "url,number,state"
         )
         entries = json.loads(output or "[]")
-        return (int(entries[0]["number"]), str(entries[0]["url"])) if entries else None
+        if not entries:
+            return None
+        entries.sort(key=lambda entry: (str(entry.get("state", "")).upper() != "OPEN", int(entry["number"])))
+        chosen = entries[0]
+        return int(chosen["number"]), str(chosen["url"]), str(chosen.get("state", "")).upper()
 
     def open_or_update_ledger_pull_request(self, branch: str, title: str, body: str, base: str) -> str:
         if branch in PROTECTED_BRANCHES or not branch.startswith(BOT_BRANCH_PREFIX):
@@ -66,7 +71,13 @@ class AutomationClient:
             )
         existing = self._find_pull_request(branch)
         if existing is not None:
-            number, url = existing
+            number, url, state = existing
+            if state == "MERGED":
+                # The ledger entry already landed; the merged record is the source of truth now.
+                return url
+            if state != "OPEN":
+                # One ledger pull request per finding: a closed unmerged one is reopened rather than duplicated.
+                self._gh("pr", "reopen", str(number), "--repo", self._repository)
             self._gh("pr", "edit", str(number), "--repo", self._repository, "--title", title, "--body", body)
             return url
         return self._gh(

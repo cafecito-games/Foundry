@@ -72,14 +72,36 @@ def _propose(arguments: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+    # The runner echoes the ledger fields of a finding it already knows; a command-line value wins, an echoed
+    # value is kept, and only a genuinely new finding needs every field supplied.
+    echoed = findings[0]
+    issue_url = arguments.issue_url or str(echoed.get("issue_url") or "")
+    closure_packet_url = arguments.closure_packet_url or str(echoed.get("closure_packet_url") or "")
+    permanent_test_paths = list(
+        arguments.permanent_test_path or [str(path) for path in echoed.get("permanent_test_paths") or []]
+    )
+    classification = str(echoed.get("classification") or "unclassified")
+    missing = [
+        name
+        for name, value in (
+            ("--issue-url", issue_url),
+            ("--closure-packet-url", closure_packet_url),
+            ("--permanent-test-path", permanent_test_paths),
+        )
+        if not value
+    ]
+    if missing:
+        print(f"finding is not in the ledger yet; {', '.join(missing)} must be supplied", file=sys.stderr)
+        return 2
     payload = ledger.proposed_record(
-        finding_id=str(findings[0]["finding_id"]),
+        finding_id=str(echoed["finding_id"]),
         family=artifact.family,
         case_id=artifact.case_id,
         dimension=arguments.dimension,
-        issue_url=arguments.issue_url,
-        closure_packet_url=arguments.closure_packet_url,
-        permanent_test_paths=arguments.permanent_test_path,
+        issue_url=issue_url,
+        closure_packet_url=closure_packet_url,
+        permanent_test_paths=permanent_test_paths,
+        classification=classification,
     )
     detected_at = (
         deadline.parse_timestamp(arguments.detected_at) if arguments.detected_at else datetime.now(timezone.utc)
@@ -148,9 +170,17 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("--comparison", required=True)
     propose.add_argument("--case-id", required=True)
     propose.add_argument("--dimension", required=True)
-    propose.add_argument("--issue-url", required=True)
-    propose.add_argument("--closure-packet-url", required=True)
-    propose.add_argument("--permanent-test-path", action="append", required=True)
+    propose.add_argument(
+        "--issue-url", help="required for a new finding; defaults to the ledger value the runner echoes"
+    )
+    propose.add_argument(
+        "--closure-packet-url", help="required for a new finding; defaults to the ledger value the runner echoes"
+    )
+    propose.add_argument(
+        "--permanent-test-path",
+        action="append",
+        help="required for a new finding; defaults to the ledger paths the runner echoes",
+    )
     propose.add_argument(
         "--capability-path",
         action="append",
