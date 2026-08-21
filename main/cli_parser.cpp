@@ -1168,6 +1168,70 @@ static void parse_test_completeness_run(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+static void parse_test_completeness_select(CLIParseState &r_state) {
+	set_command_path(r_state.result, "test", "completeness select");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_COMPLETENESS_SELECT;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--changed-paths" || arg.begins_with("--changed-paths=")) {
+			if (arg == "--changed-paths") {
+				if (!require_value(r_state, arg, r_state.result.invocation.completeness_changed_paths)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.completeness_changed_paths = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else if (arg == "--catalog" || arg.begins_with("--catalog=")) {
+			if (arg == "--catalog") {
+				if (!require_value(r_state, arg, r_state.result.invocation.completeness_catalog)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.completeness_catalog = inline_option_value(arg);
+				r_state.index++;
+			}
+		} else {
+			fail(r_state.result, "Unknown option for test completeness select: " + arg + ".");
+			return;
+		}
+	}
+
+	// `--json` is the shared global flag rather than a second option that only this command knows, so
+	// the selection is requested the same way every other machine-readable output in the CLI is.
+	r_state.result.invocation.completeness_json = r_state.result.json;
+
+	if (r_state.result.invocation.completeness_changed_paths.is_empty()) {
+		fail(r_state.result, "test completeness select requires --changed-paths <file>.");
+		return;
+	}
+	if (r_state.result.invocation.completeness_catalog.is_empty()) {
+		fail(r_state.result, "test completeness select requires --catalog <dir>.");
+		return;
+	}
+	// JSON is the only encoding the selection is published in, and it is requested rather than
+	// assumed: a caller that forgot the flag gets a refusal instead of output it did not ask for.
+	if (!r_state.result.invocation.completeness_json) {
+		fail(r_state.result, "test completeness select requires --json.");
+		return;
+	}
+
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
+}
+
 static void parse_test_completeness(CLIParseState &r_state) {
 	if (r_state.index >= r_state.args.size()) {
 		fail(r_state.result, "test completeness requires a command.");
@@ -1176,6 +1240,10 @@ static void parse_test_completeness(CLIParseState &r_state) {
 	const String command = r_state.args[r_state.index++];
 	if (is_help_flag(command)) {
 		request_help(r_state);
+		return;
+	}
+	if (command == "select") {
+		parse_test_completeness_select(r_state);
 		return;
 	}
 	if (command != "run") {

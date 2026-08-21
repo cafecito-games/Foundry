@@ -1,0 +1,10 @@
+{
+	"families": [
+		"union_destination_membership"
+	],
+	"schema_version": 1,
+	"used_broad_core_fallback": true,
+	"validation_errors": [
+		"invalid changed path: ./modules/foundry_script/fs_analyzer.cpp"
+	]
+}

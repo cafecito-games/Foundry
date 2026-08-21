@@ -32,8 +32,10 @@
 
 #include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_common.h"
+#include "fs_type_completeness_manifest.h"
 
 #include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
 
@@ -272,6 +274,114 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 		return EXIT_STRUCTURAL_FAILURE;
 	}
 	return timed_out ? int(EXIT_TIMEOUT) : exit_code_for_outcome(worst);
+}
+
+namespace {
+
+// Schema of the selection document. Bumped whenever a member is added, removed, or reinterpreted, so a
+// consumer pinned to an older shape refuses rather than silently reads a different meaning.
+constexpr int64_t SELECTION_SCHEMA_VERSION = 1;
+
+void sort_and_deduplicate(Vector<String> &r_values) {
+	r_values.sort();
+	for (int index = r_values.size() - 1; index > 0; index--) {
+		if (r_values[index] == r_values[index - 1]) {
+			r_values.remove_at(index);
+		}
+	}
+}
+
+} // namespace
+
+int FSCompletenessSelectCLI::run(const Options &p_options, String *r_document) {
+	Vector<String> validation_errors;
+	Vector<String> families;
+	bool used_broad_core_fallback = false;
+
+	if (!p_options.json) {
+		validation_errors.push_back("--json is required: JSON is the only supported selection encoding");
+	} else if (p_options.changed_paths_path.is_empty()) {
+		validation_errors.push_back("--changed-paths <file> is required");
+	} else if (p_options.catalog_root.is_empty()) {
+		validation_errors.push_back("--catalog <dir> is required");
+	} else {
+		Error read_error = OK;
+		const String changed_paths_text =
+				FileAccess::get_file_as_string(p_options.changed_paths_path, &read_error);
+		if (read_error != OK) {
+			validation_errors.push_back(vformat("cannot read changed-paths file %s (error %d)",
+					p_options.changed_paths_path, read_error));
+		} else {
+			// Only wholly empty lines are dropped: that is line framing, not path normalization. Every
+			// other line reaches the capability map exactly as written, so a path carrying a stray
+			// carriage return or a leading "./" is reported as invalid instead of being repaired.
+			Vector<String> changed_paths;
+			for (const String &line : changed_paths_text.split("\n")) {
+				if (!line.is_empty()) {
+					changed_paths.push_back(line);
+				}
+			}
+
+			FSCompletenessCapabilityMap capability_map;
+			Vector<String> map_errors;
+			const String capabilities_path = p_options.catalog_root.path_join("capabilities.json");
+			if (capability_map.load(capabilities_path, map_errors) != OK) {
+				for (const String &error : map_errors) {
+					validation_errors.push_back(vformat("%s: %s", capabilities_path, error));
+				}
+				if (map_errors.is_empty()) {
+					validation_errors.push_back(vformat("cannot load capability map %s", capabilities_path));
+				}
+			} else {
+				// A map that disagrees with the rule directory cannot be trusted to scope anything, so
+				// its disagreement is reported alongside the per-path errors rather than after them.
+				Vector<String> rule_errors;
+				const String rule_directory = p_options.catalog_root.path_join("rules");
+				capability_map.validate_against_rule_directory(rule_directory, rule_errors);
+				for (const String &error : rule_errors) {
+					validation_errors.push_back(error);
+				}
+
+				const FSCompletenessSelection selection = capability_map.select(changed_paths);
+				used_broad_core_fallback = selection.used_broad_core_fallback;
+				for (const String &family : selection.families) {
+					families.push_back(family);
+				}
+				for (const String &error : selection.validation_errors) {
+					validation_errors.push_back(error);
+				}
+			}
+		}
+	}
+
+	sort_and_deduplicate(families);
+	sort_and_deduplicate(validation_errors);
+
+	Array family_array;
+	for (const String &family : families) {
+		family_array.push_back(family);
+	}
+	Array error_array;
+	for (const String &error : validation_errors) {
+		error_array.push_back(error);
+	}
+	Dictionary document;
+	// Held as int64_t so the schema version and any future count render as JSON integers; the runner's
+	// float convention is a property of its own report, not of this document.
+	document["schema_version"] = SELECTION_SCHEMA_VERSION;
+	document["families"] = family_array;
+	document["used_broad_core_fallback"] = used_broad_core_fallback;
+	document["validation_errors"] = error_array;
+
+	const String text = JSON::stringify(document, "\t", true, true) + "\n";
+	if (r_document != nullptr) {
+		*r_document = text;
+	} else {
+		// Printed verbatim and alone: the consumer parses this stream, so every diagnostic this command
+		// produces goes to stderr instead.
+		print_line(text.substr(0, text.length() - 1));
+	}
+	return validation_errors.is_empty() ? EXIT_SELECTED : EXIT_REFUSED;
 }
 
 } // namespace FSTests
