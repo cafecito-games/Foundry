@@ -1,0 +1,137 @@
+"""Command-line entry point: ``python3 -m scripts.type_completeness <command>``."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from . import comparator, deadline, ledger, provisional, reconcile, report
+
+
+def _write_json(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _compare(arguments: argparse.Namespace) -> int:
+    branch = report.load_report_file(Path(arguments.branch_report))
+    develop = report.load_report_file(Path(arguments.develop_report))
+    artifacts = comparator.compare_reports(branch, develop, arguments.configuration)
+    _write_json(Path(arguments.output), comparator.serialize_many(artifacts))
+    blocking = [
+        artifact for artifact in artifacts if artifact.status in (comparator.Status.NEW, comparator.Status.WORSENED)
+    ]
+    for artifact in artifacts:
+        print(f"{artifact.status.value:10} {artifact.case_id}")
+    return 1 if blocking and arguments.fail_on_regression else 0
+
+
+def _propose(arguments: argparse.Namespace) -> int:
+    artifacts = comparator.deserialize_many(Path(arguments.comparison).read_text(encoding="utf-8"))
+    matching = [artifact for artifact in artifacts if artifact.case_id == arguments.case_id]
+    if not matching:
+        print(f"comparison has no artifact for case {arguments.case_id!r}", file=sys.stderr)
+        return 2
+    artifact = matching[0]
+    payload = ledger.proposed_record(
+        family=artifact.family,
+        case_id=artifact.case_id,
+        dimension=arguments.dimension,
+        issue_url=arguments.issue_url,
+        closure_packet_url=arguments.closure_packet_url,
+        permanent_test_paths=arguments.permanent_test_path,
+    )
+    detected_at = (
+        deadline.parse_timestamp(arguments.detected_at) if arguments.detected_at else datetime.now(timezone.utc)
+    )
+    record = provisional.ProvisionalRecord.create(
+        finding_id=payload["finding_id"],
+        payload=payload,
+        capability_slice=arguments.capability_path,
+        workstream_owner=arguments.workstream_owner,
+        detection_artifact=arguments.detection_artifact,
+        develop_comparison=artifact.to_dict(),
+        detected_at=detected_at,
+        bot_pr_url=arguments.bot_pr_url,
+        origin=arguments.origin,
+    )
+    output_dir = Path(arguments.output_dir)
+    ledger.write_record(output_dir, payload)
+    _write_json(output_dir / "provisional.json", json.dumps(record.to_dict(), sort_keys=True, indent=2) + "\n")
+    _write_json(output_dir / "tracking_issue_body.md", provisional.render_issue_body(record))
+    print(f"{record.finding_id} due {deadline.format_timestamp(record.due_at)}")
+    return 0
+
+
+def _reconcile(arguments: argparse.Namespace) -> int:
+    record = provisional.ProvisionalRecord.from_dict(
+        json.loads(Path(arguments.provisional).read_text(encoding="utf-8"))
+    )
+    merged = ledger.load_ledger(Path(arguments.ledger_dir)).get(record.finding_id)
+    pull_request = None
+    if arguments.pull_request_state:
+        pull_request = reconcile.PullRequest(url=record.bot_pr_url or "", state=arguments.pull_request_state)
+    now = deadline.parse_timestamp(arguments.now) if arguments.now else datetime.now(timezone.utc)
+    result = reconcile.reconcile_finding(
+        finding_id=record.finding_id,
+        provisional_record=record,
+        merged_record=merged,
+        pull_request=pull_request,
+        now=now,
+        comparison_status=arguments.comparison_status,
+    )
+    text = json.dumps(result.to_dict(), sort_keys=True, indent=2) + "\n"
+    if arguments.output:
+        _write_json(Path(arguments.output), text)
+    print(text, end="")
+    return 1 if result.blocks_slice else 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="type_completeness")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    compare = commands.add_parser("compare", help="compare a branch report against the matching develop report")
+    compare.add_argument("--branch-report", required=True)
+    compare.add_argument("--develop-report", required=True)
+    compare.add_argument("--configuration", required=True, help="capability configuration label, e.g. text")
+    compare.add_argument("--output", required=True)
+    compare.add_argument("--fail-on-regression", action="store_true")
+    compare.set_defaults(handler=_compare)
+
+    propose = commands.add_parser("propose", help="emit a proposed ledger entry and provisional record")
+    propose.add_argument("--comparison", required=True)
+    propose.add_argument("--case-id", required=True)
+    propose.add_argument("--dimension", required=True)
+    propose.add_argument("--issue-url", required=True)
+    propose.add_argument("--closure-packet-url", required=True)
+    propose.add_argument("--permanent-test-path", action="append", required=True)
+    propose.add_argument("--capability-path", action="append", required=True)
+    propose.add_argument("--workstream-owner", required=True)
+    propose.add_argument("--detection-artifact", required=True)
+    propose.add_argument("--detected-at", help="ISO-8601 timestamp with offset; defaults to now")
+    propose.add_argument("--bot-pr-url")
+    propose.add_argument("--origin", choices=provisional.ORIGINS, default="automation")
+    propose.add_argument("--output-dir", required=True)
+    propose.set_defaults(handler=_propose)
+
+    reconcile_parser = commands.add_parser("reconcile", help="reconcile a provisional record with the ledger")
+    reconcile_parser.add_argument("--provisional", required=True)
+    reconcile_parser.add_argument("--ledger-dir", required=True)
+    reconcile_parser.add_argument("--pull-request-state", choices=("open", "merged", "closed"))
+    reconcile_parser.add_argument("--comparison-status", choices=[status.value for status in comparator.Status])
+    reconcile_parser.add_argument("--now", help="ISO-8601 timestamp with offset; defaults to now")
+    reconcile_parser.add_argument("--output")
+    reconcile_parser.set_defaults(handler=_reconcile)
+    return parser
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    arguments = build_parser().parse_args(argv)
+    handler = arguments.handler
+    exit_code: int = handler(arguments)
+    return exit_code
