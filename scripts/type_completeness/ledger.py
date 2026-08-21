@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable
+
+from .report import schema_version_matches
 
 LEDGER_SCHEMA_VERSION = 1
 LEDGER_FIELDS = (
@@ -38,6 +41,15 @@ def record_digest(record: dict[str, Any]) -> str:
 
 
 IDENTITY_FIELDS = ("finding_id", "case_id", "family", "dimension")
+# make_finding_id in fs_type_completeness_runner.cpp: "fstcf-v1-" + sha256(case_id + "|" + dimension)[:20].
+FINDING_ID_PATTERN = re.compile(r"^fstcf-v1-[0-9a-f]{20}$")
+
+
+def require_runner_finding_id(finding_id: Any) -> str:
+    """The finding ID names a file, so it is validated against the runner's exact format before any path use."""
+    if not isinstance(finding_id, str) or not FINDING_ID_PATTERN.match(finding_id):
+        raise ValueError(f"finding_id must match the runner format fstcf-v1-<20 hex>; got {finding_id!r}")
+    return finding_id
 
 
 def identity_digest(record: dict[str, Any]) -> str:
@@ -61,8 +73,7 @@ def proposed_record(
 ) -> dict[str, Any]:
     if classification not in KNOWN_CLASSIFICATIONS:
         raise ValueError(f"unknown classification {classification!r}")
-    if not finding_id:
-        raise ValueError("finding_id must be the runner's stable finding ID; it is never recomputed here")
+    require_runner_finding_id(finding_id)
     paths: list[str] = []
     for path in permanent_test_paths:
         if path not in paths:
@@ -91,13 +102,14 @@ def validate_record(record: dict[str, Any]) -> None:
     if set(record) != set(LEDGER_FIELDS):
         raise ValueError(f"ledger record must have exactly {sorted(LEDGER_FIELDS)}; got {sorted(record)}")
     version = record["schema_version"]
-    if isinstance(version, bool) or not isinstance(version, int) or version != LEDGER_SCHEMA_VERSION:
-        raise ValueError(f"schema_version must be the integer {LEDGER_SCHEMA_VERSION}; got {version!r}")
+    if not schema_version_matches(version, LEDGER_SCHEMA_VERSION):
+        raise ValueError(f"schema_version must be the number {LEDGER_SCHEMA_VERSION}; got {version!r}")
     for field in ("finding_id", "case_id", "family", "dimension", "classification", "issue_url", "closure_packet_url"):
         if not isinstance(record[field], str) or not record[field]:
             raise ValueError(f"{field} must be a non-empty string")
     if record["classification"] not in KNOWN_CLASSIFICATIONS:
         raise ValueError(f"unknown classification {record['classification']!r}")
+    require_runner_finding_id(record["finding_id"])
     for field in ("issue_url", "closure_packet_url"):
         if not record[field].startswith(("https://", "http://")):
             raise ValueError(f"{field} must be an http(s) URL")
@@ -111,7 +123,10 @@ def validate_record(record: dict[str, Any]) -> None:
 def write_record(directory: Path, record: dict[str, Any]) -> Path:
     validate_record(record)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{record['finding_id']}.json"
+    resolved_directory = directory.resolve()
+    path = (resolved_directory / f"{record['finding_id']}.json").resolve()
+    if path.parent != resolved_directory:
+        raise ValueError(f"refusing to write ledger record outside {resolved_directory}: {path}")
     path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return path
 

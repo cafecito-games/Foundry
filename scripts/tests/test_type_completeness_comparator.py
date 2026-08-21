@@ -6,6 +6,7 @@ Run with: python3 -m unittest discover -s scripts/tests -p "test_type_completene
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -69,9 +70,14 @@ def _case(case_id: str = "case-a", passed: bool = True, **overrides: Any) -> dic
     return base
 
 
+def _runner_finding_id(case_id: str, dimension: str) -> str:
+    """Mirror of make_finding_id in fs_type_completeness_runner.cpp: "fstcf-v1-" + sha256(case_id|dimension)[:20]."""
+    return "fstcf-v1-" + hashlib.sha256(f"{case_id}|{dimension}".encode()).hexdigest()[:20]
+
+
 def _finding(case_id: str, dimension: str) -> dict[str, Any]:
     return {
-        "finding_id": f"{case_id}-{dimension}",
+        "finding_id": _runner_finding_id(case_id, dimension),
         "case_id": case_id,
         "family": "union_destination_membership",
         "dimension": dimension,
@@ -112,6 +118,105 @@ def _ny(year: int, month: int, day: int, hour: int, minute: int = 0, second: int
     return datetime(year, month, day, hour, minute, second, tzinfo=NY)
 
 
+# A report exactly as FSCompletenessRunner writes it, derived from fs_type_completeness_runner.cpp:
+# the top-level key set and value types come from the report assembly (schema_version is the Variant
+# FLOAT 1.0; cell_count, executed_by_surface values, coverage counters, uncovered_required_dimensions and
+# text_bytecode_parity_failures are all double()), each case from the case_report block, and each finding from
+# finding_report(). The text is what JSON::stringify(report, "\t", false, true) produces: sorted keys, tab
+# indentation, every numeric rendered as a float ("1.0", "2.0"), and a trailing newline.
+RUNNER_REPORT_TEXT = """{
+\t"cases": [
+\t\t{
+\t\t\t"actual": {
+\t\t\t\t"destination": "reject"
+\t\t\t},
+\t\t\t"agreeing_provenance": [
+\t\t\t\t"seed"
+\t\t\t],
+\t\t\t"artifact_path": "/scratch/type_completeness/union_destination_membership/case_union_store_variable.fs",
+\t\t\t"canonical_provenance": "seed",
+\t\t\t"case_id": "case_union_store_variable",
+\t\t\t"coordinates": {
+\t\t\t\t"destination": "variable",
+\t\t\t\t"surface": "text"
+\t\t\t},
+\t\t\t"diagnostics": [
+\t\t\t\t"Cannot assign a value of type String to a variable of type int | float."
+\t\t\t],
+\t\t\t"expected": {
+\t\t\t\t"destination": "accept"
+\t\t\t},
+\t\t\t"expected_output": "ok\\n",
+\t\t\t"passed": false,
+\t\t\t"produced_output": "",
+\t\t\t"runtime_passed": false,
+\t\t\t"runtime_status": "analyzer_error",
+\t\t\t"status": "failed"
+\t\t},
+\t\t{
+\t\t\t"actual": {
+\t\t\t\t"destination": "accept"
+\t\t\t},
+\t\t\t"agreeing_provenance": [
+\t\t\t\t"seed"
+\t\t\t],
+\t\t\t"artifact_path": "/scratch/type_completeness/union_destination_membership/case_union_store_member.fs",
+\t\t\t"canonical_provenance": "seed",
+\t\t\t"case_id": "case_union_store_member",
+\t\t\t"coordinates": {
+\t\t\t\t"destination": "member",
+\t\t\t\t"surface": "text"
+\t\t\t},
+\t\t\t"diagnostics": [],
+\t\t\t"expected": {
+\t\t\t\t"destination": "accept"
+\t\t\t},
+\t\t\t"expected_output": "ok\\n",
+\t\t\t"passed": true,
+\t\t\t"produced_output": "ok\\n",
+\t\t\t"runtime_passed": true,
+\t\t\t"runtime_status": "ok",
+\t\t\t"status": "passed"
+\t\t}
+\t],
+\t"cell_count": 2.0,
+\t"coverage_by_chain_length": {
+\t\t"1": 2.0
+\t},
+\t"coverage_by_dimension": {
+\t\t"destination": 2.0
+\t},
+\t"executed_by_surface": {
+\t\t"bytecode": 0.0,
+\t\t"text": 2.0
+\t},
+\t"family": "union_destination_membership",
+\t"findings": [
+\t\t{
+\t\t\t"actual": "reject",
+\t\t\t"artifact_path": "/scratch/type_completeness/union_destination_membership/case_union_store_variable.fs",
+\t\t\t"case_id": "case_union_store_variable",
+\t\t\t"classification": "unclassified",
+\t\t\t"closure_packet_url": "",
+\t\t\t"dimension": "destination",
+\t\t\t"expected": "accept",
+\t\t\t"family": "union_destination_membership",
+\t\t\t"finding_id": "fstcf-v1-%s",
+\t\t\t"issue_url": "",
+\t\t\t"migrated_from": "",
+\t\t\t"parity_evidence": {},
+\t\t\t"permanent_test_paths": [],
+\t\t\t"resolved_case_ids": []
+\t\t}
+\t],
+\t"schema_version": 1.0,
+\t"success": false,
+\t"text_bytecode_parity_failures": 0.0,
+\t"uncovered_required_dimensions": 0.0
+}
+""" % hashlib.sha256(b"case_union_store_variable|destination").hexdigest()[:20]
+
+
 class ReportLoadingTests(unittest.TestCase):
     def test_loads_failed_cases_with_observations(self) -> None:
         loaded = report.load_report(_report([_case("a", passed=True), _case("b", passed=False)]))
@@ -120,6 +225,93 @@ class ReportLoadingTests(unittest.TestCase):
         observation = loaded.case("b").observation
         self.assertEqual(observation["diagnostics"], ["Cannot assign"])
         self.assertEqual(observation["actual"], {"outcome": "reject"})
+
+    def test_loads_the_report_the_runner_actually_writes(self) -> None:
+        loaded = report.load_report(json.loads(RUNNER_REPORT_TEXT))
+        self.assertEqual([case.case_id for case in loaded.failed_cases()], ["case_union_store_variable"])
+        failed = loaded.case("case_union_store_variable")
+        self.assertEqual(len(failed.findings), 1)
+        self.assertEqual(
+            failed.findings[0]["finding_id"], _runner_finding_id("case_union_store_variable", "destination")
+        )
+        self.assertEqual(loaded.case("case_union_store_member").findings, ())
+
+    def test_runner_report_survives_compare_and_propose_end_to_end(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "branch.json").write_text(RUNNER_REPORT_TEXT)
+            (root / "develop.json").write_text(RUNNER_REPORT_TEXT)
+            self.assertEqual(
+                cli.main(
+                    [
+                        "compare",
+                        "--branch-report",
+                        str(root / "branch.json"),
+                        "--develop-report",
+                        str(root / "develop.json"),
+                        "--configuration",
+                        "text",
+                        "--output",
+                        str(root / "comparison.json"),
+                        "--fail-on-regression",
+                    ]
+                ),
+                0,
+            )
+            comparison = json.loads((root / "comparison.json").read_text())
+            self.assertEqual([entry["status"] for entry in comparison["artifacts"]], ["unchanged"])
+            self.assertEqual(
+                cli.main(
+                    [
+                        "propose",
+                        "--comparison",
+                        str(root / "comparison.json"),
+                        "--case-id",
+                        "case_union_store_variable",
+                        "--dimension",
+                        "destination",
+                        "--issue-url",
+                        "https://x/1",
+                        "--closure-packet-url",
+                        "https://x/2",
+                        "--permanent-test-path",
+                        "p",
+                        "--capability-path",
+                        "modules/foundry_script/fs_analyzer.cpp",
+                        "--workstream-owner",
+                        "o",
+                        "--detection-artifact",
+                        "d",
+                        "--detected-at",
+                        "2026-08-17T10:00:00-04:00",
+                        "--output-dir",
+                        str(root / "out"),
+                    ]
+                ),
+                0,
+            )
+            finding_id = _runner_finding_id("case_union_store_variable", "destination")
+            self.assertEqual(ledger.read_record(root / "out" / f"{finding_id}.json")["finding_id"], finding_id)
+
+    def test_integral_float_schema_version_is_accepted_everywhere(self) -> None:
+        ok = _report([_case()])
+        ok["schema_version"] = 1.0
+        report.load_report(ok)
+        record = ledger.proposed_record(
+            finding_id="fstcf-v1-eeeeeeeeeeeeeeeeeeee",
+            family="f",
+            case_id="c",
+            dimension="d",
+            issue_url="https://x/1",
+            closure_packet_url="https://x/2",
+            permanent_test_paths=["p"],
+        )
+        ledger.validate_record(dict(record, schema_version=1.0))
+        for bad in (1.5, "1", True, 2.0):
+            with self.assertRaises(report.ReportError, msg=repr(bad)):
+                report.load_report(dict(ok, schema_version=bad))
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                ledger.validate_record(dict(record, schema_version=bad))
 
     def test_rejects_unknown_schema_version(self) -> None:
         bad = _report([_case()])
@@ -236,7 +428,9 @@ class ComparatorTests(unittest.TestCase):
         )
         self.assertEqual([finding["dimension"] for finding in artifact.develop["findings"]], ["destination"])
         self.assertEqual(artifact.status, comparator.Status.WORSENED)
-        self.assertEqual(artifact.to_dict()["branch"]["findings"][1]["finding_id"], "a-source_proof")
+        self.assertEqual(
+            artifact.to_dict()["branch"]["findings"][1]["finding_id"], _runner_finding_id("a", "source_proof")
+        )
 
     def test_non_semantic_finding_metadata_does_not_make_failure_worsened(self) -> None:
         branch_finding = dict(
@@ -333,6 +527,34 @@ class LedgerTests(unittest.TestCase):
                 closure_packet_url="https://x/2",
                 permanent_test_paths=["p"],
             )
+
+    def test_finding_id_must_match_the_runner_format_before_any_path_use(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for bad in ("../escape", "fstcf-v1-ABCDEF0123456789ABCD", "fstcf-v1-0123", "x/fstcf-v1-" + "0" * 20, "."):
+                with self.assertRaises(ValueError, msg=repr(bad)):
+                    ledger.proposed_record(
+                        finding_id=bad,
+                        family="f",
+                        case_id="c",
+                        dimension="d",
+                        issue_url="https://x/1",
+                        closure_packet_url="https://x/2",
+                        permanent_test_paths=["p"],
+                    )
+                record = ledger.proposed_record(
+                    finding_id="fstcf-v1-" + "0" * 20,
+                    family="f",
+                    case_id="c",
+                    dimension="d",
+                    issue_url="https://x/1",
+                    closure_packet_url="https://x/2",
+                    permanent_test_paths=["p"],
+                )
+                with self.assertRaises(ValueError, msg=repr(bad)):
+                    ledger.write_record(root, dict(record, finding_id=bad))
+            self.assertEqual(sorted(root.iterdir()), [])
+            self.assertFalse((root.parent / "escape.json").exists())
 
     def test_proposed_record_matches_runner_ledger_schema(self) -> None:
         record = ledger.proposed_record(
@@ -789,7 +1011,7 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(record.due_at, _ny(2026, 8, 19, 17))
             self.assertEqual(record.origin, "manual")
-            self.assertEqual(record.finding_id, "a-destination")
+            self.assertEqual(record.finding_id, _runner_finding_id("a", "destination"))
             ledger_file = root / "out" / (record.finding_id + ".json")
             self.assertEqual(ledger.read_record(ledger_file), record.payload)
 

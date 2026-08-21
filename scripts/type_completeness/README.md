@@ -52,6 +52,13 @@ While the bot path is unavailable, a human follows the same contract:
 5. Run `reconcile` until it reports `merged`. Manual records carry `"origin": "manual"` and otherwise have the
    same fields, deadline, reconciliation, and blocking semantics as automated ones.
 
+## Runner numbers
+
+The engine JSON writer renders every Variant number as a float (`"schema_version": 1.0`, `"cell_count": 2.0`), so
+loaders accept any integral JSON number for versions and counts and reject strings, booleans, and fractional
+values. The fixture `RUNNER_REPORT_TEXT` in `scripts/tests/test_type_completeness_comparator.py` is the
+byte-faithful reference for the runner's output.
+
 ## Runner categories
 
 Until the runner emits a per-case `category`, every failed case is treated as `product_finding`. When a

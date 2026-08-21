@@ -8,7 +8,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
-from .report import OBSERVATION_FIELDS, CaseResult, Report, ReportError
+from .report import OBSERVATION_FIELDS, CaseResult, Report, ReportError, schema_version_matches
 
 COMPARISON_SCHEMA_VERSION = 1
 
@@ -189,7 +189,6 @@ def serialize_many(artifacts: list[ComparisonArtifact]) -> str:
 
 def deserialize_many(text: str) -> list[ComparisonArtifact]:
     data = json.loads(text)
-    version = data.get("schema_version")
-    if isinstance(version, bool) or not isinstance(version, int) or version != COMPARISON_SCHEMA_VERSION:
+    if not schema_version_matches(data.get("schema_version"), COMPARISON_SCHEMA_VERSION):
         raise ReportError("unsupported comparison schema_version")
     return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]

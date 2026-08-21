@@ -33,6 +33,23 @@ class ReportError(ValueError):
     """Raised when a runner report cannot be interpreted."""
 
 
+def is_integral_number(value: Any) -> bool:
+    """True for a JSON number with no fractional part.
+
+    The runner stores every count and version as a Variant FLOAT and the engine JSON writer renders it as
+    ``1.0``, so an integral float is the normal on-disk form; booleans and strings are never accepted.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and value.is_integer()
+
+
+def schema_version_matches(value: Any, expected: int) -> bool:
+    return is_integral_number(value) and int(value) == expected
+
+
 class Category(str, enum.Enum):
     PRODUCT_FINDING = "product_finding"
     STRUCTURAL_FAILURE = "structural_failure"
@@ -98,7 +115,7 @@ def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
 
 def load_report(data: Mapping[str, Any]) -> Report:
     version = _require(data, "schema_version", "report")
-    if isinstance(version, bool) or not isinstance(version, int) or version != SUPPORTED_SCHEMA_VERSION:
+    if not schema_version_matches(version, SUPPORTED_SCHEMA_VERSION):
         raise ReportError(f"unsupported report schema_version {version!r}; expected {SUPPORTED_SCHEMA_VERSION}")
     family = str(_require(data, "family", "report"))
     raw_cases = _require(data, "cases", "report")

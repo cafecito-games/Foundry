@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
 from . import deadline, ledger
+from .report import schema_version_matches
 
 PROVISIONAL_SCHEMA_VERSION = 1
 ORIGINS = ("automation", "manual")
@@ -100,8 +101,7 @@ class ProvisionalRecord:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ProvisionalRecord:
         try:
-            version = data["schema_version"]
-            if isinstance(version, bool) or not isinstance(version, int) or version != PROVISIONAL_SCHEMA_VERSION:
+            if not schema_version_matches(data["schema_version"], PROVISIONAL_SCHEMA_VERSION):
                 raise ProvisionalError("unsupported provisional schema_version")
             record = cls.create(
                 finding_id=str(data["finding_id"]),
