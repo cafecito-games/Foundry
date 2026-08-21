@@ -6,6 +6,7 @@
 		"modules/foundry_script/fs_compiler.cpp",
 		"modules/foundry_script/fs_function.cpp",
 		"modules/foundry_script/fs_reflection.cpp",
+		"modules/foundry_script/fs_type.cpp",
 		"modules/foundry_script/fs_vm.cpp"
 	],
 	"unmapped_production_paths": [

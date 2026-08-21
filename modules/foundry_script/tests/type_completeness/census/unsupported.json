@@ -1,6 +1,6 @@
 {
 	"schema_version": 1,
-	"description": "Genuinely unsupported type-representation configurations. Every entry carries a rationale grounded in a production anchor and a witness reference; an entry whose witness status is deferred is an uncovered census cell, not a pass, and is owned by the negative-witness adapters of #2477/#2478. The census validator resolves every present doctest_case and fixture reference against the repository.",
+	"description": "Genuinely unsupported type-representation configurations. Every entry carries a rationale grounded in a production anchor and a witness reference; an entry whose witness status is deferred is an uncovered census cell, not a pass, and is owned by the negative-witness adapters of #2477/#2478. The census validator resolves every present fixture reference against the repository and shape-checks doctest_case references (suite-qualified names); binding those names to a registered TEST_CASE follows with the #2477 adapters.",
 	"entries": [
 		{
 			"id": "union_member_that_is_union_or_nullable",

@@ -11,7 +11,8 @@
 				"modules/foundry_script/fs_parser.cpp",
 				"modules/foundry_script/fs_parser_data_type.cpp",
 				"modules/foundry_script/fs_analyzer.cpp",
-				"modules/foundry_script/fs_compiler.cpp"
+				"modules/foundry_script/fs_compiler.cpp",
+				"modules/foundry_script/fs_type.cpp"
 			],
 			"surface_applicability": {
 				"analyzer": true,
@@ -389,7 +390,7 @@
 			"id": "reflection_property_info",
 			"owner": "runtime_enforcement",
 			"anchor": "modules/foundry_script/fs_parser.h:356",
-			"summary": "The PropertyInfo projection: the engine-facing description of a member (FSParser::DataType::to_property_info) and its inverse (FSAnalyzer::type_from_property, modules/foundry_script/fs_analyzer.h:1010). PropertyInfo is also serialized into .fsb member records (modules/foundry_script/fs_bytecode_export.cpp:404).",
+			"summary": "The PropertyInfo projection: the engine-facing description of a member (FSParser::DataType::to_property_info) and its inverse (FSAnalyzer::type_from_property, modules/foundry_script/fs_analyzer.h:1010). PropertyInfo is also serialized into .fsb member records (modules/foundry_script/fs_bytecode_export.cpp:404). Its hint_string is a live child channel, not a terminal blob.",
 			"production_paths": [
 				"modules/foundry_script/fs_reflection.cpp",
 				"modules/foundry_script/fs_analyzer.cpp"
@@ -403,7 +404,16 @@
 				"editor_tools": true
 			},
 			"kind_enums": [],
-			"child_slots": []
+			"child_slots": [
+				{
+					"id": "hint_string",
+					"anchor": "modules/foundry_script/fs_parser_data_type.cpp:1069",
+					"kinds": [],
+					"child_representation": "parser_data_type",
+					"axes": ["composition", "value_boundary"],
+					"summary": "Type children encoded into hint_string: Callable/Signal signature suffixes (parameter, return, and rest slots) under PROPERTY_HINT_CALLABLE_TYPE and typed-array element hints under PROPERTY_HINT_ARRAY_TYPE, decoded back into parser slots by FSAnalyzer::type_from_property (modules/foundry_script/fs_analyzer.cpp:15706)."
+				}
+			]
 		},
 		{
 			"id": "rendered_source_name",

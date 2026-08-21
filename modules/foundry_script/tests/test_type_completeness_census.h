@@ -325,8 +325,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		REQUIRE_MESSAGE(representations.size() > 0, "representations.json lists no representations");
 
 		const Vector<CensusLiveEnum> live_enums = census_live_enums();
-		bool live_enum_seen = false;
-		int checked_kind_rows = 0;
+		HashSet<String> enums_cross_checked;
 		for (const Dictionary &representation : representations) {
 			for (const Dictionary &kind_enum : census_dictionary_array(representation, "kind_enums")) {
 				const String live_enum_name = census_string(kind_enum, "live_enum");
@@ -359,7 +358,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 					}
 					continue;
 				}
-				live_enum_seen = true;
+				enums_cross_checked.insert(live_enum_name);
 
 				Vector<String> census_ids;
 				HashSet<int> census_values;
@@ -382,8 +381,6 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 					if (!census_values.has(row.value)) {
 						errors.push_back(vformat("%s: %s value %d (%s) is missing from the census",
 								census_string(representation, "id"), live_enum_name, row.value, row.id));
-					} else {
-						checked_kind_rows++;
 					}
 				}
 				census_ids.sort();
@@ -392,8 +389,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 						vformat("%s: census %s ids do not match the live enum", census_string(representation, "id"), live_enum_name));
 			}
 		}
-		CHECK_MESSAGE(live_enum_seen, "no census representation records a kind enum");
-		CHECK_MESSAGE(checked_kind_rows >= 40, "unexpectedly few live kind rows were cross-checked");
+		// Bidirectional coverage: every live enum must be recorded by at least one representation's
+		// kind inventory, so deleting a kind_enum record fails instead of shrinking coverage silently.
+		for (const CensusLiveEnum &live_enum : live_enums) {
+			if (!enums_cross_checked.has(live_enum.live_enum)) {
+				errors.push_back(vformat("no census representation records live enum %s", live_enum.live_enum));
+			}
+		}
 		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 	}
 
@@ -469,6 +471,46 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		const int actual_entries = census_dictionary_array(policies_data, "entries").size();
 		CHECK_MESSAGE(actual_entries == expected_entries,
 				vformat("policies.json has %d entries but the inventory expects exactly %d", actual_entries, expected_entries));
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+	}
+
+	TEST_CASE("TypeCompleteness Census vocabularies and references are closed") {
+		Vector<String> errors;
+		Variant schema_data;
+		Variant representations_data;
+		REQUIRE_MESSAGE(census_read_json("schema.json", schema_data, errors), String(" | ").join(errors));
+		REQUIRE_MESSAGE(census_read_json("representations.json", representations_data, errors), String(" | ").join(errors));
+
+		const Dictionary schema = schema_data;
+		const HashSet<String> axes = census_string_set(census_string_array(schema, "axes"));
+		const HashSet<String> owners = census_string_set(census_string_array(schema, "owners"));
+		REQUIRE_MESSAGE(axes.size() > 0, "schema.json declares no axes vocabulary");
+		REQUIRE_MESSAGE(owners.size() > 0, "schema.json declares no owners vocabulary");
+
+		HashSet<String> representation_ids;
+		const Vector<Dictionary> representations = census_dictionary_array(representations_data, "representations");
+		for (const Dictionary &representation : representations) {
+			representation_ids.insert(census_string(representation, "id"));
+		}
+
+		for (const Dictionary &representation : representations) {
+			const String id = census_string(representation, "id");
+			if (!owners.has(census_string(representation, "owner"))) {
+				errors.push_back(vformat("%s: owner '%s' is outside the owners vocabulary", id, census_string(representation, "owner")));
+			}
+			for (const Dictionary &slot : census_dictionary_array(representation, "child_slots")) {
+				const String slot_id = census_string(slot, "id");
+				for (const String &axis : census_string_array(slot, "axes")) {
+					if (!axes.has(axis)) {
+						errors.push_back(vformat("%s.%s: axis '%s' is outside the axes vocabulary", id, slot_id, axis));
+					}
+				}
+				const String child_representation = census_string(slot, "child_representation");
+				if (!representation_ids.has(child_representation) && child_representation != "none") {
+					errors.push_back(vformat("%s.%s: references uninventoried child representation '%s'", id, slot_id, child_representation));
+				}
+			}
+		}
 		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 	}
 
@@ -648,6 +690,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 				errors.push_back(vformat("reconciliation: census production path '%s' is neither mapped nor declared unmapped", path));
 			}
 		}
+		// Reverse direction: a path the capability map lists must be visible to the census (a
+		// production path of some representation) or explicitly reconciled, so a map addition the
+		// census never absorbed is noisy instead of silently ignored.
+		for (const String &path : capability_paths) {
+			if (!census_paths.has(path) && !declared_paths.has(path)) {
+				errors.push_back(vformat("reconciliation: capability-map path '%s' appears in neither the census nor the reconciliation", path));
+			}
+		}
 		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 	}
 
@@ -655,10 +705,22 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		Vector<String> errors;
 		Variant schema_data;
 		Variant representations_data;
+		Variant policies_data;
 		REQUIRE_MESSAGE(census_read_json("schema.json", schema_data, errors), String(" | ").join(errors));
 		REQUIRE_MESSAGE(census_read_json("representations.json", representations_data, errors), String(" | ").join(errors));
+		REQUIRE_MESSAGE(census_read_json("policies.json", policies_data, errors), String(" | ").join(errors));
 
 		const Vector<String> surfaces = census_string_array(schema_data, "surfaces");
+
+		// Convention: a surface a representation is not applicable for is a surface its records never
+		// reach, so every policy for that (representation, surface) pair must be not_applicable. A
+		// project/erase cell on an inapplicable surface would describe a crossing that cannot happen.
+		HashMap<String, String> policy_by_representation_surface;
+		for (const Dictionary &entry : census_dictionary_array(policies_data, "entries")) {
+			policy_by_representation_surface[census_string(entry, "representation") + "::" + census_string(entry, "child_slot") + "::" + census_string(entry, "surface")] =
+					census_string(entry, "policy");
+		}
+
 		bool any_bytecode_only = false;
 		for (const Dictionary &representation : census_dictionary_array(representations_data, "representations")) {
 			const String id = census_string(representation, "id");
@@ -672,6 +734,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 				const Variant &value = applicability_dictionary.get(surface, Variant());
 				if (value.get_type() != Variant::BOOL) {
 					errors.push_back(vformat("%s: surface_applicability.%s is not a boolean", id, surface));
+					continue;
+				}
+				if (!bool(value)) {
+					for (const Dictionary &slot : census_dictionary_array(representation, "child_slots")) {
+						const String key = id + "::" + census_string(slot, "id") + "::" + surface;
+						const String *policy = policy_by_representation_surface.getptr(key);
+						if (policy != nullptr && *policy != "not_applicable") {
+							errors.push_back(vformat("%s: %s is not applicable on %s but slot '%s' has policy '%s'",
+									id, id, surface, census_string(slot, "id"), *policy));
+						}
+					}
 				}
 			}
 			if (applicability_dictionary.size() != surfaces.size()) {

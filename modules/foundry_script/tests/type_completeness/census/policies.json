@@ -20,8 +20,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "container_element_types",
 			"surface": "runtime_bytecode",
-			"policy": "project",
-			"rationale": "The bytecode execution path consumes the same lowered runtime form."
+			"policy": "not_applicable",
+			"rationale": "The bytecode path never materializes the parser record; it executes decoded runtime records whose elements were written at compile time (recorded under runtime_text and bytecode_serialized_type)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -62,8 +62,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "union_members",
 			"surface": "runtime_bytecode",
-			"policy": "project",
-			"rationale": "Same lowering; decoded alternatives enforce identically."
+			"policy": "not_applicable",
+			"rationale": "The bytecode path reads decoded runtime alternatives, never parser members (see runtime_data_type and bytecode_serialized_type)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -104,8 +104,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "type_arguments",
 			"surface": "runtime_bytecode",
-			"policy": "project",
-			"rationale": "Same reification through decoded records."
+			"policy": "not_applicable",
+			"rationale": "The bytecode path reads decoded reified argument records, never parser ones (see runtime_data_type and bytecode_serialized_type)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -146,8 +146,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "type_parameter_bound",
 			"surface": "runtime_bytecode",
-			"policy": "erase",
-			"rationale": "Same erasure on the bytecode path."
+			"policy": "not_applicable",
+			"rationale": "Bounds are proven statically before compilation and never exist on the bytecode path."
 		},
 		{
 			"representation": "parser_data_type",
@@ -175,7 +175,7 @@
 			"child_slot": "method_parameter_types",
 			"surface": "analyzer",
 			"policy": "traverse",
-			"rationale": "Signature assignability compares parameter types recursively (modules/foundry_script/fs_analyzer.cpp:1052)."
+			"rationale": "Signature assignability compares parameter slots recursively (modules/foundry_script/fs_type.cpp:351)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -188,8 +188,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_parameter_types",
 			"surface": "runtime_bytecode",
-			"policy": "erase",
-			"rationale": "Same erasure on the bytecode path."
+			"policy": "not_applicable",
+			"rationale": "Callable signature identity is static; the bytecode path never sees the parser signature record."
 		},
 		{
 			"representation": "parser_data_type",
@@ -202,8 +202,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_parameter_types",
 			"surface": "reflection",
-			"policy": "not_applicable",
-			"rationale": "PropertyInfo does not express callable parameter signatures."
+			"policy": "project",
+			"rationale": "to_property_info encodes the parameter slots into the PROPERTY_HINT_CALLABLE_TYPE hint_string (modules/foundry_script/fs_parser_data_type.cpp:1068, encoder at :792) and type_from_property decodes them back (modules/foundry_script/fs_analyzer.cpp:15706); a slot that cannot round-trip drops the whole hint so the callable crosses untyped (modules/foundry_script/fs_parser_data_type.cpp:923)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -217,7 +217,7 @@
 			"child_slot": "method_return_type",
 			"surface": "analyzer",
 			"policy": "traverse",
-			"rationale": "Signature assignability compares return types recursively (modules/foundry_script/fs_analyzer.cpp:1052)."
+			"rationale": "Signature assignability compares return slots recursively (modules/foundry_script/fs_type.cpp:366)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -230,8 +230,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_return_type",
 			"surface": "runtime_bytecode",
-			"policy": "erase",
-			"rationale": "Same erasure on the bytecode path."
+			"policy": "not_applicable",
+			"rationale": "Callable signature identity is static; the bytecode path never sees the parser signature record."
 		},
 		{
 			"representation": "parser_data_type",
@@ -244,8 +244,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_return_type",
 			"surface": "reflection",
-			"policy": "not_applicable",
-			"rationale": "PropertyInfo does not express callable return signatures."
+			"policy": "project",
+			"rationale": "The return slot travels inside the same PROPERTY_HINT_CALLABLE_TYPE signature suffix (modules/foundry_script/fs_parser_data_type.cpp:814) and is decoded back into the return slot (modules/foundry_script/fs_analyzer.cpp:15706)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -259,7 +259,7 @@
 			"child_slot": "method_rest_parameter_type",
 			"surface": "analyzer",
 			"policy": "traverse",
-			"rationale": "The rest tail participates in arity and signature checks with its narrowed element type."
+			"rationale": "The rest tail participates in arity and signature checks with its narrowed element type (modules/foundry_script/fs_type.cpp:328)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -272,8 +272,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_rest_parameter_type",
 			"surface": "runtime_bytecode",
-			"policy": "erase",
-			"rationale": "Same erasure on the bytecode path; the loader validates the rest slot's vararg arity bit instead."
+			"policy": "not_applicable",
+			"rationale": "Callable signature identity is static; the bytecode path never sees the parser signature record."
 		},
 		{
 			"representation": "parser_data_type",
@@ -286,8 +286,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_rest_parameter_type",
 			"surface": "reflection",
-			"policy": "not_applicable",
-			"rationale": "PropertyInfo does not express variadic tails."
+			"policy": "project",
+			"rationale": "The rest tail is encoded as the final '...' entry of the signature suffix (modules/foundry_script/fs_parser_data_type.cpp:798) and decoded back into the rest slot (modules/foundry_script/fs_analyzer.cpp:1915)."
 		},
 		{
 			"representation": "parser_data_type",
@@ -314,8 +314,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "enum_case_payload_field_types",
 			"surface": "runtime_bytecode",
-			"policy": "erase",
-			"rationale": "Same erasure; payload values serialize as baked constants."
+			"policy": "not_applicable",
+			"rationale": "The tagged-union shape is analyzer-only; payload values cross the bytecode path as baked positional constants."
 		},
 		{
 			"representation": "parser_data_type",
@@ -356,8 +356,8 @@
 			"representation": "parser_data_type",
 			"child_slot": "enum_case_payload_field_names",
 			"surface": "runtime_bytecode",
-			"policy": "erase",
-			"rationale": "Same positional erasure."
+			"policy": "not_applicable",
+			"rationale": "The tagged-union shape is analyzer-only; names never exist on the bytecode path."
 		},
 		{
 			"representation": "parser_data_type",
@@ -841,6 +841,48 @@
 			"surface": "editor_tools",
 			"policy": "not_applicable",
 			"rationale": "Evidence is not an editor-facing surface."
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "analyzer",
+			"policy": "project",
+			"rationale": "type_from_property decodes the signature grammar back into parser slots (modules/foundry_script/fs_analyzer.cpp:15706, suffix decoder at :1857) and resolves array element hints through the same grammar (modules/foundry_script/fs_analyzer.cpp:1762)."
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "runtime_text",
+			"policy": "preserve",
+			"rationale": "to_property_info writes the hint once at compile time (modules/foundry_script/fs_parser_data_type.cpp:1069); the text runtime carries it in member metadata without decoding it."
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "runtime_bytecode",
+			"policy": "preserve",
+			"rationale": "_encode_property_info serializes hint and hint_string verbatim with each member record (modules/foundry_script/fs_bytecode_export.cpp:404)."
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "bytecode_serialization",
+			"policy": "preserve",
+			"rationale": "The serialized member record carries the same hint and hint_string bytes across reload (modules/foundry_script/fs_bytecode_export.cpp:404)."
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "reflection",
+			"policy": "preserve",
+			"rationale": "Reflective consumers carry the PropertyInfo verbatim; the compiled member descriptor, not the hint, remains what knows widths and element types (modules/foundry_script/fs_reflection.cpp:355)."
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "editor_tools",
+			"policy": "project",
+			"rationale": "Inspectors and tooling render typed arrays and callable signatures through the engine's generic PropertyInfo hint consumers — the exact grammar the encoder targets (modules/foundry_script/fs_parser_data_type.cpp:749)."
 		}
 	]
 }
