@@ -369,17 +369,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		CHECK_EQ(cases_with_severity, 40);
 	}
 
+	// Warning collection is a debug-build capability, so these cases are scoped to it.
+#ifdef DEBUG_ENABLED
 	TEST_CASE("TypeCompleteness GateSafety records a warning code and its suppression") {
 		// Warning levels are process-global and are not initialized by a test run, so the ambient pass
 		// only sees this code when the case pins it.
-#ifdef DEBUG_ENABLED
 		Vector<WarningLevelOverride> overrides;
 		WarningLevelOverride unused_variable;
 		unused_variable.code = FSWarning::UNUSED_VARIABLE;
 		unused_variable.level = FSWarning::WARN;
 		overrides.push_back(unused_variable);
 		const WarningSettingsScope warning_settings(overrides);
-#endif // DEBUG_ENABLED
 
 		FSCompletenessProgram warned;
 		warned.case_id = "gate_safety_unused_variable";
@@ -426,6 +426,38 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		}
 		CHECK(found_suppressed);
 	}
+
+	TEST_CASE("TypeCompleteness GateSafety records a suppressed error-level diagnostic") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::ERROR;
+		overrides.push_back(unused_variable);
+		const WarningSettingsScope warning_settings(overrides);
+
+		FSCompletenessProgram suppressed;
+		suppressed.case_id = "gate_safety_suppressed_error_level";
+		suppressed.surface = "text";
+		suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\")\n\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(suppressed, "text");
+		// The annotation hides the promoted diagnostic from the analysis outcome entirely.
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+		CHECK(observation.diagnostics.is_empty());
+		bool found_suppressed_error = false;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			if (String(record.get("severity", String())) != "error") {
+				continue;
+			}
+			found_suppressed_error = true;
+			CHECK_EQ(String(record.get("code", String())), "suppressed_analysis_error");
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+		}
+		CHECK(found_suppressed_error);
+	}
+#endif // DEBUG_ENABLED
 
 	TEST_CASE("TypeCompleteness GateSafety records rejected analysis as error severity") {
 		FSCompletenessProgram invalid;

@@ -186,35 +186,62 @@ static String blank_warning_ignore_annotations(const String &p_source) {
 	return String("\n").join(blanked);
 }
 
-static void append_warning_diagnostic_records(
+// Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
+// warning promoted to error level never reaches the warning list, so errors are collected too:
+// otherwise a diagnostic that a `@warning_ignore` hides would leave no severity evidence at all.
+static void append_unsuppressed_diagnostic_records(
 		const String &p_source, const String &p_path, FSCompletenessObservation &r_observation) {
 #ifdef DEBUG_ENABLED
-	struct ObservedWarning {
+	struct ObservedDiagnostic {
+		String severity;
 		String code;
 		int line = 0;
 		int column = 0;
 		String message;
 	};
 	auto collect = [](const String &p_analyzed_source, const String &p_analyzed_path,
-						   Vector<ObservedWarning> &r_warnings) {
+						   Vector<ObservedDiagnostic> &r_diagnostics) {
 		FSParser parser;
 		if (parser.parse(p_analyzed_source, p_analyzed_path, false) == OK) {
 			FSAnalyzer analyzer(&parser);
 			analyzer.analyze();
 		}
+		for (const FSParser::ParserError *error : parser.get_errors_in_source_order()) {
+			if (error == nullptr) {
+				continue;
+			}
+			ObservedDiagnostic observed;
+			observed.severity = DIAGNOSTIC_SEVERITY_ERROR;
+			observed.code = "suppressed_analysis_error";
+			observed.line = error->line;
+			observed.column = error->column;
+			observed.message = vformat("%d:%d: %s", error->line, error->column, error->message);
+			r_diagnostics.push_back(observed);
+		}
 		for (const FSWarning &warning : parser.get_warnings()) {
-			ObservedWarning observed;
+			ObservedDiagnostic observed;
+			observed.severity = DIAGNOSTIC_SEVERITY_WARNING;
 			observed.code = FSWarning::get_name_from_code(warning.code);
 			observed.line = warning.start_line;
 			observed.column = warning.start_column;
 			observed.message = warning.get_message();
-			r_warnings.push_back(observed);
+			r_diagnostics.push_back(observed);
 		}
 	};
+	auto contains = [](const Vector<ObservedDiagnostic> &p_diagnostics,
+							const ObservedDiagnostic &p_diagnostic) {
+		for (const ObservedDiagnostic &candidate : p_diagnostics) {
+			if (candidate.severity == p_diagnostic.severity && candidate.code == p_diagnostic.code &&
+					candidate.line == p_diagnostic.line && candidate.column == p_diagnostic.column) {
+				return true;
+			}
+		}
+		return false;
+	};
 
-	Vector<ObservedWarning> emitted;
+	Vector<ObservedDiagnostic> emitted;
 	collect(p_source, p_path, emitted);
-	Vector<ObservedWarning> unsuppressed;
+	Vector<ObservedDiagnostic> unsuppressed;
 	const String unsuppressed_source = blank_warning_ignore_annotations(p_source);
 	if (unsuppressed_source == p_source) {
 		unsuppressed = emitted;
@@ -222,17 +249,15 @@ static void append_warning_diagnostic_records(
 		collect(unsuppressed_source, p_path, unsuppressed);
 	}
 
-	for (const ObservedWarning &warning : unsuppressed) {
-		bool suppressed = true;
-		for (const ObservedWarning &visible : emitted) {
-			if (visible.code == warning.code && visible.line == warning.line &&
-					visible.column == warning.column) {
-				suppressed = false;
-				break;
-			}
+	for (const ObservedDiagnostic &diagnostic : unsuppressed) {
+		const bool suppressed = !contains(emitted, diagnostic);
+		// An error the primary analysis already reported owns a record from the primary pass.
+		if (diagnostic.severity == DIAGNOSTIC_SEVERITY_ERROR && !suppressed) {
+			continue;
 		}
-		r_observation.diagnostic_records.push_back(make_diagnostic_record(DIAGNOSTIC_SEVERITY_WARNING,
-				"analysis", warning.code, warning.line, warning.column, warning.message, suppressed));
+		r_observation.diagnostic_records.push_back(
+				make_diagnostic_record(diagnostic.severity, "analysis", diagnostic.code, diagnostic.line,
+						diagnostic.column, diagnostic.message, suppressed));
 	}
 #else
 	(void)p_source;
@@ -865,7 +890,7 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 		append_error_diagnostic(observation, "analyzer_error",
 				vformat("Analyzer failed without diagnostics (error %d).", analyzer_error));
 	}
-	append_warning_diagnostic_records(p_program.source, path, observation);
+	append_unsuppressed_diagnostic_records(p_program.source, path, observation);
 	observation.dimensions["analysis"] = parse_error == OK && analyzer_error == OK ? "accept" : "reject";
 	cover_diagnostics_with_records(observation);
 	return observation;
