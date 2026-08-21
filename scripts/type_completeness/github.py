@@ -84,7 +84,7 @@ class AutomationClient:
             body,
         ).strip()
 
-    def _find_tracking_issue(self, finding_id: str) -> Optional[Tuple[int, str, bool]]:
+    def _find_tracking_issue(self, finding_id: str) -> Optional[tuple[int, str, bool]]:
         """Find the one tracking issue for a finding in any state; an open one wins over closed duplicates."""
         output = self._gh(
             "issue",
