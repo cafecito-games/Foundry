@@ -466,13 +466,13 @@ static bool ledger_dimension_is_known(
 
 static String canonicalize_existing_input_path(const String &p_path);
 
-static String find_repository_root(const String &p_catalog_root) {
-	const String canonical_catalog_root = canonicalize_existing_input_path(p_catalog_root);
-	if (canonical_catalog_root.is_empty() || !DirAccess::dir_exists_absolute(canonical_catalog_root)) {
+static String find_repository_root_ancestor(const String &p_start_path) {
+	const String canonical_start_path = canonicalize_existing_input_path(p_start_path);
+	if (canonical_start_path.is_empty() || !DirAccess::dir_exists_absolute(canonical_start_path)) {
 		return String();
 	}
 
-	for (String current = canonical_catalog_root; !current.is_empty();) {
+	for (String current = canonical_start_path; !current.is_empty();) {
 		const String git_marker = current.path_join(".git");
 		if (FileAccess::exists(git_marker) || DirAccess::dir_exists_absolute(git_marker)) {
 			return current;
@@ -483,11 +483,25 @@ static String find_repository_root(const String &p_catalog_root) {
 		}
 		current = parent;
 	}
+	return String();
+}
+
+static String find_repository_root(const String &p_catalog_root) {
+	const String catalog_repository_root = find_repository_root_ancestor(p_catalog_root);
+	if (!catalog_repository_root.is_empty()) {
+		return catalog_repository_root;
+	}
 
 	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	if (filesystem.is_null()) {
 		return String();
 	}
+	const String current_repository_root = find_repository_root_ancestor(filesystem->get_current_dir());
+	if (!current_repository_root.is_empty()) {
+		return current_repository_root;
+	}
+
+	const String canonical_catalog_root = canonicalize_existing_input_path(p_catalog_root);
 	const String canonical_current_directory =
 			canonicalize_existing_input_path(filesystem->get_current_dir());
 	if (canonical_current_directory == canonical_catalog_root ||
