@@ -105,6 +105,7 @@ class FSCompletenessCapabilityMap {
 	Vector<Pair<String, HashSet<String>>> production_prefixes;
 	Vector<String> nonproduction_prefixes;
 	HashSet<String> broad_core_families;
+	bool loaded = false;
 
 public:
 	Error load(const String &p_path, Vector<String> &r_errors);

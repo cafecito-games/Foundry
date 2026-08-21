@@ -882,6 +882,51 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 						.used_broad_core_fallback);
 	}
 
+	TEST_CASE("TypeCompleteness Manifest changed paths must be normalized repository files") {
+		TemporaryProjectTree tree("type_completeness_capability_changed_files");
+		REQUIRE(tree.is_valid());
+		const String path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[
+    {"paths":["modules/foundry_script/editor/"],"families":["editor_family"]}
+  ],
+  "nonproduction_prefixes":["docs/","modules/foundry_script/tests/"],
+  "broad_core_families":["broad_family"]
+})JSON");
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(capability_map.load(path, errors) == OK, String(" | ").join(errors));
+
+		const char *invalid_changed_paths[] = {
+			"modules/foundry_script/",
+			"modules/foundry_script/tests/",
+			"modules/foundry_script/editor/",
+			"docs/",
+			"./modules/foundry_script/x.cpp",
+			"other/../modules/foundry_script/x.cpp",
+		};
+		for (const char *invalid_path : invalid_changed_paths) {
+			CAPTURE(invalid_path);
+			const FSCompletenessSelection selection =
+					capability_map.select(Vector<String>({ invalid_path }));
+			CHECK(selection_has_only_family(selection, "broad_family"));
+			CHECK(selection.used_broad_core_fallback);
+			CHECK_EQ(selection.validation_errors.size(), 1);
+			if (selection.validation_errors.size() == 1) {
+				CHECK_EQ(selection.validation_errors[0], vformat("invalid changed path: %s", invalid_path));
+			}
+		}
+
+		const FSCompletenessSelection valid_nonproduction = capability_map.select(Vector<String>({
+				"docs/type_completeness.md",
+				"modules/foundry_script/tests/test_type_completeness_manifest.h",
+		}));
+		CHECK(valid_nonproduction.families.is_empty());
+		CHECK_FALSE(valid_nonproduction.used_broad_core_fallback);
+		CHECK(valid_nonproduction.validation_errors.is_empty());
+	}
+
 	TEST_CASE("TypeCompleteness Manifest capability loader rejects malformed schema and ambiguous ownership") {
 		struct InvalidCapabilityMap {
 			const char *name;
@@ -966,7 +1011,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
   "nonproduction_prefixes":["docs/"],
   "broad_core_families":["core.json"]
 })JSON",
-					"safe filename-stem family id" },
+					"lowercase portable filename-stem family id" },
 		};
 
 		for (const InvalidCapabilityMap &test_case : cases) {
@@ -979,6 +1024,69 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 					ERR_INVALID_DATA);
 			CHECK(completeness_errors_contain_text(errors, test_case.diagnostic));
 		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability families use portable lowercase stems") {
+		const char *invalid_families[] = {
+			"Uppercase",
+			"with-dash",
+			"1leading_digit",
+			"con",
+			"PrN",
+			"aux",
+			"nul",
+			"com1",
+			"lpt9",
+		};
+		for (const char *family : invalid_families) {
+			CAPTURE(family);
+			TemporaryProjectTree tree(vformat("type_completeness_capability_family_%s",
+					String(family).sha256_text().substr(0, 8)));
+			REQUIRE(tree.is_valid());
+			const String contents = vformat(R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/mapped.cpp"],"families":["%s"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["%s"]
+})JSON",
+					family, family);
+			FSCompletenessCapabilityMap capability_map;
+			Vector<String> errors;
+			CHECK_EQ(capability_map.load(write_completeness_capability_map(tree, contents), errors),
+					ERR_INVALID_DATA);
+			CHECK(completeness_errors_contain_text(errors,
+					"must be a lowercase portable filename-stem family id"));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability diagnostics preserve source array indices") {
+		TemporaryProjectTree tree("type_completeness_capability_source_indices");
+		REQUIRE(tree.is_valid());
+		const String path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{
+    "paths":["outside/file.cpp","/absolute.cpp"],
+    "families":["z_valid","Upper"]
+  }],
+  "nonproduction_prefixes":["modules/foundry_script/editor/","/docs/"],
+  "broad_core_families":["z_valid","Upper"]
+})JSON");
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		CHECK_EQ(capability_map.load(path, errors), ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain(errors,
+				"$.production[0].paths[0]: must identify a path within modules/foundry_script/"));
+		CHECK(completeness_errors_contain(errors,
+				"$.production[0].paths[1]: must be a normalized repository-relative path"));
+		CHECK(completeness_errors_contain(errors,
+				"$.production[0].families[1]: must be a lowercase portable filename-stem family id"));
+		CHECK(completeness_errors_contain(errors,
+				"$.nonproduction_prefixes[0]: may exempt Foundry Script production core; only the tests subtree is permitted"));
+		CHECK(completeness_errors_contain(errors,
+				"$.nonproduction_prefixes[1]: must be a normalized repository-relative path"));
+		CHECK(completeness_errors_contain(errors,
+				"$.broad_core_families[1]: must be a lowercase portable filename-stem family id"));
 	}
 
 	TEST_CASE("TypeCompleteness Manifest capability loader confines nonproduction ownership to tests") {
@@ -1067,15 +1175,27 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		const FSCompletenessSelection cleared =
 				capability_map.select(Vector<String>({ "modules/foundry_script/exact.cpp" }));
 		CHECK(cleared.families.is_empty());
-		CHECK(cleared.used_broad_core_fallback);
+		CHECK_FALSE(cleared.used_broad_core_fallback);
+		REQUIRE_EQ(cleared.validation_errors.size(), 1);
+		CHECK_EQ(cleared.validation_errors[0], "capability map is not loaded");
 
 		const FSCompletenessSelection invalid = capability_map.select(Vector<String>({
 				"modules/foundry_script/../outside.cpp",
 				"modules\\foundry_script\\fs_compiler.cpp",
 				"/modules/foundry_script/fs_compiler.cpp",
 		}));
-		CHECK(invalid.used_broad_core_fallback);
-		CHECK_GE(invalid.validation_errors.size(), 3);
+		CHECK(invalid.families.is_empty());
+		CHECK_FALSE(invalid.used_broad_core_fallback);
+		REQUIRE_EQ(invalid.validation_errors.size(), 1);
+		CHECK_EQ(invalid.validation_errors[0], "capability map is not loaded");
+
+		FSCompletenessCapabilityMap never_loaded;
+		const FSCompletenessSelection initial =
+				never_loaded.select(Vector<String>({ "modules/foundry_script/new.cpp" }));
+		CHECK(initial.families.is_empty());
+		CHECK_FALSE(initial.used_broad_core_fallback);
+		REQUIRE_EQ(initial.validation_errors.size(), 1);
+		CHECK_EQ(initial.validation_errors[0], "capability map is not loaded");
 	}
 
 	TEST_CASE("TypeCompleteness Manifest capability validation checks family reachability without mutation") {
@@ -1173,6 +1293,45 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 				ERR_INVALID_DATA);
 		CHECK(completeness_errors_contain_text(errors, "unexpected non-JSON entry 'mapped.JSON'"));
 		CHECK(completeness_errors_contain_text(errors, "mapped family 'mapped' has no rule manifest"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest rule families and filenames use portable lowercase stems") {
+		struct InvalidRuleFamily {
+			const char *filename;
+			const char *family;
+			const char *diagnostic;
+		};
+		const InvalidRuleFamily cases[] = {
+			{ "Upper.json", "Upper", "rule family 'Upper' is not a lowercase portable filename stem" },
+			{ "with-dash.json", "with-dash",
+					"rule family 'with-dash' is not a lowercase portable filename stem" },
+			{ "1leading.json", "1leading",
+					"rule family '1leading' is not a lowercase portable filename stem" },
+			{ "con.json", "con", "rule family 'con' is not a lowercase portable filename stem" },
+			{ "PrN.json", "mapped", "filename stem 'PrN' is not a lowercase portable family id" },
+			{ "com9.json", "com9", "rule family 'com9' is not a lowercase portable filename stem" },
+			{ "lpt1.json", "lpt1", "rule family 'lpt1' is not a lowercase portable filename stem" },
+		};
+		for (const InvalidRuleFamily &test_case : cases) {
+			CAPTURE(test_case.filename);
+			TemporaryProjectTree tree(vformat("type_completeness_rule_family_%s",
+					String(test_case.filename).sha256_text().substr(0, 8)));
+			REQUIRE(tree.is_valid());
+			const String map_path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/mapped.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["mapped"]
+})JSON");
+			tree.write_file(String("rules/") + test_case.filename, make_completeness_rule(test_case.family));
+
+			FSCompletenessCapabilityMap capability_map;
+			Vector<String> errors;
+			REQUIRE(capability_map.load(map_path, errors) == OK);
+			CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors),
+					ERR_INVALID_DATA);
+			CHECK(completeness_errors_contain_text(errors, test_case.diagnostic));
+		}
 	}
 
 	TEST_CASE("TypeCompleteness Manifest checked-in capability families have exactly one reachable rule") {

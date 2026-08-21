@@ -486,6 +486,10 @@ static bool is_normalized_repository_path(const String &p_path) {
 	return true;
 }
 
+static bool is_normalized_repository_file_path(const String &p_path) {
+	return !p_path.ends_with("/") && is_normalized_repository_path(p_path);
+}
+
 static bool capability_path_matches(const String &p_rule, const String &p_path) {
 	if (p_rule.ends_with("/")) {
 		return p_path.length() > p_rule.length() && p_path.begins_with(p_rule);
@@ -505,14 +509,6 @@ static bool is_foundry_script_production_path(const String &p_path) {
 static bool is_foundry_script_production_rule(const String &p_path) {
 	static const String production_root = "modules/foundry_script/";
 	return p_path == production_root || is_foundry_script_production_path(p_path);
-}
-
-static bool invalid_path_may_target_production(const String &p_path) {
-	String forward_path = p_path.replace("\\", "/");
-	while (forward_path.begins_with("/")) {
-		forward_path = forward_path.trim_prefix("/");
-	}
-	return forward_path.begins_with("modules/foundry_script/");
 }
 
 static bool is_permitted_nonproduction_rule(const String &p_path) {
@@ -549,15 +545,24 @@ static bool parse_capability_string_array(const Dictionary &p_object, const Stri
 }
 
 static bool is_safe_capability_family(const String &p_family) {
-	if (p_family.is_empty()) {
+	if (p_family.is_empty() || p_family[0] < 'a' || p_family[0] > 'z') {
 		return false;
 	}
-	for (int i = 0; i < p_family.length(); i++) {
+	for (int i = 1; i < p_family.length(); i++) {
 		const char32_t character = p_family[i];
-		if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
-					(character >= '0' && character <= '9') || character == '_' || character == '-')) {
+		if (!((character >= 'a' && character <= 'z') ||
+					(character >= '0' && character <= '9') || character == '_')) {
 			return false;
 		}
+	}
+	const String upper_family = p_family.to_upper();
+	if (upper_family == "CON" || upper_family == "PRN" || upper_family == "AUX" || upper_family == "NUL") {
+		return false;
+	}
+	if (upper_family.length() == 4 &&
+			(upper_family.begins_with("COM") || upper_family.begins_with("LPT")) &&
+			upper_family[3] >= '1' && upper_family[3] <= '9') {
+		return false;
 	}
 	return true;
 }
@@ -611,6 +616,7 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	production_prefixes.clear();
 	nonproduction_prefixes.clear();
 	broad_core_families.clear();
+	loaded = false;
 	r_errors.clear();
 
 	Error read_error = OK;
@@ -659,8 +665,6 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 			Vector<String> families;
 			parse_capability_string_array(record, SNAME("paths"), record_path + ".paths", paths, r_errors);
 			parse_capability_string_array(record, SNAME("families"), record_path + ".families", families, r_errors);
-			paths.sort();
-			families.sort();
 
 			HashSet<String> family_set;
 			for (int family_index = 0; family_index < families.size(); family_index++) {
@@ -670,7 +674,7 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 				}
 				if (!is_safe_capability_family(family)) {
 					append_error(r_errors, vformat("%s.families[%d]", record_path, family_index),
-							"must be a safe filename-stem family id");
+							"must be a lowercase portable filename-stem family id");
 					continue;
 				}
 				family_set.insert(family);
@@ -706,7 +710,6 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	Vector<String> nonproduction;
 	if (parse_capability_string_array(root, SNAME("nonproduction_prefixes"), "$.nonproduction_prefixes",
 				nonproduction, r_errors)) {
-		nonproduction.sort();
 		for (int i = 0; i < nonproduction.size(); i++) {
 			if (!is_normalized_repository_path(nonproduction[i])) {
 				append_error(r_errors, vformat("$.nonproduction_prefixes[%d]", i),
@@ -725,13 +728,12 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	Vector<String> broad_families;
 	if (parse_capability_string_array(root, SNAME("broad_core_families"), "$.broad_core_families",
 				broad_families, r_errors)) {
-		broad_families.sort();
 		for (int family_index = 0; family_index < broad_families.size(); family_index++) {
 			const String &family = broad_families[family_index];
 			if (!family.is_empty()) {
 				if (!is_safe_capability_family(family)) {
 					append_error(r_errors, vformat("$.broad_core_families[%d]", family_index),
-							"must be a safe filename-stem family id");
+							"must be a lowercase portable filename-stem family id");
 				} else {
 					parsed.broad_core_families.insert(family);
 				}
@@ -760,6 +762,10 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 		}
 	}
 
+	if (!r_errors.is_empty()) {
+		sort_and_deduplicate_errors(r_errors);
+		return ERR_INVALID_DATA;
+	}
 	for (int left = 0; left < parsed.production_prefixes.size(); left++) {
 		for (int right = left + 1; right < parsed.production_prefixes.size(); right++) {
 			if (parsed.production_prefixes[right].first < parsed.production_prefixes[left].first) {
@@ -767,23 +773,19 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 			}
 		}
 	}
-
-	if (!r_errors.is_empty()) {
-		sort_and_deduplicate_errors(r_errors);
-		return ERR_INVALID_DATA;
-	}
+	parsed.nonproduction_prefixes.sort();
 	production_prefixes = parsed.production_prefixes;
 	nonproduction_prefixes = parsed.nonproduction_prefixes;
 	broad_core_families = parsed.broad_core_families;
+	loaded = true;
 	return OK;
 }
 
 FSCompletenessSelection FSCompletenessCapabilityMap::select(const Vector<String> &p_changed_paths) const {
 	FSCompletenessSelection selection;
-	const bool map_is_loaded = !production_prefixes.is_empty() && !broad_core_families.is_empty();
-	if (!map_is_loaded) {
-		selection.used_broad_core_fallback = true;
+	if (!loaded) {
 		selection.validation_errors.push_back("capability map is not loaded");
+		return selection;
 	}
 	Vector<String> changed_paths = p_changed_paths;
 	changed_paths.sort();
@@ -796,13 +798,11 @@ FSCompletenessSelection FSCompletenessCapabilityMap::select(const Vector<String>
 		previous_path = path;
 		has_previous_path = true;
 
-		if (!is_normalized_repository_path(path)) {
+		if (!is_normalized_repository_file_path(path)) {
 			selection.validation_errors.push_back(vformat("invalid changed path: %s", path));
-			if (invalid_path_may_target_production(path)) {
-				selection.used_broad_core_fallback = true;
-				for (const String &family : broad_core_families) {
-					selection.families.insert(family);
-				}
+			selection.used_broad_core_fallback = true;
+			for (const String &family : broad_core_families) {
+				selection.families.insert(family);
 			}
 			continue;
 		}
@@ -913,14 +913,23 @@ Error FSCompletenessCapabilityMap::validate_against_rule_directory(
 			r_errors.push_back(vformat("%s: rule manifest must be a canonical direct child", file));
 			continue;
 		}
+		const String filename_stem = file.get_file().get_basename();
+		if (!is_safe_capability_family(filename_stem)) {
+			r_errors.push_back(vformat("%s: filename stem '%s' is not a lowercase portable family id",
+					file, filename_stem));
+		}
 		FSCompletenessManifest manifest;
 		Vector<String> file_errors;
 		if (FSCompletenessManifest::load(file, manifest, file_errors) != OK) {
 			append_catalog_errors(r_errors, file, file_errors);
 			continue;
 		}
+		if (filename_stem != manifest.family) {
+			r_errors.push_back(vformat("%s: filename stem must equal rule family '%s'", file, manifest.family));
+		}
 		if (!is_safe_capability_family(manifest.family)) {
-			r_errors.push_back(vformat("%s: rule family '%s' is not a safe filename stem", file, manifest.family));
+			r_errors.push_back(vformat("%s: rule family '%s' is not a lowercase portable filename stem",
+					file, manifest.family));
 			continue;
 		}
 		const String *prior_source = family_sources.getptr(manifest.family);
@@ -930,9 +939,6 @@ Error FSCompletenessCapabilityMap::validate_against_rule_directory(
 			continue;
 		}
 		family_sources.insert(manifest.family, file);
-		if (file.get_file().get_basename() != manifest.family) {
-			r_errors.push_back(vformat("%s: filename stem must equal rule family '%s'", file, manifest.family));
-		}
 	}
 
 	HashSet<String> explicitly_mapped_families;
