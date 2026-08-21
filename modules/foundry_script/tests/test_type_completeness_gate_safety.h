@@ -1,0 +1,1251 @@
+/**************************************************************************/
+/*  test_type_completeness_gate_safety.h                                  */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                              GODOT ENGINE                              */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#ifdef DEBUG_ENABLED
+#include "modules/foundry_script/tests/fs_test_warning_settings.h"
+#endif
+#include "modules/foundry_script/tests/test_type_completeness_union_pilot.h"
+
+namespace FSTests {
+
+static String gate_safety_severity_case_id;
+
+static void gate_safety_inject_error_record(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id != gate_safety_severity_case_id) {
+		return;
+	}
+	Dictionary record;
+	record["severity"] = "error";
+	record["category"] = "analysis";
+	record["code"] = "injected_severity_mutation";
+	record["line"] = 1.0;
+	record["column"] = 1.0;
+	record["message"] = "injected severity mutation";
+	record["suppressed"] = false;
+	r_observation.diagnostic_records.push_back(record);
+}
+
+static void gate_safety_inject_warning_record(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id != gate_safety_severity_case_id) {
+		return;
+	}
+	Dictionary record;
+	record["severity"] = "warning";
+	record["category"] = "analysis";
+	record["code"] = "INJECTED_WARNING";
+	record["line"] = 1.0;
+	record["column"] = 1.0;
+	record["message"] = "injected downgraded diagnostic";
+	record["suppressed"] = true;
+	r_observation.diagnostic_records.push_back(record);
+}
+
+static String gate_safety_partner_case_id;
+
+static void gate_safety_corrupt_partner_obligation(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == gate_safety_partner_case_id) {
+		r_observation.dimensions["runtime_obligation"] = "typed_destination_check";
+	}
+}
+
+static Dictionary gate_safety_diagnostic_record(const String &p_severity, const String &p_code) {
+	Dictionary record;
+	record["severity"] = p_severity;
+	record["category"] = "analysis";
+	record["code"] = p_code;
+	record["line"] = 1.0;
+	record["column"] = 1.0;
+	record["message"] = "injected " + p_code;
+	record["suppressed"] = false;
+	return record;
+}
+
+static void gate_safety_inject_text_only_warning_record(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_pair_text_id) {
+		r_observation.diagnostic_records.push_back(
+				gate_safety_diagnostic_record("warning", "INJECTED_SURFACE_ONLY_WARNING"));
+	}
+}
+
+static String gate_safety_indentation(const String &p_line) {
+	int width = 0;
+	while (width < p_line.length() && (p_line[width] == U' ' || p_line[width] == U'\t')) {
+		width++;
+	}
+	return p_line.substr(0, width);
+}
+
+#ifdef DEBUG_ENABLED
+// The column the front-end itself reports for a code in this exact source, used as an independent
+// oracle for the column the probe must map a diagnostic back to.
+static int gate_safety_warning_column(const String &p_source, FSWarning::Code p_code) {
+	FSParser parser;
+	if (parser.parse(p_source, "res://gate_safety_warning_column.fs", false) != OK) {
+		return -1;
+	}
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	for (const FSWarning &warning : parser.get_warnings()) {
+		if (warning.code == p_code) {
+			return warning.start_column;
+		}
+	}
+	return -1;
+}
+#endif // DEBUG_ENABLED
+
+struct GateSafetySeparatorShape {
+	const char *name = nullptr;
+	const char *separator = nullptr;
+};
+
+struct GateSafetyAnnotationShape {
+	const char *name = nullptr;
+	String source;
+	String expected;
+};
+
+static String gate_safety_finding_id(const String &p_case_id, const String &p_dimension) {
+	return "fstcf-v1-" + (p_case_id + "|" + p_dimension).sha256_text().substr(0, 20);
+}
+
+static String gate_safety_finding_record(const String &p_finding_id, const String &p_case_id,
+		const String &p_dimension, const String &p_classification) {
+	return vformat(R"JSON({
+	"schema_version": 1,
+	"finding_id": "%s",
+	"case_id": "%s",
+	"family": "union_destination_membership",
+	"dimension": "%s",
+	"classification": "%s",
+	"issue_url": "https://example.invalid/issues/7",
+	"closure_packet_url": "https://example.invalid/closure/7",
+	"permanent_test_paths": ["modules/foundry_script/tests/test_type_completeness_gate_safety.h"]
+}
+)JSON",
+			p_finding_id, p_case_id, p_dimension, p_classification);
+}
+
+static String gate_safety_witness_case_id(
+		const FSCompletenessResolution &p_resolution, const String &p_witness_id) {
+	Dictionary coordinates;
+	if (FSUnionCompletenessAdapter::witness_coordinates(p_witness_id, coordinates) != OK) {
+		return String();
+	}
+	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
+		if (cell.coordinates == coordinates) {
+			return cell.case_id;
+		}
+	}
+	return String();
+}
+
+static String gate_safety_pilot_case_id(const FSCompletenessResolution &p_resolution,
+		const String &p_surface, const String &p_destination, const String &p_source_proof,
+		const String &p_boundary) {
+	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
+		if (cell.coordinates.get("surface", String()) == p_surface &&
+				cell.coordinates.get("destination", String()) == p_destination &&
+				cell.coordinates.get("source_proof", String()) == p_source_proof &&
+				cell.coordinates.get("boundary", String()) == p_boundary) {
+			return cell.case_id;
+		}
+	}
+	return String();
+}
+
+static void gate_safety_rewrite_staged_rules(
+		const String &p_catalog_root, const Vector<String> &p_replacements) {
+	const String rules_path = p_catalog_root.path_join("rules/union_destination_membership.json");
+	Error read_error = OK;
+	String source = FileAccess::get_file_as_string(rules_path, &read_error);
+	REQUIRE_EQ(read_error, OK);
+	REQUIRE_EQ(p_replacements.size() % 2, 0);
+	for (int index = 0; index + 1 < p_replacements.size(); index += 2) {
+		REQUIRE_MESSAGE(source.contains(p_replacements[index]), p_replacements[index]);
+		source = source.replace(p_replacements[index], p_replacements[index + 1]);
+	}
+	Ref<FileAccess> file = FileAccess::open(rules_path, FileAccess::WRITE);
+	REQUIRE(file.is_valid());
+	REQUIRE(file->store_string(source));
+}
+
+static const FSCompletenessFinding *gate_safety_find_finding(
+		const FSCompletenessRunResult &p_result, const String &p_case_id, const String &p_dimension) {
+	for (const FSCompletenessFinding &finding : p_result.findings) {
+		if (finding.case_id == p_case_id && finding.dimension == p_dimension) {
+			return &finding;
+		}
+	}
+	return nullptr;
+}
+
+static bool gate_safety_has_structural_stage(
+		const FSCompletenessRunResult &p_result, const String &p_stage) {
+	for (const FSCompletenessStructuralFailure &failure : p_result.structural_failures) {
+		if (failure.stage == p_stage) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static Dictionary gate_safety_case_report(const Dictionary &p_report, const String &p_case_id) {
+	const Array cases = p_report.get("cases", Array());
+	for (int index = 0; index < cases.size(); index++) {
+		const Dictionary case_report = cases[index];
+		if (String(case_report.get("case_id", String())) == p_case_id) {
+			return case_report;
+		}
+	}
+	return Dictionary();
+}
+
+TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
+	TEST_CASE("TypeCompleteness GateSafety separates product mismatches from structural failures") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id = gate_safety_pilot_case_id(
+				resolution, "text", "union", "numeric_constant", "argument_binding");
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		union_pilot_mutation_count = 0;
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_channels_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_stored_carrier;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_EQ(result.outcome, "product_mismatch");
+		CHECK(result.structural_failures.is_empty());
+		CHECK_FALSE(result.findings.is_empty());
+		CHECK_EQ(String(result.report.get("outcome", String())), "product_mismatch");
+		CHECK(Array(result.report.get("structural_failures", Array())).is_empty());
+
+		FSCompletenessRunOptions aborted = options;
+		aborted.catalog_root = tree.root.path_join("missing_catalog");
+		aborted.observation_mutator = nullptr;
+		FSCompletenessRunResult aborted_result;
+		const Error aborted_error = FSCompletenessRunner::run(aborted, aborted_result);
+		CHECK_NE(aborted_error, OK);
+		CHECK_NE(aborted_error, FAILED);
+		CHECK_EQ(aborted_result.outcome, "structural_failure");
+		REQUIRE_FALSE(aborted_result.structural_failures.is_empty());
+		CHECK_EQ(aborted_result.structural_failures[0].stage, "run_aborted");
+		CHECK(aborted_result.findings.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety reports a stale ledger entry without discarding evidence") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const String case_id = gate_safety_pilot_case_id(
+				resolution, "text", "union", "numeric_constant", "argument_binding");
+		REQUIRE_FALSE(case_id.is_empty());
+		const String finding_id = gate_safety_finding_id(case_id, "stored_carrier");
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_stale_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/" + finding_id + ".json",
+				gate_safety_finding_record(finding_id, case_id, "stored_carrier", "product_defect"));
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+		CHECK_EQ(result.outcome, "structural_failure");
+		CHECK_FALSE(result.success);
+		CHECK(result.findings.is_empty());
+		REQUIRE_EQ(result.structural_failures.size(), 1);
+		CHECK_EQ(result.structural_failures[0].stage, "ledger_entry_stale");
+		CHECK_EQ(result.structural_failures[0].case_id, case_id);
+
+		const Dictionary report = result.report;
+		CHECK_EQ(String(report.get("outcome", String())), "structural_failure");
+		CHECK_EQ(bool(report.get("success", true)), false);
+		CHECK_EQ(Array(report.get("cases", Array())).size(), 40);
+		const Dictionary ledger = report.get("ledger", Dictionary());
+		CHECK(Array(ledger.get("reconciled", Array())).is_empty());
+		const Array stale = ledger.get("stale", Array());
+		REQUIRE_EQ(stale.size(), 1);
+		CHECK_EQ(String(Dictionary(stale[0]).get("finding_id", String())), finding_id);
+		CHECK_EQ(String(Dictionary(stale[0]).get("case_id", String())), case_id);
+		CHECK_EQ(String(Dictionary(stale[0]).get("dimension", String())), "stored_carrier");
+
+		Error read_error = OK;
+		const String published = FileAccess::get_file_as_string(options.report_path, &read_error);
+		REQUIRE_EQ(read_error, OK);
+		JSON json;
+		REQUIRE_EQ(json.parse(published), OK);
+		CHECK_EQ(Dictionary(json.get_data()), report);
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety keeps a classified failing witness blocking and unwitnessed") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id =
+				gate_safety_witness_case_id(resolution, "text_gradual_argument_binding");
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		const String finding_id =
+				gate_safety_finding_id(union_pilot_mutated_case_id, "runtime_obligation");
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_witness_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/" + finding_id + ".json",
+				gate_safety_finding_record(finding_id, union_pilot_mutated_case_id, "runtime_obligation",
+						"intentional_unsupported"));
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_witness_dimension;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
+		CHECK(result.structural_failures.is_empty());
+		const FSCompletenessFinding *finding =
+				gate_safety_find_finding(result, union_pilot_mutated_case_id, "runtime_obligation");
+		REQUIRE(finding != nullptr);
+		CHECK_EQ(finding->classification, "intentional_unsupported");
+		CHECK_EQ(finding->finding_id, finding_id);
+
+		const Array exceptions = result.report.get("exceptions", Array());
+		REQUIRE_EQ(exceptions.size(), 1);
+		const Dictionary exception_report = exceptions[0];
+		CHECK_EQ(String(exception_report.get("exception_id", String())),
+				"unproven_source_requires_membership");
+		CHECK_EQ(bool(exception_report.get("witnessed", true)), false);
+		const Array positive = exception_report.get("positive_witnesses", Array());
+		REQUIRE_EQ(positive.size(), 2);
+		bool checked_witness = false;
+		for (int index = 0; index < positive.size(); index++) {
+			const Dictionary witness = positive[index];
+			if (String(witness.get("witness_id", String())) != "text_gradual_argument_binding") {
+				continue;
+			}
+			checked_witness = true;
+			CHECK_EQ(String(witness.get("case_id", String())), union_pilot_mutated_case_id);
+			CHECK_EQ(bool(witness.get("witnessed", true)), false);
+			const Array blocking = witness.get("blocking_finding_ids", Array());
+			CHECK(blocking.has(finding_id));
+		}
+		CHECK(checked_witness);
+		const Dictionary ledger = result.report.get("ledger", Dictionary());
+		CHECK_EQ(Array(ledger.get("reconciled", Array())).size(), 1);
+		CHECK(Array(ledger.get("stale", Array())).is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety reports every exception witnessed on a clean run") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_witnessed_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK_EQ(result.outcome, "passed");
+		CHECK(result.structural_failures.is_empty());
+
+		const Array exceptions = result.report.get("exceptions", Array());
+		REQUIRE_EQ(exceptions.size(), 1);
+		const Dictionary exception_report = exceptions[0];
+		CHECK_EQ(bool(exception_report.get("witnessed", false)), true);
+		CHECK_EQ(Array(exception_report.get("positive_witnesses", Array())).size(), 2);
+		CHECK_EQ(Array(exception_report.get("boundary_witnesses", Array())).size(), 1);
+		const Array boundary = exception_report.get("boundary_witnesses", Array());
+		CHECK_EQ(String(Dictionary(boundary[0]).get("witness_id", String())),
+				"text_static_member_argument_binding");
+		CHECK_EQ(bool(Dictionary(boundary[0]).get("witnessed", false)), true);
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety records analyzer diagnostic severity and codes") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_severity_evidence_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+
+		const Array cases = result.report.get("cases", Array());
+		REQUIRE_EQ(cases.size(), 40);
+		int cases_with_severity = 0;
+		for (int index = 0; index < cases.size(); index++) {
+			const Dictionary case_report = cases[index];
+			const String severity = case_report.get("diagnostic_severity", String());
+			CHECK_NE(severity, "error");
+			CHECK((severity == "none" || severity == "warning"));
+			cases_with_severity++;
+			const Array records = case_report.get("diagnostic_records", Array());
+			for (int record_index = 0; record_index < records.size(); record_index++) {
+				const Dictionary record = records[record_index];
+				CHECK(record.has("severity"));
+				CHECK(record.has("code"));
+				CHECK(record.has("category"));
+				CHECK(record.has("suppressed"));
+				CHECK_FALSE(String(record.get("code", String())).is_empty());
+			}
+		}
+		CHECK_EQ(cases_with_severity, 40);
+	}
+
+	// Warning collection is a debug-build capability, so these cases are scoped to it.
+#ifdef DEBUG_ENABLED
+	TEST_CASE("TypeCompleteness GateSafety records a warning code and its suppression") {
+		// Warning levels are process-global and are not initialized by a test run, so the ambient pass
+		// only sees this code when the case pins it.
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::WARN;
+		overrides.push_back(unused_variable);
+		WarningLevelOverride untyped_declaration;
+		untyped_declaration.code = FSWarning::UNTYPED_DECLARATION;
+		untyped_declaration.level = FSWarning::WARN;
+		overrides.push_back(untyped_declaration);
+		const WarningSettingsScope warning_settings(overrides);
+
+		FSCompletenessProgram warned;
+		warned.case_id = "gate_safety_unused_variable";
+		warned.surface = "text";
+		warned.source = "func test() -> void:\n\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(warned, "text");
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+		CHECK(observation.diagnostics.is_empty());
+		bool found_warning = false;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_warning = true;
+			CHECK_EQ(String(record.get("severity", String())), "warning");
+			CHECK_EQ(String(record.get("category", String())), "analysis");
+			CHECK_EQ(bool(record.get("suppressed", true)), false);
+			CHECK_EQ(int(record.get("line", 0)), 2);
+		}
+		CHECK(found_warning);
+
+		FSCompletenessProgram suppressed;
+		suppressed.case_id = "gate_safety_unused_variable_suppressed";
+		suppressed.surface = "text";
+		suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\")\n\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation suppressed_observation =
+				FSUnionCompletenessAdapter::analyze(suppressed, "text");
+		CHECK_EQ(String(suppressed_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(suppressed_observation.diagnostics.is_empty());
+		bool found_suppressed = false;
+		for (int index = 0; index < suppressed_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = suppressed_observation.diagnostic_records[index];
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_suppressed = true;
+			CHECK_EQ(String(record.get("severity", String())), "warning");
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 3);
+		}
+		CHECK(found_suppressed);
+
+		FSCompletenessProgram inline_suppressed;
+		inline_suppressed.case_id = "gate_safety_unused_variable_inline";
+		inline_suppressed.surface = "text";
+		inline_suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local := 1\n";
+
+		const FSCompletenessObservation inline_observation =
+				FSUnionCompletenessAdapter::analyze(inline_suppressed, "text");
+		CHECK_EQ(String(inline_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(inline_observation.diagnostics.is_empty());
+		bool found_inline_suppressed = false;
+		for (int index = 0; index < inline_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = inline_observation.diagnostic_records[index];
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_inline_suppressed = true;
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 2);
+		}
+		CHECK(found_inline_suppressed);
+
+		FSCompletenessProgram multiline_suppressed;
+		multiline_suppressed.case_id = "gate_safety_unused_variable_multiline";
+		multiline_suppressed.surface = "text";
+		multiline_suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\n\t\t\"unused_variable\")\n\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation multiline_observation =
+				FSUnionCompletenessAdapter::analyze(multiline_suppressed, "text");
+		CHECK_EQ(String(multiline_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(multiline_observation.diagnostics.is_empty());
+		bool found_multiline_suppressed = false;
+		for (int index = 0; index < multiline_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = multiline_observation.diagnostic_records[index];
+			// A probe that left the annotation's continuation lines behind would report parse errors.
+			CHECK_NE(String(record.get("severity", String())), "error");
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_multiline_suppressed = true;
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 4);
+		}
+		CHECK(found_multiline_suppressed);
+
+		// A comment inside the argument list can carry an unbalanced parenthesis. Treating it as
+		// syntax would truncate the annotation, leave its real closing parenthesis in the probe
+		// source, and turn the resulting parse error into false error-severity evidence.
+		FSCompletenessProgram commented_suppressed;
+		commented_suppressed.case_id = "gate_safety_unused_variable_commented";
+		commented_suppressed.surface = "text";
+		commented_suppressed.source =
+				"func test() -> void:\n"
+				"\t@warning_ignore(\n"
+				"\t\t\"unused_variable\" # see foo(bar)) below\n"
+				"\t)\n"
+				"\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation commented_observation =
+				FSUnionCompletenessAdapter::analyze(commented_suppressed, "text");
+		CHECK_EQ(String(commented_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(commented_observation.diagnostics.is_empty());
+		bool found_commented_suppressed = false;
+		for (int index = 0; index < commented_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = commented_observation.diagnostic_records[index];
+			CHECK_NE(String(record.get("severity", String())), "error");
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_commented_suppressed = true;
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 5);
+		}
+		CHECK(found_commented_suppressed);
+
+		// Stripping an inline annotation shifts the statement it precedes. A diagnostic the primary
+		// analysis still reported must keep `suppressed: false` despite that shift.
+		FSCompletenessProgram mixed_suppression;
+		mixed_suppression.case_id = "gate_safety_inline_mixed_suppression";
+		mixed_suppression.surface = "text";
+		mixed_suppression.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local = 1\n";
+
+		const FSCompletenessObservation mixed_observation =
+				FSUnionCompletenessAdapter::analyze(mixed_suppression, "text");
+		CHECK_EQ(String(mixed_observation.dimensions.get("analysis", String())), "accept");
+		bool found_emitted_untyped = false;
+		bool found_ignored_unused = false;
+		for (int index = 0; index < mixed_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = mixed_observation.diagnostic_records[index];
+			CHECK_NE(String(record.get("severity", String())), "error");
+			const String code = record.get("code", String());
+			if (code == "UNTYPED_DECLARATION") {
+				found_emitted_untyped = true;
+				CHECK_EQ(bool(record.get("suppressed", true)), false);
+				CHECK_EQ(int(record.get("line", 0)), 2);
+			} else if (code == "UNUSED_VARIABLE") {
+				found_ignored_unused = true;
+				CHECK_EQ(bool(record.get("suppressed", false)), true);
+				CHECK_EQ(int(record.get("line", 0)), 2);
+			}
+		}
+		CHECK(found_emitted_untyped);
+		CHECK(found_ignored_unused);
+		// Both codes describe the same declaration, so the shift correction must land them on the
+		// same column rather than merely on the same line.
+		int untyped_column = -1;
+		int unused_column = -2;
+		for (int index = 0; index < mixed_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = mixed_observation.diagnostic_records[index];
+			const String code = record.get("code", String());
+			if (code == "UNTYPED_DECLARATION") {
+				untyped_column = record.get("column", 0);
+			} else if (code == "UNUSED_VARIABLE") {
+				unused_column = record.get("column", 0);
+			}
+		}
+		CHECK_EQ(untyped_column, unused_column);
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety records a suppressed error-level diagnostic") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::ERROR;
+		overrides.push_back(unused_variable);
+		const WarningSettingsScope warning_settings(overrides);
+
+		FSCompletenessProgram suppressed;
+		suppressed.case_id = "gate_safety_suppressed_error_level";
+		suppressed.surface = "text";
+		suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\")\n\tvar unused_local := 1\n";
+
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(suppressed, "text");
+		// The annotation hides the promoted diagnostic from the analysis outcome entirely.
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+		CHECK(observation.diagnostics.is_empty());
+		bool found_suppressed_error = false;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			if (String(record.get("severity", String())) != "error") {
+				continue;
+			}
+			found_suppressed_error = true;
+			CHECK_EQ(String(record.get("code", String())), "suppressed_analysis_error");
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+		}
+		CHECK(found_suppressed_error);
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety strips every annotation shape without disturbing the program") {
+		// An annotation owns its name, its argument list, and the whitespace separating it from what
+		// follows. Everything else survives: the line count, the block level of the target, and the
+		// indentation of every line that still has content. A probe source that loses any of those
+		// parses differently from the program it stands for, and the errors it invents are recorded
+		// as suppressed error-severity evidence that fails an accepted case on the severity gate.
+		const GateSafetyAnnotationShape shapes[] = {
+			{ "own_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\")\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "inline_same_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\") var unused_local = 1\n",
+					"func test() -> void:\n"
+					"\tvar unused_local = 1\n" },
+			{ "multiline_own_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\")\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			// The target shares the annotation's closing line, so it takes the block level the
+			// annotation introduced rather than the continuation line's deeper indentation.
+			{ "multiline_closing_on_target_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\") var unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "argument_line_comment_with_parens",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\" # see foo(bar)) below\n"
+					"\t)\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "argument_line_comment_with_quote",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\n"
+					"\t\t\"unused_variable\" # a lone \" and a )\n"
+					"\t)\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "consecutive_annotations",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\")\n"
+					"\t@warning_ignore(\"untyped_declaration\")\n"
+					"\tvar unused_local = 1\n",
+					"func test() -> void:\n"
+					"\t\n"
+					"\t\n"
+					"\tvar unused_local = 1\n" },
+			{ "two_annotations_one_line",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\") @warning_ignore(\"untyped_declaration\") var unused_local = 1\n",
+					"func test() -> void:\n"
+					"\tvar unused_local = 1\n" },
+			{ "inside_indented_block",
+					"func test(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\t@warning_ignore(\"unused_variable\")\n"
+					"\t\tvar unused_local = 1\n",
+					"func test(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\t\n"
+					"\t\tvar unused_local = 1\n" },
+			// An annotation is not always the first thing on its line.
+			{ "annotation_after_another",
+					"extends Node\n"
+					"@onready @warning_ignore(\"onready_with_export\") @export var value: int = 42\n",
+					"extends Node\n"
+					"@onready @export var value: int = 42\n" },
+			{ "annotation_before_another",
+					"extends Node\n"
+					"@warning_ignore(\"onready_with_export\") @onready @export var value: int = 42\n",
+					"extends Node\n"
+					"@onready @export var value: int = 42\n" },
+			{ "three_annotations_one_line",
+					"extends Node\n"
+					"@onready @warning_ignore(\"onready_with_export\") @warning_ignore(\"untyped_declaration\") @export var value: int = 42\n",
+					"extends Node\n"
+					"@onready @export var value: int = 42\n" },
+			// Only the lexer can tell an annotation from text that merely looks like one.
+			{ "inside_triple_quoted_string",
+					"func test() -> String:\n"
+					"\treturn \"\"\"\n"
+					"@warning_ignore(\"unused_variable\")\n"
+					"\"\"\"\n",
+					"func test() -> String:\n"
+					"\treturn \"\"\"\n"
+					"@warning_ignore(\"unused_variable\")\n"
+					"\"\"\"\n" },
+			{ "target_string_with_parens",
+					"func test() -> void:\n"
+					"\t@warning_ignore(\"unused_variable\") var unused_local = \")(\"\n",
+					"func test() -> void:\n"
+					"\tvar unused_local = \")(\"\n" },
+		};
+
+		for (const GateSafetyAnnotationShape &shape : shapes) {
+			CAPTURE(String(shape.name));
+			const String path = "res://gate_safety_annotation_shape.fs";
+			FSParser original_parser;
+			REQUIRE_EQ(original_parser.parse(shape.source, path, false), OK);
+			REQUIRE(original_parser.get_errors().is_empty());
+
+			// The expected text is authoritative: it states exactly which annotations were removed, and
+			// a shape whose annotation only looks like one keeps it verbatim.
+			const FSCompletenessProbeSource probe = make_unsuppressed_probe_source(shape.source);
+			CHECK_EQ(probe.text, shape.expected);
+
+			FSParser probe_parser;
+			CHECK_EQ(probe_parser.parse(probe.text, path, false), OK);
+			CHECK(probe_parser.get_errors().is_empty());
+
+			const PackedStringArray original_lines = shape.source.split("\n", true);
+			const PackedStringArray probe_lines = probe.text.split("\n", true);
+			REQUIRE_EQ(probe_lines.size(), original_lines.size());
+			for (int line = 0; line < probe_lines.size(); line++) {
+				CAPTURE(line);
+				if (probe_lines[line].strip_edges().is_empty()) {
+					continue;
+				}
+				// A statement that was inside a block must never come back at file scope.
+				const bool block_level_kept = gate_safety_indentation(probe_lines[line]).is_empty() ==
+						gate_safety_indentation(original_lines[line]).is_empty();
+				CHECK(block_level_kept);
+			}
+		}
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety maps a probe column back through any separator") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::WARN;
+		overrides.push_back(unused_variable);
+		WarningLevelOverride untyped_declaration;
+		untyped_declaration.code = FSWarning::UNTYPED_DECLARATION;
+		untyped_declaration.level = FSWarning::WARN;
+		overrides.push_back(untyped_declaration);
+		const WarningSettingsScope warning_settings(overrides);
+
+		// Diagnostic columns are display columns, so a tab in the separator advances them by the
+		// tokenizer's tab width rather than by one. Reconciliation compares columns exactly: a shift
+		// measured in characters reports a still-emitted diagnostic as suppressed.
+		const GateSafetySeparatorShape separators[] = {
+			{ "space", " " },
+			{ "tab", "\t" },
+			{ "two_tabs", "\t\t" },
+			{ "tab_then_spaces", "\t  " },
+			{ "spaces_then_tab", "  \t" },
+		};
+
+		for (const GateSafetySeparatorShape &separator : separators) {
+			CAPTURE(String(separator.name));
+			const String source = String("func test() -> void:\n\t@warning_ignore(\"unused_variable\")") +
+					String(separator.separator) + String("var unused_local = 1\n");
+			const int expected_column =
+					gate_safety_warning_column(source, FSWarning::UNTYPED_DECLARATION);
+			REQUIRE_GT(expected_column, 0);
+
+			FSCompletenessProgram program;
+			program.case_id = String("gate_safety_separator_") + separator.name;
+			program.surface = "text";
+			program.source = source;
+			const FSCompletenessObservation observation =
+					FSUnionCompletenessAdapter::analyze(program, "text");
+			CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+
+			int emitted_records = 0;
+			int ignored_records = 0;
+			for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+				const Dictionary record = observation.diagnostic_records[index];
+				const String code = record.get("code", String());
+				if (code == "UNTYPED_DECLARATION") {
+					emitted_records++;
+					CHECK_EQ(bool(record.get("suppressed", true)), false);
+					CHECK_EQ(int(record.get("column", 0)), expected_column);
+				} else if (code == "UNUSED_VARIABLE") {
+					ignored_records++;
+					CHECK_EQ(bool(record.get("suppressed", false)), true);
+				}
+			}
+			CHECK_EQ(emitted_records, 1);
+			CHECK_EQ(ignored_records, 1);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety records same-code diagnostics on one line separately") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_parameter;
+		unused_parameter.code = FSWarning::UNUSED_PARAMETER;
+		unused_parameter.level = FSWarning::WARN;
+		overrides.push_back(unused_parameter);
+		const WarningSettingsScope warning_settings(overrides);
+
+		// Both parameters raise the same code on the same line. Suppression is keyed on code and line,
+		// so they share every identity field except position and message: a matcher that pairs
+		// diagnostics on position alone would let one answer for the other.
+		FSCompletenessProgram shared_line;
+		shared_line.case_id = "gate_safety_same_code_one_line";
+		shared_line.surface = "text";
+		shared_line.source =
+				"@warning_ignore(\"unused_parameter\") func test(first: int, second: int) -> void:\n\tpass\n";
+
+		const FSCompletenessObservation observation =
+				FSUnionCompletenessAdapter::analyze(shared_line, "text");
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+		CHECK(observation.diagnostics.is_empty());
+		Vector<Dictionary> parameter_records;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			CHECK_NE(String(record.get("severity", String())), "error");
+			if (String(record.get("code", String())) == "UNUSED_PARAMETER") {
+				parameter_records.push_back(record);
+			}
+		}
+		REQUIRE_EQ(parameter_records.size(), 2);
+		CHECK_EQ(int(parameter_records[0].get("line", 0)), 1);
+		CHECK_EQ(int(parameter_records[1].get("line", 0)), 1);
+		CHECK_NE(int(parameter_records[0].get("column", 0)), int(parameter_records[1].get("column", 0)));
+		CHECK_NE(String(parameter_records[0].get("message", String())),
+				String(parameter_records[1].get("message", String())));
+		// Suppression is per code and line, so the two share a flag whichever way it resolves.
+		CHECK_EQ(bool(parameter_records[0].get("suppressed", false)),
+				bool(parameter_records[1].get("suppressed", false)));
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety invents no suppressed evidence when analysis fails") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::ERROR;
+		overrides.push_back(unused_variable);
+		const WarningSettingsScope warning_settings(overrides);
+
+		FSCompletenessProgram rejected;
+		rejected.case_id = "gate_safety_rejected_with_annotation";
+		rejected.surface = "text";
+		rejected.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local: int = \"text\"\n";
+
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(rejected, "text");
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
+		REQUIRE_FALSE(observation.diagnostics.is_empty());
+		int reported_errors = 0;
+		int suppressed_errors = 0;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			if (String(record.get("severity", String())) != "error") {
+				continue;
+			}
+			if (bool(record.get("suppressed", false))) {
+				suppressed_errors++;
+			} else {
+				reported_errors++;
+			}
+		}
+		// The probe re-analyzes a source that still fails, so its errors must reconcile against the
+		// reported ones rather than land as extra suppressed evidence that would fail an accepted
+		// case on severity. A promotion the analyzer never reached is simply not recoverable here.
+		CHECK_EQ(reported_errors, observation.diagnostics.size());
+		CHECK_EQ(suppressed_errors, 0);
+	}
+
+#endif // DEBUG_ENABLED
+
+	TEST_CASE("TypeCompleteness GateSafety records rejected analysis as error severity") {
+		FSCompletenessProgram invalid;
+		invalid.case_id = "gate_safety_rejected_program";
+		invalid.surface = "text";
+		invalid.source = "func test() -> void:\n\tvar value: int = \"not an integer\"\n";
+
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(invalid, "text");
+		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
+		REQUIRE_FALSE(observation.diagnostics.is_empty());
+		int error_records = 0;
+		for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+			const Dictionary record = observation.diagnostic_records[index];
+			if (String(record.get("severity", String())) != "error") {
+				continue;
+			}
+			error_records++;
+			CHECK_EQ(String(record.get("code", String())), "analyzer_error");
+			CHECK_EQ(String(record.get("category", String())), "analysis");
+		}
+		CHECK_EQ(error_records, observation.diagnostics.size());
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety detects a warning-to-error severity mutation") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		gate_safety_severity_case_id = gate_safety_pilot_case_id(
+				resolution, "text", "plain", "gradual", "argument_binding");
+		REQUIRE_FALSE(gate_safety_severity_case_id.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_warning_to_error_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = gate_safety_inject_error_record;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		const FSCompletenessFinding *finding =
+				gate_safety_find_finding(result, gate_safety_severity_case_id, "diagnostic_severity");
+		REQUIRE(finding != nullptr);
+		CHECK_EQ(String(finding->expected), "at_most_warning");
+		CHECK_EQ(String(finding->actual), "error");
+		CHECK_EQ(String(gate_safety_case_report(result.report, gate_safety_severity_case_id)
+								 .get("diagnostic_severity", String())),
+				"error");
+		gate_safety_severity_case_id.clear();
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety detects an error-to-warning severity mutation") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		gate_safety_severity_case_id = gate_safety_pilot_case_id(
+				resolution, "text", "plain", "gradual", "argument_binding");
+		REQUIRE_FALSE(gate_safety_severity_case_id.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_error_to_warning_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		Vector<String> replacements;
+		replacements.push_back("\"analysis\": \"accept\"");
+		replacements.push_back("\"analysis\": \"reject\"");
+		gate_safety_rewrite_staged_rules(catalog_root, replacements);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = gate_safety_inject_warning_record;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+
+		const FSCompletenessFinding *severity_finding =
+				gate_safety_find_finding(result, gate_safety_severity_case_id, "diagnostic_severity");
+		REQUIRE(severity_finding != nullptr);
+		CHECK_EQ(String(severity_finding->expected), "error");
+		CHECK_EQ(String(severity_finding->actual), "warning");
+		CHECK(gate_safety_find_finding(result, gate_safety_severity_case_id, "analysis") != nullptr);
+
+		int severity_findings = 0;
+		for (const FSCompletenessFinding &finding : result.findings) {
+			if (finding.dimension != "diagnostic_severity") {
+				continue;
+			}
+			severity_findings++;
+			CHECK_EQ(String(finding.expected), "error");
+			CHECK_NE(String(finding.actual), "error");
+		}
+		CHECK_EQ(severity_findings, 40);
+		gate_safety_severity_case_id.clear();
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety names unknown and duplicated witness declarations") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_witness_id_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String unknown_catalog = stage_union_pilot_completeness_catalog_at(tree, "unknown_catalog");
+		Vector<String> unknown_replacements;
+		unknown_replacements.push_back("\"text_gradual_argument_binding\"");
+		unknown_replacements.push_back("\"not_a_declared_witness\"");
+		gate_safety_rewrite_staged_rules(unknown_catalog, unknown_replacements);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = unknown_catalog;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root.path_join("unknown_scratch");
+		options.report_path = options.scratch_root.path_join("report.json");
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+		CHECK_EQ(result.outcome, "structural_failure");
+		CHECK(gate_safety_has_structural_stage(result, "witness_id_unknown"));
+		CHECK_EQ(result.structural_failures[0].witness_id, "not_a_declared_witness");
+		CHECK_EQ(result.structural_failures[0].exception_id, "unproven_source_requires_membership");
+		CHECK_FALSE(FileAccess::exists(options.report_path));
+
+		const String duplicate_catalog = stage_union_pilot_completeness_catalog_at(tree, "duplicate_catalog");
+		Vector<String> duplicate_replacements;
+		duplicate_replacements.push_back("\"text_static_member_argument_binding\"");
+		duplicate_replacements.push_back("\"text_gradual_argument_binding\"");
+		gate_safety_rewrite_staged_rules(duplicate_catalog, duplicate_replacements);
+
+		FSCompletenessRunOptions duplicate_options;
+		duplicate_options.catalog_root = duplicate_catalog;
+		duplicate_options.family = "union_destination_membership";
+		duplicate_options.scratch_root = tree.root.path_join("duplicate_scratch");
+		duplicate_options.report_path = duplicate_options.scratch_root.path_join("report.json");
+		FSCompletenessRunResult duplicate_result;
+		CHECK_EQ(FSCompletenessRunner::run(duplicate_options, duplicate_result), ERR_INVALID_DATA);
+		CHECK_EQ(duplicate_result.outcome, "structural_failure");
+		CHECK(gate_safety_has_structural_stage(duplicate_result, "witness_declared_twice"));
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety names a witness that never observes its exception") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_witness_provenance_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		Vector<String> replacements;
+		replacements.push_back("\"text_gradual_argument_binding\"");
+		replacements.push_back("\"gate_safety_swap_placeholder\"");
+		replacements.push_back("\"text_static_member_argument_binding\"");
+		replacements.push_back("\"text_gradual_argument_binding\"");
+		replacements.push_back("\"gate_safety_swap_placeholder\"");
+		replacements.push_back("\"text_static_member_argument_binding\"");
+		gate_safety_rewrite_staged_rules(catalog_root, replacements);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+		CHECK_EQ(result.outcome, "structural_failure");
+		CHECK(gate_safety_has_structural_stage(result, "witness_exception_provenance_missing"));
+		for (const FSCompletenessStructuralFailure &failure : result.structural_failures) {
+			if (failure.stage != "witness_exception_provenance_missing") {
+				continue;
+			}
+			CHECK_EQ(failure.witness_id, "text_static_member_argument_binding");
+			CHECK_FALSE(failure.case_id.is_empty());
+		}
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety unwitnesses an exception when only the paired surface fails") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const String witness_case_id =
+				gate_safety_witness_case_id(resolution, "text_gradual_argument_binding");
+		REQUIRE_FALSE(witness_case_id.is_empty());
+		gate_safety_partner_case_id =
+				gate_safety_pilot_case_id(resolution, "bytecode", "union", "gradual", "argument_binding");
+		REQUIRE_FALSE(gate_safety_partner_case_id.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_pair_witness_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = gate_safety_corrupt_partner_obligation;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		// The witness case itself carries no finding; only its paired surface does.
+		CHECK(gate_safety_find_finding(result, witness_case_id, "runtime_obligation") == nullptr);
+		const FSCompletenessFinding *partner_finding =
+				gate_safety_find_finding(result, gate_safety_partner_case_id, "runtime_obligation");
+		REQUIRE(partner_finding != nullptr);
+		CHECK_EQ(String(gate_safety_case_report(result.report, witness_case_id).get("status", String())),
+				"failed");
+
+		const Array exceptions = result.report.get("exceptions", Array());
+		REQUIRE_EQ(exceptions.size(), 1);
+		const Dictionary exception_report = exceptions[0];
+		CHECK_EQ(bool(exception_report.get("witnessed", true)), false);
+		const Array positive = exception_report.get("positive_witnesses", Array());
+		bool checked_witness = false;
+		for (int index = 0; index < positive.size(); index++) {
+			const Dictionary witness = positive[index];
+			if (String(witness.get("witness_id", String())) != "text_gradual_argument_binding") {
+				continue;
+			}
+			checked_witness = true;
+			CHECK_EQ(bool(witness.get("witnessed", true)), false);
+			CHECK(Array(witness.get("blocking_finding_ids", Array())).has(partner_finding->finding_id));
+		}
+		CHECK(checked_witness);
+		gate_safety_partner_case_id.clear();
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety treats a diagnostic-record disagreement as a surface mismatch") {
+		FSCompletenessRuntimeResult text;
+		text.case_id = "gate_safety_text";
+		text.surface = "text";
+		text.passed = true;
+		text.status = "ok";
+		text.produced_output = "uint 5\n";
+		text.diagnostic_records = Array();
+		FSCompletenessRuntimeResult bytecode = text;
+		bytecode.case_id = "gate_safety_bytecode";
+		bytecode.surface = "bytecode";
+		// `Array` assignment shares the instance, so the two surfaces need distinct evidence arrays.
+		bytecode.diagnostic_records = Array();
+		CHECK_FALSE(compare_surface_evidence(text, bytecode).any());
+
+		text.diagnostic_records.push_back(
+				gate_safety_diagnostic_record("warning", "INJECTED_SURFACE_ONLY_WARNING"));
+		const FSCompletenessSurfaceEvidenceMismatch mismatch = compare_surface_evidence(text, bytecode);
+		CHECK(mismatch.diagnostic_records);
+		CHECK(mismatch.any());
+		CHECK_FALSE(mismatch.produced_output);
+		CHECK_FALSE(mismatch.diagnostics);
+		CHECK_FALSE(mismatch.runtime_status);
+
+		bytecode.diagnostic_records = text.diagnostic_records.duplicate(true);
+		CHECK_FALSE(compare_surface_evidence(text, bytecode).any());
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety fails a pair that differs only in diagnostic records") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "plain", "static_member", "argument_binding");
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_record_parity_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = gate_safety_inject_text_only_warning_record;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+
+		// A warning record never raises the severity profile to error, so the record disagreement is
+		// the only thing that can fail this pair.
+		REQUIRE_EQ(result.findings.size(), 1);
+		const FSCompletenessFinding &finding = result.findings[0];
+		CHECK_EQ(finding.dimension, "text_bytecode_parity");
+		CHECK_EQ(finding.case_id, union_pilot_mutated_pair_text_id);
+		const Dictionary evidence = finding.parity_evidence;
+		REQUIRE(evidence.has("diagnostic_records"));
+		CHECK_FALSE(evidence.has("output"));
+		CHECK_FALSE(evidence.has("diagnostics"));
+		CHECK_FALSE(evidence.has("runtime_status"));
+		CHECK(Dictionary(evidence.get("dimensions", Dictionary())).is_empty());
+		for (const String &case_id : { union_pilot_mutated_pair_text_id, union_pilot_mutated_pair_bytecode_id }) {
+			CAPTURE(case_id);
+			const Dictionary case_report = gate_safety_case_report(result.report, case_id);
+			REQUIRE_FALSE(case_report.is_empty());
+			CHECK_EQ(String(case_report.get("status", String())), "failed");
+			CHECK_FALSE(Dictionary(case_report.get("parity_evidence", Dictionary())).is_empty());
+		}
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety keeps parity evidence on both surfaces of a failing pair") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "union", "numeric_constant", "argument_binding");
+		union_pilot_mutated_case_id = union_pilot_mutated_pair_text_id;
+		union_pilot_mutation_count = 0;
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_parity_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_stored_carrier;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+
+		for (const String &case_id : { union_pilot_mutated_pair_text_id, union_pilot_mutated_pair_bytecode_id }) {
+			CAPTURE(case_id);
+			const Dictionary case_report = gate_safety_case_report(result.report, case_id);
+			REQUIRE_FALSE(case_report.is_empty());
+			CHECK_EQ(String(case_report.get("status", String())), "failed");
+			const Dictionary evidence = case_report.get("parity_evidence", Dictionary());
+			REQUIRE_FALSE(evidence.is_empty());
+			CHECK_EQ(String(evidence.get("text_case_id", String())), union_pilot_mutated_pair_text_id);
+			CHECK_EQ(String(evidence.get("bytecode_case_id", String())), union_pilot_mutated_pair_bytecode_id);
+			CHECK(Dictionary(evidence.get("dimensions", Dictionary())).has("stored_carrier"));
+		}
+
+		const Dictionary passing_case = gate_safety_case_report(result.report,
+				gate_safety_pilot_case_id(resolution, "text", "plain", "static_member", "argument_binding"));
+		REQUIRE_FALSE(passing_case.is_empty());
+		CHECK(Dictionary(passing_case.get("parity_evidence", Dictionary())).is_empty());
+	}
+}
+
+} // namespace FSTests

@@ -38,6 +38,7 @@
 #include "../fs_cache.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
+#include "../fs_tokenizer.h"
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -106,12 +107,298 @@ static String boundary_body_for(const String &p_boundary) {
 		   "\tvar stored: Variant = holder.value";
 }
 
-static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, PackedStringArray &r_diagnostics) {
+static const char *DIAGNOSTIC_SEVERITY_ERROR = "error";
+static const char *DIAGNOSTIC_SEVERITY_WARNING = "warning";
+
+static Dictionary make_diagnostic_record(const String &p_severity, const String &p_category,
+		const String &p_code, int p_line, int p_column, const String &p_message, bool p_suppressed) {
+	Dictionary record;
+	record["severity"] = p_severity;
+	record["category"] = p_category;
+	record["code"] = p_code;
+	record["line"] = double(p_line);
+	record["column"] = double(p_column);
+	record["message"] = p_message;
+	record["suppressed"] = p_suppressed;
+	return record;
+}
+
+static void append_error_diagnostic(FSCompletenessObservation &r_observation, const String &p_code,
+		const String &p_message) {
+	r_observation.diagnostics.push_back(p_message);
+	r_observation.diagnostic_records.push_back(make_diagnostic_record(
+			DIAGNOSTIC_SEVERITY_ERROR, "harness", p_code, 0, 0, p_message, false));
+}
+
+// Every diagnostic string must own an error record so the severity profile derived from
+// `diagnostic_records` can never understate what the observation already reported.
+static void cover_diagnostics_with_records(FSCompletenessObservation &r_observation) {
+	HashMap<String, int> recorded_messages;
+	for (int index = 0; index < r_observation.diagnostic_records.size(); index++) {
+		const Dictionary record = r_observation.diagnostic_records[index];
+		if (String(record.get("severity", String())) != DIAGNOSTIC_SEVERITY_ERROR) {
+			continue;
+		}
+		const String message = record.get("message", String());
+		recorded_messages[message] = recorded_messages.has(message) ? recorded_messages[message] + 1 : 1;
+	}
+	for (const String &diagnostic : r_observation.diagnostics) {
+		int *remaining = recorded_messages.getptr(diagnostic);
+		if (remaining != nullptr && *remaining > 0) {
+			(*remaining)--;
+			continue;
+		}
+		r_observation.diagnostic_records.push_back(make_diagnostic_record(
+				DIAGNOSTIC_SEVERITY_ERROR, "harness", "harness_diagnostic", 0, 0, diagnostic, false));
+	}
+}
+
+static void append_parser_diagnostics_in_source_order(
+		const FSParser &p_parser, PackedStringArray &r_diagnostics) {
 	for (const FSParser::ParserError *error : p_parser.get_errors_in_source_order()) {
 		if (error != nullptr) {
 			r_diagnostics.push_back(vformat("%d:%d: %s", error->line, error->column, error->message));
 		}
 	}
+}
+
+static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, const String &p_code,
+		FSCompletenessObservation &r_observation) {
+	for (const FSParser::ParserError *error : p_parser.get_errors_in_source_order()) {
+		if (error != nullptr) {
+			const String message = vformat("%d:%d: %s", error->line, error->column, error->message);
+			r_observation.diagnostics.push_back(message);
+			r_observation.diagnostic_records.push_back(make_diagnostic_record(DIAGNOSTIC_SEVERITY_ERROR,
+					"analysis", p_code, error->line, error->column, message, false));
+		}
+	}
+}
+
+// Offset of the first character of every line, so a token's (line, column) can be turned into an
+// index into the source.
+static Vector<int> line_start_offsets(const String &p_source) {
+	Vector<int> offsets;
+	offsets.push_back(0);
+	for (int index = 0; index < p_source.length(); index++) {
+		if (p_source[index] == U'\n') {
+			offsets.push_back(index + 1);
+		}
+	}
+	return offsets;
+}
+
+// The tokenizer reports display columns: a tab advances the column by its configured tab size, which
+// an editor setting can change. Asking the tokenizer what it does to a known tab keeps the mapping
+// from column back to character index correct without duplicating that setting here.
+static int tokenizer_tab_size() {
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("func calibrate():\n\t@calibrate\n");
+	for (FSTokenizer::Token token = tokenizer.scan();
+			token.type != FSTokenizer::Token::TK_EOF && token.type != FSTokenizer::Token::ERROR;
+			token = tokenizer.scan()) {
+		if (token.type == FSTokenizer::Token::ANNOTATION) {
+			return MAX(1, token.start_column - 1);
+		}
+	}
+	return 4;
+}
+
+static int offset_for_column(
+		const String &p_source, int p_line_begin, int p_target_column, int p_tab_size) {
+	int column = 1;
+	int index = p_line_begin;
+	while (index < p_source.length() && p_source[index] != U'\n') {
+		if (column >= p_target_column) {
+			return index;
+		}
+		column += p_source[index] == U'\t' ? p_tab_size : 1;
+		index++;
+	}
+	return index;
+}
+
+// The display column of the character at `p_offset`, counted the way the tokenizer counts it.
+static int display_column_at(
+		const String &p_source, int p_line_begin, int p_offset, int p_tab_size) {
+	int column = 1;
+	for (int index = p_line_begin; index < p_offset && index < p_source.length(); index++) {
+		if (p_source[index] == U'\n') {
+			break;
+		}
+		column += p_source[index] == U'\t' ? p_tab_size : 1;
+	}
+	return column;
+}
+
+static int display_width(const String &p_text, int p_tab_size) {
+	int width = 0;
+	for (int index = 0; index < p_text.length(); index++) {
+		width += p_text[index] == U'\t' ? p_tab_size : 1;
+	}
+	return width;
+}
+
+static int token_offset(const String &p_source, const Vector<int> &p_line_offsets, int p_line,
+		int p_column, int p_tab_size) {
+	const int line_index = p_line - 1;
+	if (line_index < 0 || line_index >= p_line_offsets.size() || p_column < 1) {
+		return -1;
+	}
+	return offset_for_column(p_source, p_line_offsets[line_index], p_column, p_tab_size);
+}
+
+struct WarningIgnoreAnnotationSpan {
+	int start = 0;
+	int end = 0;
+	int start_line = 0;
+};
+
+// Locates every warning-suppression annotation through the front-end's own lexer, so string
+// literals, comments, and multiline argument lists are recognized the way the language defines them
+// rather than by re-deriving them here, and an annotation is found wherever it may legally appear.
+static Vector<WarningIgnoreAnnotationSpan> find_warning_ignore_annotations(
+		const String &p_source, const Vector<int> &p_line_offsets, int p_tab_size) {
+	Vector<WarningIgnoreAnnotationSpan> spans;
+	const int tab_size = p_tab_size;
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code(p_source);
+	FSTokenizer::Token token = tokenizer.scan();
+	while (token.type != FSTokenizer::Token::TK_EOF && token.type != FSTokenizer::Token::ERROR) {
+		if (token.type != FSTokenizer::Token::ANNOTATION || !token.source.begins_with("@warning_ignore")) {
+			token = tokenizer.scan();
+			continue;
+		}
+		WarningIgnoreAnnotationSpan span;
+		span.start = token_offset(p_source, p_line_offsets, token.start_line, token.start_column, tab_size);
+		span.end = token_offset(p_source, p_line_offsets, token.end_line, token.end_column, tab_size);
+		span.start_line = token.start_line;
+
+		FSTokenizer::Token next = tokenizer.scan();
+		if (next.type == FSTokenizer::Token::PARENTHESIS_OPEN) {
+			int depth = 1;
+			while (depth > 0) {
+				next = tokenizer.scan();
+				if (next.type == FSTokenizer::Token::TK_EOF || next.type == FSTokenizer::Token::ERROR) {
+					break;
+				}
+				if (next.type == FSTokenizer::Token::PARENTHESIS_OPEN) {
+					depth++;
+				} else if (next.type == FSTokenizer::Token::PARENTHESIS_CLOSE) {
+					depth--;
+					if (depth == 0) {
+						span.end = token_offset(
+								p_source, p_line_offsets, next.end_line, next.end_column, tab_size);
+					}
+				}
+			}
+			next = tokenizer.scan();
+		}
+		if (span.start >= 0 && span.end > span.start) {
+			spans.push_back(span);
+		}
+		token = next;
+	}
+	return spans;
+}
+
+// Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
+// warning promoted to error level never reaches the warning list, so errors are collected too:
+// otherwise a diagnostic that a `@warning_ignore` hides would leave no severity evidence at all.
+static void append_unsuppressed_diagnostic_records(
+		const String &p_source, const String &p_path, FSCompletenessObservation &r_observation) {
+#ifdef DEBUG_ENABLED
+	struct ObservedDiagnostic {
+		String severity;
+		String code;
+		int line = 0;
+		int column = 0;
+		String message;
+	};
+	auto collect = [](const String &p_analyzed_source, const String &p_analyzed_path,
+						   Vector<ObservedDiagnostic> &r_diagnostics) {
+		FSParser parser;
+		if (parser.parse(p_analyzed_source, p_analyzed_path, false) == OK) {
+			FSAnalyzer analyzer(&parser);
+			analyzer.analyze();
+		}
+		for (const FSParser::ParserError *error : parser.get_errors_in_source_order()) {
+			if (error == nullptr) {
+				continue;
+			}
+			ObservedDiagnostic observed;
+			observed.severity = DIAGNOSTIC_SEVERITY_ERROR;
+			observed.code = "suppressed_analysis_error";
+			observed.line = error->line;
+			observed.column = error->column;
+			observed.message = error->message;
+			r_diagnostics.push_back(observed);
+		}
+		for (const FSWarning &warning : parser.get_warnings()) {
+			ObservedDiagnostic observed;
+			observed.severity = DIAGNOSTIC_SEVERITY_WARNING;
+			observed.code = FSWarning::get_name_from_code(warning.code);
+			observed.line = warning.start_line;
+			observed.column = warning.start_column;
+			observed.message = warning.get_message();
+			r_diagnostics.push_back(observed);
+		}
+	};
+	// Consumes the first unclaimed diagnostic identical to `p_diagnostic`. Matching is a multiset
+	// operation, not membership: two distinct diagnostics can share a position, and every error
+	// carries the same code, so a claimed entry must not answer for a second one. The message is part
+	// of the key because it is the only field that separates same-code diagnostics at one position.
+	auto claim_matching = [](Vector<ObservedDiagnostic> &r_diagnostics, Vector<bool> &r_claimed,
+								  const ObservedDiagnostic &p_diagnostic) {
+		for (int index = 0; index < r_diagnostics.size(); index++) {
+			if (r_claimed[index]) {
+				continue;
+			}
+			const ObservedDiagnostic &candidate = r_diagnostics[index];
+			if (candidate.severity == p_diagnostic.severity && candidate.code == p_diagnostic.code &&
+					candidate.line == p_diagnostic.line && candidate.column == p_diagnostic.column &&
+					candidate.message == p_diagnostic.message) {
+				r_claimed.write[index] = true;
+				return true;
+			}
+		}
+		return false;
+	};
+
+	Vector<ObservedDiagnostic> emitted;
+	collect(p_source, p_path, emitted);
+	Vector<ObservedDiagnostic> unsuppressed;
+	const FSCompletenessProbeSource probe = make_unsuppressed_probe_source(p_source);
+	if (probe.text == p_source) {
+		unsuppressed = emitted;
+	} else {
+		collect(probe.text, p_path, unsuppressed);
+	}
+	Vector<bool> claimed;
+	claimed.resize(emitted.size());
+	claimed.fill(false);
+
+	for (const ObservedDiagnostic &diagnostic : unsuppressed) {
+		// Removing an inline annotation shifts everything after it on that line, so the probe's
+		// coordinates are translated back to the original source before anything is matched or
+		// recorded. Without that, a diagnostic the primary analysis still reported would look new.
+		ObservedDiagnostic original = diagnostic;
+		original.column = probe.original_column(diagnostic.line, diagnostic.column);
+		const bool suppressed = !claim_matching(emitted, claimed, original);
+		// An error the primary analysis already reported owns a record from the primary pass.
+		if (original.severity == DIAGNOSTIC_SEVERITY_ERROR && !suppressed) {
+			continue;
+		}
+		const String message = original.severity == DIAGNOSTIC_SEVERITY_ERROR
+				? vformat("%d:%d: %s", original.line, original.column, original.message)
+				: original.message;
+		r_observation.diagnostic_records.push_back(make_diagnostic_record(original.severity, "analysis",
+				original.code, original.line, original.column, message, suppressed));
+	}
+#else
+	(void)p_source;
+	(void)p_path;
+	(void)r_observation;
+#endif // DEBUG_ENABLED
 }
 
 static Mutex &synthetic_source_mutex() {
@@ -130,7 +417,7 @@ static FSCompletenessObservation rejected_observation(
 	observation.case_id = p_program.case_id;
 	observation.surface = p_surface;
 	observation.dimensions["analysis"] = "reject";
-	observation.diagnostics.push_back(p_diagnostic);
+	append_error_diagnostic(observation, "harness_rejected_program", p_diagnostic);
 	return observation;
 }
 
@@ -574,8 +861,7 @@ static bool is_surface_identity_dimension(const Variant &p_key) {
 
 static bool observations_match_on_common_dimensions(
 		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
-	if (p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status ||
-			p_text.diagnostics != p_bytecode.diagnostics || p_text.produced_output != p_bytecode.produced_output) {
+	if (compare_surface_evidence(p_text, p_bytecode).any()) {
 		return false;
 	}
 	for (const Variant &key : p_text.dimensions.keys()) {
@@ -716,7 +1002,8 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		observation.dimensions["analysis"] = "reject";
-		observation.diagnostics.push_back("In-memory analyzer identity is unavailable.");
+		append_error_diagnostic(
+				observation, "harness_identity_unavailable", "In-memory analyzer identity is unavailable.");
 		return observation;
 	}
 	const String &path = synthetic_source.get_path();
@@ -728,17 +1015,22 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 		FSAnalyzer analyzer(&parser);
 		analyzer_error = analyzer.analyze();
 	}
-	append_parser_diagnostics_in_source_order(parser, observation.diagnostics);
+	append_parser_diagnostics_in_source_order(
+			parser, parse_error == OK ? "analyzer_error" : "parse_error", observation);
 	if (parse_error != OK && observation.diagnostics.is_empty()) {
-		observation.diagnostics.push_back(vformat("Parser failed without diagnostics (error %d).", parse_error));
+		append_error_diagnostic(observation, "parse_error",
+				vformat("Parser failed without diagnostics (error %d).", parse_error));
 	} else if (parse_error == OK && analyzer_error != OK && observation.diagnostics.is_empty()) {
-		observation.diagnostics.push_back(vformat("Analyzer failed without diagnostics (error %d).", analyzer_error));
+		append_error_diagnostic(observation, "analyzer_error",
+				vformat("Analyzer failed without diagnostics (error %d).", analyzer_error));
 	}
+	append_unsuppressed_diagnostic_records(p_program.source, path, observation);
 	observation.dimensions["analysis"] = parse_error == OK && analyzer_error == OK ? "accept" : "reject";
+	cover_diagnostics_with_records(observation);
 	return observation;
 }
 
-static FSCompletenessObservation inspect_runtime_contract_internal(
+static FSCompletenessObservation inspect_runtime_contract_body(
 		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
 	r_structural_error = OK;
 	FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(p_program, p_program.surface);
@@ -843,6 +1135,14 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 		observation.dimensions["stored_carrier"] =
 				destination == "union" ? "admitting_alternative" : "plain_destination";
 	}
+	return observation;
+}
+
+static FSCompletenessObservation inspect_runtime_contract_internal(
+		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
+	FSCompletenessObservation observation =
+			inspect_runtime_contract_body(p_program, p_runtime_context, r_structural_error);
+	cover_diagnostics_with_records(observation);
 	return observation;
 }
 
@@ -1072,6 +1372,94 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 	}
 	r_batch = completed;
 	return OK;
+}
+
+// Removes exactly the characters a warning-suppression annotation owns: its name, its argument list
+// however many lines that spans, and the whitespace separating it from what follows on that line.
+// Whitespace that belongs to the target statement is never removed. The annotation's own indentation
+// is re-established on the line its last character sits on, so a target that shares that line stays
+// at the block level the annotation introduced instead of collapsing to file scope. Every removed
+// newline is re-emitted, so line numbers survive, and the characters removed before the surviving
+// content of a line are recorded so a column can be mapped back to the original program.
+FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source) {
+	FSCompletenessProbeSource probe;
+	probe.text = p_source;
+	const int tab_size = tokenizer_tab_size();
+	const Vector<int> line_offsets = line_start_offsets(p_source);
+	const Vector<WarningIgnoreAnnotationSpan> spans =
+			find_warning_ignore_annotations(p_source, line_offsets, tab_size);
+	if (spans.is_empty()) {
+		return probe;
+	}
+
+	String stripped;
+	int copied_from = 0;
+	for (const WarningIgnoreAnnotationSpan &span : spans) {
+		if (span.start < copied_from) {
+			continue;
+		}
+		// The separator belongs to the annotation, not to the target: leaving it would append spaces
+		// to a tab indent and make the indentation of the probe source inconsistent.
+		int span_end = span.end;
+		while (span_end < p_source.length() && (p_source[span_end] == U' ' || p_source[span_end] == U'\t')) {
+			span_end++;
+		}
+
+		const int line_index = span.start_line - 1;
+		const int line_begin = line_index >= 0 && line_index < line_offsets.size()
+				? line_offsets[line_index]
+				: 0;
+		int indentation_width = 0;
+		while (line_begin + indentation_width < span.start &&
+				(p_source[line_begin + indentation_width] == U' ' ||
+						p_source[line_begin + indentation_width] == U'\t')) {
+			indentation_width++;
+		}
+		const String statement_indentation = p_source.substr(line_begin, indentation_width);
+
+		stripped += p_source.substr(copied_from, span.start - copied_from);
+		int removed_newlines = 0;
+		int final_line_start = span.start;
+		for (int scan = span.start; scan < span_end; scan++) {
+			if (p_source[scan] == U'\n') {
+				removed_newlines++;
+				final_line_start = scan + 1;
+			}
+		}
+		for (int emitted = 0; emitted < removed_newlines; emitted++) {
+			stripped += "\n";
+		}
+		const bool crossed_lines = removed_newlines > 0;
+		if (crossed_lines) {
+			stripped += statement_indentation;
+		}
+		// Diagnostic columns are display columns, so the shift has to be measured in the same unit: a
+		// tab inside the removed span or the separator counts for the tokenizer's tab width, not one.
+		const int final_line = span.start_line + removed_newlines;
+		const int surviving_column_before = crossed_lines
+				? display_column_at(p_source, final_line_start, span_end, tab_size)
+				: display_column_at(p_source, line_begin, span_end, tab_size);
+		const int surviving_column_after = crossed_lines
+				? 1 + display_width(statement_indentation, tab_size)
+				: display_column_at(p_source, line_begin, span.start, tab_size);
+		const int *previous_shift = probe.column_shift_by_line.getptr(final_line);
+		probe.column_shift_by_line[final_line] = (previous_shift == nullptr ? 0 : *previous_shift) +
+				surviving_column_before - surviving_column_after;
+		copied_from = span_end;
+	}
+	stripped += p_source.substr(copied_from);
+	probe.text = stripped;
+	return probe;
+}
+
+FSCompletenessSurfaceEvidenceMismatch compare_surface_evidence(
+		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
+	FSCompletenessSurfaceEvidenceMismatch mismatch;
+	mismatch.produced_output = p_text.produced_output != p_bytecode.produced_output;
+	mismatch.diagnostics = p_text.diagnostics != p_bytecode.diagnostics;
+	mismatch.diagnostic_records = p_text.diagnostic_records != p_bytecode.diagnostic_records;
+	mismatch.runtime_status = p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status;
+	return mismatch;
 }
 
 Error FSUnionCompletenessAdapter::witness_coordinates(const String &p_witness_id, Dictionary &r_coordinates) {

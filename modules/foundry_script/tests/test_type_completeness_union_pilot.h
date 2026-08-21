@@ -935,7 +935,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(bool(result.report.get("success", true)), false);
 		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
 		CHECK(FileAccess::exists(options.report_path));
-		CHECK_EQ(result.findings.size(), 4);
+		CHECK_EQ(result.findings.size(), 5);
 
 		HashSet<String> target_dimensions;
 		String target_artifact_path;
@@ -953,13 +953,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			} else if (finding.dimension == "diagnostics") {
 				const PackedStringArray diagnostics = finding.actual;
 				CHECK_FALSE(diagnostics.is_empty());
+			} else if (finding.dimension == "diagnostic_severity") {
+				CHECK_EQ(String(finding.expected), "at_most_warning");
+				CHECK_EQ(String(finding.actual), "error");
 			}
 		}
 		CHECK(target_dimensions.has("analysis"));
 		CHECK(target_dimensions.has("diagnostics"));
+		CHECK(target_dimensions.has("diagnostic_severity"));
 		CHECK(target_dimensions.has("output"));
 		CHECK(target_dimensions.has("runtime_status"));
-		CHECK_EQ(target_dimensions.size(), 4);
+		CHECK_EQ(target_dimensions.size(), 5);
 		CHECK(FileAccess::exists(target_artifact_path));
 		CHECK_EQ(FileAccess::get_file_as_string(target_artifact_path), union_pilot_program_mutation_source);
 
@@ -991,7 +995,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const Dictionary parsed_report = json.get_data();
 		CHECK_EQ(bool(parsed_report.get("success", true)), false);
 		CHECK_EQ(int(parsed_report.get("cell_count", 0)), 40);
-		CHECK_EQ(Array(parsed_report.get("findings", Array())).size(), 4);
+		CHECK_EQ(Array(parsed_report.get("findings", Array())).size(), 5);
 		CHECK_EQ(Array(parsed_report.get("cases", Array())).size(), 40);
 	}
 
@@ -1051,7 +1055,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK(FileAccess::exists(options.report_path));
 		CHECK_EQ(int(result.report.get("cell_count", 0)), 40);
 		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
-		CHECK_EQ(result.findings.size(), 3);
+		CHECK_EQ(result.findings.size(), 4);
 
 		HashSet<String> target_dimensions;
 		String target_artifact_path;
@@ -1062,9 +1066,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			target_artifact_path = finding.artifact_path;
 		}
 		CHECK(target_dimensions.has("diagnostics"));
+		CHECK(target_dimensions.has("diagnostic_severity"));
 		CHECK(target_dimensions.has("output"));
 		CHECK(target_dimensions.has("runtime_status"));
-		CHECK_EQ(target_dimensions.size(), 3);
+		CHECK_EQ(target_dimensions.size(), 4);
 		CHECK(FileAccess::exists(target_artifact_path));
 		CHECK_EQ(FileAccess::get_file_as_string(target_artifact_path), union_pilot_program_mutation_source);
 

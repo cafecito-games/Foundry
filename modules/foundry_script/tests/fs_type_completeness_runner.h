@@ -71,10 +71,24 @@ struct FSCompletenessRunOptions {
 	FSCompletenessPersistedWriteHook persisted_write_hook = nullptr;
 };
 
+// A defect in the harness, the catalog, or the evidence contract rather than an observation about
+// the product. Structural failures are reported separately from findings so a gate can never read
+// a broken run as a clean one, and never file a harness defect as a product defect.
+struct FSCompletenessStructuralFailure {
+	String stage;
+	String detail;
+	String case_id;
+	String witness_id;
+	String exception_id;
+	Error error_code = OK;
+};
+
 struct FSCompletenessRunResult {
 	bool success = false;
 	int executed_cells = 0;
 	Vector<FSCompletenessFinding> findings;
+	Vector<FSCompletenessStructuralFailure> structural_failures;
+	String outcome = "not_run";
 	Dictionary report;
 };
 
