@@ -470,6 +470,9 @@ static int union_pilot_program_mutation_count = 0;
 static int union_pilot_program_callback_count = 0;
 static int union_pilot_identity_mutation_count = 0;
 static int union_pilot_identity_callback_count = 0;
+static int union_pilot_persisted_write_mutation_count = 0;
+static int union_pilot_runner_artifact_mutation_count = 0;
+static int union_pilot_runner_report_mutation_count = 0;
 
 struct UnionPilotProgramMutationScope {
 	~UnionPilotProgramMutationScope() {
@@ -481,8 +484,60 @@ struct UnionPilotProgramMutationScope {
 		union_pilot_program_callback_count = 0;
 		union_pilot_identity_mutation_count = 0;
 		union_pilot_identity_callback_count = 0;
+		union_pilot_persisted_write_mutation_count = 0;
+		union_pilot_runner_artifact_mutation_count = 0;
+		union_pilot_runner_report_mutation_count = 0;
+		UnionCompletenessInternal::set_persisted_write_test_hook(nullptr);
 	}
 };
+
+static void truncate_first_union_pilot_persisted_source(const String &p_path) {
+	if (union_pilot_persisted_write_mutation_count != 0 || p_path.get_extension() != "fs") {
+		return;
+	}
+	Error open_error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &open_error);
+	if (file.is_null() || open_error != OK) {
+		return;
+	}
+	file->store_string("truncated\n");
+	file->flush();
+	file->close();
+	file.unref();
+	union_pilot_persisted_write_mutation_count++;
+}
+
+static void truncate_first_union_pilot_runner_artifact(const String &p_path) {
+	if (union_pilot_runner_artifact_mutation_count != 0 || p_path.get_extension() != "fs") {
+		return;
+	}
+	Error open_error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &open_error);
+	if (file.is_null() || open_error != OK) {
+		return;
+	}
+	file->store_string("truncated\n");
+	file->flush();
+	file->close();
+	file.unref();
+	union_pilot_runner_artifact_mutation_count++;
+}
+
+static void truncate_union_pilot_runner_report_temp(const String &p_path) {
+	if (union_pilot_runner_report_mutation_count != 0 || !p_path.contains(".tmp.")) {
+		return;
+	}
+	Error open_error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &open_error);
+	if (file.is_null() || open_error != OK) {
+		return;
+	}
+	file->store_string("truncated\n");
+	file->flush();
+	file->close();
+	file.unref();
+	union_pilot_runner_report_mutation_count++;
+}
 
 static void inject_union_pilot_analyzer_error(FSCompletenessProgram &r_program) {
 	union_pilot_program_callback_count++;
@@ -673,6 +728,43 @@ static String union_pilot_finding_record(const String &p_finding_id, const Strin
 )JSON",
 			p_finding_id, p_case_id, p_classification, p_permanent_test_paths, p_extra_field);
 }
+
+static Error union_pilot_tracked_file_probe_error = OK;
+static int union_pilot_tracked_file_probe_exit_code = 0;
+static String union_pilot_tracked_file_probe_repository_root;
+static String union_pilot_tracked_file_probe_path;
+
+static Error union_pilot_tracked_file_probe(const String &p_repository_root, const String &p_path,
+		String &r_output, int &r_exit_code) {
+	union_pilot_tracked_file_probe_repository_root = p_repository_root;
+	union_pilot_tracked_file_probe_path = p_path;
+	r_output = String();
+	r_exit_code = union_pilot_tracked_file_probe_exit_code;
+	return union_pilot_tracked_file_probe_error;
+}
+
+struct UnionPilotWarningRecorder {
+	UnionPilotWarningRecorder() {
+		handler.errfunc = _record;
+		handler.userdata = this;
+		add_error_handler(&handler);
+	}
+
+	~UnionPilotWarningRecorder() {
+		remove_error_handler(&handler);
+	}
+
+	static void _record(void *p_self, const char *p_function, const char *p_file, int p_line,
+			const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
+		UnionPilotWarningRecorder *self = static_cast<UnionPilotWarningRecorder *>(p_self);
+		self->messages += String::utf8(
+								  p_explanation != nullptr && p_explanation[0] != '\0' ? p_explanation : p_error) +
+				"\n";
+	}
+
+	ErrorHandlerList handler;
+	String messages;
+};
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	TEST_CASE("TypeCompleteness UnionPilot runner publishes complete deterministic coverage") {
@@ -1392,6 +1484,65 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
 	}
 
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects persisted artifact truncation before execution") {
+		UnionPilotProgramMutationScope mutation_scope;
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_truncated_artifact_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const PackedStringArray entries_before = union_pilot_directory_entries(tree.root);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.persisted_write_hook = truncate_first_union_pilot_runner_artifact;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.findings.push_back(FSCompletenessFinding());
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_FILE_CORRUPT);
+		CHECK_EQ(union_pilot_runner_artifact_mutation_count, 1);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner preserves reports after persisted temp truncation") {
+		UnionPilotProgramMutationScope mutation_scope;
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_truncated_report_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("report.json", "caller report sentinel\n");
+		const String report_path = tree.root.path_join("report.json");
+		const PackedStringArray entries_before = union_pilot_directory_entries(tree.root);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_path;
+		options.persisted_write_hook = truncate_union_pilot_runner_report_temp;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.findings.push_back(FSCompletenessFinding());
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_FILE_CORRUPT);
+		CHECK_EQ(union_pilot_runner_report_mutation_count, 1);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(report_path), "caller report sentinel\n");
+		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot runner reconciles a direct mismatch with parity evidence") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		union_pilot_mutated_case_id.clear();
@@ -1733,6 +1884,155 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const Array report_findings = report.get("findings", Array());
 		REQUIRE_EQ(report_findings.size(), 1);
 		CHECK_EQ(String(Dictionary(report_findings[0]).get("classification", String())), "product_defect");
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner ignores dot-prefixed findings metadata") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("surface", String()) == "text" &&
+					cell.coordinates.get("destination", String()) == "union" &&
+					cell.coordinates.get("source_proof", String()) == "numeric_constant" &&
+					cell.coordinates.get("boundary", String()) == "argument_binding") {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		const String finding_id = "fstcf-v1-" +
+				(union_pilot_mutated_case_id + "|stored_carrier").sha256_text().substr(0, 20);
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_findings_dot_entry_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/" + finding_id + ".json",
+				union_pilot_finding_record(finding_id, union_pilot_mutated_case_id, "product_defect"));
+		tree.write_file("catalog/findings/.DS_Store", "filesystem metadata");
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_stored_carrier;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].finding_id, finding_id);
+		CHECK_EQ(result.findings[0].classification, "product_defect");
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects visible unexpected findings entries with a diagnostic") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_findings_visible_entry_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/notes.txt", "unexpected");
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		UnionPilotWarningRecorder diagnostics;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+		CHECK(result.findings.is_empty());
+		CHECK(diagnostics.messages.contains("unexpected non-JSON findings entry 'notes.txt'"));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner falls back when Git tracked-file verification is unavailable") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("surface", String()) == "text" &&
+					cell.coordinates.get("destination", String()) == "union" &&
+					cell.coordinates.get("source_proof", String()) == "numeric_constant" &&
+					cell.coordinates.get("boundary", String()) == "argument_binding") {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		const String finding_id = "fstcf-v1-" +
+				(union_pilot_mutated_case_id + "|stored_carrier").sha256_text().substr(0, 20);
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_git_unavailable_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/" + finding_id + ".json",
+				union_pilot_finding_record(finding_id, union_pilot_mutated_case_id, "product_defect"));
+
+		union_pilot_tracked_file_probe_error = ERR_CANT_FORK;
+		union_pilot_tracked_file_probe_exit_code = -1;
+		union_pilot_tracked_file_probe_repository_root.clear();
+		union_pilot_tracked_file_probe_path.clear();
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_stored_carrier;
+		options.tracked_file_probe = union_pilot_tracked_file_probe;
+		FSCompletenessRunResult result;
+		UnionPilotWarningRecorder warnings;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].classification, "product_defect");
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		CHECK_EQ(union_pilot_tracked_file_probe_repository_root,
+				filesystem->get_current_dir().replace("\\", "/").simplify_path());
+		CHECK_EQ(union_pilot_tracked_file_probe_path,
+				"modules/foundry_script/tests/test_type_completeness_union_pilot.h");
+		CHECK(warnings.messages.contains("Git tracked-file verification is unavailable"));
+		CHECK(warnings.messages.contains("accepting canonical existing test path"));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects an untracked permanent test path") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		String current_case_id;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.dimensions.has("stored_carrier")) {
+				current_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(current_case_id.is_empty());
+		const String finding_id = "fstcf-v1-untracked-permanent-test";
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_git_untracked_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/" + finding_id + ".json",
+				union_pilot_finding_record(finding_id, current_case_id, "product_defect"));
+
+		union_pilot_tracked_file_probe_error = OK;
+		union_pilot_tracked_file_probe_exit_code = 1;
+		union_pilot_tracked_file_probe_repository_root.clear();
+		union_pilot_tracked_file_probe_path.clear();
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.tracked_file_probe = union_pilot_tracked_file_probe;
+		FSCompletenessRunResult result;
+		UnionPilotWarningRecorder warnings;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+		CHECK(result.findings.is_empty());
+		CHECK_EQ(union_pilot_tracked_file_probe_path,
+				"modules/foundry_script/tests/test_type_completeness_union_pilot.h");
+		CHECK_FALSE(warnings.messages.contains("Git tracked-file verification is unavailable"));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects a linked findings entry atomically") {
@@ -2333,6 +2633,24 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK(setup_error_detector.has_error);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot rejects persisted runtime fixture truncation before execution") {
+		UnionPilotProgramMutationScope mutation_scope;
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_truncated_fixture_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const PackedStringArray entries_before = union_pilot_directory_entries(tree.root);
+
+		UnionCompletenessInternal::set_persisted_write_test_hook(
+				truncate_first_union_pilot_persisted_source);
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_FILE_CORRUPT);
+		CHECK_EQ(union_pilot_persisted_write_mutation_count, 1);
+		check_union_pilot_runtime_batch_cleared(batch);
+		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot refuses symlinked runtime roots and ancestors") {

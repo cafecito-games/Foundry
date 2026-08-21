@@ -55,6 +55,10 @@ struct FSCompletenessFinding {
 	PackedStringArray resolved_case_ids;
 };
 
+using FSCompletenessTrackedFileProbe = Error (*)(const String &p_repository_root, const String &p_path,
+		String &r_output, int &r_exit_code);
+using FSCompletenessPersistedWriteHook = void (*)(const String &p_path);
+
 struct FSCompletenessRunOptions {
 	String catalog_root;
 	String family;
@@ -63,6 +67,8 @@ struct FSCompletenessRunOptions {
 	void (*program_mutator)(FSCompletenessProgram &) = nullptr;
 	void (*observation_mutator)(FSCompletenessObservation &) = nullptr;
 	void (*runtime_result_mutator)(FSCompletenessRuntimeResult &) = nullptr;
+	FSCompletenessTrackedFileProbe tracked_file_probe = nullptr;
+	FSCompletenessPersistedWriteHook persisted_write_hook = nullptr;
 };
 
 struct FSCompletenessRunResult {

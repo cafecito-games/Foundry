@@ -500,6 +500,41 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK_FALSE(catalog.dimension_has_outcome("analysis", "same"));
 	}
 
+	TEST_CASE("TypeCompleteness Manifest catalog ignores dot-prefixed filesystem metadata") {
+		TemporaryProjectTree tree("type_completeness_catalog_dot_entries");
+		REQUIRE(tree.is_valid());
+		tree.write_file("partitions/shape.json",
+				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
+		tree.write_file("dimensions/core.json",
+				R"JSON({"schema_version":1,"adapter":"core","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+		tree.write_file("partitions/.DS_Store", "filesystem metadata");
+		tree.write_file("dimensions/.metadata.json", "not catalog data");
+
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		CHECK_EQ(catalog.load(tree.root, errors), OK);
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+		CHECK(catalog.axis_has_leaf("shape", "plain"));
+		CHECK(catalog.dimension_has_outcome("analysis", "accept"));
+	}
+
+	TEST_CASE("TypeCompleteness Manifest catalog rejects visible unexpected entries") {
+		TemporaryProjectTree tree("type_completeness_catalog_unexpected_entries");
+		REQUIRE(tree.is_valid());
+		tree.write_file("partitions/shape.json",
+				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
+		tree.write_file("dimensions/core.json",
+				R"JSON({"schema_version":1,"adapter":"core","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+		tree.write_file("partitions/notes.txt", "unexpected");
+		tree.write_file("dimensions/nested/metadata.json", "unexpected");
+
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		CHECK_EQ(catalog.load(tree.root, errors), ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain_text(errors, "unexpected non-JSON entry 'notes.txt'"));
+		CHECK(completeness_errors_contain_text(errors, "unexpected directory entry 'nested'"));
+	}
+
 	TEST_CASE("TypeCompleteness Manifest vocabulary accepts a representative valid rule") {
 		TemporaryProjectTree tree("type_completeness_vocabulary_valid");
 		REQUIRE(tree.is_valid());
@@ -1317,13 +1352,33 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK(completeness_errors_contain_text(errors, "duplicate rule family 'mapped'"));
 		CHECK(completeness_errors_contain_text(errors, "malformed.json"));
 		CHECK(completeness_errors_contain_text(errors, "unexpected non-JSON entry 'not-json.txt'"));
-		CHECK(completeness_errors_contain_text(errors, "unexpected hidden entry '.hidden.json'"));
+		CHECK_FALSE(completeness_errors_contain_text(errors, ".hidden.json"));
 		CHECK(completeness_errors_contain_text(errors, "unexpected directory entry 'nested'"));
 		CHECK(completeness_errors_contain_text(errors, "unknown_rule.json: $.unknown: unknown field 'unknown'"));
 		CHECK(completeness_errors_contain_text(errors, "filename stem must equal rule family 'mapped'"));
 #ifdef UNIX_ENABLED
 		CHECK(completeness_errors_contain_text(errors, "linked rule entry 'linked.json' is not allowed"));
 #endif
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability validation ignores dot-prefixed filesystem metadata") {
+		TemporaryProjectTree tree("type_completeness_capability_rule_dot_entries");
+		REQUIRE(tree.is_valid());
+		const String map_path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/mapped.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["mapped"]
+})JSON");
+		tree.write_file("rules/mapped.json", make_completeness_rule("mapped"));
+		tree.write_file("rules/.DS_Store", "filesystem metadata");
+		tree.write_file("rules/.metadata.json", "not a rule manifest");
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE(capability_map.load(map_path, errors) == OK);
+		CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors), OK);
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 	}
 
 	TEST_CASE("TypeCompleteness Manifest capability validation requires a lowercase json extension") {

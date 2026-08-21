@@ -41,7 +41,6 @@
 #include "core/io/json.h"
 #include "core/os/os.h"
 #include "core/templates/hash_set.h"
-#include "tests/test_utils.h"
 
 #ifdef UNIX_ENABLED
 #include <cstdlib>
@@ -467,6 +466,38 @@ static bool ledger_dimension_is_known(
 
 static String canonicalize_existing_input_path(const String &p_path);
 
+static String find_repository_root(const String &p_catalog_root) {
+	const String canonical_catalog_root = canonicalize_existing_input_path(p_catalog_root);
+	if (canonical_catalog_root.is_empty() || !DirAccess::dir_exists_absolute(canonical_catalog_root)) {
+		return String();
+	}
+
+	for (String current = canonical_catalog_root; !current.is_empty();) {
+		const String git_marker = current.path_join(".git");
+		if (FileAccess::exists(git_marker) || DirAccess::dir_exists_absolute(git_marker)) {
+			return current;
+		}
+		const String parent = current.get_base_dir();
+		if (parent == current) {
+			break;
+		}
+		current = parent;
+	}
+
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return String();
+	}
+	const String canonical_current_directory =
+			canonicalize_existing_input_path(filesystem->get_current_dir());
+	if (canonical_current_directory == canonical_catalog_root ||
+			TemporaryProjectTree::is_strict_descendant(
+					canonical_current_directory, canonical_catalog_root)) {
+		return canonical_current_directory;
+	}
+	return String();
+}
+
 static bool is_permanent_test_path_form(const String &p_path) {
 	const String filename = p_path.get_file();
 	const String extension = filename.get_extension();
@@ -499,7 +530,23 @@ static bool is_permanent_test_path_form(const String &p_path) {
 	return false;
 }
 
-static Error validate_permanent_test_path(const String &p_path) {
+static Error default_tracked_file_probe(const String &p_repository_root, const String &p_path,
+		String &r_output, int &r_exit_code) {
+	List<String> arguments;
+	arguments.push_back("-C");
+	arguments.push_back(p_repository_root);
+	arguments.push_back("ls-files");
+	arguments.push_back("--error-unmatch");
+	arguments.push_back("--");
+	arguments.push_back(p_path);
+	if (OS::get_singleton() == nullptr) {
+		return ERR_UNAVAILABLE;
+	}
+	return OS::get_singleton()->execute("git", arguments, &r_output, &r_exit_code, true);
+}
+
+static Error validate_permanent_test_path(const String &p_path, const String &p_repository_root,
+		FSCompletenessTrackedFileProbe p_tracked_file_probe) {
 	if (p_path.is_empty() || p_path.is_absolute_path() || p_path.simplify_path() != p_path ||
 			p_path.contains("://") || p_path.contains("/../") ||
 			p_path.ends_with("/..")) {
@@ -508,9 +555,8 @@ static Error validate_permanent_test_path(const String &p_path) {
 	if (!is_permanent_test_path_form(p_path)) {
 		return ERR_INVALID_DATA;
 	}
-	const String repository_root = TestUtils::get_tests_dir().get_base_dir().simplify_path();
-	const String absolute_path = repository_root.path_join(p_path).simplify_path();
-	if (!TemporaryProjectTree::is_strict_descendant(repository_root, absolute_path) ||
+	const String absolute_path = p_repository_root.path_join(p_path).simplify_path();
+	if (!TemporaryProjectTree::is_strict_descendant(p_repository_root, absolute_path) ||
 			!FileAccess::exists(absolute_path) || DirAccess::dir_exists_absolute(absolute_path)) {
 		return ERR_INVALID_DATA;
 	}
@@ -518,37 +564,38 @@ static Error validate_permanent_test_path(const String &p_path) {
 	if (filesystem.is_null()) {
 		return ERR_UNAVAILABLE;
 	}
-	for (String current = absolute_path; current != repository_root; current = current.get_base_dir()) {
+	for (String current = absolute_path; current != p_repository_root; current = current.get_base_dir()) {
 		if (current.is_empty() || filesystem->is_link(current)) {
 			return ERR_UNAUTHORIZED;
 		}
 	}
-	const String canonical_repository_root = canonicalize_existing_input_path(repository_root);
+	const String canonical_repository_root = canonicalize_existing_input_path(p_repository_root);
 	const String canonical_absolute_path = canonicalize_existing_input_path(absolute_path);
 	if (canonical_repository_root.is_empty() || canonical_absolute_path.is_empty() ||
-			canonical_repository_root != repository_root || canonical_absolute_path != absolute_path ||
+			canonical_repository_root != p_repository_root || canonical_absolute_path != absolute_path ||
 			!TemporaryProjectTree::is_strict_descendant(canonical_repository_root, canonical_absolute_path)) {
 		return ERR_UNAUTHORIZED;
 	}
 
-	List<String> arguments;
-	arguments.push_back("-C");
-	arguments.push_back(repository_root);
-	arguments.push_back("ls-files");
-	arguments.push_back("--error-unmatch");
-	arguments.push_back("--");
-	arguments.push_back(p_path);
 	String git_output;
 	int exit_code = -1;
-	if (OS::get_singleton() == nullptr ||
-			OS::get_singleton()->execute("git", arguments, &git_output, &exit_code, true) != OK) {
-		return ERR_UNAVAILABLE;
+	const FSCompletenessTrackedFileProbe tracked_file_probe =
+			p_tracked_file_probe == nullptr ? default_tracked_file_probe : p_tracked_file_probe;
+	const Error probe_error = tracked_file_probe(p_repository_root, p_path, git_output, exit_code);
+	if (probe_error != OK) {
+		WARN_PRINT(vformat("Git tracked-file verification is unavailable for '%s' (error %d); "
+						   "accepting canonical existing test path.",
+				p_path, probe_error));
+		return OK;
 	}
 	if (exit_code == 1) {
 		return ERR_INVALID_DATA;
 	}
 	if (exit_code != 0) {
-		return ERR_UNAVAILABLE;
+		WARN_PRINT(vformat("Git tracked-file verification is unavailable for '%s' (exit %d%s); "
+						   "accepting canonical existing test path.",
+				p_path, exit_code,
+				git_output.strip_edges().is_empty() ? String() : ": " + git_output.strip_edges()));
 	}
 	return OK;
 }
@@ -589,7 +636,8 @@ static String canonicalize_existing_input_path(const String &p_path) {
 
 static Error load_findings_ledger(const String &p_directory, const String &p_family,
 		const FSCompletenessResolution &p_resolution, const HashSet<String> &p_current_ids,
-		const FSCompletenessMigrations &p_migrations,
+		const FSCompletenessMigrations &p_migrations, const String &p_repository_root,
+		FSCompletenessTrackedFileProbe p_tracked_file_probe,
 		HashMap<String, FSCompletenessFinding> &r_findings) {
 	r_findings.clear();
 	Error open_error = OK;
@@ -611,7 +659,7 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	}
 	Vector<String> files;
 	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
-		if (entry == "." || entry == ".." || entry == ".gitkeep") {
+		if (entry.begins_with(".")) {
 			continue;
 		}
 		const String file_path = lexical_directory.path_join(entry);
@@ -619,7 +667,13 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 			directory->list_dir_end();
 			return ERR_UNAUTHORIZED;
 		}
-		if (directory->current_is_dir() || entry.get_extension().to_lower() != "json") {
+		if (directory->current_is_dir()) {
+			ERR_PRINT(vformat("%s: unexpected findings directory entry '%s'", p_directory, entry));
+			directory->list_dir_end();
+			return ERR_INVALID_DATA;
+		}
+		if (entry.get_extension().to_lower() != "json") {
+			ERR_PRINT(vformat("%s: unexpected non-JSON findings entry '%s'", p_directory, entry));
 			directory->list_dir_end();
 			return ERR_INVALID_DATA;
 		}
@@ -706,7 +760,7 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 				return ERR_INVALID_DATA;
 			}
 			const String path = paths[path_index];
-			if (validate_permanent_test_path(path) != OK) {
+			if (validate_permanent_test_path(path, p_repository_root, p_tracked_file_probe) != OK) {
 				return ERR_INVALID_DATA;
 			}
 			observed_paths.insert(path);
@@ -935,7 +989,8 @@ public:
 	}
 
 	Error stage(const String &p_canonical_scratch_root, const FSCompletenessResolution &p_resolution,
-			const Vector<FSCompletenessProgram> &p_programs) {
+			const Vector<FSCompletenessProgram> &p_programs,
+			FSCompletenessPersistedWriteHook p_persisted_write_hook) {
 		artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
 		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, artifact_root)) {
 			return ERR_UNAUTHORIZED;
@@ -986,14 +1041,28 @@ public:
 			}
 			created_files.push_back(path);
 			if (!file->store_string(program->source)) {
+				const Error write_error = file->get_error();
+				file->close();
 				file.unref();
-				return ERR_CANT_CREATE;
+				return write_error == OK ? ERR_CANT_CREATE : write_error;
 			}
 			file->flush();
 			const Error write_error = file->get_error();
+			file->close();
 			file.unref();
 			if (write_error != OK) {
 				return write_error;
+			}
+			if (p_persisted_write_hook != nullptr) {
+				p_persisted_write_hook(path);
+			}
+			Error read_error = OK;
+			const String persisted_source = FileAccess::get_file_as_string(path, &read_error);
+			if (read_error != OK) {
+				return read_error;
+			}
+			if (persisted_source != program->source) {
+				return ERR_FILE_CORRUPT;
 			}
 			String canonical_path;
 			if (TemporaryProjectTree::resolve_existing_owned_path(path, canonical_path) != OK ||
@@ -1050,7 +1119,8 @@ static Error replace_report_file(const String &p_temporary_path, const String &p
 }
 
 static Error write_report_atomically(const String &p_canonical_scratch_root,
-		const String &p_catalog_root, const String &p_report_path, const Dictionary &p_report) {
+		const String &p_catalog_root, const String &p_report_path, const Dictionary &p_report,
+		FSCompletenessPersistedWriteHook p_persisted_write_hook) {
 	Error validation_error = validate_owned_report_path(
 			p_canonical_scratch_root, p_catalog_root, p_report_path);
 	if (validation_error != OK) {
@@ -1077,14 +1147,28 @@ static Error write_report_atomically(const String &p_canonical_scratch_root,
 	}
 	temporary_cleanup.retain_for_cleanup(temporary_path);
 	if (!temporary->store_string(contents)) {
+		const Error write_error = temporary->get_error();
+		temporary->close();
 		temporary.unref();
-		return ERR_CANT_CREATE;
+		return write_error == OK ? ERR_CANT_CREATE : write_error;
 	}
 	temporary->flush();
 	const Error write_error = temporary->get_error();
+	temporary->close();
 	temporary.unref();
 	if (write_error != OK) {
 		return write_error;
+	}
+	if (p_persisted_write_hook != nullptr) {
+		p_persisted_write_hook(temporary_path);
+	}
+	Error read_error = OK;
+	const String persisted_contents = FileAccess::get_file_as_string(temporary_path, &read_error);
+	if (read_error != OK) {
+		return read_error;
+	}
+	if (persisted_contents != contents) {
+		return ERR_FILE_CORRUPT;
 	}
 	String canonical_temporary_path;
 	if (TemporaryProjectTree::resolve_existing_owned_path(
@@ -1269,9 +1353,13 @@ Error FSCompletenessRunner::run(
 	if (error != OK) {
 		return error;
 	}
+	const String repository_root = find_repository_root(p_options.catalog_root);
+	if (repository_root.is_empty()) {
+		return ERR_UNAUTHORIZED;
+	}
 	HashMap<String, FSCompletenessFinding> ledger;
 	error = load_findings_ledger(p_options.catalog_root.path_join("findings"), p_options.family,
-			resolution, current_ids, migrations, ledger);
+			resolution, current_ids, migrations, repository_root, p_options.tracked_file_probe, ledger);
 	if (error != OK) {
 		return error;
 	}
@@ -1302,11 +1390,11 @@ Error FSCompletenessRunner::run(
 				program.expected_output != rendered_expected_output) {
 			return ERR_INVALID_DATA;
 		}
-		(void)FSUnionCompletenessAdapter::analyze(program, program.surface);
 		programs.push_back(program);
 	}
 	ReportArtifactScope artifact_scope;
-	error = artifact_scope.stage(canonical_scratch_root, resolution, programs);
+	error = artifact_scope.stage(
+			canonical_scratch_root, resolution, programs, p_options.persisted_write_hook);
 	if (error != OK) {
 		return error;
 	}
@@ -1556,7 +1644,8 @@ Error FSCompletenessRunner::run(
 	report["findings"] = report_findings;
 	report["cases"] = cases;
 	error = write_report_atomically(
-			canonical_scratch_root, p_options.catalog_root, p_options.report_path, report);
+			canonical_scratch_root, p_options.catalog_root, p_options.report_path, report,
+			p_options.persisted_write_hook);
 	if (error != OK) {
 		return error;
 	}

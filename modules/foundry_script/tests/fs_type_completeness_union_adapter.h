@@ -67,6 +67,10 @@ struct TemporaryProjectTree;
 
 namespace UnionCompletenessInternal {
 
+using PersistedWriteTestHook = void (*)(const String &);
+
+void set_persisted_write_test_hook(PersistedWriteTestHook p_hook);
+
 class SyntheticSourceScope {
 	String path;
 	TemporaryProjectTree *tree = nullptr;

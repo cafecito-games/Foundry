@@ -51,6 +51,7 @@ namespace FSTests {
 namespace {
 
 static const String union_completeness_family = "union_destination_membership";
+static thread_local UnionCompletenessInternal::PersistedWriteTestHook persisted_write_test_hook = nullptr;
 
 static bool is_allowed_coordinate(const String &p_axis, const String &p_value) {
 	if (p_axis == "destination") {
@@ -286,8 +287,28 @@ static Error write_runtime_file_exclusive(const String &p_path, const String &p_
 	if (file.is_null()) {
 		return file_error == OK ? ERR_CANT_CREATE : file_error;
 	}
-	file->store_string(p_contents);
-	return file->get_error();
+	if (!file->store_string(p_contents)) {
+		file_error = file->get_error();
+		file->close();
+		file.unref();
+		return file_error == OK ? ERR_CANT_CREATE : file_error;
+	}
+	file->flush();
+	file_error = file->get_error();
+	file->close();
+	file.unref();
+	if (file_error != OK) {
+		return file_error;
+	}
+	if (persisted_write_test_hook != nullptr) {
+		persisted_write_test_hook(p_path);
+	}
+	Error read_error = OK;
+	const String persisted = FileAccess::get_file_as_string(p_path, &read_error);
+	if (read_error != OK) {
+		return read_error;
+	}
+	return persisted == p_contents ? OK : ERR_FILE_CORRUPT;
 }
 
 static Error validate_runtime_staging_whitelist(
@@ -577,6 +598,10 @@ static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outco
 }
 
 } // namespace
+
+void UnionCompletenessInternal::set_persisted_write_test_hook(PersistedWriteTestHook p_hook) {
+	persisted_write_test_hook = p_hook;
+}
 
 UnionCompletenessInternal::SyntheticSourceScope::SyntheticSourceScope(
 		const String &p_identity, const String &p_source) {

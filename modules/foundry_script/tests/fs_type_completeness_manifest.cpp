@@ -874,11 +874,7 @@ Error FSCompletenessCapabilityMap::validate_against_rule_directory(
 
 	Vector<String> json_files;
 	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
-		if (entry == "." || entry == "..") {
-			continue;
-		}
 		if (entry.begins_with(".")) {
-			r_errors.push_back(vformat("%s: unexpected hidden entry '%s'", p_directory, entry));
 			continue;
 		}
 		const String entry_path = directory_path.path_join(entry).simplify_path();
@@ -992,7 +988,15 @@ static bool collect_catalog_files(const String &p_directory, Vector<String> &r_f
 
 	String entry = directory->get_next();
 	while (!entry.is_empty()) {
-		if (!directory->current_is_dir() && !entry.begins_with(".") && entry.get_extension() == "json") {
+		if (entry.begins_with(".")) {
+			entry = directory->get_next();
+			continue;
+		}
+		if (directory->current_is_dir()) {
+			r_errors.push_back(vformat("%s: unexpected directory entry '%s'", p_directory, entry));
+		} else if (entry.get_extension() != "json") {
+			r_errors.push_back(vformat("%s: unexpected non-JSON entry '%s'", p_directory, entry));
+		} else {
 			r_files.push_back(p_directory.path_join(entry));
 		}
 		entry = directory->get_next();
