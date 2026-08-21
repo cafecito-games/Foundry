@@ -29,12 +29,14 @@
 /**************************************************************************/
 
 #include "fs_type_completeness_case_id.h"
+#include "fs_type_completeness_json.h"
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
-#include "core/io/json.h"
 #include "core/math/math_funcs.h"
 #include "core/variant/array.h"
+
+#include <cstdint>
 
 namespace FSTests {
 
@@ -66,14 +68,25 @@ static String length_encoded(const String &p_value) {
 	return vformat("%d:%s", p_value.length(), p_value);
 }
 
-static String canonical_variant_identity(const Variant &p_value) {
+static constexpr int MAX_COORDINATE_VARIANT_DEPTH = 32;
+
+static String canonical_variant_identity(const Variant &p_value, int p_depth, HashSet<uint64_t> &r_active_containers) {
+	if (p_depth >= MAX_COORDINATE_VARIANT_DEPTH) {
+		return "X:DEPTH_LIMIT";
+	}
 	if (p_value.get_type() == Variant::DICTIONARY) {
 		const Dictionary dictionary = p_value;
+		const uint64_t identity_key = uint64_t(reinterpret_cast<uintptr_t>(dictionary.id()));
+		if (r_active_containers.has(identity_key)) {
+			return "X:CYCLE";
+		}
+		r_active_containers.insert(identity_key);
 		Vector<String> members;
 		for (const Variant &key : dictionary.keys()) {
-			members.push_back(length_encoded(canonical_variant_identity(key)) +
-					length_encoded(canonical_variant_identity(dictionary[key])));
+			members.push_back(length_encoded(canonical_variant_identity(key, p_depth + 1, r_active_containers)) +
+					length_encoded(canonical_variant_identity(dictionary[key], p_depth + 1, r_active_containers)));
 		}
+		r_active_containers.erase(identity_key);
 		members.sort();
 		String identity = "D{";
 		for (const String &member : members) {
@@ -83,14 +96,29 @@ static String canonical_variant_identity(const Variant &p_value) {
 	}
 	if (p_value.get_type() == Variant::ARRAY) {
 		const Array array = p_value;
+		const uint64_t identity_key = uint64_t(reinterpret_cast<uintptr_t>(array.id()));
+		if (r_active_containers.has(identity_key)) {
+			return "X:CYCLE";
+		}
+		r_active_containers.insert(identity_key);
 		String identity = "A[";
 		for (int i = 0; i < array.size(); i++) {
-			identity += length_encoded(canonical_variant_identity(array[i]));
+			identity += length_encoded(canonical_variant_identity(array[i], p_depth + 1, r_active_containers));
 		}
+		r_active_containers.erase(identity_key);
 		return identity + "]";
 	}
 	if (p_value.get_type() == Variant::STRING) {
 		return "S" + length_encoded(p_value);
+	}
+	switch (p_value.get_type()) {
+		case Variant::OBJECT:
+		case Variant::CALLABLE:
+		case Variant::SIGNAL:
+		case Variant::RID:
+			return vformat("X:UNSUPPORTED:T%d", p_value.get_type());
+		default:
+			break;
 	}
 	return vformat("T%d:%s", p_value.get_type(), length_encoded(p_value.stringify()));
 }
@@ -101,8 +129,11 @@ static String deterministic_coordinate_value(const Variant &p_value) {
 	}
 	// Valid manifests use string leaves. The sentinel begins with a raw percent sign, which no
 	// escaped string value can contain, so malformed programmatic inputs remain deterministic and
-	// cannot collide with a valid string coordinate.
-	return "%!" + escape_case_id_component(canonical_variant_identity(p_value));
+	// cannot collide with a valid string coordinate. This hardening is intentionally not an
+	// injective semantic encoding for invalid object-like, cyclic, or excessively deep values:
+	// those values collapse to explicit stable sentinels instead of depending on instance identity.
+	HashSet<uint64_t> active_containers;
+	return "%!" + escape_case_id_component(canonical_variant_identity(p_value, 0, active_containers));
 }
 
 static void append_file_error(Vector<String> &r_errors, const String &p_file, const String &p_path,
@@ -200,7 +231,7 @@ String FSCompletenessCaseID::canonical_coordinates(const Dictionary &p_coordinat
 }
 
 String FSCompletenessCaseID::make(const String &p_family, const Dictionary &p_coordinates) {
-	const String payload = p_family + "|" + canonical_coordinates(p_coordinates);
+	const String payload = escape_case_id_component(p_family) + "|" + canonical_coordinates(p_coordinates);
 	return "fstc-v1-" + payload.sha256_text().substr(0, 20);
 }
 
@@ -242,18 +273,17 @@ Error FSCompletenessMigrations::load(const String &p_directory, const HashSet<St
 			r_errors.push_back(vformat("%s: could not read file (error %d)", file, read_error));
 			continue;
 		}
-		JSON json;
-		if (json.parse(source) != OK) {
-			append_file_error(r_errors, file, "$",
-					vformat("invalid JSON at line %d: %s", json.get_error_line(), json.get_error_message()));
+		Variant json_data;
+		const Error json_error = parse_type_completeness_json(source, file, json_data, r_errors);
+		if (json_error == ERR_PARSE_ERROR) {
 			had_parse_error = true;
 			continue;
 		}
-		if (json.get_data().get_type() != Variant::DICTIONARY) {
+		if (json_data.get_type() != Variant::DICTIONARY) {
 			append_file_error(r_errors, file, "$", "expected object");
 			continue;
 		}
-		const Dictionary root = json.get_data();
+		const Dictionary root = json_data;
 		validate_exact_fields(root, Vector<String>({ "schema_version", "migrations" }), file, "$", r_errors);
 		if (root.has("schema_version")) {
 			int schema_version = 0;

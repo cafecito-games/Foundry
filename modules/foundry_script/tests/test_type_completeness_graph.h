@@ -107,6 +107,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 		const String first_id = FSCompletenessCaseID::make("assignment_compatibility", first);
 		const String reversed_id = FSCompletenessCaseID::make("assignment_compatibility", reversed);
 		CHECK_EQ(first_id, reversed_id);
+		CHECK_EQ(first_id, "fstc-v1-2c96bdc868fed3178746");
 		CHECK(first_id.begins_with("fstc-v1-"));
 		CHECK_EQ(first_id.length(), 28);
 		for (int i = 8; i < first_id.length(); i++) {
@@ -127,6 +128,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 		collision_attempt["a"] = "|=%|a|=%=|";
 		CHECK_NE(FSCompletenessCaseID::canonical_coordinates(escaped),
 				FSCompletenessCaseID::canonical_coordinates(collision_attempt));
+
+		Dictionary first_payload_coordinates;
+		first_payload_coordinates["b"] = "c";
+		first_payload_coordinates["d"] = "e";
+		Dictionary second_payload_coordinates;
+		second_payload_coordinates["d"] = "e";
+		CHECK_NE(FSCompletenessCaseID::make("a", first_payload_coordinates),
+				FSCompletenessCaseID::make("a|b=c", second_payload_coordinates));
 
 		Dictionary unexpected_number;
 		unexpected_number["coordinate"] = 1;
@@ -149,6 +158,28 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 		unexpected_nested_reversed["coordinate"] = nested_reversed;
 		CHECK_EQ(FSCompletenessCaseID::canonical_coordinates(unexpected_nested_first),
 				FSCompletenessCaseID::canonical_coordinates(unexpected_nested_reversed));
+
+		Variant too_deep = 1;
+		for (int i = 0; i < 40; i++) {
+			Array wrapper;
+			wrapper.push_back(too_deep);
+			too_deep = wrapper;
+		}
+		Dictionary unexpected_too_deep;
+		unexpected_too_deep["coordinate"] = too_deep;
+		CHECK(FSCompletenessCaseID::canonical_coordinates(unexpected_too_deep).contains("DEPTH_LIMIT"));
+
+		Dictionary unexpected_object_like;
+		unexpected_object_like["coordinate"] = Callable();
+		CHECK(FSCompletenessCaseID::canonical_coordinates(unexpected_object_like).contains("UNSUPPORTED"));
+
+		Array recursive_array;
+		Dictionary recursive_link;
+		recursive_link["back"] = recursive_array;
+		recursive_array.push_back(recursive_link);
+		Dictionary unexpected_cycle;
+		unexpected_cycle["coordinate"] = recursive_array;
+		CHECK(FSCompletenessCaseID::canonical_coordinates(unexpected_cycle).contains("CYCLE"));
 	}
 
 	TEST_CASE("TypeCompleteness Graph assigns distinct stable IDs to the union pilot") {
@@ -216,6 +247,41 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 		CHECK(migrations.resolve("a").is_empty());
 	}
 
+	TEST_CASE("TypeCompleteness Graph migration aliases reject duplicate JSON members atomically") {
+		TemporaryProjectTree tree(completeness_migration_tree_name("type_completeness_migration_duplicate_members"));
+		REQUIRE(tree.is_valid());
+		tree.write_file("migrations/v1.json", R"JSON({
+  "schema_version": 1,
+  "migrations": [{"old_id": "stale", "new_ids": ["current"], "reason": "Initial alias."}]
+})JSON");
+
+		FSCompletenessMigrations migrations;
+		Vector<String> errors;
+		REQUIRE_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "current" }), errors), OK);
+		CHECK_EQ(migrations.resolve("stale"), Vector<String>({ "current" }));
+
+		tree.write_file("migrations/v1.json", R"JSON({
+  "schema_version": 1,
+  "\u0073chema_version": 1,
+  "migrations": [{
+    "old_id": "stale",
+    "\u006fld_id": "shadowed",
+    "new_ids": ["current"],
+    "\u006eew_ids": ["current"],
+    "reason": "Duplicate names must fail closed."
+  }]
+})JSON");
+		CHECK_EQ(migrations.load(tree.root.path_join("migrations"), completeness_current_ids({ "current" }), errors),
+				ERR_INVALID_DATA);
+		CHECK(graph_errors_contain(errors,
+				"v1.json: $.schema_version: duplicate object member 'schema_version'"));
+		CHECK(graph_errors_contain(errors,
+				"v1.json: $.migrations[0].old_id: duplicate object member 'old_id'"));
+		CHECK(graph_errors_contain(errors,
+				"v1.json: $.migrations[0].new_ids: duplicate object member 'new_ids'"));
+		CHECK(migrations.resolve("stale").is_empty());
+	}
+
 	TEST_CASE("TypeCompleteness Graph migration aliases aggregate deterministic validation errors") {
 		TemporaryProjectTree tree(completeness_migration_tree_name("type_completeness_migration_invalid"));
 		REQUIRE(tree.is_valid());
@@ -243,7 +309,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 		Vector<String> sorted_errors = errors;
 		sorted_errors.sort();
 		CHECK_EQ(errors, sorted_errors);
-		CHECK(graph_errors_contain(errors, "duplicate old_id 'dup'"));
+		CHECK(errors.has(vformat("%s: $.migrations[0].old_id: duplicate old_id 'dup' (first declared in %s)",
+				tree.root.path_join("migrations/z.json"), tree.root.path_join("migrations/a.json"))));
 		CHECK(graph_errors_contain(errors, "must not alias itself"));
 		CHECK(graph_errors_contain(errors, "replacement ID 'missing' is not a current case ID"));
 		CHECK(graph_errors_contain(errors, "new_ids must not be empty"));
