@@ -1,0 +1,111 @@
+{
+	"schema_version": 1,
+	"description": "Every erasure, reification, projection, and substitution transition between two census representations. A transition names the source and destination representations, the kind of transformation, and the anchor that owns it; the census validator rejects a transition whose endpoints are not inventoried representations.",
+	"transitions": [
+		{
+			"id": "parser_union_members_to_runtime_alternatives",
+			"from": "parser_data_type",
+			"to": "runtime_data_type",
+			"kind": "project",
+			"anchor": "modules/foundry_script/fs_function.h:140",
+			"summary": "Normalized parser union members lower into runtime union_alternatives in the same canonical order; the alternatives are deliberately not stored in container_element_types because they are parts of a set, not of one value.",
+			"families": ["union_destination_membership"]
+		},
+		{
+			"id": "parser_tagged_union_to_positional_array_carrier",
+			"from": "parser_data_type",
+			"to": "runtime_data_type",
+			"kind": "erase",
+			"anchor": "modules/foundry_script/fs_parser.h:234",
+			"summary": "A tagged union is an ENUM with no runtime ENUM kind: its values are positional read-only Arrays and its meta type a Dictionary; enum_case_payloads field names are an analyzer-only convenience."
+		},
+		{
+			"id": "parser_type_parameter_to_variant_erasure",
+			"from": "parser_data_type",
+			"to": "runtime_data_type",
+			"kind": "erase",
+			"anchor": "modules/foundry_script/fs_function.h:364",
+			"summary": "Type parameters are erased before execution; a runtime TYPE_PARAMETER node accepts any value defensively. The only runtime form that keeps TYPE_PARAMETER nodes is a FIXED member binding."
+		},
+		{
+			"id": "parser_type_parameter_to_fixed_binding",
+			"from": "parser_data_type",
+			"to": "member_binding_descriptor",
+			"kind": "substitute",
+			"anchor": "modules/foundry_script/foundry_script.h:181",
+			"summary": "A FIXED binding stores an FSDataType that keeps TYPE_PARAMETER nodes at any depth, so each further extends step substitutes them recursively and a leaf supplying the last parameter resolves the whole type."
+		},
+		{
+			"id": "parser_numeric_width_to_runtime_descriptor",
+			"from": "parser_data_type",
+			"to": "runtime_data_type",
+			"kind": "project",
+			"anchor": "modules/foundry_script/fs_parser.h:166",
+			"summary": "The declared integer width lowers with the carrier it constrains; a width reconstructed from a carrier-only boundary keeps numeric_type_is_carrier_erased provenance and must not be copied into a constraint slot (as_container_slot_type, modules/foundry_script/fs_parser.h:372)."
+		},
+		{
+			"id": "runtime_type_to_serialized_record",
+			"from": "runtime_data_type",
+			"to": "bytecode_serialized_type",
+			"kind": "project",
+			"anchor": "modules/foundry_script/fs_bytecode_export.cpp:340",
+			"summary": "encode_data_type writes kind, carrier, width, native and trait names, flags, parameter identity, script reference, and all three recursive child vectors; decode_data_type rebuilds them and rejects a kind above UNION or an out-of-range or carrier-inconsistent width."
+		},
+		{
+			"id": "serialized_record_to_runtime_type",
+			"from": "bytecode_serialized_type",
+			"to": "runtime_data_type",
+			"kind": "reify",
+			"anchor": "modules/foundry_script/fs_bytecode_loader.h:158",
+			"summary": "The loader rebuilds live FSDataType records from serialized bytes; a reloaded script enforces the same constraints as a text-compiled one, so every child that survived serialization is reified here."
+		},
+		{
+			"id": "runtime_type_to_property_info",
+			"from": "runtime_data_type",
+			"to": "reflection_property_info",
+			"kind": "erase",
+			"anchor": "modules/foundry_script/fs_function.h:146",
+			"summary": "A plain PropertyInfo round trip keeps only the carrier: a slot that stores just a carrier decodes to the wide spelling. Tuples erase to a bare untyped Array; unions degrade to the shared carrier or Variant."
+		},
+		{
+			"id": "property_info_to_parser_type",
+			"from": "reflection_property_info",
+			"to": "parser_data_type",
+			"kind": "reify",
+			"anchor": "modules/foundry_script/fs_analyzer.h:1010",
+			"summary": "type_from_property reconstructs a parser DataType from a PropertyInfo; a width it recovers from the carrier alone is provenance-marked numeric_type_is_carrier_erased so it describes a value range, never a constraint."
+		},
+		{
+			"id": "runtime_type_to_container_descriptor",
+			"from": "runtime_data_type",
+			"to": "container_descriptor",
+			"kind": "project",
+			"anchor": "modules/foundry_script/fs_function.h:155",
+			"summary": "FSDataType::from_container_type and the ContainerType lowering are the bridge between script-typed slots and engine-level typed containers; element widths and reified arguments both survive the crossing."
+		},
+		{
+			"id": "runtime_type_to_rendered_source_name",
+			"from": "runtime_data_type",
+			"to": "rendered_source_name",
+			"kind": "project",
+			"anchor": "modules/foundry_script/fs_function.h:149",
+			"summary": "get_source_type_name reconstructs the Foundry Script spelling from the stored descriptor alone, never from a runtime value; containers, generic arguments, tuples, and nullability recurse, so widths stay distinguishable."
+		},
+		{
+			"id": "instance_to_specialization_evidence",
+			"from": "container_descriptor",
+			"to": "specialization_evidence",
+			"kind": "reify",
+			"anchor": "modules/foundry_script/fs_function.h:71",
+			"summary": "An instance and a class handle both reduce to a leaf script plus reified arguments; an unspecialized handle reports no evidence, which is gradual acceptance rather than a claim."
+		},
+		{
+			"id": "parser_tuple_to_slot_shape_preservation",
+			"from": "parser_data_type",
+			"to": "member_binding_descriptor",
+			"kind": "preserve",
+			"anchor": "modules/foundry_script/foundry_script.h:207",
+			"summary": "A tuple member's declared shape is preserved as tuple_slot_shape beside the erased Array data_type, so a reflective write — which has only the slot type to go on — still rejects a wrong-arity or wrong-element Array."
+		}
+	]
+}

@@ -1,0 +1,846 @@
+{
+	"schema_version": 1,
+	"description": "The complete handling-policy matrix: exactly one declared policy for every (representation, child slot, surface) pair inventoried in representations.json. The census validator rejects a missing pair (an uncovered child) and an extra pair (an orphaned entry) alike.",
+	"entries": [
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "Substitution, equality, and normalization recurse through container elements (FSParser::DataType::substitute, modules/foundry_script/fs_parser.h:324)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_text",
+			"policy": "project",
+			"rationale": "Lowered at compile time into runtime_data_type.container_element_types and ContainerType metadata."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_bytecode",
+			"policy": "project",
+			"rationale": "The bytecode execution path consumes the same lowered runtime form."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "The parser record is never serialized; the exporter writes the lowered runtime form."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "reflection",
+			"policy": "project",
+			"rationale": "to_property_info carries element typing into hints; tuple elements erase to the bare Array carrier (modules/foundry_script/fs_parser.h:356)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Rendering, hover, and completion name element types."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "make_union normalization and equality compare alternatives (modules/foundry_script/fs_parser.h:273)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "runtime_text",
+			"policy": "project",
+			"rationale": "Lowered into runtime_data_type.union_alternatives, which owns the membership test."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "runtime_bytecode",
+			"policy": "project",
+			"rationale": "Same lowering; decoded alternatives enforce identically."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "Serialization writes the runtime alternatives, never the parser members."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "reflection",
+			"policy": "erase",
+			"rationale": "A union has no carrier of its own; the PropertyInfo projection degrades to the shared carrier or Variant."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Diagnostics and hover render the alternative set."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "Substitution and equality recurse through type arguments (modules/foundry_script/fs_parser.h:313)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_text",
+			"policy": "project",
+			"rationale": "Reified onto the runtime slot and, for handles, the constructed instance."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_bytecode",
+			"policy": "project",
+			"rationale": "Same reification through decoded records."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "The parser form is never serialized; serialized arguments come from the runtime record."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "reflection",
+			"policy": "project",
+			"rationale": "Specialization travels into ContainerType.type_arguments on typed slots and handles."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Renderers distinguish Box[int] from Box[String]."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "Bound satisfaction is proven statically against the bound type before any lowering."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "runtime_text",
+			"policy": "erase",
+			"rationale": "Bounds are proven statically and erased before execution; a runtime TYPE_PARAMETER accepts any value (modules/foundry_script/fs_function.h:364)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "runtime_bytecode",
+			"policy": "erase",
+			"rationale": "Same erasure on the bytecode path."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "TYPE_PARAMETER nodes are erased before serialization; only preserved FIXED bindings serialize them."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "PropertyInfo has no bound expression."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Hover and signature rendering show declared bounds."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "Signature assignability compares parameter types recursively (modules/foundry_script/fs_analyzer.cpp:1052)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "runtime_text",
+			"policy": "erase",
+			"rationale": "Callable signature identity is static; the runtime value is the Callable carrier."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "runtime_bytecode",
+			"policy": "erase",
+			"rationale": "Same erasure on the bytecode path."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "MethodInfo is serialized for compiled functions, not as a child of a data-type record."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "PropertyInfo does not express callable parameter signatures."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Signature help and hover render parameter types."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "Signature assignability compares return types recursively (modules/foundry_script/fs_analyzer.cpp:1052)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "runtime_text",
+			"policy": "erase",
+			"rationale": "Callable signature identity is static; the runtime value is the Callable carrier."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "runtime_bytecode",
+			"policy": "erase",
+			"rationale": "Same erasure on the bytecode path."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "MethodInfo is serialized for compiled functions, not as a child of a data-type record."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "PropertyInfo does not express callable return signatures."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Hover and inferred-type rendering show the return type."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "The rest tail participates in arity and signature checks with its narrowed element type."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "runtime_text",
+			"policy": "erase",
+			"rationale": "The rest tail's element constraint travels with typed-array store validation, not with the signature record."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "runtime_bytecode",
+			"policy": "erase",
+			"rationale": "Same erasure on the bytecode path; the loader validates the rest slot's vararg arity bit instead."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "The rest slot is a signature record, not a serialized data-type child."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "PropertyInfo does not express variadic tails."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Signature help renders the rest element type."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "analyzer",
+			"policy": "traverse",
+			"rationale": "Case construction checks payload arguments against the declared field types (modules/foundry_script/fs_parser.h:234)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "runtime_text",
+			"policy": "erase",
+			"rationale": "The runtime payload carrier is a positional read-only Array; the declared shape does not exist at runtime."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "runtime_bytecode",
+			"policy": "erase",
+			"rationale": "Same erasure; payload values serialize as baked constants."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "Tagged-union shape is analyzer-only and is not part of any serialized type record."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "PropertyInfo shows the Array carrier only."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "editor_tools",
+			"policy": "traverse",
+			"rationale": "Completion and rendering of case constructors show payload shapes."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "analyzer",
+			"policy": "preserve",
+			"rationale": "Field names are an analyzer-only convenience over the positional carrier (modules/foundry_script/fs_parser.h:227)."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "runtime_text",
+			"policy": "erase",
+			"rationale": "The runtime representation is positional; names do not exist at runtime."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "runtime_bytecode",
+			"policy": "erase",
+			"rationale": "Same positional erasure."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "Names are never serialized with values."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "Reflective access sees the positional Array only."
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "editor_tools",
+			"policy": "preserve",
+			"rationale": "Completion and diagnostics use the declared names."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Post-analysis form; the analyzer adapter observes the parser record."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "is_type compares typed container identity and recurses through tuple element acceptance (modules/foundry_script/fs_function.h:253, modules/foundry_script/fs_function.h:344)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Decoded records enforce identically to text-compiled ones."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "encode_data_type writes each element record recursively (modules/foundry_script/fs_bytecode_export.cpp:380)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "reflection",
+			"policy": "project",
+			"rationale": "Typed-container metadata materializes as ContainerType/ContainerTypeValidate."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "editor_tools",
+			"policy": "project",
+			"rationale": "get_source_type_name renders element types so widths stay distinguishable (modules/foundry_script/fs_function.h:144)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Post-analysis form; the analyzer adapter observes the parser record."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "_script_specialization_matches asks the invariant question about reified arguments (modules/foundry_script/fs_function.h:196)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Decoded arguments enforce identically to text-compiled ones."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "encode_data_type writes each argument record recursively (modules/foundry_script/fs_bytecode_export.cpp:387)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "reflection",
+			"policy": "project",
+			"rationale": "ContainerType.type_arguments carries reified arguments across reflective boundaries."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "editor_tools",
+			"policy": "project",
+			"rationale": "Renderers name the specialization."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Post-analysis form; the analyzer adapter observes the parser record."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "Membership is the disjunction of the alternatives (modules/foundry_script/fs_function.h:363)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Decoded alternatives enforce identically to text-compiled ones."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "encode_data_type writes each alternative record recursively (modules/foundry_script/fs_bytecode_export.cpp:394)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "reflection",
+			"policy": "erase",
+			"rationale": "A union stays an unconstrained node everywhere except its own membership test (modules/foundry_script/fs_function.h:136)."
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "editor_tools",
+			"policy": "project",
+			"rationale": "Renderers show the alternative set."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Engine-level form produced after analysis."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "ContainerTypeValidate recurses through element records on every typed store."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Decoded container records validate identically."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "Typed constants serialize their container records including nested widths."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "reflection",
+			"policy": "traverse",
+			"rationale": "Object.set and proxies validate through the same recursive records."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "editor_tools",
+			"policy": "project",
+			"rationale": "The inspector renders typed containers from hints derived from these records."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Engine-level form produced after analysis."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "Specialization evidence and expected arguments compare recursively (modules/foundry_script/fs_function.h:185)."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Decoded arguments validate identically."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "ContainerType carries and serializes type arguments."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "reflection",
+			"policy": "traverse",
+			"rationale": "Reflective writes resolve OPEN bindings against leaf type arguments."
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "editor_tools",
+			"policy": "project",
+			"rationale": "Renderers name the specialization."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Serialized records exist only after compilation."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "runtime_text",
+			"policy": "not_applicable",
+			"rationale": "The text path never reads serialized records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "runtime_bytecode",
+			"policy": "project",
+			"rationale": "decode_data_type rebuilds live FSDataType records before execution (modules/foundry_script/fs_bytecode_loader.h:158)."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "Decoding validates each nested record; an out-of-range width or carrier-inconsistent descriptor is rejected."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "Reflection observes live values, not serialized records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "editor_tools",
+			"policy": "not_applicable",
+			"rationale": "Tools observe source or live scripts, not raw .fsb records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Serialized records exist only after compilation."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "runtime_text",
+			"policy": "not_applicable",
+			"rationale": "The text path never reads serialized records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "runtime_bytecode",
+			"policy": "project",
+			"rationale": "decode_data_type rebuilds the reified argument records before execution."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "Argument records round-trip so a specialized slot keeps enforcing after reload."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "Reflection observes live values, not serialized records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "editor_tools",
+			"policy": "not_applicable",
+			"rationale": "Tools observe source or live scripts, not raw .fsb records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Serialized records exist only after compilation."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "runtime_text",
+			"policy": "not_applicable",
+			"rationale": "The text path never reads serialized records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "runtime_bytecode",
+			"policy": "project",
+			"rationale": "decode_data_type rebuilds the alternative records before execution."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "Alternative records round-trip so the membership obligation survives reload."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "reflection",
+			"policy": "not_applicable",
+			"rationale": "Reflection observes live values, not serialized records."
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "editor_tools",
+			"policy": "not_applicable",
+			"rationale": "Tools observe source or live scripts, not raw .fsb records."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Compiled artifact; the analyzer observes the parser record."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "runtime_text",
+			"policy": "substitute",
+			"rationale": "Each further extends step substitutes surviving TYPE_PARAMETER nodes recursively (modules/foundry_script/foundry_script.h:181)."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "runtime_bytecode",
+			"policy": "substitute",
+			"rationale": "Same substitution after reload."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "_write_type_argument_binding serializes the FIXED record recursively (modules/foundry_script/fs_bytecode_export.cpp:941)."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "reflection",
+			"policy": "substitute",
+			"rationale": "project_type_argument_binding resolves FIXED nodes against a receiver's reified arguments (modules/foundry_script/foundry_script.h:248)."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "editor_tools",
+			"policy": "not_applicable",
+			"rationale": "Bindings are not an editor-facing surface."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Compiled artifact; the analyzer observes the parser record."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "Reflective member writes validate against tuple_slot_shape after resolving surviving parameters (modules/foundry_script/foundry_script.h:234)."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Same validation after reload."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "bytecode_serialization",
+			"policy": "traverse",
+			"rationale": "The shape is encoded and decoded with the member record (modules/foundry_script/fs_bytecode_export.cpp:933, modules/foundry_script/fs_bytecode_loader.cpp:1907)."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "reflection",
+			"policy": "traverse",
+			"rationale": "A reflective Object.set has only this shape for a tuple slot."
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "editor_tools",
+			"policy": "not_applicable",
+			"rationale": "Bindings are not an editor-facing surface."
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "analyzer",
+			"policy": "not_applicable",
+			"rationale": "Evidence is derived from live values, which the analyzer never sees."
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "runtime_text",
+			"policy": "traverse",
+			"rationale": "specialization_matches projects evidence arguments through the leaf binding table (modules/foundry_script/fs_function.h:169)."
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "runtime_bytecode",
+			"policy": "traverse",
+			"rationale": "Same relation after reload."
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "bytecode_serialization",
+			"policy": "not_applicable",
+			"rationale": "Evidence is derived from live instances and never stored."
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "reflection",
+			"policy": "project",
+			"rationale": "from_instance/from_class_handle are the reflective entry points (modules/foundry_script/fs_function.h:71)."
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "editor_tools",
+			"policy": "not_applicable",
+			"rationale": "Evidence is not an editor-facing surface."
+		}
+	]
+}
