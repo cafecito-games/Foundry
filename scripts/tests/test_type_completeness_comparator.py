@@ -111,8 +111,23 @@ def _report(
         "coverage_by_dimension": {},
         "uncovered_required_dimensions": 0,
         "text_bytecode_parity_failures": 0,
+        "published_surface": "",
+        "outcome": "passed" if all(case["passed"] for case in cases) else "product_mismatch",
+        "structural_failures": [],
+        "ledger": {"reconciled": [], "stale": []},
+        "exceptions": [],
         "findings": findings or [],
         "cases": cases,
+        # Observability only: every consumer must ignore it, so every synthetic report carries it.
+        "timings_ms": {
+            "load": 1.0,
+            "resolve": 2.0,
+            "render": 3.0,
+            "analyze": 4.0,
+            "execute": 5.0,
+            "report": 6.0,
+            "total": 21.0,
+        },
     }
 
 
@@ -205,6 +220,7 @@ RUNNER_REPORT_TEXT = """{
 \t"coverage_by_dimension": {
 \t\t"destination": 2.0
 \t},
+\t"exceptions": [],
 \t"executed_by_surface": {
 \t\t"bytecode": 0.0,
 \t\t"text": 2.0
@@ -228,12 +244,62 @@ RUNNER_REPORT_TEXT = """{
 \t\t\t"resolved_case_ids": []
 \t\t}
 \t],
+\t"ledger": {
+\t\t"reconciled": [],
+\t\t"stale": []
+\t},
+\t"outcome": "product_mismatch",
+\t"published_surface": "",
 \t"schema_version": 1.0,
+\t"structural_failures": [],
 \t"success": false,
 \t"text_bytecode_parity_failures": 0.0,
+\t"timings_ms": {
+\t\t"analyze": 3.5,
+\t\t"execute": 812.25,
+\t\t"load": 11.75,
+\t\t"render": 4.0,
+\t\t"report": 1.5,
+\t\t"resolve": 6.25,
+\t\t"total": 839.5
+\t},
 \t"uncovered_required_dimensions": 0.0
 }
 """ % hashlib.sha256(b"case_union_store_variable|destination").hexdigest()[:20]
+
+
+# `Error::ERR_TIMEOUT`, the code the runner stamps on a `run_timeout` structural failure. The runner
+# writes every error code as a Variant FLOAT, so it reads back as 24.0.
+RUNNER_ERR_TIMEOUT = 24.0
+
+
+def _republished_after_timeout(text: str) -> str:
+    """The document `run_family` republishes when its budget is found crossed after the last write.
+
+    Applying the runner's own transformation to the fixture above is what makes this the runner's
+    document rather than an invented one: the verdict members are replaced in place (so the engine's
+    member order is preserved), the `run_timeout` record carries exactly the members
+    `structural_failure_report()` writes, and Python's JSON writer with a tab indent reproduces the
+    engine's writer byte for byte - checked against a report written by a real `test completeness
+    run`. The evidence stays in the document; only the verdict changes.
+    """
+    document = json.loads(text)
+    document["success"] = False
+    document["outcome"] = "structural_failure"
+    document["structural_failures"] = [
+        {
+            "stage": "run_timeout",
+            "detail": "The run exceeded its wall-clock budget while publishing its report.",
+            "case_id": "",
+            "witness_id": "",
+            "exception_id": "",
+            "error_code": RUNNER_ERR_TIMEOUT,
+        }
+    ]
+    return json.dumps(document, indent="\t") + "\n"
+
+
+RUNNER_TIMEOUT_REPORT_TEXT = _republished_after_timeout(RUNNER_REPORT_TEXT)
 
 
 class ReportLoadingTests(unittest.TestCase):
@@ -254,6 +320,57 @@ class ReportLoadingTests(unittest.TestCase):
             failed.findings[0]["finding_id"], _runner_finding_id("case_union_store_variable", "destination")
         )
         self.assertEqual(loaded.case("case_union_store_member").findings, ())
+
+    def _compare_exit_code(self, root: Path, branch_text: str, develop_text: str) -> tuple[int, dict[str, Any]]:
+        (root / "branch.json").write_text(branch_text)
+        (root / "develop.json").write_text(develop_text)
+        code = cli.main(
+            [
+                "compare",
+                "--branch-report",
+                str(root / "branch.json"),
+                "--develop-report",
+                str(root / "develop.json"),
+                "--configuration",
+                "text",
+                "--capabilities",
+                str(_CAPABILITIES_FILE),
+                "--output",
+                str(root / "comparison.json"),
+                "--fail-on-regression",
+            ]
+        )
+        return code, json.loads((root / "comparison.json").read_text())
+
+    def test_compare_refuses_a_republished_timeout_report(self) -> None:
+        for label, branch_text, develop_text in (
+            ("branch", RUNNER_TIMEOUT_REPORT_TEXT, RUNNER_REPORT_TEXT),
+            ("develop", RUNNER_REPORT_TEXT, RUNNER_TIMEOUT_REPORT_TEXT),
+            ("both", RUNNER_TIMEOUT_REPORT_TEXT, RUNNER_TIMEOUT_REPORT_TEXT),
+        ):
+            with self.subTest(side=label), tempfile.TemporaryDirectory() as directory:
+                code, comparison = self._compare_exit_code(Path(directory), branch_text, develop_text)
+                # Refused whatever --fail-on-regression says: this is not a regression judgment.
+                self.assertEqual(code, cli.STRUCTURAL_FAILURE_EXIT_CODE)
+                self.assertEqual(comparison["artifacts"], [])
+                self.assertIn("structural_failure", comparison)
+                self.assertTrue(comparison["structural_failure"]["reasons"])
+                # Nothing a consumer could read as a clean verdict.
+                self.assertNotIn("unchanged", json.dumps(comparison))
+
+    def test_a_refused_comparison_cannot_be_deserialized_as_a_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, comparison = self._compare_exit_code(root, RUNNER_TIMEOUT_REPORT_TEXT, RUNNER_REPORT_TEXT)
+            with self.assertRaises(report.ReportError):
+                comparator.deserialize_many(json.dumps(comparison))
+
+    def test_compare_still_classifies_a_product_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            code, comparison = self._compare_exit_code(Path(directory), RUNNER_REPORT_TEXT, RUNNER_REPORT_TEXT)
+            self.assertEqual(code, 0)
+            self.assertEqual([entry["status"] for entry in comparison["artifacts"]], ["unchanged"])
+            self.assertNotIn("structural_failure", comparison)
 
     def test_runner_report_survives_compare_and_propose_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -410,6 +527,51 @@ class ReportLoadingTests(unittest.TestCase):
         loaded = report.load_report(_report([_case("b", passed=False, category="structural_failure")]))
         self.assertEqual(loaded.case("b").category, report.Category.STRUCTURAL_FAILURE)
 
+    def test_the_outcome_is_required_and_must_agree_with_success(self) -> None:
+        complete = json.loads(RUNNER_REPORT_TEXT)
+        report.load_report(complete)
+
+        missing = {member: value for member, value in complete.items() if member != "outcome"}
+        with self.assertRaises(report.ReportError):
+            report.load_report(missing)
+        for malformed in (None, 1, True, "", "clean", ["passed"]):
+            with self.subTest(outcome=malformed):
+                with self.assertRaises(report.ReportError):
+                    report.load_report(dict(complete, outcome=malformed))
+        # A document whose two verdict members disagree was not written by a run.
+        with self.assertRaises(report.ReportError):
+            report.load_report(dict(complete, success=True))
+        with self.assertRaises(report.ReportError):
+            report.load_report(dict(json.loads(RUNNER_TIMEOUT_REPORT_TEXT), success=True))
+
+    def test_a_republished_timeout_report_is_a_structural_failure(self) -> None:
+        loaded = report.load_report(json.loads(RUNNER_TIMEOUT_REPORT_TEXT))
+        self.assertTrue(loaded.is_structural_failure)
+        self.assertFalse(loaded.is_clean)
+        self.assertFalse(loaded.success)
+        self.assertEqual(loaded.outcome, "structural_failure")
+        # The cases the run did collect are still there, and they still read as they were observed:
+        # nothing about the case list reveals that the run failed.
+        self.assertEqual(len(loaded.cases), len(report.load_report(json.loads(RUNNER_REPORT_TEXT)).cases))
+
+    def test_a_product_mismatch_report_is_not_a_structural_failure(self) -> None:
+        loaded = report.load_report(json.loads(RUNNER_REPORT_TEXT))
+        self.assertEqual(loaded.outcome, "product_mismatch")
+        self.assertFalse(loaded.is_structural_failure)
+        self.assertFalse(loaded.is_clean)
+
+    def test_timings_are_dropped_from_the_loaded_evidence(self) -> None:
+        loaded = report.load_report(json.loads(RUNNER_REPORT_TEXT))
+        self.assertIn("timings_ms", json.loads(RUNNER_REPORT_TEXT))
+        self.assertNotIn("timings_ms", loaded.raw)
+        for case in loaded.cases:
+            self.assertNotIn("timings_ms", case.observation)
+
+    def test_a_report_without_timings_loads_identically(self) -> None:
+        timed = json.loads(RUNNER_REPORT_TEXT)
+        untimed = {member: value for member, value in timed.items() if member != "timings_ms"}
+        self.assertEqual(report.load_report(timed).raw, report.load_report(untimed).raw)
+
     def test_capability_slice_is_resolved_from_capabilities_manifest(self) -> None:
         manifest = {
             "schema_version": 1,
@@ -470,6 +632,26 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(comparator.observation_digest(ordered), comparator.observation_digest(reordered))
         changed = _case("a", passed=False, produced_output="different")
         self.assertNotEqual(comparator.observation_digest(ordered), comparator.observation_digest(changed))
+
+    def test_digests_and_comparison_ignore_timings(self) -> None:
+        timed = _case("a", passed=False)
+        branch = report.load_report(_report([timed]))
+        untimed_report = {member: value for member, value in _report([timed]).items() if member != "timings_ms"}
+        untimed = report.load_report(untimed_report)
+        timed_artifact = comparator.compare_case(branch, branch, "a", configuration="text")
+        untimed_artifact = comparator.compare_case(untimed, untimed, "a", configuration="text")
+        self.assertEqual(timed_artifact.branch_digest, untimed_artifact.branch_digest)
+        self.assertEqual(timed_artifact.comparison_id, untimed_artifact.comparison_id)
+        self.assertEqual(timed_artifact.to_dict(), untimed_artifact.to_dict())
+
+    def test_a_run_that_only_differs_in_timings_is_unchanged(self) -> None:
+        slow = _report([_case("a", passed=False)])
+        fast = _report([_case("a", passed=False)])
+        fast["timings_ms"] = {member: value * 17.0 for member, value in fast["timings_ms"].items()}
+        artifact = comparator.compare_case(
+            report.load_report(slow), report.load_report(fast), "a", configuration="text"
+        )
+        self.assertEqual(artifact.status, comparator.Status.UNCHANGED)
 
     def test_artifact_preserves_full_evidence_and_slice(self) -> None:
         artifact = self._compare(_case("a", passed=False), _case("a", passed=False))

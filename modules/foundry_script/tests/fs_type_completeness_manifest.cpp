@@ -29,6 +29,9 @@
 /**************************************************************************/
 
 #include "fs_type_completeness_manifest.h"
+
+#include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_common.h"
 #include "fs_type_completeness_json.h"
 
 #include "core/io/dir_access.h"
@@ -37,15 +40,9 @@
 #include "core/math/math_funcs.h"
 #include "core/variant/array.h"
 
-#ifdef UNIX_ENABLED
-#include <cstdlib>
-#endif
-
-#ifdef WINDOWS_ENABLED
-#include <windows.h>
-#endif
-
 namespace FSTests {
+
+using namespace Completeness;
 
 static void append_error(Vector<String> &r_errors, const String &p_path, const String &p_reason) {
 	r_errors.push_back(vformat("%s: %s", p_path, p_reason));
@@ -136,20 +133,6 @@ static bool append_unique_id(const String &p_id, const String &p_path, HashSet<S
 
 static void validate_allowed_fields(const Dictionary &p_object, const Vector<String> &p_allowed_fields,
 		const String &p_path, Vector<String> &r_errors);
-
-static bool require_json_integer(const Variant &p_value, const String &p_path, int &r_value, Vector<String> &r_errors) {
-	if (p_value.get_type() != Variant::FLOAT && p_value.get_type() != Variant::INT) {
-		append_error(r_errors, p_path, "expected an integer");
-		return false;
-	}
-	const double number = p_value;
-	if (!Math::is_finite(number) || number != Math::floor(number) || number < INT32_MIN || number > INT32_MAX) {
-		append_error(r_errors, p_path, "expected an integer");
-		return false;
-	}
-	r_value = (int)number;
-	return true;
-}
 
 static bool parse_string_array(const Array &p_array, const String &p_path, Vector<String> &r_values,
 		Vector<String> &r_errors, bool p_require_non_empty) {
@@ -373,10 +356,10 @@ Error FSCompletenessManifest::load(const String &p_path, FSCompletenessManifest 
 			"$", r_errors);
 	if (!root.has(SNAME("schema_version"))) {
 		append_error(r_errors, "$.schema_version", "required field is missing");
-	} else if (require_json_integer(root[SNAME("schema_version")], "$.schema_version", parsed.schema_version, r_errors)) {
-		if (parsed.schema_version != 1) {
-			append_error(r_errors, "$.schema_version", "must equal 1");
-		}
+	} else if (!parse_json_integer(root[SNAME("schema_version")], parsed.schema_version)) {
+		append_error(r_errors, "$.schema_version", "expected an integer");
+	} else if (parsed.schema_version != 1) {
+		append_error(r_errors, "$.schema_version", "must equal 1");
 	}
 	if (require_string(root, SNAME("family"), "$.family", parsed.family, r_errors) && parsed.family.is_empty()) {
 		append_error(r_errors, "$.family", "must be non-empty");
@@ -408,10 +391,10 @@ Error FSCompletenessManifest::load(const String &p_path, FSCompletenessManifest 
 
 	if (root.has(SNAME("max_chain_length"))) {
 		const Variant value = root[SNAME("max_chain_length")];
-		if (require_json_integer(value, "$.max_chain_length", parsed.max_chain_length, r_errors)) {
-			if (parsed.max_chain_length < 1 || parsed.max_chain_length > 3) {
-				append_error(r_errors, "$.max_chain_length", "must be between 1 and 3");
-			}
+		if (!parse_json_integer(value, parsed.max_chain_length)) {
+			append_error(r_errors, "$.max_chain_length", "expected an integer");
+		} else if (parsed.max_chain_length < 1 || parsed.max_chain_length > 3) {
+			append_error(r_errors, "$.max_chain_length", "must be between 1 and 3");
 		}
 	}
 
@@ -447,15 +430,6 @@ static bool load_catalog_object(const String &p_path, Dictionary &r_root, Vector
 	}
 	r_root = json_data;
 	return true;
-}
-
-static Vector<String> sorted_dictionary_keys(const Dictionary &p_dictionary) {
-	Vector<String> keys;
-	for (const Variant &key : p_dictionary.keys()) {
-		keys.push_back(key);
-	}
-	keys.sort();
-	return keys;
 }
 
 static void validate_allowed_fields(const Dictionary &p_object, const Vector<String> &p_allowed_fields,
@@ -578,40 +552,6 @@ static void sort_and_deduplicate_errors(Vector<String> &r_errors) {
 	r_errors = unique_errors;
 }
 
-static String canonicalize_existing_capability_path(const String &p_path) {
-#ifdef UNIX_ENABLED
-	char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
-	if (resolved == nullptr) {
-		return String();
-	}
-	String canonical;
-	const Error parse_error = canonical.append_utf8(resolved);
-	::free(resolved);
-	return parse_error == OK ? canonical.simplify_path() : String();
-#elif defined(WINDOWS_ENABLED)
-	HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
-			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-			FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-	if (handle == INVALID_HANDLE_VALUE) {
-		return String();
-	}
-	WCHAR buffer[4096];
-	const DWORD length = ::GetFinalPathNameByHandleW(
-			handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-	::CloseHandle(handle);
-	if (length == 0 || length > 4095) {
-		return String();
-	}
-	buffer[length] = 0;
-	return String::utf16((const char16_t *)buffer, (int)length)
-			.trim_prefix("\\\\?\\")
-			.replace("\\", "/")
-			.simplify_path();
-#else
-	return p_path.simplify_path();
-#endif
-}
-
 Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_errors) {
 	production_prefixes.clear();
 	nonproduction_prefixes.clear();
@@ -642,8 +582,9 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	int schema_version = 0;
 	if (!root.has(SNAME("schema_version"))) {
 		append_error(r_errors, "$.schema_version", "required field is missing");
-	} else if (require_json_integer(root[SNAME("schema_version")], "$.schema_version", schema_version, r_errors) &&
-			schema_version != 1) {
+	} else if (!parse_json_integer(root[SNAME("schema_version")], schema_version)) {
+		append_error(r_errors, "$.schema_version", "expected an integer");
+	} else if (schema_version != 1) {
 		append_error(r_errors, "$.schema_version", "must equal 1");
 	}
 
@@ -843,72 +784,53 @@ FSCompletenessSelection FSCompletenessCapabilityMap::select(const Vector<String>
 	return selection;
 }
 
+// A rule directory holds the family manifests the capability map is validated against, so its entries
+// are named "rule" in diagnostics; everything else keeps the shared wording.
+static String describe_rule_directory_error(const JsonDirectoryError &p_error) {
+	switch (p_error.kind) {
+		case JsonDirectoryErrorKind::DIRECTORY_UNOPENABLE:
+			return vformat("could not open rule directory (error %d)", p_error.error_code);
+		case JsonDirectoryErrorKind::DIRECTORY_UNLISTABLE:
+			return "could not list rule directory";
+		case JsonDirectoryErrorKind::DIRECTORY_NOT_CANONICAL:
+			return "rule directory must be canonical";
+		case JsonDirectoryErrorKind::LINKED_DIRECTORY:
+			return "linked rule directory is not allowed";
+		case JsonDirectoryErrorKind::LINKED_ENTRY:
+			return vformat("linked rule entry '%s' is not allowed", p_error.entry);
+		case JsonDirectoryErrorKind::NON_CONTAINED_ENTRY:
+			return vformat("non-contained rule entry '%s'", p_error.entry);
+		case JsonDirectoryErrorKind::ENTRY_NOT_CANONICAL:
+			return vformat("rule manifest '%s' must be a canonical direct child", p_error.entry);
+		case JsonDirectoryErrorKind::EMPTY_DIRECTORY:
+			return "must contain at least one JSON rule manifest";
+		default:
+			break;
+	}
+	return describe_json_directory_error(p_error);
+}
+
 Error FSCompletenessCapabilityMap::validate_against_rule_directory(
 		const String &p_directory, Vector<String> &r_errors) const {
 	r_errors.clear();
-	Error open_error = OK;
-	Ref<DirAccess> directory = DirAccess::open(p_directory, &open_error);
-	if (directory.is_null()) {
-		r_errors.push_back(vformat("%s: could not open rule directory (error %d)", p_directory, open_error));
-		return ERR_INVALID_DATA;
-	}
-	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (filesystem.is_null()) {
-		r_errors.push_back(vformat("%s: filesystem access is unavailable", p_directory));
-		return ERR_INVALID_DATA;
-	}
-	if (filesystem->is_link(p_directory)) {
-		r_errors.push_back(vformat("%s: linked rule directory is not allowed", p_directory));
-		return ERR_INVALID_DATA;
-	}
-	const String directory_path = directory->get_current_dir().replace("\\", "/").simplify_path();
-	const String canonical_directory_path = canonicalize_existing_capability_path(directory_path);
-	if (canonical_directory_path.is_empty() || canonical_directory_path != directory_path) {
-		r_errors.push_back(vformat("%s: rule directory must be canonical", p_directory));
-		return ERR_INVALID_DATA;
-	}
-	if (directory->list_dir_begin() != OK) {
-		r_errors.push_back(vformat("%s: could not list rule directory", p_directory));
-		return ERR_INVALID_DATA;
-	}
-
 	Vector<String> json_files;
-	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
-		if (entry.begins_with(".")) {
-			continue;
-		}
-		const String entry_path = directory_path.path_join(entry).simplify_path();
-		if (entry_path.get_base_dir() != directory_path) {
-			r_errors.push_back(vformat("%s: non-contained rule entry '%s'", p_directory, entry));
-			continue;
-		}
-		if (directory->is_link(entry) || filesystem->is_link(entry_path)) {
-			r_errors.push_back(vformat("%s: linked rule entry '%s' is not allowed", p_directory, entry));
-			continue;
-		}
-		if (directory->current_is_dir()) {
-			r_errors.push_back(vformat("%s: unexpected directory entry '%s'", p_directory, entry));
-			continue;
-		}
-		if (entry.get_extension() != "json") {
-			r_errors.push_back(vformat("%s: unexpected non-JSON entry '%s'", p_directory, entry));
-			continue;
-		}
-		json_files.push_back(entry_path);
+	Vector<JsonDirectoryError> directory_errors;
+	JsonDirectoryPolicy policy;
+	policy.require_canonical_directory = true;
+	policy.require_canonical_children = true;
+	bool fatal = false;
+	enumerate_json_directory(p_directory, policy, json_files, directory_errors);
+	for (const JsonDirectoryError &directory_error : directory_errors) {
+		r_errors.push_back(vformat("%s: %s", p_directory, describe_rule_directory_error(directory_error)));
+		fatal = fatal || is_directory_level_error(directory_error.kind);
 	}
-	directory->list_dir_end();
-	json_files.sort();
-	if (json_files.is_empty()) {
-		r_errors.push_back(vformat("%s: must contain at least one JSON rule manifest", p_directory));
+	if (fatal) {
+		sort_and_deduplicate_errors(r_errors);
+		return ERR_INVALID_DATA;
 	}
 
 	HashMap<String, String> family_sources;
 	for (const String &file : json_files) {
-		const String canonical_file = canonicalize_existing_capability_path(file);
-		if (canonical_file.is_empty() || canonical_file != file || canonical_file.get_base_dir() != canonical_directory_path) {
-			r_errors.push_back(vformat("%s: rule manifest must be a canonical direct child", file));
-			continue;
-		}
 		const String filename_stem = file.get_file().get_basename();
 		if (!is_safe_capability_family(filename_stem)) {
 			r_errors.push_back(vformat("%s: filename stem '%s' is not a lowercase portable family id",
@@ -974,40 +896,21 @@ Error FSCompletenessCapabilityMap::validate_against_rule_directory(
 }
 
 static bool collect_catalog_files(const String &p_directory, Vector<String> &r_files, Vector<String> &r_errors) {
-	Error open_error = OK;
-	Ref<DirAccess> directory = DirAccess::open(p_directory, &open_error);
-	if (directory.is_null()) {
-		r_errors.push_back(vformat("%s: could not open directory (error %d)", p_directory, open_error));
-		return false;
+	Vector<String> files;
+	Vector<JsonDirectoryError> directory_errors;
+	enumerate_json_directory(p_directory, JsonDirectoryPolicy(), files, directory_errors);
+	for (const String &file : files) {
+		r_files.push_back(file);
 	}
-	const Error list_error = directory->list_dir_begin();
-	if (list_error != OK) {
-		r_errors.push_back(vformat("%s: could not list directory (error %d)", p_directory, list_error));
-		return false;
+	// An unexpected entry names a defect in the catalog without making the JSON files that are there
+	// unreadable, so only a directory-level refusal ends the load; an empty result is reported by the
+	// return value.
+	bool fatal = false;
+	for (const JsonDirectoryError &directory_error : directory_errors) {
+		r_errors.push_back(vformat("%s: %s", p_directory, describe_json_directory_error(directory_error)));
+		fatal = fatal || is_directory_level_error(directory_error.kind);
 	}
-
-	String entry = directory->get_next();
-	while (!entry.is_empty()) {
-		if (entry.begins_with(".")) {
-			entry = directory->get_next();
-			continue;
-		}
-		if (directory->current_is_dir()) {
-			r_errors.push_back(vformat("%s: unexpected directory entry '%s'", p_directory, entry));
-		} else if (entry.get_extension() != "json") {
-			r_errors.push_back(vformat("%s: unexpected non-JSON entry '%s'", p_directory, entry));
-		} else {
-			r_files.push_back(p_directory.path_join(entry));
-		}
-		entry = directory->get_next();
-	}
-	directory->list_dir_end();
-	r_files.sort();
-	if (r_files.is_empty()) {
-		r_errors.push_back(vformat("%s: must contain at least one JSON file", p_directory));
-		return false;
-	}
-	return true;
+	return !fatal && !files.is_empty();
 }
 
 static bool parse_catalog_schema_version(const Dictionary &p_root, int &r_schema_version, Vector<String> &r_errors) {
@@ -1015,7 +918,8 @@ static bool parse_catalog_schema_version(const Dictionary &p_root, int &r_schema
 		append_error(r_errors, "$.schema_version", "required field is missing");
 		return false;
 	}
-	if (!require_json_integer(p_root[SNAME("schema_version")], "$.schema_version", r_schema_version, r_errors)) {
+	if (!parse_json_integer(p_root[SNAME("schema_version")], r_schema_version)) {
+		append_error(r_errors, "$.schema_version", "expected an integer");
 		return false;
 	}
 	if (r_schema_version != 1) {

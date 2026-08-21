@@ -29,8 +29,10 @@
 /**************************************************************************/
 
 #include "fs_type_completeness_union_adapter.h"
+
 #include "fs_temporary_project_tree.h"
 #include "fs_test_runner.h"
+#include "fs_type_completeness_common.h"
 
 #include "../fs_analyzer.h"
 #include "../fs_bytecode_export.h"
@@ -48,6 +50,8 @@
 #include "core/templates/safe_refcount.h"
 
 namespace FSTests {
+
+using namespace Completeness;
 
 namespace {
 
@@ -442,12 +446,6 @@ static bool read_program_coordinates(const FSCompletenessProgram &p_program, Str
 			read_coordinate(p_program.coordinates, "source_proof", r_source_proof) &&
 			read_coordinate(p_program.coordinates, "boundary", r_boundary) &&
 			read_coordinate(p_program.coordinates, "surface", r_surface);
-}
-
-static String semantic_pair_key(const Dictionary &p_coordinates) {
-	Dictionary semantic_coordinates = p_coordinates.duplicate();
-	semantic_coordinates.erase("surface");
-	return FSCompletenessCaseID::canonical_coordinates(semantic_coordinates);
 }
 
 enum RuntimeDestinationKind {
@@ -890,9 +888,8 @@ void UnionCompletenessInternal::set_persisted_write_test_hook(PersistedWriteTest
 }
 
 UnionCompletenessInternal::SyntheticSourceScope::SyntheticSourceScope(
-		const String &p_identity, const String &p_source) {
-	synthetic_source_mutex().lock();
-	lock_held = true;
+		const String &p_identity, const String &p_source) :
+		lock(synthetic_source_mutex()) {
 	tree = memnew(TemporaryProjectTree(next_synthetic_source_tree_name()));
 	if (!tree->is_valid()) {
 		return;
@@ -918,9 +915,6 @@ UnionCompletenessInternal::SyntheticSourceScope::~SyntheticSourceScope() {
 	}
 	if (tree != nullptr) {
 		memdelete(tree);
-	}
-	if (lock_held) {
-		synthetic_source_mutex().unlock();
 	}
 }
 
@@ -1197,7 +1191,7 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 			return ERR_INVALID_DATA;
 		}
 
-		const String pair_key = semantic_pair_key(program.coordinates);
+		const String pair_key = semantic_pair_key(program.coordinates, "surface");
 		if (case_ids.has(program.case_id)) {
 			return case_id_pair_keys[program.case_id] == pair_key &&
 							case_id_surfaces[program.case_id] == surface

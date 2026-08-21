@@ -104,6 +104,44 @@ TEST_CASE("[FoundryCLI][UserRoot] A written artifact inside the root is recogniz
 	remove_recursive(scratch);
 }
 
+TEST_CASE("[FoundryCLI][UserRoot] A directory of outputs inside the root is an artifact") {
+	const String scratch = owned_scratch_root("holds-directory");
+	remove_recursive(scratch);
+	const String user_root = scratch.path_join("user-completeness-9");
+	const String artifact_directory = user_root.path_join("foundry/app_userdata/project/completeness");
+	write_scratch_file(artifact_directory.path_join("report.json"), "{}");
+
+	// A run whose outputs are a tree, not a single file, must be able to name that tree. Recognizing
+	// only files would leave such a run's evidence unprotected from the root's own cleanup.
+	CHECK(FoundryCLIUserRoot::root_holds_artifact(artifact_directory, user_root));
+	CHECK(FoundryCLIUserRoot::root_holds_artifact(artifact_directory + "/", user_root));
+	CHECK_FALSE(FoundryCLIUserRoot::root_holds_artifact(user_root.path_join("never-created"), user_root));
+	CHECK_FALSE(FoundryCLIUserRoot::root_holds_artifact(scratch.path_join("outside-directory"), user_root));
+
+	remove_recursive(scratch);
+}
+
+TEST_CASE("[FoundryCLI][UserRoot] A root that holds a directory of outputs is kept") {
+	const String scratch = owned_scratch_root("kept-directory");
+	remove_recursive(scratch);
+	const String user_root = scratch.path_join("user-completeness-2");
+	const String artifact_directory = user_root.path_join("foundry/app_userdata/project/completeness");
+	const String published = artifact_directory.path_join("report.json");
+	write_scratch_file(published, "{}");
+
+	Vector<String> artifacts;
+	artifacts.push_back(artifact_directory);
+	// The path a run writes last may never be written at all; the directory it publishes into is what
+	// keeps everything the run did publish.
+	artifacts.push_back(artifact_directory.path_join("index-that-was-never-written.json"));
+	FoundryCLIUserRoot::remove_owned_root(user_root, artifacts);
+
+	CHECK(DirAccess::exists(user_root));
+	CHECK(FileAccess::exists(published));
+
+	remove_recursive(scratch);
+}
+
 TEST_CASE("[FoundryCLI][UserRoot] A run's root is removed when it holds no artifact") {
 	const String scratch = owned_scratch_root("removed");
 	remove_recursive(scratch);

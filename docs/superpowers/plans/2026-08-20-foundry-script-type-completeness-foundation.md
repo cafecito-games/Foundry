@@ -11,7 +11,7 @@ domain, and derives each required observable through simple relation chains of a
 adapter renders and executes the pilot on the analyzer, text runtime, and compiled-bytecode runtime, while a common
 runner emits stable case-level JSON for later CI and ledger automation.
 
-**Tech Stack:** C++17, Godot `Variant`/`Dictionary` JSON support, Foundry Script parser/analyzer/compiler,
+**Tech Stack:** C++17, the engine's `Variant`/`Dictionary` JSON support, Foundry Script parser/analyzer/compiler,
 `FSTestRunner`, doctest, SHA-256 case IDs, SCons/Ninja through `scripts/agent_build.py`.
 
 **Design:** `docs/superpowers/specs/2026-08-20-foundry-script-type-system-completeness-design.md`

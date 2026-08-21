@@ -59,6 +59,10 @@ using FSCompletenessTrackedFileProbe = Error (*)(const String &p_repository_root
 		String &r_output, int &r_exit_code);
 using FSCompletenessPersistedWriteHook = void (*)(const String &p_path);
 
+// Monotonic microsecond clock the deadline is measured on. Injectable so a timeout can be proven
+// deterministically instead of by racing a real wall clock.
+using FSCompletenessClock = uint64_t (*)();
+
 struct FSCompletenessRunOptions {
 	String catalog_root;
 	String family;
@@ -69,6 +73,15 @@ struct FSCompletenessRunOptions {
 	void (*runtime_result_mutator)(FSCompletenessRuntimeResult &) = nullptr;
 	FSCompletenessTrackedFileProbe tracked_file_probe = nullptr;
 	FSCompletenessPersistedWriteHook persisted_write_hook = nullptr;
+
+	// Surface whose cases the published report carries; empty publishes every case. The run always
+	// executes both surfaces, because parity evidence is only meaningful when both were observed;
+	// this only narrows the published document for a consumer that compares one configuration.
+	String published_surface;
+
+	// Absolute deadline on `clock`, in microseconds. Zero runs without a deadline.
+	uint64_t deadline_usec = 0;
+	FSCompletenessClock clock = nullptr;
 };
 
 // A defect in the harness, the catalog, or the evidence contract rather than an observation about
@@ -95,6 +108,20 @@ struct FSCompletenessRunResult {
 class FSCompletenessRunner {
 public:
 	static Error run(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result);
+
+	// Publishes a document that belongs to a run without being a family report - the index over a
+	// multi-family invocation - under exactly the contract a report is published with: the path must
+	// be owned by the scratch root, must not resolve through a link or into the catalog or the
+	// artifact tree, and the file is replaced atomically.
+	static Error publish_owned_document(const String &p_scratch_root, const String &p_catalog_root,
+			const String &p_document_path, const Dictionary &p_document);
+
+	// Rewrites an already published document's verdict into the structural failure a crossed budget
+	// makes it, and republishes it. A run notices its own crossing after its last write; the command
+	// driving several runs can only notice after the last write of the whole invocation. Both go
+	// through this, so a report, an index over it, and the exit code derived from them cannot disagree.
+	static Error republish_timed_out_document(const String &p_scratch_root, const String &p_catalog_root,
+			const String &p_document_path, const String &p_detail);
 };
 
 } // namespace FSTests

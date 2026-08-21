@@ -33,6 +33,7 @@
 #include "fs_type_completeness_case_id.h"
 #include "fs_type_completeness_manifest.h"
 
+#include "core/templates/hash_map.h"
 #include "core/variant/variant.h"
 
 namespace FSTests {
@@ -66,6 +67,23 @@ struct FSCompletenessResolution {
 	int max_observed_chain_length = 0;
 	int uncovered_dimension_count = 0;
 	int ambiguous_dimension_count = 0;
+
+	// Lookup indices over `cells`, rebuilt by build_indices(). They are what keeps a run linear in
+	// the number of cells: a matrix an order of magnitude larger than the pilot family would
+	// otherwise spend quadratic time resolving case IDs and witness coordinates.
+	HashMap<String, int> cell_index_by_id;
+	HashMap<String, Vector<int>> cell_indices_by_coordinate_key;
+
+	// Rebuilds the lookup indices from `cells`. Called by FSCompletenessGraph::resolve(); any code
+	// that builds a resolution by other means must call it before looking a cell up.
+	void build_indices();
+
+	const FSCompletenessResolvedCell *find_cell_by_id(const String &p_case_id) const;
+
+	// The single cell carrying p_coordinates, with r_matches reporting how many cells carry them, so
+	// an ambiguous witness is distinguishable from an unknown one.
+	const FSCompletenessResolvedCell *find_cell_by_coordinates(
+			const Dictionary &p_coordinates, int &r_matches) const;
 };
 
 class FSCompletenessGraph {

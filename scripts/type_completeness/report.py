@@ -33,6 +33,15 @@ OBSERVATION_FIELDS = (
 # lacks one is malformed rather than a report with defaults.
 CASE_REQUIRED_FIELDS = OBSERVATION_FIELDS + ("coordinates", "artifact_path")
 FINDING_REQUIRED_FIELDS = ("finding_id", "case_id", "family", "dimension", "expected", "actual", "classification")
+# Members the runner writes for observability only. They vary run to run on identical evidence, so they are
+# dropped at load and can never reach a digest, a comparison, or a fixture.
+NON_EVIDENCE_MEMBERS = ("timings_ms",)
+
+# The verdicts the runner writes at the top level of a report. A run that is not "passed" published
+# evidence that no comparison may be drawn from: the run either found a product mismatch or broke
+# before it could finish, and in both cases a clean comparison verdict would be a lie.
+KNOWN_OUTCOMES = ("passed", "product_mismatch", "structural_failure")
+
 KNOWN_CLASSIFICATIONS = (
     "unclassified",
     "product_defect",
@@ -102,8 +111,26 @@ class CaseResult:
 class Report:
     family: str
     success: bool
+    outcome: str
     cases: tuple[CaseResult, ...]
     raw: dict[str, Any]
+
+    @property
+    def is_clean(self) -> bool:
+        """True for a run that finished with nothing to report."""
+        return self.outcome == "passed"
+
+    @property
+    def is_structural_failure(self) -> bool:
+        """True when the run itself failed rather than the product it measured.
+
+        Nothing may be concluded from such a report. Its per-case verdicts can all read "passed"
+        while the run as a whole did not - a run that crossed its budget while publishing is
+        republished exactly that way - so a consumer that looks only at the cases would draw a clean
+        verdict from a run that never finished. A product mismatch is not in this category:
+        classifying those is what a comparison is for.
+        """
+        return self.outcome == "structural_failure"
 
     def case(self, case_id: str) -> CaseResult:
         for case in self.cases:
@@ -138,6 +165,13 @@ def load_report(data: Mapping[str, Any]) -> Report:
     success = _require(data, "success", "report")
     if not isinstance(success, bool):
         raise ReportError(f"report member 'success' must be a JSON boolean; got {success!r}")
+    outcome = _require(data, "outcome", "report")
+    if not isinstance(outcome, str) or outcome not in KNOWN_OUTCOMES:
+        raise ReportError(f"report member 'outcome' must be one of {KNOWN_OUTCOMES}; got {outcome!r}")
+    # The runner derives one from the other, so a document where they disagree was not written by a
+    # run: taking either at face value would mean trusting a report nobody produced.
+    if success != (outcome == "passed"):
+        raise ReportError(f"report members disagree: success={success!r} with outcome {outcome!r}")
     raw_findings = _require(data, "findings", "report")
     if not isinstance(raw_findings, list):
         raise ReportError("report member 'findings' must be an array")
@@ -190,7 +224,8 @@ def load_report(data: Mapping[str, Any]) -> Report:
     contradictory = [case.case_id for case in cases if case.passed and case.findings]
     if contradictory:
         raise ReportError(f"report marks cases passed although findings target them: {contradictory}")
-    return Report(family=family, success=success, cases=tuple(cases), raw=dict(data))
+    evidence = {member: value for member, value in data.items() if member not in NON_EVIDENCE_MEMBERS}
+    return Report(family=family, success=success, outcome=outcome, cases=tuple(cases), raw=evidence)
 
 
 def load_report_file(path: Path) -> Report:

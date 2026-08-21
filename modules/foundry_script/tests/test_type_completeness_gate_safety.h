@@ -33,6 +33,7 @@
 #ifdef DEBUG_ENABLED
 #include "modules/foundry_script/tests/fs_test_warning_settings.h"
 #endif
+#include "modules/foundry_script/tests/fs_type_completeness_cache.h"
 #include "modules/foundry_script/tests/test_type_completeness_union_pilot.h"
 
 namespace FSTests {
@@ -374,21 +375,18 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		CHECK(Array(ledger.get("stale", Array())).is_empty());
 	}
 
+	// Assertion-only: the clean run it needs is the shared baseline, so the matrix is not executed
+	// again just to read its report.
 	TEST_CASE("TypeCompleteness GateSafety reports every exception witnessed on a clean run") {
-		TemporaryProjectTree tree(
-				vformat("type_completeness_gate_witnessed_%d", OS::get_singleton()->get_process_id()));
-		REQUIRE(tree.is_valid());
-		FSCompletenessRunOptions options;
-		options.catalog_root = type_completeness_union_pilot_root;
-		options.family = "union_destination_membership";
-		options.scratch_root = tree.root;
-		options.report_path = tree.root.path_join("report.json");
-		FSCompletenessRunResult result;
-		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
-		CHECK_EQ(result.outcome, "passed");
-		CHECK(result.structural_failures.is_empty());
+		const FSCompletenessRunResult *baseline =
+				FSCompletenessBaseline::shared_or_skip("union_destination_membership");
+		if (baseline == nullptr) {
+			return;
+		}
+		CHECK_EQ(baseline->outcome, "passed");
+		CHECK(baseline->structural_failures.is_empty());
 
-		const Array exceptions = result.report.get("exceptions", Array());
+		const Array exceptions = baseline->report.get("exceptions", Array());
 		REQUIRE_EQ(exceptions.size(), 1);
 		const Dictionary exception_report = exceptions[0];
 		CHECK_EQ(bool(exception_report.get("witnessed", false)), true);
@@ -400,19 +398,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		CHECK_EQ(bool(Dictionary(boundary[0]).get("witnessed", false)), true);
 	}
 
+	// Assertion-only: consumes the shared baseline rather than running the matrix again.
 	TEST_CASE("TypeCompleteness GateSafety records analyzer diagnostic severity and codes") {
-		TemporaryProjectTree tree(
-				vformat("type_completeness_gate_severity_evidence_%d", OS::get_singleton()->get_process_id()));
-		REQUIRE(tree.is_valid());
-		FSCompletenessRunOptions options;
-		options.catalog_root = type_completeness_union_pilot_root;
-		options.family = "union_destination_membership";
-		options.scratch_root = tree.root;
-		options.report_path = tree.root.path_join("report.json");
-		FSCompletenessRunResult result;
-		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		const FSCompletenessRunResult *baseline =
+				FSCompletenessBaseline::shared_or_skip("union_destination_membership");
+		if (baseline == nullptr) {
+			return;
+		}
 
-		const Array cases = result.report.get("cases", Array());
+		const Array cases = baseline->report.get("cases", Array());
 		REQUIRE_EQ(cases.size(), 40);
 		int cases_with_severity = 0;
 		for (int index = 0; index < cases.size(); index++) {

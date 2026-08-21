@@ -52,6 +52,7 @@ public:
 			TEST_GENERATE_FORMAT_FIXTURES,
 			TEST_BENCHMARK,
 			TEST_FIXTURES,
+			TEST_COMPLETENESS_RUN,
 			TOOLING_SERVE,
 			DOCS_GENERATE_API,
 			DOCS_GENERATE_ENGINE,
@@ -125,6 +126,18 @@ public:
 		bool fixtures_binary_tokens = false;
 		// `all` (both corpus passes), `text`, or `bytecode`. Empty means `all`.
 		String fixtures_pass;
+
+		// `test completeness run` inputs. Each `--family` appends one entry; the remaining
+		// options are the catalog, the owned scratch root, the report path, the optional
+		// published surface, the required budget tier, and the optional timeout in seconds
+		// (0 means "the tier's hard timeout").
+		PackedStringArray completeness_families;
+		String completeness_catalog;
+		String completeness_scratch;
+		String completeness_report;
+		String completeness_surface;
+		String completeness_tier;
+		int completeness_timeout_seconds = 0;
 
 		// Empty means "use the tooling host default" (6005 for LSP, 6006 for DAP).
 		// Otherwise a validated decimal port in [0, 65535], where 0 requests an

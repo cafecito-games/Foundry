@@ -29,6 +29,8 @@
 /**************************************************************************/
 
 #include "fs_type_completeness_case_id.h"
+
+#include "fs_type_completeness_common.h"
 #include "fs_type_completeness_json.h"
 
 #include "core/io/dir_access.h"
@@ -39,6 +41,8 @@
 #include <cstdint>
 
 namespace FSTests {
+
+using namespace Completeness;
 
 namespace {
 
@@ -64,65 +68,6 @@ static String escape_case_id_component(const String &p_value) {
 	return escaped;
 }
 
-static String length_encoded(const String &p_value) {
-	return vformat("%d:%s", p_value.length(), p_value);
-}
-
-static constexpr int MAX_COORDINATE_VARIANT_DEPTH = 32;
-
-static String canonical_variant_identity(const Variant &p_value, int p_depth, HashSet<uint64_t> &r_active_containers) {
-	if (p_depth >= MAX_COORDINATE_VARIANT_DEPTH) {
-		return "X:DEPTH_LIMIT";
-	}
-	if (p_value.get_type() == Variant::DICTIONARY) {
-		const Dictionary dictionary = p_value;
-		const uint64_t identity_key = uint64_t(reinterpret_cast<uintptr_t>(dictionary.id()));
-		if (r_active_containers.has(identity_key)) {
-			return "X:CYCLE";
-		}
-		r_active_containers.insert(identity_key);
-		Vector<String> members;
-		for (const Variant &key : dictionary.keys()) {
-			members.push_back(length_encoded(canonical_variant_identity(key, p_depth + 1, r_active_containers)) +
-					length_encoded(canonical_variant_identity(dictionary[key], p_depth + 1, r_active_containers)));
-		}
-		r_active_containers.erase(identity_key);
-		members.sort();
-		String identity = "D{";
-		for (const String &member : members) {
-			identity += member;
-		}
-		return identity + "}";
-	}
-	if (p_value.get_type() == Variant::ARRAY) {
-		const Array array = p_value;
-		const uint64_t identity_key = uint64_t(reinterpret_cast<uintptr_t>(array.id()));
-		if (r_active_containers.has(identity_key)) {
-			return "X:CYCLE";
-		}
-		r_active_containers.insert(identity_key);
-		String identity = "A[";
-		for (int i = 0; i < array.size(); i++) {
-			identity += length_encoded(canonical_variant_identity(array[i], p_depth + 1, r_active_containers));
-		}
-		r_active_containers.erase(identity_key);
-		return identity + "]";
-	}
-	if (p_value.get_type() == Variant::STRING) {
-		return "S" + length_encoded(p_value);
-	}
-	switch (p_value.get_type()) {
-		case Variant::OBJECT:
-		case Variant::CALLABLE:
-		case Variant::SIGNAL:
-		case Variant::RID:
-			return vformat("X:UNSUPPORTED:T%d", p_value.get_type());
-		default:
-			break;
-	}
-	return vformat("T%d:%s", p_value.get_type(), length_encoded(p_value.stringify()));
-}
-
 static String deterministic_coordinate_value(const Variant &p_value) {
 	if (p_value.get_type() == Variant::STRING) {
 		return escape_case_id_component(p_value);
@@ -132,24 +77,12 @@ static String deterministic_coordinate_value(const Variant &p_value) {
 	// cannot collide with a valid string coordinate. This hardening is intentionally not an
 	// injective semantic encoding for invalid object-like, cyclic, or excessively deep values:
 	// those values collapse to explicit stable sentinels instead of depending on instance identity.
-	HashSet<uint64_t> active_containers;
-	return "%!" + escape_case_id_component(canonical_variant_identity(p_value, 0, active_containers));
+	return "%!" + escape_case_id_component(canonical_variant_identity(p_value));
 }
 
 static void append_file_error(Vector<String> &r_errors, const String &p_file, const String &p_path,
 		const String &p_reason) {
 	r_errors.push_back(vformat("%s: %s: %s", p_file, p_path, p_reason));
-}
-
-static Vector<String> sorted_dictionary_keys(const Dictionary &p_dictionary) {
-	Vector<String> keys;
-	const Array raw_keys = p_dictionary.keys();
-	keys.reserve(raw_keys.size());
-	for (int i = 0; i < raw_keys.size(); i++) {
-		keys.push_back(raw_keys[i]);
-	}
-	keys.sort();
-	return keys;
 }
 
 static void validate_exact_fields(const Dictionary &p_object, const Vector<String> &p_allowed,
@@ -164,18 +97,6 @@ static void validate_exact_fields(const Dictionary &p_object, const Vector<Strin
 			append_file_error(r_errors, p_file, p_path + "." + field, "required field is missing");
 		}
 	}
-}
-
-static bool parse_json_integer(const Variant &p_value, int &r_value) {
-	if (p_value.get_type() != Variant::FLOAT && p_value.get_type() != Variant::INT) {
-		return false;
-	}
-	const double number = p_value;
-	if (!Math::is_finite(number) || number != Math::floor(number) || number < INT32_MIN || number > INT32_MAX) {
-		return false;
-	}
-	r_value = int(number);
-	return true;
 }
 
 static void detect_migration_cycle(const String &p_id, const HashMap<String, Vector<String>> &p_aliases,
@@ -240,27 +161,18 @@ Error FSCompletenessMigrations::load(const String &p_directory, const HashSet<St
 	aliases.clear();
 	r_errors.clear();
 
-	Error directory_error = OK;
-	Ref<DirAccess> directory = DirAccess::open(p_directory, &directory_error);
-	if (directory.is_null()) {
-		r_errors.push_back(vformat("%s: could not open directory (error %d)", p_directory, directory_error));
-		return directory_error == OK ? ERR_CANT_OPEN : directory_error;
-	}
-	if (directory->list_dir_begin() != OK) {
-		r_errors.push_back(vformat("%s: could not list directory", p_directory));
-		return ERR_CANT_OPEN;
-	}
 	Vector<String> files;
-	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
-		if (!directory->current_is_dir() && entry.get_extension().to_lower() == "json") {
-			files.push_back(p_directory.path_join(entry));
+	Vector<JsonDirectoryError> directory_errors;
+	const Error enumerate_error = enumerate_json_directory(p_directory, JsonDirectoryPolicy(), files, directory_errors);
+	if (enumerate_error != OK) {
+		Error result = ERR_INVALID_DATA;
+		for (const JsonDirectoryError &error : directory_errors) {
+			r_errors.push_back(vformat("%s: %s", p_directory, describe_json_directory_error(error)));
+			if (error.kind == JsonDirectoryErrorKind::DIRECTORY_UNOPENABLE) {
+				result = error.error_code;
+			}
 		}
-	}
-	directory->list_dir_end();
-	files.sort();
-	if (files.is_empty()) {
-		r_errors.push_back(vformat("%s: must contain at least one JSON file", p_directory));
-		return ERR_INVALID_DATA;
+		return result;
 	}
 
 	HashMap<String, Vector<String>> parsed_aliases;

@@ -166,6 +166,7 @@
 #include "modules/foundry_script/tests/fs_benchmark_runner.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/tests/fs_fixture_cli.h"
+#include "modules/foundry_script/tests/fs_type_completeness_cli.h"
 #endif // TOOLS_ENABLED
 #endif // TESTS_ENABLED
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
@@ -833,6 +834,7 @@ static void apply_foundry_cli_invocation(
 		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
 		case Kind::TEST_BENCHMARK:
 		case Kind::TEST_FIXTURES:
+		case Kind::TEST_COMPLETENESS_RUN:
 			break;
 		case Kind::TOOLING_SERVE:
 			// One combined host owns both tooling listeners.
@@ -912,7 +914,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 
 	using Kind = FoundryCLIParser::CLIInvocation::Kind;
 	const Kind kind = cli_parse.invocation.kind;
-	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES && kind != Kind::TEST_BENCHMARK && kind != Kind::TEST_FIXTURES) {
+	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES && kind != Kind::TEST_BENCHMARK && kind != Kind::TEST_FIXTURES && kind != Kind::TEST_COMPLETENESS_RUN) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
@@ -944,6 +946,8 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			leaf = vformat("user-benchmark-%d", OS::get_singleton()->get_process_id());
 		} else if (kind == Kind::TEST_FIXTURES) {
 			leaf = vformat("user-fixtures-%d", OS::get_singleton()->get_process_id());
+		} else if (kind == Kind::TEST_COMPLETENESS_RUN) {
+			leaf = vformat("user-completeness-%d", OS::get_singleton()->get_process_id());
 		} else {
 			leaf = TestUserDataRootPolicy::leaf_name(cli_parse.invocation.test_shard_index,
 					cli_parse.invocation.test_shard_total, OS::get_singleton()->get_process_id());
@@ -988,13 +992,18 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 	// `user://` artifacts, so there is nothing inside the root worth preserving.
 	Vector<String> owned_user_root_artifacts;
 	const bool owns_user_root = kind == Kind::TEST_BENCHMARK || kind == Kind::TEST_FIXTURES ||
-			kind == Kind::TEST_GENERATE_FIXTURES || kind == Kind::TEST_GENERATE_FORMAT_FIXTURES;
+			kind == Kind::TEST_GENERATE_FIXTURES || kind == Kind::TEST_GENERATE_FORMAT_FIXTURES ||
+			kind == Kind::TEST_COMPLETENESS_RUN;
 	if (kind == Kind::TEST_BENCHMARK) {
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_output);
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
 	} else if (kind == Kind::TEST_FIXTURES) {
 		owned_user_root_artifacts.push_back(cli_parse.invocation.fixtures_output);
 	}
+	// A completeness run publishes several documents, and the index that names them is written last -
+	// or not at all. The paths it reports are therefore collected as it publishes them and registered
+	// below, so a failure after the first report is published cannot make the cleanup delete it.
+	PackedStringArray completeness_published_paths;
 	const auto remove_owned_user_root = [&]() {
 		if (owns_user_root) {
 			FoundryCLIUserRoot::remove_owned_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
@@ -1129,6 +1138,26 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		status = FSTests::FSFixtureCLI::run_cli(options);
 #else
 		ERR_PRINT("foundry test fixtures requires an editor build with tests and the Foundry Script module enabled.");
+		status = EXIT_FAILURE;
+#endif
+	} else if (kind == Kind::TEST_COMPLETENESS_RUN) {
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(TOOLS_ENABLED) && defined(TESTS_ENABLED)
+		FSTests::FSCompletenessCLI::Options options;
+		for (int i = 0; i < cli_parse.invocation.completeness_families.size(); i++) {
+			options.families.push_back(cli_parse.invocation.completeness_families[i]);
+		}
+		options.catalog_root = cli_parse.invocation.completeness_catalog;
+		options.scratch_root = cli_parse.invocation.completeness_scratch;
+		options.report_path = cli_parse.invocation.completeness_report;
+		options.surface = cli_parse.invocation.completeness_surface;
+		options.tier = cli_parse.invocation.completeness_tier;
+		options.timeout_seconds = cli_parse.invocation.completeness_timeout_seconds;
+		status = FSTests::FSCompletenessCLI::run(options, &completeness_published_paths);
+		for (int i = 0; i < completeness_published_paths.size(); i++) {
+			owned_user_root_artifacts.push_back(completeness_published_paths[i]);
+		}
+#else
+		ERR_PRINT("foundry test completeness run requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
 #endif
 	} else if (kind == Kind::TEST_BENCHMARK) {
