@@ -517,14 +517,12 @@ static bool observations_match_on_common_dimensions(
 	return true;
 }
 
-static Error extract_program_output(const FSTestRunner::FixtureOutcome &p_outcome, String &r_output) {
-	r_output = String();
+static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outcome) {
 	const String status_line = "FS_TEST_OK\n";
-	if (p_outcome.status != "ok" || !p_outcome.output.begins_with(status_line)) {
-		return ERR_INVALID_DATA;
+	if (p_outcome.output.begins_with(status_line)) {
+		return p_outcome.output.trim_prefix(status_line);
 	}
-	r_output = p_outcome.output.trim_prefix(status_line);
-	return OK;
+	return p_outcome.output;
 }
 
 } // namespace
@@ -664,12 +662,10 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	return observation;
 }
 
-FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
-		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) {
-	FSCompletenessObservation observation = analyze(p_program, p_program.surface);
-	if (observation.dimensions.get("analysis", String()) != "accept" || !observation.diagnostics.is_empty()) {
-		return observation;
-	}
+static FSCompletenessObservation inspect_runtime_contract_internal(
+		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
+	r_structural_error = OK;
+	FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(p_program, p_program.surface);
 
 	String destination;
 	String source_proof;
@@ -678,6 +674,7 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 	if (!read_program_coordinates(p_program, destination, source_proof, boundary, surface) ||
 			surface != p_program.surface) {
 		observation.diagnostics.push_back("Runtime contract coordinates are invalid.");
+		r_structural_error = ERR_INVALID_DATA;
 		return observation;
 	}
 	for (const String &axis : { String("destination"), String("source_proof"), String("boundary"), String("surface") }) {
@@ -685,6 +682,7 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 				p_runtime_context.get(axis, Variant()) != p_program.coordinates.get(axis, Variant())) {
 			observation.diagnostics.push_back(
 					vformat("Runtime context coordinate '%s' disagrees with the program.", axis));
+			r_structural_error = ERR_INVALID_DATA;
 			return observation;
 		}
 	}
@@ -692,15 +690,20 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 	const Variant produced_value = p_runtime_context.get("produced_output", Variant());
 	if (produced_value.get_type() != Variant::STRING) {
 		observation.diagnostics.push_back("Runtime contract produced output is unavailable.");
+		r_structural_error = ERR_INVALID_DATA;
 		return observation;
 	}
 	observation.produced_output = produced_value;
+	if (observation.dimensions.get("analysis", String()) != "accept" || !observation.diagnostics.is_empty()) {
+		return observation;
+	}
 
 	Ref<FoundryScript> original;
 	Ref<FoundryScript> inspected;
 	const Error compile_error =
 			compile_runtime_contract_script(p_program, original, inspected, observation.diagnostics);
 	if (compile_error != OK) {
+		r_structural_error = compile_error;
 		return observation;
 	}
 	const ObjectID original_instance_id = original->get_instance_id();
@@ -713,6 +716,7 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 	const Error descriptor_error = inspect_runtime_destination_descriptor(
 			inspected, boundary, descriptor_evidence, observation.diagnostics);
 	if (descriptor_error != OK) {
+		r_structural_error = descriptor_error;
 		return observation;
 	}
 	observation.dimensions["original_instance_id"] = int64_t(original_instance_id);
@@ -755,6 +759,12 @@ FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
 				destination == "union" ? "admitting_alternative" : "plain_destination";
 	}
 	return observation;
+}
+
+FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
+		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) {
+	Error structural_error = OK;
+	return inspect_runtime_contract_internal(p_program, p_runtime_context, structural_error);
 }
 
 Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
@@ -937,15 +947,14 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 				return ERR_INVALID_DATA;
 			}
 
-			String produced_output;
-			if (extract_program_output(outcome, produced_output) != OK) {
-				return ERR_INVALID_DATA;
-			}
+			const String produced_output = extract_program_output(outcome);
 			Dictionary runtime_context;
 			runtime_context["produced_output"] = produced_output;
-			const FSCompletenessObservation observation = inspect_runtime_contract(*program, runtime_context);
-			if (!observation.diagnostics.is_empty()) {
-				return ERR_INVALID_DATA;
+			Error inspection_error = OK;
+			FSCompletenessObservation observation =
+					inspect_runtime_contract_internal(*program, runtime_context, inspection_error);
+			if (inspection_error != OK || observation.case_id != case_id || observation.surface != p_surface) {
+				return inspection_error == OK ? ERR_INVALID_DATA : inspection_error;
 			}
 			FSCompletenessRuntimeResult result;
 			static_cast<FSCompletenessObservation &>(result) = observation;

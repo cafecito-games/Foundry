@@ -490,6 +490,13 @@ static void add_union_pilot_diagnostic(FSCompletenessObservation &r_observation)
 	}
 }
 
+static bool is_union_pilot_adapter_diagnostic_target(const FSCompletenessProgram &p_program) {
+	return p_program.coordinates.get("surface", String()) == "text" &&
+			p_program.coordinates.get("destination", String()) == "plain" &&
+			p_program.coordinates.get("source_proof", String()) == "static_member" &&
+			p_program.coordinates.get("boundary", String()) == "reflective_write";
+}
+
 static void fail_union_pilot_runtime_result(FSCompletenessRuntimeResult &r_result) {
 	if (r_result.case_id == union_pilot_mutated_case_id) {
 		r_result.passed = false;
@@ -1344,6 +1351,45 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_FALSE(filesystem->dir_exists(owned_root));
 	}
 
+	TEST_CASE("TypeCompleteness UnionPilot publishes analyzer rejected runtime observations") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		Vector<FSCompletenessProgram> programs = render_union_pilot_programs(resolution);
+		String target_case_id;
+		for (FSCompletenessProgram &program : programs) {
+			if (is_union_pilot_adapter_diagnostic_target(program)) {
+				target_case_id = program.case_id;
+				Error source_error = OK;
+				program.source = FileAccess::get_file_as_string(
+						"modules/foundry_script/tests/scripts/analyzer/errors/number_not_an_expression.fs",
+						&source_error);
+				REQUIRE_EQ(source_error, OK);
+				break;
+			}
+		}
+		REQUIRE_FALSE(target_case_id.is_empty());
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_adapter_observation_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
+
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), OK);
+		CHECK_EQ(batch.text.size(), 20);
+		CHECK_EQ(batch.bytecode.size(), 20);
+		CHECK_EQ(batch.parity_failures, 1);
+		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_case_id);
+		REQUIRE(target != nullptr);
+		if (target == nullptr) {
+			return;
+		}
+		CHECK_FALSE(target->passed);
+		CHECK_EQ(target->status, "analyzer_error");
+		CHECK_EQ(String(target->dimensions.get("analysis", String())), "reject");
+		CHECK_FALSE(target->diagnostics.is_empty());
+		CHECK(target->produced_output.begins_with("FS_TEST_ANALYZER_ERROR\n"));
+		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot rejects missing and duplicate surface pairs atomically") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
@@ -1382,7 +1428,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot publishes output mismatches but rejects an invalid carrier") {
+	TEST_CASE("TypeCompleteness UnionPilot publishes output mismatches and invalid carriers") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
 		TemporaryProjectTree mismatch_tree(vformat("type_completeness_union_output_%d", OS::get_singleton()->get_process_id()));
@@ -1408,8 +1454,20 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> bad_carrier = valid;
 		bad_carrier.write[0].source = bad_carrier[0].source.replace("return \"uint \" + str(value)", "return \"bad \" + str(value)");
 		batch = stale_union_pilot_runtime_batch();
-		CHECK_NE(FSUnionCompletenessAdapter::execute(carrier_tree.root, bad_carrier, batch), OK);
-		check_union_pilot_runtime_batch_cleared(batch);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::execute(carrier_tree.root, bad_carrier, batch), OK);
+		CHECK_EQ(batch.text.size(), 20);
+		CHECK_EQ(batch.bytecode.size(), 20);
+		const HashMap<String, FSCompletenessRuntimeResult> &carrier_results =
+				bad_carrier[0].surface == "text" ? batch.text : batch.bytecode;
+		const FSCompletenessRuntimeResult *carrier_result = carrier_results.getptr(bad_carrier[0].case_id);
+		REQUIRE(carrier_result != nullptr);
+		if (carrier_result == nullptr) {
+			return;
+		}
+		CHECK_FALSE(carrier_result->passed);
+		CHECK_EQ(carrier_result->status, "ok");
+		CHECK_EQ(carrier_result->produced_output, "bad 5\n");
+		CHECK_FALSE(carrier_result->diagnostics.is_empty());
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot rejects unsafe scratch roots and duplicate global setup") {
