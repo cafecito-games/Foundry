@@ -277,6 +277,31 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(record["classification"], "unclassified")
         self.assertEqual(record["schema_version"], 1)
 
+    def test_validate_record_rejects_what_the_runner_rejects(self) -> None:
+        valid = ledger.proposed_record(
+            family="f",
+            case_id="c",
+            dimension="d",
+            issue_url="https://x/1",
+            closure_packet_url="https://x/2",
+            permanent_test_paths=["p"],
+        )
+        ledger.validate_record(valid)
+        rejected = [
+            dict(valid, schema_version="1"),
+            dict(valid, schema_version=2),
+            dict(valid, dimension=""),
+            dict(valid, issue_url="ftp://x/1"),
+            dict(valid, closure_packet_url="pull/2"),
+            dict(valid, permanent_test_paths=[]),
+            dict(valid, permanent_test_paths=["p", "p"]),
+            dict(valid, permanent_test_paths=[""]),
+            dict(valid, classification="bogus"),
+        ]
+        for record in rejected:
+            with self.assertRaises(ValueError, msg=repr(record)):
+                ledger.validate_record(record)
+
     def test_record_digest_is_canonical(self) -> None:
         record = {"b": 1, "a": [1, 2]}
         self.assertEqual(ledger.record_digest(record), ledger.record_digest({"a": [1, 2], "b": 1}))
@@ -458,6 +483,18 @@ class ReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(result.state, reconcile.State.RESOLVED)
         self.assertFalse(result.blocks_slice)
+
+    def test_resolved_comparison_does_not_mask_a_merged_pr_without_ledger_entry(self) -> None:
+        record = self._provisional()
+        result = reconcile.reconcile_finding(
+            finding_id=record.finding_id,
+            provisional_record=record,
+            merged_record=None,
+            pull_request=reconcile.PullRequest(url="https://x/2", state="merged"),
+            now=_ny(2026, 8, 18, 9),
+            comparison_status="resolved",
+        )
+        self.assertEqual(result.state, reconcile.State.CONFLICTING)
 
     def test_manual_records_reconcile_identically(self) -> None:
         manual = self._provisional(origin="manual")

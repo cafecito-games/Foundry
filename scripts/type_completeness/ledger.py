@@ -89,10 +89,29 @@ def proposed_record(
 
 
 def validate_record(record: dict[str, Any]) -> None:
+    """Mirror the runner's structural checks so a generated file is never rejected by the harness.
+
+    The runner additionally verifies that each permanent test path is a tracked file and that the case ID is
+    live or migrated; those checks need a repository checkout and stay with the runner.
+    """
     if set(record) != set(LEDGER_FIELDS):
         raise ValueError(f"ledger record must have exactly {sorted(LEDGER_FIELDS)}; got {sorted(record)}")
+    version = record["schema_version"]
+    if isinstance(version, bool) or not isinstance(version, int) or version != LEDGER_SCHEMA_VERSION:
+        raise ValueError(f"schema_version must be the integer {LEDGER_SCHEMA_VERSION}; got {version!r}")
+    for field in ("finding_id", "case_id", "family", "dimension", "classification", "issue_url", "closure_packet_url"):
+        if not isinstance(record[field], str) or not record[field]:
+            raise ValueError(f"{field} must be a non-empty string")
     if record["classification"] not in KNOWN_CLASSIFICATIONS:
         raise ValueError(f"unknown classification {record['classification']!r}")
+    for field in ("issue_url", "closure_packet_url"):
+        if not record[field].startswith(("https://", "http://")):
+            raise ValueError(f"{field} must be an http(s) URL")
+    paths = record["permanent_test_paths"]
+    if not isinstance(paths, list) or not paths:
+        raise ValueError("permanent_test_paths must be a non-empty array")
+    if any(not isinstance(path, str) or not path for path in paths) or len(set(paths)) != len(paths):
+        raise ValueError("permanent_test_paths must be unique non-empty strings")
 
 
 def write_record(directory: Path, record: dict[str, Any]) -> Path:

@@ -106,12 +106,12 @@ def reconcile_finding(
         return result(State.MERGED, "merged ledger entry matches the provisional record")
 
     assert provisional_record is not None
-    if comparison_status == "resolved":
-        return result(State.RESOLVED, "case passes on the branch and no ledger entry remains")
     if pull_request is None:
         return result(State.CONFLICTING, "provisional record has no ledger pull request")
     if pull_request.state == "merged":
         return result(State.CONFLICTING, "pull request is merged but no ledger entry exists for the finding")
+    if comparison_status == "resolved" and pull_request.state == "closed":
+        return result(State.RESOLVED, "case passes on the branch and the ledger proposal was withdrawn unmerged")
     if pull_request.state != "open":
         return result(State.CONFLICTING, f"ledger pull request is {pull_request.state} without a merged entry")
     if due_at is not None and deadline.is_overdue(due_at, now):
