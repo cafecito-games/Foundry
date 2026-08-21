@@ -499,12 +499,32 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 		CHECK_EQ(resolution.find_cell_by_id("absent"), nullptr);
 	}
 
+	TEST_CASE("TypeCompleteness Harness the baseline refuses a scratch root it does not own") {
+		String root;
+		REQUIRE_EQ(FSCompletenessBaseline::resolve_scratch_root("refusal_probe_family", root), OK);
+		REQUIRE_FALSE(root.is_empty());
+		{
+			TemporaryProjectTree occupied("type_completeness_baseline_refusal_probe_family_" +
+					String::num_int64(OS::get_singleton()->get_process_id()));
+			REQUIRE(occupied.is_valid());
+			CHECK_EQ(occupied.root, root);
+			// An existing root belongs to another run; the baseline never adopts it.
+			String reused;
+			CHECK_EQ(FSCompletenessBaseline::resolve_scratch_root("refusal_probe_family", reused),
+					ERR_ALREADY_IN_USE);
+		}
+		String released;
+		CHECK_EQ(FSCompletenessBaseline::resolve_scratch_root("refusal_probe_family", released), OK);
+		CHECK_EQ(released, root);
+	}
+
 	TEST_CASE("TypeCompleteness Harness reported parity failures equal the disagreeing pairs") {
-		const FSCompletenessRunResult &baseline = FSCompletenessBaseline::shared(completeness_family);
-		if (!baseline.report.has("text_bytecode_parity_failures")) {
-			Completeness::fs_completeness_skip("the shared baseline published no report to compare against");
+		const FSCompletenessRunResult *shared_baseline =
+				FSCompletenessBaseline::shared_or_skip(completeness_family);
+		if (shared_baseline == nullptr) {
 			return;
 		}
+		const FSCompletenessRunResult &baseline = *shared_baseline;
 		const String canonical_root = TemporaryProjectTree::canonicalize_existing_path(tracked_catalog_root());
 		REQUIRE_FALSE(canonical_root.is_empty());
 		const FSCompletenessCatalogRecord *record = nullptr;

@@ -31,6 +31,7 @@
 #include "fs_type_completeness_cache.h"
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_common.h"
 #include "fs_type_completeness_manifest.h"
 
 #include "core/io/dir_access.h"
@@ -66,6 +67,10 @@ struct CompletenessStore {
 CompletenessStore &store() {
 	static CompletenessStore instance;
 	return instance;
+}
+
+String baseline_scratch_name(const String &p_family) {
+	return vformat("type_completeness_baseline_%s_%d", p_family, OS::get_singleton()->get_process_id());
 }
 
 FSCompletenessStructuralFailure baseline_failure(Error p_error, const String &p_detail) {
@@ -163,29 +168,21 @@ const FSCompletenessRunResult &FSCompletenessBaseline::shared(const String &p_fa
 	shared_store.baselines.insert(p_family, result);
 	shared_store.baseline_run_count++;
 
-	// The leaf carries this process's ID, so an existing directory means either a live sibling process
-	// that reused the same scratch space or a crashed run that happened to hold this ID. Reusing it
-	// would mix two runs' artifacts into one baseline, so the baseline refuses instead.
-	const String root = TemporaryProjectTree::get_test_scratch_path(
-			vformat("type_completeness_baseline_%s_%d", p_family, OS::get_singleton()->get_process_id()));
-	if (root.is_empty()) {
+	String root;
+	const Error root_error = resolve_scratch_root(p_family, root);
+	if (root_error != OK) {
 		result->outcome = "structural_failure";
-		result->structural_failures.push_back(baseline_failure(ERR_UNCONFIGURED,
-				"The test scratch space is unavailable, so no baseline root could be resolved."));
-		return *result;
-	}
-	if (DirAccess::dir_exists_absolute(root)) {
-		result->outcome = "structural_failure";
-		result->structural_failures.push_back(baseline_failure(ERR_ALREADY_IN_USE,
-				"The baseline scratch root already exists and is not this run's to reuse."));
+		result->structural_failures.push_back(baseline_failure(root_error,
+				root_error == ERR_ALREADY_IN_USE
+						? "The baseline scratch root already exists and is not this run's to reuse."
+						: "The test scratch space is unavailable, so no baseline root could be resolved."));
 		return *result;
 	}
 
 	// The tree is scoped to this call: the baseline is consumed as an in-memory result, so its scratch
 	// artifacts are removed as soon as the run publishes them rather than surviving the whole process.
 	// A test that needs the artifact files on disk runs its own family instead.
-	TemporaryProjectTree tree(
-			vformat("type_completeness_baseline_%s_%d", p_family, OS::get_singleton()->get_process_id()));
+	TemporaryProjectTree tree(baseline_scratch_name(p_family));
 	if (!tree.is_valid()) {
 		result->outcome = "structural_failure";
 		result->structural_failures.push_back(
@@ -200,6 +197,30 @@ const FSCompletenessRunResult &FSCompletenessBaseline::shared(const String &p_fa
 	options.report_path = tree.root.path_join("report.json");
 	FSCompletenessRunner::run(options, *result);
 	return *result;
+}
+
+Error FSCompletenessBaseline::resolve_scratch_root(const String &p_family, String &r_root) {
+	r_root = TemporaryProjectTree::get_test_scratch_path(baseline_scratch_name(p_family));
+	if (r_root.is_empty()) {
+		return ERR_UNCONFIGURED;
+	}
+	// The leaf carries this process's ID, so an existing directory means either a live sibling process
+	// that reused the same scratch space or a crashed run that happened to hold this ID. Reusing it
+	// would mix two runs' artifacts into one baseline, so the baseline refuses instead.
+	if (DirAccess::dir_exists_absolute(r_root)) {
+		return ERR_ALREADY_IN_USE;
+	}
+	return OK;
+}
+
+const FSCompletenessRunResult *FSCompletenessBaseline::shared_or_skip(const String &p_family) {
+	const FSCompletenessRunResult &baseline = shared(p_family);
+	if (baseline.outcome == "passed") {
+		return &baseline;
+	}
+	Completeness::fs_completeness_skip(
+			vformat("the shared type-completeness baseline for '%s' is unavailable", p_family).utf8().get_data());
+	return nullptr;
 }
 
 int FSCompletenessBaseline::run_count() {

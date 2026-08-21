@@ -80,6 +80,14 @@ public:
 	// same result, so a test can never observe a baseline contaminated by another test's mutation.
 	static const FSCompletenessRunResult &shared(const String &p_family);
 
+	// The shared baseline, or nullptr after printing why it is unavailable. Assertion-only tests use
+	// this so an environment that cannot produce a baseline is visible instead of silently passing.
+	static const FSCompletenessRunResult *shared_or_skip(const String &p_family);
+
+	// Absolute path of p_family's baseline scratch root, or an error explaining why it cannot be
+	// used. Exposed so the refusal to reuse an existing root is provable without a second process.
+	static Error resolve_scratch_root(const String &p_family, String &r_root);
+
 	// How many baseline runs this process has executed.
 	static int run_count();
 };
