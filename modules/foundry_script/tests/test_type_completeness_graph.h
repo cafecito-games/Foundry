@@ -282,6 +282,53 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 			CHECK_EQ(FSCompletenessGraph::resolve(invalid, catalog, resolution, errors), ERR_INVALID_DATA);
 			CHECK(graph_errors_contain(errors, "has no reachable disposition"));
 		}
+
+		SUBCASE("An empty cell counts each unique matching required dimension") {
+			errors.clear();
+			resolution = FSCompletenessResolution();
+			FSCompletenessManifest invalid = manifest;
+			invalid.domain["destination"] = Vector<String>({ "plain" });
+			invalid.domain["source_proof"] = Vector<String>({ "gradual", "erased" });
+			invalid.domain["boundary"] = Vector<String>({ "argument_binding" });
+			invalid.domain["surface"] = Vector<String>({ "text" });
+			invalid.required_dimensions.clear();
+			FSCompletenessRequiredDimension analysis;
+			analysis.dimension = "analysis";
+			analysis.when["source_proof"] = "erased";
+			invalid.required_dimensions.push_back(analysis);
+			invalid.required_dimensions.push_back(analysis);
+			FSCompletenessRequiredDimension runtime;
+			runtime.dimension = "runtime_obligation";
+			runtime.when["source_proof"] = "erased";
+			invalid.required_dimensions.push_back(runtime);
+			invalid.anchors.clear();
+			FSCompletenessAnchor anchor;
+			anchor.id = "reachable_gradual";
+			anchor.coordinates["destination"] = "plain";
+			anchor.coordinates["source_proof"] = "gradual";
+			anchor.coordinates["boundary"] = "argument_binding";
+			anchor.coordinates["surface"] = "text";
+			anchor.expect["analysis"] = "accept";
+			invalid.anchors.push_back(anchor);
+			invalid.relations.clear();
+			invalid.exceptions.clear();
+			resolution.cells.resize(1);
+			resolution.max_observed_chain_length = 99;
+			resolution.uncovered_dimension_count = 99;
+			resolution.ambiguous_dimension_count = 99;
+
+			CHECK_EQ(FSCompletenessGraph::resolve(invalid, catalog, resolution, errors), ERR_INVALID_DATA);
+			CHECK(resolution.cells.is_empty());
+			CHECK_EQ(resolution.max_observed_chain_length, 0);
+			CHECK_EQ(resolution.uncovered_dimension_count, 0);
+			CHECK_EQ(resolution.ambiguous_dimension_count, 0);
+			CHECK_EQ(graph_error_count(errors,
+							 "cell {destination=plain, source_proof=erased, boundary=argument_binding, surface=text} has no reachable disposition"),
+					1);
+			CHECK_EQ(graph_error_count(errors, "required dimension"), 2);
+			CHECK_EQ(graph_error_count(errors, "required dimension 'analysis'"), 1);
+			CHECK_EQ(graph_error_count(errors, "required dimension 'runtime_obligation'"), 1);
+		}
 	}
 
 	TEST_CASE("TypeCompleteness Graph deduplicates and totally orders agreeing provenance") {

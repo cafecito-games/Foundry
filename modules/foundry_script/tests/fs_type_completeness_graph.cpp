@@ -832,7 +832,6 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 			append_unique_error(r_errors, emitted_errors,
 					vformat("cell {%s} has no reachable disposition",
 							coordinate_description(cell_dispositions.coordinates, p_manifest.domain_axis_order)));
-			continue;
 		}
 
 		Vector<String> required_dimensions;
