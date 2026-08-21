@@ -833,7 +833,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 	  "production": [
 	    {"paths": ["modules/foundry_script/exact.cpp"], "families": ["exact_family"]},
 	    {"paths": ["modules/foundry_script/editor/"], "families": ["editor_family"]},
-	    {"paths": ["modules/foundry_script/shared/"], "families": ["shared_family"]}
+	    {"paths": ["modules/foundry_script/shared/"], "families": ["shared_family"]},
+	    {"paths": ["modules/foundry_script/tests/owned.cpp"], "families": ["owned_test_family"]},
+	    {"paths": ["modules/foundry_script/tests/owned_cases/"], "families": ["owned_case_family"]}
   ],
   "nonproduction_prefixes": ["docs/", "modules/foundry_script/tests/"],
   "broad_core_families": ["broad_family"]
@@ -864,6 +866,12 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK(selection_has_only_family(capability_map.select(
 												Vector<String>({ "modules/foundry_script/shared/special.cpp" })),
 				"shared_family"));
+		CHECK(selection_has_only_family(capability_map.select(
+												Vector<String>({ "modules/foundry_script/tests/owned.cpp" })),
+				"owned_test_family"));
+		CHECK(selection_has_only_family(capability_map.select(
+												Vector<String>({ "modules/foundry_script/tests/owned_cases/case.fs" })),
+				"owned_case_family"));
 		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/exact.cpp/child" }))
 						.used_broad_core_fallback);
 		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/editorial/tool.cpp" }))
@@ -938,17 +946,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
   "broad_core_families":["core"]
 	})JSON",
 					"overlaps nonproduction path" },
-			{ "cross_category_exact", R"JSON({
-  "schema_version":1,
-  "production":[{"paths":["modules/foundry_script/tests/owned.cpp"],"families":["owned"]}],
-  "nonproduction_prefixes":["modules/foundry_script/tests/"],
-  "broad_core_families":["core"]
-})JSON",
-					"overlaps nonproduction path" },
 			{ "cross_category_reverse", R"JSON({
   "schema_version":1,
   "production":[{"paths":["modules/foundry_script/tests/fixtures/"],"families":["owned"]}],
   "nonproduction_prefixes":["modules/foundry_script/tests/fixtures/case.fs"],
+  "broad_core_families":["core"]
+})JSON",
+					"overlaps nonproduction path" },
+			{ "cross_category_production_ancestor", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/tests/"],"families":["owned"]}],
+  "nonproduction_prefixes":["modules/foundry_script/tests/fixtures/"],
   "broad_core_families":["core"]
 })JSON",
 					"overlaps nonproduction path" },

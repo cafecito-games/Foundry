@@ -532,6 +532,13 @@ static bool is_permitted_nonproduction_rule(const String &p_path) {
 	return true;
 }
 
+static bool is_intentional_test_production_override(const String &p_production, const String &p_nonproduction) {
+	static const String tests_root = "modules/foundry_script/tests/";
+	return p_nonproduction.ends_with("/") &&
+			(p_nonproduction == tests_root || p_nonproduction.begins_with(tests_root)) &&
+			p_production.length() > p_nonproduction.length() && p_production.begins_with(p_nonproduction);
+}
+
 static bool parse_capability_string_array(const Dictionary &p_object, const StringName &p_field,
 		const String &p_path, Vector<String> &r_values, Vector<String> &r_errors) {
 	Array values;
@@ -744,7 +751,8 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	}
 	for (const Pair<String, HashSet<String>> &production_entry : parsed.production_prefixes) {
 		for (const String &nonproduction_entry : parsed.nonproduction_prefixes) {
-			if (capability_rules_overlap(production_entry.first, nonproduction_entry)) {
+			if (capability_rules_overlap(production_entry.first, nonproduction_entry) &&
+					!is_intentional_test_production_override(production_entry.first, nonproduction_entry)) {
 				append_error(r_errors, "$",
 						vformat("production path '%s' overlaps nonproduction path '%s'",
 								production_entry.first, nonproduction_entry));
