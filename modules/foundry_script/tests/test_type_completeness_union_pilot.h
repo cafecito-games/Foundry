@@ -31,6 +31,7 @@
 #pragma once
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_runner.h"
 #include "fs_type_completeness_union_adapter.h"
 
 #include "../fs_analyzer.h"
@@ -39,6 +40,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
 #include "tests/test_macros.h"
 #include "tests/test_tools.h"
@@ -457,7 +459,296 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 	return fingerprint;
 }
 
+static String union_pilot_mutated_case_id;
+static int union_pilot_mutation_count = 0;
+
+static void corrupt_union_pilot_stored_carrier(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_case_id && r_observation.surface == "text") {
+		r_observation.dimensions["stored_carrier"] = "plain_destination";
+		union_pilot_mutation_count++;
+	}
+}
+
+static String stage_union_pilot_completeness_catalog(TemporaryProjectTree &p_tree) {
+	const String staged_root = p_tree.root.path_join("catalog");
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(filesystem.is_valid());
+	REQUIRE_EQ(filesystem->copy_dir(type_completeness_union_pilot_root, staged_root), OK);
+	return staged_root;
+}
+
+static String union_pilot_finding_record(const String &p_finding_id, const String &p_case_id,
+		const String &p_classification, const String &p_extra_field = String()) {
+	return vformat(R"JSON({
+	"schema_version": 1,
+	"finding_id": "%s",
+	"case_id": "%s",
+	"family": "union_destination_membership",
+	"dimension": "stored_carrier",
+	"classification": "%s",
+	"issue_url": "https://example.invalid/issues/1",
+	"closure_packet_url": "https://example.invalid/closure/1",
+	"permanent_test_paths": ["modules/foundry_script/tests/test_type_completeness_union_pilot.h"]%s
+}
+)JSON",
+			p_finding_id, p_case_id, p_classification, p_extra_field);
+}
+
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
+	TEST_CASE("TypeCompleteness UnionPilot runner publishes complete deterministic coverage") {
+		TemporaryProjectTree tree(vformat("type_completeness_union_report_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.executed_cells, 40);
+		CHECK(result.findings.is_empty());
+
+		Error read_error = OK;
+		const String report_source = FileAccess::get_file_as_string(options.report_path, &read_error);
+		REQUIRE_EQ(read_error, OK);
+		JSON json;
+		REQUIRE_EQ(json.parse(report_source), OK);
+		REQUIRE_EQ(json.get_data().get_type(), Variant::DICTIONARY);
+		const Dictionary report = json.get_data();
+		CHECK_EQ(int(report.get("schema_version", 0)), 1);
+		CHECK_EQ(String(report.get("family", String())), options.family);
+		CHECK_EQ(bool(report.get("success", false)), true);
+		CHECK_EQ(int(report.get("cell_count", 0)), 40);
+		CHECK_EQ(int(report.get("uncovered_required_dimensions", -1)), 0);
+		CHECK_EQ(int(report.get("text_bytecode_parity_failures", -1)), 0);
+
+		const Dictionary executed_by_surface = report.get("executed_by_surface", Dictionary());
+		CHECK_EQ(int(executed_by_surface.get("text", 0)), 20);
+		CHECK_EQ(int(executed_by_surface.get("bytecode", 0)), 20);
+		const Dictionary chain_coverage = report.get("coverage_by_chain_length", Dictionary());
+		CHECK_EQ(int(chain_coverage.get("0", 0)), 10);
+		CHECK_EQ(int(chain_coverage.get("1", 0)), 28);
+		CHECK_EQ(int(chain_coverage.get("2", 0)), 26);
+		CHECK_EQ(int(chain_coverage.get("3", 0)), 8);
+		CHECK_EQ(int(chain_coverage.get("0", 0)) + int(chain_coverage.get("1", 0)) +
+						int(chain_coverage.get("2", 0)) + int(chain_coverage.get("3", 0)),
+				72);
+		CHECK(chain_coverage.has("3"));
+
+		const Dictionary coverage_by_dimension = report.get("coverage_by_dimension", Dictionary());
+		CHECK_EQ(int(coverage_by_dimension.get("analysis", 0)), 40);
+		CHECK_EQ(int(coverage_by_dimension.get("runtime_obligation", 0)), 24);
+		CHECK_EQ(int(coverage_by_dimension.get("stored_carrier", 0)), 8);
+		const Array cases = report.get("cases", Array());
+		CHECK_EQ(cases.size(), 40);
+		const Array findings = report.get("findings", Array());
+		CHECK(findings.is_empty());
+		CHECK_EQ(result.report, report);
+		for (int i = 0; i < cases.size(); i++) {
+			CAPTURE(i);
+			REQUIRE_EQ(cases[i].get_type(), Variant::DICTIONARY);
+			const Dictionary case_report = cases[i];
+			CHECK_FALSE(String(case_report.get("case_id", String())).is_empty());
+			CHECK_EQ(Dictionary(case_report.get("coordinates", Dictionary())).size(), 4);
+			CHECK_EQ(String(case_report.get("status", String())), "passed");
+			CHECK_FALSE(String(case_report.get("artifact_path", String())).is_empty());
+			CHECK_FALSE(Dictionary(case_report.get("expected", Dictionary())).is_empty());
+			CHECK_FALSE(Dictionary(case_report.get("actual", Dictionary())).is_empty());
+			CHECK_FALSE(Dictionary(case_report.get("canonical_provenance", Dictionary())).is_empty());
+			CHECK_FALSE(Dictionary(case_report.get("agreeing_provenance", Dictionary())).is_empty());
+		}
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner creates an owned scratch root before execution") {
+		TemporaryProjectTree tree(vformat("type_completeness_union_scratch_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root.path_join("runner_scratch");
+		options.report_path = options.scratch_root.path_join("report.json");
+		CHECK_FALSE(DirAccess::dir_exists_absolute(options.scratch_root));
+
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.executed_cells, 40);
+		CHECK(DirAccess::dir_exists_absolute(options.scratch_root));
+		CHECK(FileAccess::exists(options.report_path));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner reconciles a direct mismatch with parity evidence") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("surface", String()) == "text" &&
+					cell.coordinates.get("destination", String()) == "union" &&
+					cell.coordinates.get("source_proof", String()) == "numeric_constant" &&
+					cell.coordinates.get("boundary", String()) == "argument_binding") {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		union_pilot_mutation_count = 0;
+
+		TemporaryProjectTree tree(vformat("type_completeness_union_mismatch_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_stored_carrier;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 40);
+		CHECK_EQ(union_pilot_mutation_count, 1);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		const FSCompletenessFinding &finding = result.findings[0];
+		CHECK_FALSE(finding.finding_id.is_empty());
+		CHECK_EQ(finding.case_id, union_pilot_mutated_case_id);
+		CHECK_EQ(finding.family, options.family);
+		CHECK_EQ(finding.dimension, "stored_carrier");
+		CHECK_EQ(String(finding.expected), "admitting_alternative");
+		CHECK_EQ(String(finding.actual), "plain_destination");
+		CHECK_EQ(finding.classification, "unclassified");
+		CHECK_FALSE(finding.artifact_path.is_empty());
+		CHECK_EQ(String(finding.parity_evidence.get("text", String())), "plain_destination");
+		CHECK_EQ(String(finding.parity_evidence.get("bytecode", String())), "admitting_alternative");
+
+		const Dictionary report = result.report;
+		CHECK_EQ(bool(report.get("success", true)), false);
+		CHECK_EQ(int(report.get("text_bytecode_parity_failures", 0)), 1);
+		const Array report_findings = report.get("findings", Array());
+		REQUIRE_EQ(report_findings.size(), 1);
+		const Dictionary report_finding = report_findings[0];
+		CHECK_EQ(String(report_finding.get("case_id", String())), union_pilot_mutated_case_id);
+		CHECK_EQ(String(report_finding.get("dimension", String())), "stored_carrier");
+		CHECK_FALSE(Dictionary(report_finding.get("parity_evidence", Dictionary())).is_empty());
+		CHECK_EQ(Array(report.get("cases", Array())).size(), 40);
+
+		Error read_error = OK;
+		const String report_source = FileAccess::get_file_as_string(options.report_path, &read_error);
+		REQUIRE_EQ(read_error, OK);
+		JSON json;
+		REQUIRE_EQ(json.parse(report_source), OK);
+		CHECK_EQ(Dictionary(json.get_data()), report);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner reconciles a terminal ledger entry") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("surface", String()) == "text" &&
+					cell.coordinates.get("destination", String()) == "union" &&
+					cell.coordinates.get("source_proof", String()) == "numeric_constant" &&
+					cell.coordinates.get("boundary", String()) == "argument_binding") {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		const String finding_id = "fstcf-v1-" +
+				(union_pilot_mutated_case_id + "|stored_carrier").sha256_text().substr(0, 20);
+
+		TemporaryProjectTree tree(vformat("type_completeness_union_known_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		tree.write_file("catalog/findings/known.json",
+				union_pilot_finding_record(
+						finding_id, union_pilot_mutated_case_id, "intentional_unsupported"));
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_stored_carrier;
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.executed_cells, 40);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].finding_id, finding_id);
+		CHECK_EQ(result.findings[0].classification, "intentional_unsupported");
+		CHECK_EQ(result.findings[0].issue_url, "https://example.invalid/issues/1");
+		CHECK_EQ(result.findings[0].closure_packet_url, "https://example.invalid/closure/1");
+		CHECK_EQ(result.findings[0].permanent_test_paths.size(), 1);
+		CHECK_FALSE(result.findings[0].parity_evidence.is_empty());
+		CHECK_EQ(Array(result.report.get("findings", Array())).size(), 1);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects malformed unresolved and duplicate ledger records atomically") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		String current_case_id;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.dimensions.has("stored_carrier")) {
+				current_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(current_case_id.is_empty());
+		const String finding_id = "fstcf-v1-ledger-validation";
+		struct InvalidLedgerCase {
+			const char *name;
+			String first;
+			String second;
+		};
+		const InvalidLedgerCase invalid_cases[] = {
+			{ "unknown_field",
+					union_pilot_finding_record(finding_id, current_case_id, "product_defect",
+							",\n\t\"unexpected\": true"),
+					String() },
+			{ "unresolved_case", union_pilot_finding_record(finding_id, "fstc-v1-does-not-exist", "product_defect"), String() },
+			{ "unknown_classification",
+					union_pilot_finding_record(finding_id, current_case_id, "not_a_classification"),
+					String() },
+			{ "duplicate_id", union_pilot_finding_record(finding_id, current_case_id, "product_defect"),
+					union_pilot_finding_record(finding_id, current_case_id, "duplicate") },
+		};
+
+		for (const InvalidLedgerCase &invalid : invalid_cases) {
+			CAPTURE(invalid.name);
+			TemporaryProjectTree tree(vformat("type_completeness_union_ledger_%s_%d",
+					invalid.name, OS::get_singleton()->get_process_id()));
+			REQUIRE(tree.is_valid());
+			const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+			tree.write_file("catalog/findings/a.json", invalid.first);
+			if (!invalid.second.is_empty()) {
+				tree.write_file("catalog/findings/b.json", invalid.second);
+			}
+			tree.write_file("report.json", "caller report sentinel\n");
+
+			FSCompletenessRunOptions options;
+			options.catalog_root = catalog_root;
+			options.family = "union_destination_membership";
+			options.scratch_root = tree.root;
+			options.report_path = tree.root.path_join("report.json");
+			FSCompletenessRunResult result;
+			result.success = true;
+			result.executed_cells = 99;
+			result.findings.push_back(FSCompletenessFinding());
+			result.report["stale"] = true;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_FALSE(result.success);
+			CHECK_EQ(result.executed_cells, 0);
+			CHECK(result.findings.is_empty());
+			CHECK(result.report.is_empty());
+			CHECK_EQ(FileAccess::get_file_as_string(options.report_path), "caller report sentinel\n");
+		}
+	}
+
 	TEST_CASE("TypeCompleteness UnionPilot executes text and serialized bytecode with semantic parity") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_EQ(resolution.cells.size(), 40);
