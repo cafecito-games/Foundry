@@ -6,7 +6,10 @@ shard (and therefore every recipe it schedules) has a terminal run inside the wi
 never calls ``gh`` itself: the caller captures the JSON, so the check is testable without network.
 
 A run is terminal only when its ``conclusion`` is ``success`` or ``failure``; a cancelled, skipped,
-or still-running (``null``) run published no verdict. Every run of the workflow executes every
+or still-running (``null``) run published no verdict. A ``failure`` counts as terminal whatever step
+failed: ``gh run list`` does not say whether the shard reached its verdict, so a workflow broken
+before any recipe runs still satisfies the cadence; the per-shard mutation result artifacts are
+where that distinction lives. Every run of the workflow executes every
 shard of the matrix, so a shard's cadence is the workflow's cadence on the watched branch.
 
 Stdlib only, Python 3.8.

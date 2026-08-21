@@ -553,6 +553,29 @@ class RunFlowTests(unittest.TestCase):
             result = mutation.run_recipe(_run_options(Path(directory)), fake)
             self.assertEqual(result["outcome"], mutation.Outcome.STRUCTURAL_FAILURE.value)
 
+    def test_a_stale_report_from_an_earlier_run_is_never_reused(self) -> None:
+        fake = FakeToolchain(report_missing=True)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            options = _run_options(root)
+            stale = (
+                options.scratch.resolve() / f"matrix_{TRACKED_RECIPE_ID}" / "report.union_destination_membership.json"
+            )
+            stale.parent.mkdir(parents=True)
+            stale.write_text((FIXTURES / "runner_report_union_mutated.json").read_text(), encoding="utf-8")
+            result = mutation.run_recipe(options, fake)
+            self.assertEqual(result["outcome"], mutation.Outcome.STRUCTURAL_FAILURE.value)
+            self.assertFalse(stale.exists())
+
+    def test_a_leftover_worktree_is_removed_before_a_new_one_is_added(self) -> None:
+        fake = FakeToolchain()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            options = _run_options(root)
+            (options.scratch / f"worktree_{TRACKED_RECIPE_ID}").mkdir(parents=True)
+            mutation.run_recipe(options, fake)
+            self.assertEqual(fake.calls.index("remove_worktree"), fake.calls.index("add_worktree") - 1)
+
     def test_an_unparsable_report_is_structural(self) -> None:
         fake = FakeToolchain(report_text="{not json")
         with tempfile.TemporaryDirectory() as directory:

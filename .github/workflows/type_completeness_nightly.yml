@@ -70,13 +70,18 @@ jobs:
           export FOUNDRY_TEST_SCRATCH="$RUNNER_TEMP/type_completeness_scratch"
           mkdir -p "$FOUNDRY_TEST_SCRATCH" results
           worst=0
+          # A nonzero verdict (missed, stale, timeout, ...) is a result, not an abort: every recipe of the
+          # shard runs under the step's errexit, and the worst code is the step's.
           for recipe in $(echo "$RECIPES" | tr ',' ' '); do
-            python3 -m scripts.type_completeness.mutation run \
+            if python3 -m scripts.type_completeness.mutation run \
               --recipe "$recipe" --shard "$SHARD_ID" \
               --catalog "$MUTATION_CATALOG" --rules "$RULES_CATALOG" \
               --repository "$GITHUB_WORKSPACE" --scratch "$FOUNDRY_TEST_SCRATCH" \
-              --output "results/$recipe" --jobs "$BUILD_JOBS" --budget-seconds "$BUDGET_SECONDS"
-            code=$?
+              --output "results/$recipe" --jobs "$BUILD_JOBS" --budget-seconds "$BUDGET_SECONDS"; then
+              code=0
+            else
+              code=$?
+            fi
             if [ "$code" -gt "$worst" ]; then worst=$code; fi
           done
           exit "$worst"

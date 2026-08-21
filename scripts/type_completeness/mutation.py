@@ -635,6 +635,12 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
     capability_slice: dict[str, Any] = {"family": family, "paths": [], "broad_core": False}
     detail = ""
     try:
+        # A scratch root may be reused across runs: a stale worktree or report from an earlier
+        # invocation must never stand in for this one, so both are removed before anything starts.
+        if worktree.exists():
+            toolchain.remove_worktree(repository, worktree)
+        if report_path.exists():
+            report_path.unlink()
         toolchain.add_worktree(repository, worktree, develop_commit, deadline)
         capabilities_path = (
             worktree / "modules" / "foundry_script" / "tests" / "type_completeness" / "capabilities.json"
