@@ -101,6 +101,9 @@ class AutomationClient:
         return (int(entries[0]["number"]), str(entries[0]["url"])) if entries else None
 
     def create_or_update_tracking_issue(self, finding_id: str, title: str, body: str) -> str:
+        # Lookup searches the title for the finding ID, so creation must always embed it there.
+        if finding_id not in title:
+            title = f"{title} [{finding_id}]"
         existing = self._find_tracking_issue(finding_id)
         if existing is not None:
             number, url = existing

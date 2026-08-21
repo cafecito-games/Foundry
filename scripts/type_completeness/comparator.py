@@ -38,8 +38,19 @@ def observation_digest(case: Mapping[str, Any]) -> str:
     return digest_of({field: case[field] for field in OBSERVATION_FIELDS if field in case})
 
 
+# Only the semantic content of a finding feeds the digest. Artifact paths differ between worktrees and ledger
+# metadata (classification, issue and closure-packet URLs, permanent tests) changes without any product change.
+FINDING_DIGEST_FIELDS = ("dimension", "expected", "actual")
+
+
+def _finding_digest_view(finding: Mapping[str, Any]) -> dict[str, Any]:
+    return {field: finding.get(field) for field in FINDING_DIGEST_FIELDS}
+
+
 def _case_digest(case: CaseResult) -> str:
-    return digest_of({"observation": case.observation, "findings": list(case.findings)})
+    return digest_of(
+        {"observation": case.observation, "findings": [_finding_digest_view(finding) for finding in case.findings]}
+    )
 
 
 def _side(case: Optional[CaseResult]) -> dict[str, Any]:

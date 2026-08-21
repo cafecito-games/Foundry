@@ -226,6 +226,33 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(artifact.status, comparator.Status.WORSENED)
         self.assertEqual(artifact.to_dict()["branch"]["findings"][1]["finding_id"], "a-source_proof")
 
+    def test_non_semantic_finding_metadata_does_not_make_failure_worsened(self) -> None:
+        branch_finding = dict(
+            _finding("a", "destination"),
+            artifact_path="/branch/worktree/scratch/a.fs",
+            issue_url="https://x/issues/9",
+            classification="product_defect",
+            parity_evidence={"text": "/branch/a.txt"},
+        )
+        develop_finding = dict(_finding("a", "destination"), artifact_path="/develop/worktree/scratch/a.fs")
+        branch = report.load_report(
+            _report([_case("a", passed=False, artifact_path="/branch/a.fs")], findings=[branch_finding])
+        )
+        develop = report.load_report(
+            _report([_case("a", passed=False, artifact_path="/develop/a.fs")], findings=[develop_finding])
+        )
+        artifact = comparator.compare_case(branch, develop, "a", configuration="text")
+        self.assertEqual(artifact.status, comparator.Status.UNCHANGED)
+        self.assertEqual(artifact.branch_digest, artifact.develop_digest)
+
+    def test_semantic_finding_change_is_worsened(self) -> None:
+        branch = report.load_report(
+            _report([_case("a", passed=False)], findings=[dict(_finding("a", "destination"), actual="crash")])
+        )
+        develop = report.load_report(_report([_case("a", passed=False)], findings=[_finding("a", "destination")]))
+        artifact = comparator.compare_case(branch, develop, "a", configuration="text")
+        self.assertEqual(artifact.status, comparator.Status.WORSENED)
+
     def test_compare_report_emits_one_artifact_per_branch_failure(self) -> None:
         branch = report.load_report(
             _report([_case("a", passed=False), _case("b", passed=True), _case("c", passed=False)])
@@ -618,6 +645,18 @@ class GitHubAutomationTests(unittest.TestCase):
         joined = [" ".join(call) for call in runner.calls]
         self.assertTrue(any("pr edit 3" in call for call in joined))
         self.assertFalse(any("pr create" in call for call in joined))
+
+    def test_created_tracking_issue_title_embeds_finding_id_so_lookup_finds_it(self) -> None:
+        runner = FakeCommandRunner({"issue list": "[]", "issue create": "https://github.com/x/issues/5"})
+        client = github.AutomationClient(run=runner, repository="cafecito-games/Foundry")
+        client.create_or_update_tracking_issue("finding-1", title="Union store mismatch", body="b")
+        create_call = next(call for call in runner.calls if call[1:3] == ["issue", "create"])
+        created_title = create_call[create_call.index("--title") + 1]
+        self.assertIn("finding-1", created_title)
+        list_call = next(call for call in runner.calls if call[1:3] == ["issue", "list"])
+        search = list_call[list_call.index("--search") + 1]
+        self.assertIn("finding-1", search)
+        self.assertIn("in:title", search)
 
     def test_tracking_issue_is_created_once_and_then_updated(self) -> None:
         runner = FakeCommandRunner({"issue list": "[]", "issue create": "https://github.com/x/issues/5"})
