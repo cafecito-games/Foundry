@@ -219,6 +219,12 @@ static FSCompletenessRuntimeResult *runtime_result_for(
 	return surface == "text" ? r_batch.text.getptr(p_cell.case_id) : r_batch.bytecode.getptr(p_cell.case_id);
 }
 
+static bool runtime_result_identity_matches(
+		const FSCompletenessResolvedCell &p_cell, const FSCompletenessRuntimeResult &p_result) {
+	return p_result.case_id == p_cell.case_id &&
+			p_result.surface == String(p_cell.coordinates.get("surface", String()));
+}
+
 static String semantic_pair_key(const Dictionary &p_coordinates) {
 	Dictionary semantic_coordinates = p_coordinates.duplicate();
 	semantic_coordinates.erase("surface");
@@ -682,10 +688,32 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 	return OK;
 }
 
-static Error validate_owned_report_path(
-		const String &p_canonical_scratch_root, const String &p_report_path) {
+static Error validate_owned_report_path(const String &p_canonical_scratch_root,
+		const String &p_catalog_root, const String &p_report_path) {
 	if (p_report_path.simplify_path() != p_report_path ||
+			p_report_path.get_extension() != "json" ||
 			!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, p_report_path)) {
+		return ERR_UNAUTHORIZED;
+	}
+	const String artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
+	if (p_report_path == artifact_root ||
+			TemporaryProjectTree::is_strict_descendant(artifact_root, p_report_path)) {
+		return ERR_UNAUTHORIZED;
+	}
+
+	Error catalog_open_error = OK;
+	Ref<DirAccess> catalog_directory = DirAccess::open(p_catalog_root, &catalog_open_error);
+	if (catalog_directory.is_null()) {
+		return catalog_open_error == OK ? ERR_CANT_OPEN : catalog_open_error;
+	}
+	const String lexical_catalog_root =
+			catalog_directory->get_current_dir().replace("\\", "/").simplify_path();
+	const String canonical_catalog_root = canonicalize_existing_ledger_path(lexical_catalog_root);
+	if (canonical_catalog_root.is_empty() || canonical_catalog_root != lexical_catalog_root) {
+		return ERR_UNAUTHORIZED;
+	}
+	if (p_report_path == canonical_catalog_root ||
+			TemporaryProjectTree::is_strict_descendant(canonical_catalog_root, p_report_path)) {
 		return ERR_UNAUTHORIZED;
 	}
 	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
@@ -921,8 +949,9 @@ static Error replace_report_file(const String &p_temporary_path, const String &p
 }
 
 static Error write_report_atomically(const String &p_canonical_scratch_root,
-		const String &p_report_path, const Dictionary &p_report) {
-	Error validation_error = validate_owned_report_path(p_canonical_scratch_root, p_report_path);
+		const String &p_catalog_root, const String &p_report_path, const Dictionary &p_report) {
+	Error validation_error = validate_owned_report_path(
+			p_canonical_scratch_root, p_catalog_root, p_report_path);
 	if (validation_error != OK) {
 		return validation_error;
 	}
@@ -962,7 +991,8 @@ static Error write_report_atomically(const String &p_canonical_scratch_root,
 			canonical_temporary_path != temporary_path) {
 		return ERR_UNAUTHORIZED;
 	}
-	validation_error = validate_owned_report_path(p_canonical_scratch_root, p_report_path);
+	validation_error = validate_owned_report_path(
+			p_canonical_scratch_root, p_catalog_root, p_report_path);
 	if (validation_error != OK) {
 		return validation_error;
 	}
@@ -1099,7 +1129,7 @@ Error FSCompletenessRunner::run(
 		return scratch_error;
 	}
 	const Error report_path_error = validate_owned_report_path(
-			canonical_scratch_root, p_options.report_path);
+			canonical_scratch_root, p_options.catalog_root, p_options.report_path);
 	if (report_path_error != OK) {
 		return report_path_error;
 	}
@@ -1157,13 +1187,18 @@ Error FSCompletenessRunner::run(
 		if (error != OK) {
 			return error;
 		}
-		const FSCompletenessProgram rendered_program = program;
+		const String rendered_case_id = program.case_id;
+		const String rendered_surface = program.surface;
+		const Dictionary rendered_coordinates = program.coordinates.duplicate(true);
+		const String rendered_expected_output = program.expected_output;
 		if (p_options.program_mutator != nullptr) {
 			p_options.program_mutator(program);
 		}
-		if (program.case_id != rendered_program.case_id || program.surface != rendered_program.surface ||
-				program.coordinates != rendered_program.coordinates ||
-				program.expected_output != rendered_program.expected_output) {
+		if (program.case_id != rendered_case_id || program.case_id != cell.case_id ||
+				program.surface != rendered_surface ||
+				program.surface != String(cell.coordinates.get("surface", String())) ||
+				program.coordinates != rendered_coordinates || program.coordinates != cell.coordinates ||
+				program.expected_output != rendered_expected_output) {
 			return ERR_INVALID_DATA;
 		}
 		(void)FSUnionCompletenessAdapter::analyze(program, program.surface);
@@ -1180,6 +1215,12 @@ Error FSCompletenessRunner::run(
 	if (error != OK) {
 		return error;
 	}
+	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
+		if (actual == nullptr || !runtime_result_identity_matches(cell, *actual)) {
+			return ERR_INVALID_DATA;
+		}
+	}
 	if (p_options.observation_mutator != nullptr) {
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
@@ -1187,6 +1228,9 @@ Error FSCompletenessRunner::run(
 				return ERR_INVALID_DATA;
 			}
 			p_options.observation_mutator(static_cast<FSCompletenessObservation &>(*actual));
+			if (!runtime_result_identity_matches(cell, *actual)) {
+				return ERR_INVALID_DATA;
+			}
 		}
 	}
 	if (p_options.runtime_result_mutator != nullptr) {
@@ -1196,6 +1240,9 @@ Error FSCompletenessRunner::run(
 				return ERR_INVALID_DATA;
 			}
 			p_options.runtime_result_mutator(*actual);
+			if (!runtime_result_identity_matches(cell, *actual)) {
+				return ERR_INVALID_DATA;
+			}
 		}
 	}
 	error = validate_witness_observations(manifest, resolution, batch);
@@ -1406,7 +1453,8 @@ Error FSCompletenessRunner::run(
 	report["text_bytecode_parity_failures"] = double(parity_failures);
 	report["findings"] = report_findings;
 	report["cases"] = cases;
-	error = write_report_atomically(canonical_scratch_root, p_options.report_path, report);
+	error = write_report_atomically(
+			canonical_scratch_root, p_options.catalog_root, p_options.report_path, report);
 	if (error != OK) {
 		return error;
 	}

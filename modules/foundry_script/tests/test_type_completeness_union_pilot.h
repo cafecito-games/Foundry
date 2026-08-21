@@ -468,6 +468,8 @@ static String union_pilot_program_traversal_surface;
 static int union_pilot_mutation_count = 0;
 static int union_pilot_program_mutation_count = 0;
 static int union_pilot_program_callback_count = 0;
+static int union_pilot_identity_mutation_count = 0;
+static int union_pilot_identity_callback_count = 0;
 
 struct UnionPilotProgramMutationScope {
 	~UnionPilotProgramMutationScope() {
@@ -477,6 +479,8 @@ struct UnionPilotProgramMutationScope {
 		union_pilot_program_traversal_surface.clear();
 		union_pilot_program_mutation_count = 0;
 		union_pilot_program_callback_count = 0;
+		union_pilot_identity_mutation_count = 0;
+		union_pilot_identity_callback_count = 0;
 	}
 };
 
@@ -496,6 +500,30 @@ static void corrupt_union_pilot_program_identity(FSCompletenessProgram &r_progra
 		r_program.coordinates["surface"] = union_pilot_program_traversal_surface;
 		r_program.expected_output = "mutated expected output\n";
 		union_pilot_program_mutation_count++;
+	}
+}
+
+static void corrupt_union_pilot_program_coordinates(FSCompletenessProgram &r_program) {
+	union_pilot_identity_callback_count++;
+	if (r_program.case_id == union_pilot_mutated_case_id) {
+		r_program.coordinates["surface"] = "mutated_surface";
+		union_pilot_identity_mutation_count++;
+	}
+}
+
+static void corrupt_union_pilot_observation_identity(FSCompletenessObservation &r_observation) {
+	union_pilot_identity_callback_count++;
+	if (r_observation.case_id == union_pilot_mutated_case_id) {
+		r_observation.case_id = "forged_case_id";
+		union_pilot_identity_mutation_count++;
+	}
+}
+
+static void corrupt_union_pilot_runtime_identity(FSCompletenessRuntimeResult &r_result) {
+	union_pilot_identity_callback_count++;
+	if (r_result.case_id == union_pilot_mutated_case_id) {
+		r_result.surface = "forged_surface";
+		union_pilot_identity_mutation_count++;
 	}
 }
 
@@ -880,6 +908,162 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("outside.fs")));
 		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("sentinel.txt")), "outside sentinel\n");
 		CHECK_EQ(union_pilot_directory_entries(neighbor.root), neighbor_entries_before);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner snapshots program coordinates deeply") {
+		UnionPilotProgramMutationScope mutation_scope;
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		REQUIRE_FALSE(resolution.cells.is_empty());
+		union_pilot_mutated_case_id = resolution.cells[0].case_id;
+		union_pilot_identity_mutation_count = 0;
+		union_pilot_identity_callback_count = 0;
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_coordinate_identity_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("report.json", "prior report sentinel\n");
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.program_mutator = corrupt_union_pilot_program_coordinates;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(union_pilot_identity_callback_count, 1);
+		CHECK_EQ(union_pilot_identity_mutation_count, 1);
+		CHECK_EQ(FileAccess::get_file_as_string(options.report_path), "prior report sentinel\n");
+		CHECK_FALSE(DirAccess::dir_exists_absolute(tree.root.path_join("report-artifacts")));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects observation and runtime result identity mutation") {
+		UnionPilotProgramMutationScope mutation_scope;
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		REQUIRE_FALSE(resolution.cells.is_empty());
+		union_pilot_mutated_case_id = resolution.cells[0].case_id;
+
+		for (int mutation_kind = 0; mutation_kind < 2; mutation_kind++) {
+			CAPTURE(mutation_kind);
+			union_pilot_identity_mutation_count = 0;
+			union_pilot_identity_callback_count = 0;
+			TemporaryProjectTree tree(vformat("type_completeness_union_runtime_identity_%d_%d",
+					OS::get_singleton()->get_process_id(), mutation_kind));
+			REQUIRE(tree.is_valid());
+			tree.write_file("report.json", "prior report sentinel\n");
+			FSCompletenessRunOptions options;
+			options.catalog_root = type_completeness_union_pilot_root;
+			options.family = "union_destination_membership";
+			options.scratch_root = tree.root;
+			options.report_path = tree.root.path_join("report.json");
+			if (mutation_kind == 0) {
+				options.observation_mutator = corrupt_union_pilot_observation_identity;
+			} else {
+				options.runtime_result_mutator = corrupt_union_pilot_runtime_identity;
+			}
+			FSCompletenessRunResult result;
+			result.success = true;
+			result.executed_cells = 99;
+			result.report["stale"] = true;
+
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_FALSE(result.success);
+			CHECK_EQ(result.executed_cells, 0);
+			CHECK(result.findings.is_empty());
+			CHECK(result.report.is_empty());
+			CHECK_EQ(union_pilot_identity_callback_count, 1);
+			CHECK_EQ(union_pilot_identity_mutation_count, 1);
+			CHECK_EQ(FileAccess::get_file_as_string(options.report_path), "prior report sentinel\n");
+			CHECK_FALSE(DirAccess::dir_exists_absolute(tree.root.path_join("report-artifacts")));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects report collisions with generated artifacts") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const FSCompletenessResolvedCell *text_cell = nullptr;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("surface", String()) == "text") {
+				text_cell = &cell;
+				break;
+			}
+		}
+		REQUIRE(text_cell != nullptr);
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSUnionCompletenessAdapter::render(*text_cell, program), OK);
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_artifact_report_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String artifact_path = tree.root.path_join("report-artifacts/text/" + text_cell->case_id + ".fs");
+		tree.write_file("report-artifacts/text/" + text_cell->case_id + ".fs", program.source);
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = artifact_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(artifact_path), program.source);
+		CHECK_FALSE(DirAccess::dir_exists_absolute(tree.root.path_join("report-artifacts/bytecode")));
+
+		const String reserved_report_path = tree.root.path_join("report-artifacts/report.json");
+		tree.write_file("report-artifacts/report.json", "reserved report sentinel\n");
+		options.report_path = reserved_report_path;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(reserved_report_path), "reserved report sentinel\n");
+		CHECK_EQ(FileAccess::get_file_as_string(artifact_path), program.source);
+		CHECK_FALSE(DirAccess::dir_exists_absolute(tree.root.path_join("report-artifacts/bytecode")));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects report collisions with its catalog") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_catalog_report_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		const String manifest_path = catalog_root.path_join("rules/union_destination_membership.json");
+		const String manifest_before = FileAccess::get_file_as_string(manifest_path);
+		const String report_path = catalog_root.path_join("report.json");
+		tree.write_file("catalog/report.json", "catalog sentinel\n");
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = report_path;
+		FSCompletenessRunResult result;
+		result.success = true;
+		result.executed_cells = 99;
+		result.report["stale"] = true;
+
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_UNAUTHORIZED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 0);
+		CHECK(result.findings.is_empty());
+		CHECK(result.report.is_empty());
+		CHECK_EQ(FileAccess::get_file_as_string(report_path), "catalog sentinel\n");
+		CHECK_EQ(FileAccess::get_file_as_string(manifest_path), manifest_before);
+		CHECK_FALSE(DirAccess::dir_exists_absolute(tree.root.path_join("report-artifacts")));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects a report path through an outside symlink") {
