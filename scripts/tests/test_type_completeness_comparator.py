@@ -12,7 +12,7 @@ import json
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -498,6 +498,36 @@ class DeadlineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             deadline.classification_deadline(datetime(2026, 8, 17, 10))
 
+    def test_deadline_tracks_us_daylight_saving_across_march_and_november(self) -> None:
+        # Thursday 2026-03-05 is before the DST switch (second Sunday of March); the deadline on Monday
+        # 2026-03-09 17:00 falls after it, so it is 21:00 UTC (EDT), not 22:00 UTC (EST).
+        march = deadline.classification_deadline(datetime(2026, 3, 5, 15, 0, tzinfo=timezone.utc))
+        self.assertEqual(march.astimezone(timezone.utc), datetime(2026, 3, 9, 21, 0, tzinfo=timezone.utc))
+        # Thursday 2026-10-29 is on EDT; Monday 2026-11-02 17:00 is after the first Sunday of November, so EST.
+        november = deadline.classification_deadline(datetime(2026, 10, 29, 15, 0, tzinfo=timezone.utc))
+        self.assertEqual(november.astimezone(timezone.utc), datetime(2026, 11, 2, 22, 0, tzinfo=timezone.utc))
+        self.assertEqual(deadline.format_timestamp(march), "2026-03-09T17:00:00-04:00")
+        self.assertEqual(deadline.format_timestamp(november), "2026-11-02T17:00:00-05:00")
+
+    def test_new_york_offsets_without_zoneinfo(self) -> None:
+        self.assertNotIn("ZoneInfo", vars(deadline))
+        self.assertNotIn("zoneinfo", vars(deadline))
+        self.assertEqual(_ny(2026, 1, 15, 12).utcoffset(), timedelta(hours=-5))
+        self.assertEqual(_ny(2026, 7, 15, 12).utcoffset(), timedelta(hours=-4))
+        self.assertEqual(_ny(2026, 3, 8, 1, 59).utcoffset(), timedelta(hours=-5))
+        self.assertEqual(_ny(2026, 3, 8, 3, 0).utcoffset(), timedelta(hours=-4))
+        self.assertEqual(_ny(2026, 11, 1, 0, 59).utcoffset(), timedelta(hours=-4))
+        self.assertEqual(_ny(2026, 11, 1, 2, 0).utcoffset(), timedelta(hours=-5))
+
+    def test_repeated_november_hour_converts_from_utc_to_standard_time(self) -> None:
+        # 05:00 UTC is the first 01:00 (EDT); 06:00 UTC is the second 01:00 (EST) and must round-trip.
+        first = datetime(2026, 11, 1, 5, 0, tzinfo=timezone.utc).astimezone(NY)
+        second = datetime(2026, 11, 1, 6, 0, tzinfo=timezone.utc).astimezone(NY)
+        self.assertEqual(first.utcoffset(), timedelta(hours=-4))
+        self.assertEqual(second.utcoffset(), timedelta(hours=-5))
+        self.assertEqual(second.astimezone(timezone.utc), datetime(2026, 11, 1, 6, 0, tzinfo=timezone.utc))
+        self.assertEqual(deadline.format_timestamp(second), "2026-11-01T01:00:00-05:00")
+
     def test_overdue_boundary_at_1700(self) -> None:
         due = _ny(2026, 8, 19, 17)
         self.assertFalse(deadline.is_overdue(due, now=_ny(2026, 8, 19, 16, 59, 59)))
@@ -820,6 +850,17 @@ class ReconciliationTests(unittest.TestCase):
         result = self._reconcile(manual, None, "open", _ny(2026, 8, 19, 17, 0, 1))
         self.assertEqual(result.state, reconcile.State.OVERDUE)
 
+    def test_ledger_file_without_pull_request_evidence_never_clears_blocking(self) -> None:
+        record = self._provisional()
+        classified = dict(record.payload, classification="product_defect")
+        result = self._reconcile(record, classified, None, _ny(2026, 8, 18, 9))
+        self.assertEqual(result.state, reconcile.State.PENDING_MERGE)
+        self.assertTrue(result.blocks_release)
+        self.assertTrue(result.unclassified)
+        overdue = self._reconcile(record, classified, None, _ny(2026, 8, 25, 9))
+        self.assertEqual(overdue.state, reconcile.State.OVERDUE)
+        self.assertTrue(overdue.blocks_slice)
+
     def test_blocked_slices_only_include_overdue_and_conflicting(self) -> None:
         pending = self._reconcile(self._provisional(), None, "open", _ny(2026, 8, 18, 9))
         overdue = self._reconcile(
@@ -1095,6 +1136,51 @@ class CliTests(unittest.TestCase):
             written = json.loads((root / "reconciliation.json").read_text())
             self.assertEqual(written["state"], "overdue")
             self.assertEqual(written["blocked_capability_slice"], ["x.cpp"])
+
+    def test_reconcile_command_without_pull_request_state_keeps_classified_ledger_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = ledger.proposed_record(
+                finding_id="fstcf-v1-dddddddddddddddddddd",
+                family="f",
+                case_id="c",
+                dimension="d",
+                issue_url="https://x/1",
+                closure_packet_url="https://x/2",
+                permanent_test_paths=["p"],
+            )
+            record = provisional.ProvisionalRecord.create(
+                finding_id=payload["finding_id"],
+                payload=payload,
+                capability_slice=["x.cpp"],
+                workstream_owner="o",
+                detection_artifact="a",
+                develop_comparison={"status": "unchanged"},
+                detected_at=_ny(2026, 8, 17, 10),
+                bot_pr_url="https://x/2",
+                origin="automation",
+            )
+            (root / "provisional.json").write_text(json.dumps(record.to_dict()))
+            ledger_dir = root / "ledger"
+            ledger.write_record(ledger_dir, dict(payload, classification="product_defect"))
+            arguments = [
+                "reconcile",
+                "--provisional",
+                str(root / "provisional.json"),
+                "--ledger-dir",
+                str(ledger_dir),
+                "--now",
+                "2026-08-18T09:00:00-04:00",
+                "--output",
+                str(root / "reconciliation.json"),
+            ]
+            cli.main(arguments)
+            written = json.loads((root / "reconciliation.json").read_text())
+            self.assertEqual(written["state"], "pending_merge")
+            self.assertTrue(written["blocks_release"])
+            self.assertEqual(cli.main(arguments + ["--pull-request-state", "merged"]), 0)
+            self.assertEqual(json.loads((root / "reconciliation.json").read_text())["state"], "merged")
+            self.assertFalse(json.loads((root / "reconciliation.json").read_text())["blocks_release"])
 
 
 if __name__ == "__main__":

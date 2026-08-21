@@ -78,6 +78,19 @@ def reconcile_finding(
     if provisional_record is None and merged_record is None:
         return result(State.CONFLICTING, "no authority: neither a provisional record nor a merged ledger entry exists")
 
+    if pull_request is None and provisional_record is not None:
+        # Without pull-request evidence a ledger file may come from a still-open bot branch, so it proves nothing:
+        # the proposal stays pending and keeps blocking until the merge is confirmed.
+        unverified = Reconciliation(
+            finding_id,
+            State.OVERDUE if due_at is not None and deadline.is_overdue(due_at, now) else State.PENDING_MERGE,
+            "pull request state unknown; an unverified ledger entry cannot clear blocking",
+            capability_slice,
+            due_at,
+            True,
+        )
+        return unverified
+
     if merged_record is not None:
         if provisional_record is not None:
             proposed = provisional_record.payload
@@ -106,8 +119,7 @@ def reconcile_finding(
         return result(State.MERGED, "merged ledger entry matches the provisional record")
 
     assert provisional_record is not None
-    if pull_request is None:
-        return result(State.CONFLICTING, "provisional record has no ledger pull request")
+    assert pull_request is not None
     if pull_request.state == "merged":
         return result(State.CONFLICTING, "pull request is merged but no ledger entry exists for the finding")
     if comparison_status == "resolved" and pull_request.state == "closed":

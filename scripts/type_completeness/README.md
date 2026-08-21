@@ -26,7 +26,8 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
   blocks the producing capability slice (`overdue`, `conflicting`). The output also carries `blocks_release`,
   which is true for every finding that is still unclassified, including `pending_merge` ones. A finding with neither a provisional record
   nor a merged ledger entry, any disagreement between the two other than classifying an `unclassified` proposal, or a merged pull request with no ledger
-  file is `conflicting`; nothing disappears silently.
+  file is `conflicting`; nothing disappears silently. Without `--pull-request-state` a ledger file is not trusted:
+  the finding stays `pending_merge` (or `overdue`) and keeps blocking release until the merge is confirmed.
 
 The `github` module wraps the `gh` CLI for the bot path: stable `bot/type-completeness/<finding_id>` branches,
 one tracking issue per finding (label `type-completeness-finding`), and one ledger pull request that is
