@@ -1599,6 +1599,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	int parity_failures = 0;
 	HashSet<String> parity_case_ids;
 	HashMap<String, Dictionary> parity_evidence_by_case;
+	HashMap<String, String> parity_partner_case_id;
 	for (const String &pair_key : pair_keys) {
 		const SurfacePair &pair = pairs[pair_key];
 		if (pair.text == nullptr || pair.bytecode == nullptr) {
@@ -1622,6 +1623,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		parity_case_ids.insert(pair.bytecode->case_id);
 		parity_evidence_by_case[pair.text->case_id] = evidence;
 		parity_evidence_by_case[pair.bytecode->case_id] = evidence;
+		parity_partner_case_id[pair.text->case_id] = pair.bytecode->case_id;
+		parity_partner_case_id[pair.bytecode->case_id] = pair.text->case_id;
 		bool parity_attached = false;
 		for (FSCompletenessFinding &finding : findings) {
 			if (finding.case_id == pair.text->case_id || finding.case_id == pair.bytecode->case_id) {
@@ -1714,6 +1717,26 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			blocking = blocking_finding_ids_by_case.getptr(finding.case_id);
 		}
 		blocking->push_back(finding.finding_id);
+	}
+	// A parity failure fails both cases of the pair even when only one of them carries a finding, so
+	// each case of a failing pair inherits its partner's findings as blocking evidence.
+	for (const String &case_id : parity_case_ids) {
+		const String *partner = parity_partner_case_id.getptr(case_id);
+		const Array *partner_blocking =
+				partner == nullptr ? nullptr : blocking_finding_ids_by_case.getptr(*partner);
+		Array *blocking = blocking_finding_ids_by_case.getptr(case_id);
+		if (blocking == nullptr) {
+			blocking_finding_ids_by_case[case_id] = Array();
+			blocking = blocking_finding_ids_by_case.getptr(case_id);
+		}
+		if (partner_blocking == nullptr) {
+			continue;
+		}
+		for (int index = 0; index < partner_blocking->size(); index++) {
+			if (!blocking->has((*partner_blocking)[index])) {
+				blocking->push_back((*partner_blocking)[index]);
+			}
+		}
 	}
 	HashMap<String, Dictionary> exception_reports;
 	Vector<String> exception_ids;

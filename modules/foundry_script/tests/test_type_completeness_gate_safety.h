@@ -69,6 +69,14 @@ static void gate_safety_inject_warning_record(FSCompletenessObservation &r_obser
 	r_observation.diagnostic_records.push_back(record);
 }
 
+static String gate_safety_partner_case_id;
+
+static void gate_safety_corrupt_partner_obligation(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == gate_safety_partner_case_id) {
+		r_observation.dimensions["runtime_obligation"] = "typed_destination_check";
+	}
+}
+
 static String gate_safety_finding_id(const String &p_case_id, const String &p_dimension) {
 	return "fstcf-v1-" + (p_case_id + "|" + p_dimension).sha256_text().substr(0, 20);
 }
@@ -425,6 +433,28 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			CHECK_EQ(int(record.get("line", 0)), 3);
 		}
 		CHECK(found_suppressed);
+
+		FSCompletenessProgram inline_suppressed;
+		inline_suppressed.case_id = "gate_safety_unused_variable_inline";
+		inline_suppressed.surface = "text";
+		inline_suppressed.source =
+				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local := 1\n";
+
+		const FSCompletenessObservation inline_observation =
+				FSUnionCompletenessAdapter::analyze(inline_suppressed, "text");
+		CHECK_EQ(String(inline_observation.dimensions.get("analysis", String())), "accept");
+		CHECK(inline_observation.diagnostics.is_empty());
+		bool found_inline_suppressed = false;
+		for (int index = 0; index < inline_observation.diagnostic_records.size(); index++) {
+			const Dictionary record = inline_observation.diagnostic_records[index];
+			if (String(record.get("code", String())) != "UNUSED_VARIABLE") {
+				continue;
+			}
+			found_inline_suppressed = true;
+			CHECK_EQ(bool(record.get("suppressed", false)), true);
+			CHECK_EQ(int(record.get("line", 0)), 2);
+		}
+		CHECK(found_inline_suppressed);
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety records a suppressed error-level diagnostic") {
@@ -623,6 +653,53 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			CHECK_EQ(failure.witness_id, "text_static_member_argument_binding");
 			CHECK_FALSE(failure.case_id.is_empty());
 		}
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety unwitnesses an exception when only the paired surface fails") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		const String witness_case_id =
+				gate_safety_witness_case_id(resolution, "text_gradual_argument_binding");
+		REQUIRE_FALSE(witness_case_id.is_empty());
+		gate_safety_partner_case_id =
+				gate_safety_pilot_case_id(resolution, "bytecode", "union", "gradual", "argument_binding");
+		REQUIRE_FALSE(gate_safety_partner_case_id.is_empty());
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_pair_witness_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = gate_safety_corrupt_partner_obligation;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		// The witness case itself carries no finding; only its paired surface does.
+		CHECK(gate_safety_find_finding(result, witness_case_id, "runtime_obligation") == nullptr);
+		const FSCompletenessFinding *partner_finding =
+				gate_safety_find_finding(result, gate_safety_partner_case_id, "runtime_obligation");
+		REQUIRE(partner_finding != nullptr);
+		CHECK_EQ(String(gate_safety_case_report(result.report, witness_case_id).get("status", String())),
+				"failed");
+
+		const Array exceptions = result.report.get("exceptions", Array());
+		REQUIRE_EQ(exceptions.size(), 1);
+		const Dictionary exception_report = exceptions[0];
+		CHECK_EQ(bool(exception_report.get("witnessed", true)), false);
+		const Array positive = exception_report.get("positive_witnesses", Array());
+		bool checked_witness = false;
+		for (int index = 0; index < positive.size(); index++) {
+			const Dictionary witness = positive[index];
+			if (String(witness.get("witness_id", String())) != "text_gradual_argument_binding") {
+				continue;
+			}
+			checked_witness = true;
+			CHECK_EQ(bool(witness.get("witnessed", true)), false);
+			CHECK(Array(witness.get("blocking_finding_ids", Array())).has(partner_finding->finding_id));
+		}
+		CHECK(checked_witness);
+		gate_safety_partner_case_id.clear();
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety keeps parity evidence on both surfaces of a failing pair") {

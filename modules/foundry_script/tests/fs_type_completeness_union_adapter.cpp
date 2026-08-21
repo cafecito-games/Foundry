@@ -173,17 +173,81 @@ static void append_parser_diagnostics_in_source_order(const FSParser &p_parser, 
 	}
 }
 
-// Blanking the annotation preserves every following line number, so a warning recovered from the
-// unsuppressed pass keeps the position it would have had in the analyzed source.
-static String blank_warning_ignore_annotations(const String &p_source) {
-	const PackedStringArray lines = p_source.split("\n", true);
-	PackedStringArray blanked;
-	blanked.resize(lines.size());
-	for (int index = 0; index < lines.size(); index++) {
-		const String stripped = lines[index].strip_edges();
-		blanked.write[index] = stripped.begins_with("@warning_ignore") ? String() : lines[index];
+static bool is_annotation_name_character(char32_t p_character) {
+	return (p_character >= U'a' && p_character <= U'z') || (p_character >= U'A' && p_character <= U'Z') ||
+			(p_character >= U'0' && p_character <= U'9') || p_character == U'_';
+}
+
+// Index just past the argument list that opens at `p_open_parenthesis`, or -1 when it never closes.
+static int find_annotation_arguments_end(const String &p_line, int p_open_parenthesis) {
+	int depth = 0;
+	bool inside_string = false;
+	char32_t quote = 0;
+	for (int index = p_open_parenthesis; index < p_line.length(); index++) {
+		const char32_t character = p_line[index];
+		if (inside_string) {
+			if (character == U'\\') {
+				index++;
+			} else if (character == quote) {
+				inside_string = false;
+			}
+			continue;
+		}
+		if (character == U'"' || character == U'\'') {
+			inside_string = true;
+			quote = character;
+		} else if (character == U'(') {
+			depth++;
+		} else if (character == U')') {
+			depth--;
+			if (depth == 0) {
+				return index + 1;
+			}
+		}
 	}
-	return String("\n").join(blanked);
+	return -1;
+}
+
+// Removes leading warning-suppression annotations without touching anything else on the line, so a
+// statement written on the same line as its annotation survives and every line number is preserved.
+static String strip_warning_ignore_annotations(const String &p_source) {
+	const PackedStringArray lines = p_source.split("\n", true);
+	PackedStringArray stripped = lines;
+	for (int index = 0; index < lines.size(); index++) {
+		String line = lines[index];
+		while (true) {
+			const int annotation = line.find("@warning_ignore");
+			if (annotation < 0 || !line.substr(0, annotation).strip_edges().is_empty()) {
+				break;
+			}
+			int name_end = annotation + 1;
+			while (name_end < line.length() && is_annotation_name_character(line[name_end])) {
+				name_end++;
+			}
+			int annotation_end = name_end;
+			int cursor = name_end;
+			while (cursor < line.length() && (line[cursor] == U' ' || line[cursor] == U'\t')) {
+				cursor++;
+			}
+			if (cursor < line.length() && line[cursor] == U'(') {
+				const int arguments_end = find_annotation_arguments_end(line, cursor);
+				annotation_end = arguments_end < 0 ? line.length() : arguments_end;
+			}
+			// The whitespace that separated the annotation from the statement goes with it: leaving it
+			// behind would mix the indentation characters and make the probe source unparsable.
+			while (annotation_end < line.length() &&
+					(line[annotation_end] == U' ' || line[annotation_end] == U'\t')) {
+				annotation_end++;
+			}
+			line = line.substr(0, annotation) + line.substr(annotation_end);
+			if (line.strip_edges().is_empty()) {
+				line = String();
+				break;
+			}
+		}
+		stripped.write[index] = line;
+	}
+	return String("\n").join(stripped);
 }
 
 // Enumerates the diagnostics the analyzer would raise once annotation suppression is removed. A
@@ -242,7 +306,7 @@ static void append_unsuppressed_diagnostic_records(
 	Vector<ObservedDiagnostic> emitted;
 	collect(p_source, p_path, emitted);
 	Vector<ObservedDiagnostic> unsuppressed;
-	const String unsuppressed_source = blank_warning_ignore_annotations(p_source);
+	const String unsuppressed_source = strip_warning_ignore_annotations(p_source);
 	if (unsuppressed_source == p_source) {
 		unsuppressed = emitted;
 	} else {
