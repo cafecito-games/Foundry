@@ -74,7 +74,14 @@ public:
 	};
 
 	// Runs the invocation and returns its exit code. Diagnostics are printed as they are produced.
-	static int run(const Options &p_options);
+	//
+	// r_published_paths, when given, collects every path the invocation actually published, appended
+	// as each one is published rather than inferred afterwards from what happens to exist. A caller
+	// that has to keep this run's evidence alive - the command-line host, whose per-run `user://` root
+	// may contain the scratch tree - must use this: the index is written last and may never be written
+	// at all, so a set of paths derived from it would leave earlier, successfully published reports
+	// unprotected.
+	static int run(const Options &p_options, PackedStringArray *r_published_paths = nullptr);
 };
 
 } // namespace FSTests

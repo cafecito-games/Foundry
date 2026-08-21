@@ -85,7 +85,10 @@ String family_report_path(const String &p_report_path, const String &p_family, b
 
 } // namespace
 
-int FSCompletenessCLI::run(const Options &p_options) {
+int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_published_paths) {
+	if (r_published_paths != nullptr) {
+		r_published_paths->clear();
+	}
 	if (p_options.families.is_empty()) {
 		return refuse("at least one --family is required.");
 	}
@@ -174,6 +177,16 @@ int FSCompletenessCLI::run(const Options &p_options) {
 		timed_out = timed_out || error == ERR_TIMEOUT;
 		unpublished = unpublished || !published;
 		worst = worse_outcome(worst, result.outcome);
+		if (published && r_published_paths != nullptr) {
+			// Recorded here, before any later family runs and before the index is attempted, so a
+			// failure after this point cannot make this report look unpublished.
+			r_published_paths->push_back(options.report_path);
+			if (!r_published_paths->has(p_options.scratch_root)) {
+				// The scratch tree holds this report and the artifacts it references; naming the tree
+				// keeps them all, whatever the invocation does afterwards.
+				r_published_paths->push_back(p_options.scratch_root);
+			}
+		}
 		if (!published) {
 			print_failure(vformat("family '%s' aborted before its report could be published (error %d).",
 					family, error));
@@ -199,6 +212,9 @@ int FSCompletenessCLI::run(const Options &p_options) {
 		if (write_error != OK) {
 			return refuse(vformat("could not write the report index at %s (error %d).",
 					p_options.report_path, write_error));
+		}
+		if (r_published_paths != nullptr) {
+			r_published_paths->push_back(p_options.report_path);
 		}
 	}
 	// Missing evidence outranks every other verdict: a family that never published cannot be judged at

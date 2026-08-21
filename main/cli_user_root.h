@@ -38,10 +38,11 @@
 // erase the `user://` tree of a run started next to it.
 class FoundryCLIUserRoot {
 public:
-	// Whether a requested artifact path resolves to an existing file inside a per-process
-	// `user://` root. A `user://` output path lands in the root the run owns, so the caller
-	// has to keep the root when it holds the artifact the run was asked to produce. A path
-	// that was never written keeps nothing: the run produced no artifact worth preserving.
+	// Whether a requested artifact path resolves to an existing file or directory inside a
+	// per-process `user://` root. A `user://` output path lands in the root the run owns, so the
+	// caller has to keep the root when it holds the artifact the run was asked to produce. A
+	// directory counts because a run may publish a tree of outputs rather than one file. A path
+	// that was never created keeps nothing: the run produced no artifact worth preserving.
 	static bool root_holds_artifact(const String &p_artifact_path, const String &p_user_root);
 
 	// Removes a finished run's per-process `user://` root. The root is nobody else's to reuse,

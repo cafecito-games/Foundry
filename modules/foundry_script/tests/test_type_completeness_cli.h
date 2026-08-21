@@ -103,7 +103,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		TemporaryProjectTree tree(vformat("type_completeness_cli_pass_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 		const FSCompletenessCLI::Options options = completeness_cli_options(tree);
-		CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_PASSED);
+		PackedStringArray published_paths;
+		CHECK_EQ(FSCompletenessCLI::run(options, &published_paths), FSCompletenessCLI::EXIT_PASSED);
+		CHECK_MESSAGE(published_paths.has(options.report_path), String(", ").join(published_paths));
 
 		REQUIRE(FileAccess::exists(options.report_path));
 		const Dictionary report = completeness_cli_read_json(options.report_path);
@@ -371,8 +373,18 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		options.tier = "strict";
 		// Both families run, so the index write is attempted; it must be refused because the index path
 		// resolves through a link, and the file the link points at must be untouched.
-		CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+		PackedStringArray published_paths;
+		CHECK_EQ(FSCompletenessCLI::run(options, &published_paths), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
 		CHECK_EQ(FileAccess::get_file_as_string(outside.root.path_join("stolen.json")), "outside sentinel\n");
+
+		// The first family published before the index failed. Its report is reported as published and
+		// still exists, so a caller that has to keep this run's evidence alive can do so without the
+		// index that was never written.
+		const String first_report_path = vformat("%s.%s.json", options.report_path, completeness_cli_family);
+		CHECK(FileAccess::exists(first_report_path));
+		CHECK_MESSAGE(published_paths.has(first_report_path), String(", ").join(published_paths));
+		CHECK_MESSAGE(published_paths.has(options.scratch_root), String(", ").join(published_paths));
+		CHECK_FALSE_MESSAGE(published_paths.has(options.report_path), String(", ").join(published_paths));
 	}
 
 	TEST_CASE("TypeCompleteness CLI reports an unpublished family in its index") {
@@ -404,7 +416,12 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		options.scratch_root = tree.root.path_join("scratch");
 		options.report_path = tree.root.path_join("scratch/report.json");
 		options.tier = "strict";
-		CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+		PackedStringArray published_paths;
+		CHECK_EQ(FSCompletenessCLI::run(options, &published_paths), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+		CHECK_MESSAGE(published_paths.has(vformat("%s.%s.json", options.report_path, completeness_cli_family)),
+				String(", ").join(published_paths));
+		CHECK_FALSE_MESSAGE(published_paths.has(vformat("%s.cli_broken_family.json", options.report_path)),
+				String(", ").join(published_paths));
 
 		// Each family publishes to its own report beside the index, never to the index path itself.
 		const String published_report_path =

@@ -46,7 +46,9 @@ bool FoundryCLIUserRoot::root_holds_artifact(const String &p_artifact_path, cons
 	if (artifact != root && !artifact.begins_with(root + "/")) {
 		return false;
 	}
-	return FileAccess::exists(artifact);
+	// A run may publish a tree rather than a single file - several reports plus their artifacts - and
+	// naming that tree has to keep it, or the run's own cleanup would delete evidence it produced.
+	return FileAccess::exists(artifact) || DirAccess::exists(artifact);
 }
 
 void FoundryCLIUserRoot::remove_owned_root(const String &p_user_root, const Vector<String> &p_artifact_paths) {

@@ -999,13 +999,11 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		owned_user_root_artifacts.push_back(cli_parse.invocation.benchmark_profile_output);
 	} else if (kind == Kind::TEST_FIXTURES) {
 		owned_user_root_artifacts.push_back(cli_parse.invocation.fixtures_output);
-	} else if (kind == Kind::TEST_COMPLETENESS_RUN) {
-		// A completeness run writes its reports and artifacts below the scratch root it was given, and
-		// that root may legitimately sit inside this run's own user-data root. Registering both keeps
-		// the cleanup below from deleting the evidence the run was asked to produce.
-		owned_user_root_artifacts.push_back(cli_parse.invocation.completeness_scratch);
-		owned_user_root_artifacts.push_back(cli_parse.invocation.completeness_report);
 	}
+	// A completeness run publishes several documents, and the index that names them is written last -
+	// or not at all. The paths it reports are therefore collected as it publishes them and registered
+	// below, so a failure after the first report is published cannot make the cleanup delete it.
+	PackedStringArray completeness_published_paths;
 	const auto remove_owned_user_root = [&]() {
 		if (owns_user_root) {
 			FoundryCLIUserRoot::remove_owned_root(OS::get_singleton()->get_user_data_root_override(), owned_user_root_artifacts);
@@ -1154,7 +1152,10 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		options.surface = cli_parse.invocation.completeness_surface;
 		options.tier = cli_parse.invocation.completeness_tier;
 		options.timeout_seconds = cli_parse.invocation.completeness_timeout_seconds;
-		status = FSTests::FSCompletenessCLI::run(options);
+		status = FSTests::FSCompletenessCLI::run(options, &completeness_published_paths);
+		for (int i = 0; i < completeness_published_paths.size(); i++) {
+			owned_user_root_artifacts.push_back(completeness_published_paths[i]);
+		}
 #else
 		ERR_PRINT("foundry test completeness run requires an editor build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
