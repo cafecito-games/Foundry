@@ -465,10 +465,47 @@ static bool ledger_dimension_is_known(
 			p_dimension == "text_bytecode_parity";
 }
 
+static String canonicalize_existing_input_path(const String &p_path);
+
+static bool is_permanent_test_path_form(const String &p_path) {
+	const String filename = p_path.get_file();
+	const String extension = filename.get_extension();
+	if (p_path.begins_with("modules/foundry_script/tests/scripts/") &&
+			(extension == "fs" || extension == "out")) {
+		return true;
+	}
+
+	if (filename.begins_with("test_") && extension == "py") {
+		if (p_path.begins_with("tests/python_build/") ||
+				p_path.begins_with(".github/scripts/tests/") ||
+				p_path.begins_with("scripts/tests/")) {
+			return true;
+		}
+		const PackedStringArray components = p_path.split("/", false);
+		if (components.size() >= 4 && components[0] == "tools" && components[2] == "tests") {
+			return true;
+		}
+	}
+
+	if (!filename.begins_with("test_") || (extension != "h" && extension != "cpp")) {
+		return false;
+	}
+	const PackedStringArray components = p_path.split("/", false);
+	for (int i = 0; i + 1 < components.size(); i++) {
+		if (components[i] == "tests") {
+			return true;
+		}
+	}
+	return false;
+}
+
 static Error validate_permanent_test_path(const String &p_path) {
 	if (p_path.is_empty() || p_path.is_absolute_path() || p_path.simplify_path() != p_path ||
 			p_path.contains("://") || p_path.contains("/../") ||
 			p_path.ends_with("/..")) {
+		return ERR_INVALID_DATA;
+	}
+	if (!is_permanent_test_path_form(p_path)) {
 		return ERR_INVALID_DATA;
 	}
 	const String repository_root = TestUtils::get_tests_dir().get_base_dir().simplify_path();
@@ -485,6 +522,33 @@ static Error validate_permanent_test_path(const String &p_path) {
 		if (current.is_empty() || filesystem->is_link(current)) {
 			return ERR_UNAUTHORIZED;
 		}
+	}
+	const String canonical_repository_root = canonicalize_existing_input_path(repository_root);
+	const String canonical_absolute_path = canonicalize_existing_input_path(absolute_path);
+	if (canonical_repository_root.is_empty() || canonical_absolute_path.is_empty() ||
+			canonical_repository_root != repository_root || canonical_absolute_path != absolute_path ||
+			!TemporaryProjectTree::is_strict_descendant(canonical_repository_root, canonical_absolute_path)) {
+		return ERR_UNAUTHORIZED;
+	}
+
+	List<String> arguments;
+	arguments.push_back("-C");
+	arguments.push_back(repository_root);
+	arguments.push_back("ls-files");
+	arguments.push_back("--error-unmatch");
+	arguments.push_back("--");
+	arguments.push_back(p_path);
+	String git_output;
+	int exit_code = -1;
+	if (OS::get_singleton() == nullptr ||
+			OS::get_singleton()->execute("git", arguments, &git_output, &exit_code, true) != OK) {
+		return ERR_UNAVAILABLE;
+	}
+	if (exit_code == 1) {
+		return ERR_INVALID_DATA;
+	}
+	if (exit_code != 0) {
+		return ERR_UNAVAILABLE;
 	}
 	return OK;
 }
@@ -1460,7 +1524,8 @@ Error FSCompletenessRunner::run(
 		case_report["canonical_provenance"] = canonical_provenance(*cell);
 		case_report["agreeing_provenance"] = all_agreeing_provenance(*cell);
 		case_report["status"] = passed ? "passed" : "failed";
-		case_report["passed"] = actual->passed;
+		case_report["passed"] = passed;
+		case_report["runtime_passed"] = actual->passed;
 		case_report["runtime_status"] = actual->status;
 		Array diagnostics;
 		for (const String &diagnostic : actual->diagnostics) {

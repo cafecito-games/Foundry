@@ -656,7 +656,9 @@ static String stage_union_pilot_completeness_catalog(TemporaryProjectTree &p_tre
 }
 
 static String union_pilot_finding_record(const String &p_finding_id, const String &p_case_id,
-		const String &p_classification, const String &p_extra_field = String()) {
+		const String &p_classification, const String &p_extra_field = String(),
+		const String &p_permanent_test_paths =
+				"\"modules/foundry_script/tests/test_type_completeness_union_pilot.h\"") {
 	return vformat(R"JSON({
 	"schema_version": 1,
 	"finding_id": "%s",
@@ -666,10 +668,10 @@ static String union_pilot_finding_record(const String &p_finding_id, const Strin
 	"classification": "%s",
 	"issue_url": "https://example.invalid/issues/1",
 	"closure_packet_url": "https://example.invalid/closure/1",
-	"permanent_test_paths": ["modules/foundry_script/tests/test_type_completeness_union_pilot.h"]%s
+	"permanent_test_paths": [%s]%s
 }
 )JSON",
-			p_finding_id, p_case_id, p_classification, p_extra_field);
+			p_finding_id, p_case_id, p_classification, p_permanent_test_paths, p_extra_field);
 }
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
@@ -735,6 +737,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_FALSE(String(case_report.get("case_id", String())).is_empty());
 			CHECK_EQ(Dictionary(case_report.get("coordinates", Dictionary())).size(), 4);
 			CHECK_EQ(String(case_report.get("status", String())), "passed");
+			CHECK_EQ(bool(case_report.get("passed", false)), true);
+			CHECK_EQ(bool(case_report.get("runtime_passed", false)), true);
 			const String case_id = case_report.get("case_id", String());
 			const String surface = Dictionary(case_report.get("coordinates", Dictionary())).get("surface", String());
 			const String artifact_path = case_report.get("artifact_path", String());
@@ -878,6 +882,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			target_case_count++;
 			CHECK_EQ(String(case_report.get("status", String())), "failed");
 			CHECK_FALSE(bool(case_report.get("passed", true)));
+			CHECK_FALSE(bool(case_report.get("runtime_passed", true)));
 			CHECK_EQ(String(case_report.get("runtime_status", String())), "analyzer_error");
 			CHECK_FALSE(Array(case_report.get("diagnostics", Array())).is_empty());
 			CHECK(String(case_report.get("produced_output", String())).begins_with("FS_TEST_ANALYZER_ERROR\n"));
@@ -982,6 +987,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			target_case_count++;
 			CHECK_EQ(String(case_report.get("status", String())), "failed");
 			CHECK_FALSE(bool(case_report.get("passed", true)));
+			CHECK_FALSE(bool(case_report.get("runtime_passed", true)));
 			CHECK_EQ(String(case_report.get("runtime_status", String())), "compiler_error");
 			CHECK_FALSE(Array(case_report.get("diagnostics", Array())).is_empty());
 			CHECK(String(case_report.get("produced_output", String())).begins_with("FS_TEST_COMPILER_ERROR\n"));
@@ -1484,7 +1490,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			}
 			observed_cases++;
 			CHECK_EQ(String(case_report.get("status", String())), "failed");
-			CHECK_EQ(bool(case_report.get("passed", false)), true);
+			CHECK_FALSE(bool(case_report.get("passed", true)));
+			CHECK_EQ(bool(case_report.get("runtime_passed", false)), true);
 			CHECK_EQ(String(case_report.get("runtime_status", String())), "ok");
 			CHECK(Array(case_report.get("diagnostics", Array())).is_empty());
 			CHECK_EQ(String(case_report.get("produced_output", String())), "wrong output\n");
@@ -1525,6 +1532,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			if (case_id == union_pilot_mutated_pair_text_id ||
 					case_id == union_pilot_mutated_pair_bytecode_id) {
 				CHECK_EQ(String(case_report.get("status", String())), "failed");
+				CHECK_FALSE(bool(case_report.get("passed", true)));
+				CHECK_EQ(bool(case_report.get("runtime_passed", false)), true);
 				failed_pair_cases++;
 			}
 		}
@@ -1681,9 +1690,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		TemporaryProjectTree tree(vformat("type_completeness_union_known_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		const String fixture_path = "modules/foundry_script/tests/scripts/analyzer/features/cast_non_null.fs";
 		tree.write_file("catalog/findings/" + finding_id + ".json",
-				union_pilot_finding_record(
-						finding_id, union_pilot_mutated_case_id, "product_defect"));
+				union_pilot_finding_record(finding_id, union_pilot_mutated_case_id, "product_defect", String(),
+						vformat("\"modules/foundry_script/tests/test_type_completeness_union_pilot.h\", \"%s\"",
+								fixture_path)));
 
 		FSCompletenessRunOptions options;
 		options.catalog_root = catalog_root;
@@ -1703,7 +1714,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(result.findings[0].classification, "product_defect");
 		CHECK_EQ(result.findings[0].issue_url, "https://example.invalid/issues/1");
 		CHECK_EQ(result.findings[0].closure_packet_url, "https://example.invalid/closure/1");
-		CHECK_EQ(result.findings[0].permanent_test_paths.size(), 1);
+		REQUIRE_EQ(result.findings[0].permanent_test_paths.size(), 2);
+		CHECK_EQ(result.findings[0].permanent_test_paths[0],
+				"modules/foundry_script/tests/test_type_completeness_union_pilot.h");
+		CHECK_EQ(result.findings[0].permanent_test_paths[1], fixture_path);
 		CHECK_FALSE(result.findings[0].parity_evidence.is_empty());
 		CHECK_EQ(Array(result.report.get("findings", Array())).size(), 1);
 		CHECK_EQ(bool(result.report.get("success", true)), false);
@@ -1863,6 +1877,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			{ "unsafe_permanent_path",
 					union_pilot_finding_record(finding_id, current_case_id, "product_defect")
 							.replace("modules/foundry_script/tests/test_type_completeness_union_pilot.h", "../outside.h"),
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
+			{ "tracked_readme_permanent_path",
+					union_pilot_finding_record(finding_id, current_case_id, "product_defect")
+							.replace("modules/foundry_script/tests/test_type_completeness_union_pilot.h", "README.md"),
+					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
+			{ "tracked_source_permanent_path",
+					union_pilot_finding_record(finding_id, current_case_id, "product_defect")
+							.replace("modules/foundry_script/tests/test_type_completeness_union_pilot.h",
+									"modules/foundry_script/fs_parser.cpp"),
 					String(), finding_id + ".json", String(), ERR_INVALID_DATA },
 			{ "reconciliation_collision", union_pilot_finding_record(finding_id, current_case_id, "product_defect"),
 					union_pilot_finding_record(other_finding_id, current_case_id, "duplicate"),
