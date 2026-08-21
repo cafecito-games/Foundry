@@ -22,6 +22,10 @@ class Status(str, enum.Enum):
     PASSING = "passing"
 
 
+# A known develop failure that vanishes without passing is treated as a regression, not as progress.
+REGRESSION_STATUSES = (Status.NEW, Status.WORSENED, Status.MISSING)
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 

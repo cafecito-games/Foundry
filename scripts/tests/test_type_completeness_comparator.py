@@ -402,6 +402,12 @@ class ReconciliationTests(unittest.TestCase):
         result = self._reconcile(record, merged, "merged", _ny(2026, 8, 18, 9))
         self.assertEqual(result.state, reconcile.State.MERGED)
 
+    def test_merged_record_with_different_permanent_tests_is_conflicting(self) -> None:
+        record = self._provisional()
+        merged = dict(record.payload, permanent_test_paths=["somewhere/else.fs"])
+        result = self._reconcile(record, merged, "merged", _ny(2026, 8, 18, 9))
+        self.assertEqual(result.state, reconcile.State.CONFLICTING)
+
     def test_reclassifying_an_already_classified_provisional_record_is_conflicting(self) -> None:
         classified = dict(self._provisional().payload, classification="harness_defect")
         record = self._provisional(payload=classified)
@@ -469,9 +475,20 @@ class ReconciliationTests(unittest.TestCase):
         blocked = reconcile.blocked_slices([pending, overdue])
         self.assertEqual(blocked, {("modules/foundry_script/fs_vm.cpp",)})
         self.assertTrue(reconcile.blocks_release([pending, overdue]))
-        self.assertFalse(reconcile.blocks_release([pending]))
         self.assertFalse(reconcile.blocks_path([pending, overdue], "modules/foundry_script/fs_analyzer.cpp"))
         self.assertTrue(reconcile.blocks_path([pending, overdue], "modules/foundry_script/fs_vm.cpp"))
+
+    def test_unclassified_findings_block_release_even_before_the_deadline(self) -> None:
+        record = self._provisional()
+        pending = self._reconcile(record, None, "open", _ny(2026, 8, 18, 9))
+        merged_unclassified = self._reconcile(record, record.payload, "merged", _ny(2026, 8, 18, 9))
+        classified = dict(record.payload, classification="product_defect")
+        merged_classified = self._reconcile(record, classified, "merged", _ny(2026, 8, 18, 9))
+        self.assertTrue(reconcile.blocks_release([pending]))
+        self.assertTrue(reconcile.blocks_release([merged_unclassified]))
+        self.assertFalse(reconcile.blocks_release([merged_classified]))
+        self.assertFalse(pending.blocks_slice)
+        self.assertTrue(pending.to_dict()["blocks_release"])
 
 
 class FakeCommandRunner:
@@ -556,6 +573,25 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             written = json.loads((root / "comparison.json").read_text())
             self.assertEqual(written["artifacts"][0]["status"], "new")
+
+    def test_compare_fail_on_regression_fails_for_missing_baseline_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "branch.json").write_text(json.dumps(_report([])))
+            (root / "develop.json").write_text(json.dumps(_report([_case("a", passed=False)])))
+            arguments = [
+                "compare",
+                "--branch-report",
+                str(root / "branch.json"),
+                "--develop-report",
+                str(root / "develop.json"),
+                "--configuration",
+                "text",
+                "--output",
+                str(root / "comparison.json"),
+            ]
+            self.assertEqual(cli.main(arguments), 0)
+            self.assertEqual(cli.main(arguments + ["--fail-on-regression"]), 1)
 
     def test_propose_command_emits_ledger_payload_and_provisional_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -32,10 +32,16 @@ class Reconciliation:
     reason: str
     capability_slice: tuple[str, ...]
     due_at: Optional[datetime]
+    unclassified: bool
 
     @property
     def blocks_slice(self) -> bool:
         return self.state in (State.OVERDUE, State.CONFLICTING)
+
+    @property
+    def blocks_release(self) -> bool:
+        """Release and epic closure wait for every finding to be classified, not only for overdue ones."""
+        return self.blocks_slice or (self.unclassified and self.state is not State.RESOLVED)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +49,7 @@ class Reconciliation:
             "state": self.state.value,
             "reason": self.reason,
             "blocks_capability_slice": self.blocks_slice,
+            "blocks_release": self.blocks_release,
             "blocked_capability_slice": list(self.capability_slice) if self.blocks_slice else [],
             "due_at": None if self.due_at is None else deadline.format_timestamp(self.due_at),
         }
@@ -60,7 +67,13 @@ def reconcile_finding(
     due_at = provisional_record.due_at if provisional_record else None
 
     def result(state: State, reason: str) -> Reconciliation:
-        return Reconciliation(finding_id, state, reason, capability_slice, due_at)
+        authoritative = (
+            merged_record
+            if merged_record is not None
+            else (provisional_record.payload if provisional_record is not None else None)
+        )
+        unclassified = authoritative is None or authoritative["classification"] == "unclassified"
+        return Reconciliation(finding_id, state, reason, capability_slice, due_at, unclassified)
 
     if provisional_record is None and merged_record is None:
         return result(State.CONFLICTING, "no authority: neither a provisional record nor a merged ledger entry exists")
@@ -70,6 +83,10 @@ def reconcile_finding(
             proposed = provisional_record.payload
             if ledger.identity_digest(merged_record) != ledger.identity_digest(proposed):
                 return result(State.CONFLICTING, "merged ledger entry identity disagrees with the provisional payload")
+            if ledger.payload_digest_without_classification(
+                merged_record
+            ) != ledger.payload_digest_without_classification(proposed):
+                return result(State.CONFLICTING, "merged ledger entry payload disagrees with the provisional payload")
             if (
                 proposed["classification"] != "unclassified"
                 and merged_record["classification"] != proposed["classification"]
@@ -107,7 +124,7 @@ def blocked_slices(results: Iterable[Reconciliation]) -> set[tuple[str, ...]]:
 
 
 def blocks_release(results: Iterable[Reconciliation]) -> bool:
-    return any(result.blocks_slice for result in results)
+    return any(result.blocks_release for result in results)
 
 
 def blocks_path(results: Iterable[Reconciliation], path: str) -> bool:

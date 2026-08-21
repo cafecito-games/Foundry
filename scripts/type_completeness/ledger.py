@@ -53,6 +53,11 @@ def identity_digest(record: dict[str, Any]) -> str:
     return record_digest({field: record[field] for field in IDENTITY_FIELDS})
 
 
+def payload_digest_without_classification(record: dict[str, Any]) -> str:
+    """Digest of everything a reviewer must keep verbatim; only the classification may change after proposal."""
+    return record_digest({field: value for field, value in record.items() if field != "classification"})
+
+
 def proposed_record(
     family: str,
     case_id: str,

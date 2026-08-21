@@ -22,9 +22,7 @@ def _compare(arguments: argparse.Namespace) -> int:
     develop = report.load_report_file(Path(arguments.develop_report))
     artifacts = comparator.compare_reports(branch, develop, arguments.configuration)
     _write_json(Path(arguments.output), comparator.serialize_many(artifacts))
-    blocking = [
-        artifact for artifact in artifacts if artifact.status in (comparator.Status.NEW, comparator.Status.WORSENED)
-    ]
+    blocking = [artifact for artifact in artifacts if artifact.status in comparator.REGRESSION_STATUSES]
     for artifact in artifacts:
         print(f"{artifact.status.value:10} {artifact.case_id}")
     return 1 if blocking and arguments.fail_on_regression else 0
