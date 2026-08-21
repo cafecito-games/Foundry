@@ -830,14 +830,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		REQUIRE(tree.is_valid());
 		const String path = write_completeness_capability_map(tree, R"JSON({
   "schema_version": 1,
-  "production": [
-    {"paths": ["modules/foundry_script/exact.cpp"], "families": ["exact_family"]},
-    {"paths": ["modules/foundry_script/editor/"], "families": ["editor_family"]},
-    {"paths": ["modules/foundry_script/tests/owned.cpp"], "families": ["owned_test_family"]},
-    {
-      "paths": ["modules/foundry_script/shared/", "modules/foundry_script/shared/special.cpp"],
-      "families": ["shared_family"]
-    }
+	  "production": [
+	    {"paths": ["modules/foundry_script/exact.cpp"], "families": ["exact_family"]},
+	    {"paths": ["modules/foundry_script/editor/"], "families": ["editor_family"]},
+	    {"paths": ["modules/foundry_script/shared/"], "families": ["shared_family"]}
   ],
   "nonproduction_prefixes": ["docs/", "modules/foundry_script/tests/"],
   "broad_core_families": ["broad_family"]
@@ -868,15 +864,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		CHECK(selection_has_only_family(capability_map.select(
 												Vector<String>({ "modules/foundry_script/shared/special.cpp" })),
 				"shared_family"));
-		CHECK(selection_has_only_family(capability_map.select(
-												Vector<String>({ "modules/foundry_script/tests/owned.cpp" })),
-				"owned_test_family"));
 		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/exact.cpp/child" }))
 						.used_broad_core_fallback);
 		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/editorial/tool.cpp" }))
 						.used_broad_core_fallback);
 		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/tests/runner.cpp" }))
 						.families.is_empty());
+		CHECK(capability_map.select(Vector<String>({ "modules/foundry_script/tests_extra/runner.cpp" }))
+						.used_broad_core_fallback);
 	}
 
 	TEST_CASE("TypeCompleteness Manifest capability loader rejects malformed schema and ambiguous ownership") {
@@ -924,12 +919,36 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
   ],
   "nonproduction_prefixes":["docs/"],
   "broad_core_families":["core"]
+	})JSON",
+					"ambiguous production ownership" },
+			{ "same_record_overlap", R"JSON({
+  "schema_version":1,
+  "production":[{
+    "paths":["modules/foundry_script/shared/","modules/foundry_script/shared/special.cpp"],
+    "families":["shared"]
+  }],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["core"]
 })JSON",
 					"ambiguous production ownership" },
 			{ "cross_category", R"JSON({
   "schema_version":1,
   "production":[{"paths":["modules/foundry_script/tests/"],"families":["owned"]}],
   "nonproduction_prefixes":["modules/foundry_script/tests/"],
+  "broad_core_families":["core"]
+	})JSON",
+					"overlaps nonproduction path" },
+			{ "cross_category_exact", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/tests/owned.cpp"],"families":["owned"]}],
+  "nonproduction_prefixes":["modules/foundry_script/tests/"],
+  "broad_core_families":["core"]
+})JSON",
+					"overlaps nonproduction path" },
+			{ "cross_category_reverse", R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/tests/fixtures/"],"families":["owned"]}],
+  "nonproduction_prefixes":["modules/foundry_script/tests/fixtures/case.fs"],
   "broad_core_families":["core"]
 })JSON",
 					"overlaps nonproduction path" },
@@ -951,6 +970,70 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 			CHECK_EQ(capability_map.load(write_completeness_capability_map(tree, test_case.json), errors),
 					ERR_INVALID_DATA);
 			CHECK(completeness_errors_contain_text(errors, test_case.diagnostic));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability loader confines nonproduction ownership to tests") {
+		const char *invalid_prefixes[] = {
+			"modules/",
+			"modules/foundry_script",
+			"modules/foundry_script/",
+			"modules/foundry_script/editor/",
+			"modules/foundry_script/fs_analyzer.cpp",
+			"modules/foundry_script/tests_extra/",
+		};
+		for (const char *prefix : invalid_prefixes) {
+			CAPTURE(prefix);
+			TemporaryProjectTree tree(vformat("type_completeness_nonproduction_invalid_%s",
+					String(prefix).sha256_text().substr(0, 8)));
+			REQUIRE(tree.is_valid());
+			const String contents = vformat(R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/fs_compiler.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["%s"],
+  "broad_core_families":["broad"]
+})JSON",
+					prefix);
+			FSCompletenessCapabilityMap capability_map;
+			Vector<String> errors;
+			CHECK_EQ(capability_map.load(write_completeness_capability_map(tree, contents), errors),
+					ERR_INVALID_DATA);
+			CHECK(completeness_errors_contain_text(errors, "may exempt Foundry Script production core"));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability loader permits only component-aware test exclusions") {
+		struct PermittedExclusion {
+			const char *prefix;
+			const char *ignored_path;
+		};
+		const PermittedExclusion cases[] = {
+			{ "docs/", "docs/type_completeness.md" },
+			{ "modules/foundry_script/tests/", "modules/foundry_script/tests/runner.cpp" },
+			{ "modules/foundry_script/tests/owned.cpp", "modules/foundry_script/tests/owned.cpp" },
+			{ "modules/foundry_script/tests/fixtures/", "modules/foundry_script/tests/fixtures/case.fs" },
+		};
+		for (const PermittedExclusion &test_case : cases) {
+			CAPTURE(test_case.prefix);
+			TemporaryProjectTree tree(vformat("type_completeness_nonproduction_valid_%s",
+					String(test_case.prefix).sha256_text().substr(0, 8)));
+			REQUIRE(tree.is_valid());
+			const String contents = vformat(R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/fs_compiler.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["%s"],
+  "broad_core_families":["broad"]
+})JSON",
+					test_case.prefix);
+			FSCompletenessCapabilityMap capability_map;
+			Vector<String> errors;
+			REQUIRE_MESSAGE(capability_map.load(write_completeness_capability_map(tree, contents), errors) == OK,
+					String(" | ").join(errors));
+			const FSCompletenessSelection ignored =
+					capability_map.select(Vector<String>({ test_case.ignored_path }));
+			CHECK(ignored.families.is_empty());
+			CHECK_FALSE(ignored.used_broad_core_fallback);
+			CHECK(ignored.validation_errors.is_empty());
 		}
 	}
 
@@ -1062,6 +1145,26 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 #ifdef UNIX_ENABLED
 		CHECK(completeness_errors_contain_text(errors, "linked rule entry 'linked.json' is not allowed"));
 #endif
+	}
+
+	TEST_CASE("TypeCompleteness Manifest capability validation requires a lowercase json extension") {
+		TemporaryProjectTree tree("type_completeness_capability_rule_extension");
+		REQUIRE(tree.is_valid());
+		const String map_path = write_completeness_capability_map(tree, R"JSON({
+  "schema_version":1,
+  "production":[{"paths":["modules/foundry_script/mapped.cpp"],"families":["mapped"]}],
+  "nonproduction_prefixes":["docs/"],
+  "broad_core_families":["mapped"]
+})JSON");
+		tree.write_file("rules/mapped.JSON", make_completeness_rule("mapped"));
+
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE(capability_map.load(map_path, errors) == OK);
+		CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors),
+				ERR_INVALID_DATA);
+		CHECK(completeness_errors_contain_text(errors, "unexpected non-JSON entry 'mapped.JSON'"));
+		CHECK(completeness_errors_contain_text(errors, "mapped family 'mapped' has no rule manifest"));
 	}
 
 	TEST_CASE("TypeCompleteness Manifest checked-in capability families have exactly one reachable rule") {

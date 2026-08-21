@@ -515,6 +515,23 @@ static bool invalid_path_may_target_production(const String &p_path) {
 	return forward_path.begins_with("modules/foundry_script/");
 }
 
+static bool is_permitted_nonproduction_rule(const String &p_path) {
+	static const String production_root = "modules/foundry_script/";
+	static const String production_root_without_slash = "modules/foundry_script";
+	static const String tests_root = "modules/foundry_script/tests/";
+	if (p_path == tests_root || p_path.begins_with(tests_root)) {
+		return true;
+	}
+	if (p_path == production_root_without_slash || p_path == production_root ||
+			p_path.begins_with(production_root)) {
+		return false;
+	}
+	if (p_path.ends_with("/") && production_root.begins_with(p_path)) {
+		return false;
+	}
+	return true;
+}
+
 static bool parse_capability_string_array(const Dictionary &p_object, const StringName &p_field,
 		const String &p_path, Vector<String> &r_values, Vector<String> &r_errors) {
 	Array values;
@@ -583,11 +600,6 @@ static String canonicalize_existing_capability_path(const String &p_path) {
 #endif
 }
 
-struct CapabilityOwnershipEntry {
-	String path;
-	int record_index = -1;
-};
-
 Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_errors) {
 	production_prefixes.clear();
 	nonproduction_prefixes.clear();
@@ -623,7 +635,7 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	}
 
 	FSCompletenessCapabilityMap parsed;
-	Vector<CapabilityOwnershipEntry> ownership_entries;
+	Vector<String> ownership_entries;
 	Array production;
 	if (require_array(root, SNAME("production"), "$.production", production, r_errors)) {
 		if (production.is_empty()) {
@@ -669,21 +681,17 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 					continue;
 				}
 				parsed.production_prefixes.push_back(Pair<String, HashSet<String>>(path, family_set));
-				CapabilityOwnershipEntry entry;
-				entry.path = path;
-				entry.record_index = record_index;
-				ownership_entries.push_back(entry);
+				ownership_entries.push_back(path);
 			}
 		}
 	}
 
 	for (int left = 0; left < ownership_entries.size(); left++) {
 		for (int right = left + 1; right < ownership_entries.size(); right++) {
-			if (ownership_entries[left].record_index != ownership_entries[right].record_index &&
-					capability_rules_overlap(ownership_entries[left].path, ownership_entries[right].path)) {
+			if (capability_rules_overlap(ownership_entries[left], ownership_entries[right])) {
 				append_error(r_errors, "$.production",
 						vformat("ambiguous production ownership between '%s' and '%s'",
-								ownership_entries[left].path, ownership_entries[right].path));
+								ownership_entries[left], ownership_entries[right]));
 			}
 		}
 	}
@@ -696,6 +704,11 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 			if (!is_normalized_repository_path(nonproduction[i])) {
 				append_error(r_errors, vformat("$.nonproduction_prefixes[%d]", i),
 						"must be a normalized repository-relative path");
+				continue;
+			}
+			if (!is_permitted_nonproduction_rule(nonproduction[i])) {
+				append_error(r_errors, vformat("$.nonproduction_prefixes[%d]", i),
+						"may exempt Foundry Script production core; only the tests subtree is permitted");
 				continue;
 			}
 			parsed.nonproduction_prefixes.push_back(nonproduction[i]);
@@ -731,8 +744,7 @@ Error FSCompletenessCapabilityMap::load(const String &p_path, Vector<String> &r_
 	}
 	for (const Pair<String, HashSet<String>> &production_entry : parsed.production_prefixes) {
 		for (const String &nonproduction_entry : parsed.nonproduction_prefixes) {
-			if (production_entry.first.ends_with("/") &&
-					capability_rules_overlap(production_entry.first, nonproduction_entry)) {
+			if (capability_rules_overlap(production_entry.first, nonproduction_entry)) {
 				append_error(r_errors, "$",
 						vformat("production path '%s' overlaps nonproduction path '%s'",
 								production_entry.first, nonproduction_entry));
@@ -874,7 +886,7 @@ Error FSCompletenessCapabilityMap::validate_against_rule_directory(
 			r_errors.push_back(vformat("%s: unexpected directory entry '%s'", p_directory, entry));
 			continue;
 		}
-		if (entry.get_extension().to_lower() != "json") {
+		if (entry.get_extension() != "json") {
 			r_errors.push_back(vformat("%s: unexpected non-JSON entry '%s'", p_directory, entry));
 			continue;
 		}
