@@ -48,6 +48,16 @@ static bool graph_errors_contain(const Vector<String> &p_errors, const String &p
 	return false;
 }
 
+static int graph_error_count(const Vector<String> &p_errors, const String &p_needle) {
+	int count = 0;
+	for (const String &error : p_errors) {
+		if (error.contains(p_needle)) {
+			count++;
+		}
+	}
+	return count;
+}
+
 static const FSCompletenessResolvedCell *find_completeness_cell(const FSCompletenessResolution &p_resolution,
 		const String &p_destination, const String &p_source_proof, const String &p_boundary, const String &p_surface) {
 	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
@@ -184,6 +194,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 			invalid.relations.push_back(conflict);
 			CHECK_EQ(FSCompletenessGraph::resolve(invalid, catalog, resolution, errors), ERR_INVALID_DATA);
 			CHECK(graph_errors_contain(errors, "incompatible outcomes"));
+			CHECK_FALSE(graph_errors_contain(errors, "no reachable disposition"));
+			CHECK_EQ(resolution.uncovered_dimension_count, 0);
 		}
 
 		SUBCASE("Incomparable maximal predicates are ambiguous") {
@@ -239,6 +251,154 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 			}
 			CHECK_EQ(FSCompletenessGraph::resolve(invalid, catalog, resolution, errors), ERR_INVALID_DATA);
 			CHECK(graph_errors_contain(errors, "revisit"));
+		}
+
+		SUBCASE("Every domain cell needs a disposition outside required predicates") {
+			errors.clear();
+			resolution = FSCompletenessResolution();
+			FSCompletenessManifest invalid = manifest;
+			invalid.relations.clear();
+			invalid.exceptions.clear();
+			invalid.anchors.resize(1);
+			invalid.required_dimensions.clear();
+			FSCompletenessRequiredDimension local_analysis;
+			local_analysis.dimension = "analysis";
+			local_analysis.when["destination"] = "plain";
+			local_analysis.when["source_proof"] = "static_member";
+			local_analysis.when["boundary"] = "argument_binding";
+			invalid.required_dimensions.push_back(local_analysis);
+			CHECK_EQ(FSCompletenessGraph::resolve(invalid, catalog, resolution, errors), ERR_INVALID_DATA);
+			CHECK(graph_errors_contain(errors, "has no reachable disposition"));
+			CHECK_FALSE(graph_errors_contain(errors,
+					"source_proof=numeric_constant, boundary=argument_binding, surface=text} required dimension"));
+		}
+
+		SUBCASE("An empty requirement list does not waive cell reachability") {
+			errors.clear();
+			resolution = FSCompletenessResolution();
+			FSCompletenessManifest invalid = manifest;
+			invalid.required_dimensions.clear();
+			invalid.anchors.clear();
+			CHECK_EQ(FSCompletenessGraph::resolve(invalid, catalog, resolution, errors), ERR_INVALID_DATA);
+			CHECK(graph_errors_contain(errors, "has no reachable disposition"));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Graph deduplicates and totally orders agreeing provenance") {
+		FSCompletenessCatalog catalog;
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		load_type_completeness_graph_inputs(catalog, manifest, errors);
+
+		SUBCASE("Duplicate anchors do not multiply identical paths") {
+			FSCompletenessManifest duplicated = manifest;
+			duplicated.anchors.push_back(duplicated.anchors[0]);
+			FSCompletenessResolution resolution;
+			REQUIRE_MESSAGE(FSCompletenessGraph::resolve(duplicated, catalog, resolution, errors) == OK,
+					String(" | ").join(errors));
+
+			const FSCompletenessResolvedCell *anchor_cell = find_completeness_cell(
+					resolution, "plain", "static_member", "argument_binding", "text");
+			REQUIRE(anchor_cell != nullptr);
+			const FSCompletenessResolvedDimension *anchor_analysis = anchor_cell->find_dimension("analysis");
+			REQUIRE(anchor_analysis != nullptr);
+			REQUIRE_EQ(anchor_analysis->agreeing_provenance.size(), 1);
+			CHECK(anchor_analysis->agreeing_provenance[0].is_empty());
+
+			const FSCompletenessResolvedCell *derived_cell = find_completeness_cell(
+					resolution, "plain", "numeric_constant", "argument_binding", "text");
+			REQUIRE(derived_cell != nullptr);
+			const FSCompletenessResolvedDimension *carrier = derived_cell->find_dimension("stored_carrier");
+			REQUIRE(carrier != nullptr);
+			REQUIRE_EQ(carrier->agreeing_provenance.size(), 1);
+			CHECK_EQ(carrier->agreeing_provenance[0][0].relation_id, "plain_numeric_constant_parity");
+		}
+
+		SUBCASE("Equal ID sequences use full snapshots as a deterministic tie breaker") {
+			FSCompletenessManifest converging = manifest;
+			converging.domain["destination"] = Vector<String>({ "plain" });
+			converging.domain["source_proof"] = Vector<String>({ "gradual", "erased", "static_member" });
+			converging.domain["boundary"] = Vector<String>({ "argument_binding" });
+			converging.domain["surface"] = Vector<String>({ "text" });
+			converging.required_dimensions.clear();
+			FSCompletenessRequiredDimension analysis;
+			analysis.dimension = "analysis";
+			converging.required_dimensions.push_back(analysis);
+			converging.anchors.clear();
+			for (const String &proof : Vector<String>({ "gradual", "erased" })) {
+				FSCompletenessAnchor anchor;
+				anchor.id = proof;
+				anchor.coordinates["destination"] = "plain";
+				anchor.coordinates["source_proof"] = proof;
+				anchor.coordinates["boundary"] = "argument_binding";
+				anchor.coordinates["surface"] = "text";
+				anchor.expect["analysis"] = "accept";
+				converging.anchors.push_back(anchor);
+			}
+			converging.relations.clear();
+			FSCompletenessRelation relation;
+			relation.id = "converge_to_static";
+			Dictionary unproven;
+			unproven["class"] = "unproven";
+			relation.from["source_proof"] = unproven;
+			relation.to["source_proof"] = "static_member";
+			relation.derive["analysis"] = "same";
+			converging.relations.push_back(relation);
+			converging.exceptions.clear();
+
+			FSCompletenessResolution resolution;
+			REQUIRE_MESSAGE(FSCompletenessGraph::resolve(converging, catalog, resolution, errors) == OK,
+					String(" | ").join(errors));
+			const FSCompletenessResolvedCell *target = find_completeness_cell(
+					resolution, "plain", "static_member", "argument_binding", "text");
+			REQUIRE(target != nullptr);
+			const FSCompletenessResolvedDimension *target_analysis = target->find_dimension("analysis");
+			REQUIRE(target_analysis != nullptr);
+			REQUIRE_EQ(target_analysis->agreeing_provenance.size(), 2);
+			REQUIRE_EQ(target_analysis->canonical_provenance.size(), 1);
+			const FSCompletenessProvenanceStep &canonical = target_analysis->canonical_provenance[0];
+			CHECK_EQ(canonical.relation_id, "converge_to_static");
+			CHECK(canonical.exception_id.is_empty());
+			CHECK_EQ(canonical.source_coordinates.get("source_proof", String()), Variant("erased"));
+			CHECK_EQ(canonical.target_coordinates.get("source_proof", String()), Variant("static_member"));
+			CHECK_EQ(canonical.input_dimensions.get("analysis", String()), Variant("accept"));
+			CHECK_EQ(canonical.output_dimensions.get("analysis", String()), Variant("accept"));
+			REQUIRE_EQ(target_analysis->agreeing_provenance[1].size(), 1);
+			const FSCompletenessProvenanceStep &other = target_analysis->agreeing_provenance[1][0];
+			CHECK_EQ(other.relation_id, "converge_to_static");
+			CHECK(other.exception_id.is_empty());
+			CHECK_EQ(other.source_coordinates.get("source_proof", String()), Variant("gradual"));
+			CHECK_EQ(other.target_coordinates.get("source_proof", String()), Variant("static_member"));
+			CHECK_EQ(other.input_dimensions.get("analysis", String()), Variant("accept"));
+			CHECK_EQ(other.output_dimensions.get("analysis", String()), Variant("accept"));
+		}
+
+		SUBCASE("Overlapping identical requirements are counted once") {
+			FSCompletenessManifest overlapping = manifest;
+			overlapping.domain["destination"] = Vector<String>({ "plain" });
+			overlapping.domain["source_proof"] = Vector<String>({ "numeric_constant" });
+			overlapping.domain["boundary"] = Vector<String>({ "argument_binding" });
+			overlapping.domain["surface"] = Vector<String>({ "text" });
+			overlapping.required_dimensions.clear();
+			FSCompletenessRequiredDimension carrier;
+			carrier.dimension = "stored_carrier";
+			overlapping.required_dimensions.push_back(carrier);
+			overlapping.required_dimensions.push_back(carrier);
+			overlapping.anchors.clear();
+			FSCompletenessAnchor anchor;
+			anchor.id = "numeric_without_carrier";
+			anchor.coordinates["destination"] = "plain";
+			anchor.coordinates["source_proof"] = "numeric_constant";
+			anchor.coordinates["boundary"] = "argument_binding";
+			anchor.coordinates["surface"] = "text";
+			anchor.expect["analysis"] = "accept";
+			overlapping.anchors.push_back(anchor);
+			overlapping.relations.clear();
+			overlapping.exceptions.clear();
+
+			FSCompletenessResolution resolution;
+			CHECK_EQ(FSCompletenessGraph::resolve(overlapping, catalog, resolution, errors), ERR_INVALID_DATA);
+			CHECK_EQ(graph_error_count(errors, "required dimension 'stored_carrier' has no reachable disposition"), 1);
 		}
 	}
 }

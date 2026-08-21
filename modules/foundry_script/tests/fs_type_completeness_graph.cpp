@@ -96,6 +96,85 @@ static Vector<String> sorted_dictionary_keys(const Dictionary &p_dictionary) {
 	return keys;
 }
 
+static String length_encoded(const String &p_value) {
+	return vformat("%d:%s", p_value.length(), p_value);
+}
+
+static String canonical_variant_identity(const Variant &p_value);
+
+static String canonical_dictionary_identity(const Dictionary &p_dictionary) {
+	String identity = "{";
+	for (const String &key : sorted_dictionary_keys(p_dictionary)) {
+		identity += length_encoded(key);
+		identity += length_encoded(canonical_variant_identity(p_dictionary[key]));
+	}
+	return identity + "}";
+}
+
+static String canonical_variant_identity(const Variant &p_value) {
+	if (p_value.get_type() == Variant::DICTIONARY) {
+		return "D" + canonical_dictionary_identity(p_value);
+	}
+	if (p_value.get_type() == Variant::ARRAY) {
+		String identity = "A[";
+		const Array values = p_value;
+		for (int i = 0; i < values.size(); i++) {
+			identity += length_encoded(canonical_variant_identity(values[i]));
+		}
+		return identity + "]";
+	}
+	const String representation = p_value.stringify();
+	return vformat("T%d:%s", p_value.get_type(), length_encoded(representation));
+}
+
+static String provenance_identity(const Vector<FSCompletenessProvenanceStep> &p_provenance) {
+	String identity;
+	for (const FSCompletenessProvenanceStep &step : p_provenance) {
+		identity += length_encoded(step.relation_id);
+		identity += length_encoded(step.exception_id);
+		identity += length_encoded(canonical_dictionary_identity(step.source_coordinates));
+		identity += length_encoded(canonical_dictionary_identity(step.target_coordinates));
+		identity += length_encoded(canonical_dictionary_identity(step.input_dimensions));
+		identity += length_encoded(canonical_dictionary_identity(step.output_dimensions));
+	}
+	return identity;
+}
+
+static Vector<String> sorted_set_members(const HashSet<String> &p_set) {
+	Vector<String> members;
+	members.reserve(p_set.size());
+	for (const String &member : p_set) {
+		members.push_back(member);
+	}
+	members.sort();
+	return members;
+}
+
+static String derivation_state_identity(const DerivationState &p_state) {
+	String identity = length_encoded(canonical_dictionary_identity(p_state.coordinates));
+	identity += length_encoded(canonical_dictionary_identity(p_state.dimensions));
+	for (const String &relation_id : sorted_set_members(p_state.used_relation_ids)) {
+		identity += length_encoded(relation_id);
+	}
+	identity += "|";
+	for (const String &cell : sorted_set_members(p_state.visited_cells)) {
+		identity += length_encoded(cell);
+	}
+	identity += "|" + length_encoded(provenance_identity(p_state.provenance));
+	return identity;
+}
+
+static bool append_unique_state(Vector<DerivationState> &r_states, HashSet<String> &r_state_ids,
+		const DerivationState &p_state) {
+	const String identity = derivation_state_identity(p_state);
+	if (r_state_ids.has(identity)) {
+		return false;
+	}
+	r_state_ids.insert(identity);
+	r_states.push_back(p_state);
+	return true;
+}
+
 static void append_unique_error(Vector<String> &r_errors, HashSet<String> &r_emitted_errors, const String &p_error) {
 	if (!r_emitted_errors.has(p_error)) {
 		r_emitted_errors.insert(p_error);
@@ -275,6 +354,20 @@ static void record_state(const DerivationState &p_state, Vector<CellDispositions
 		ReachableDisposition disposition;
 		disposition.expected = p_state.dimensions[dimension_name];
 		disposition.provenance = p_state.provenance;
+		const String identity = canonical_variant_identity(disposition.expected) +
+				length_encoded(provenance_identity(disposition.provenance));
+		bool already_recorded = false;
+		for (const ReachableDisposition &existing : dimension->dispositions) {
+			const String existing_identity = canonical_variant_identity(existing.expected) +
+					length_encoded(provenance_identity(existing.provenance));
+			if (existing_identity == identity) {
+				already_recorded = true;
+				break;
+			}
+		}
+		if (already_recorded) {
+			continue;
+		}
 		dimension->dispositions.push_back(disposition);
 	}
 }
@@ -292,7 +385,19 @@ static bool provenance_less(const Vector<FSCompletenessProvenanceStep> &p_left,
 			return p_left[i].exception_id < p_right[i].exception_id;
 		}
 	}
-	return false;
+	return provenance_identity(p_left) < provenance_identity(p_right);
+}
+
+static void sort_provenance_paths(Vector<Vector<FSCompletenessProvenanceStep>> &r_paths) {
+	for (int i = 1; i < r_paths.size(); i++) {
+		const Vector<FSCompletenessProvenanceStep> path = r_paths[i];
+		int insertion_index = i;
+		while (insertion_index > 0 && provenance_less(path, r_paths[insertion_index - 1])) {
+			r_paths.write[insertion_index] = r_paths[insertion_index - 1];
+			insertion_index--;
+		}
+		r_paths.write[insertion_index] = path;
+	}
 }
 
 } // namespace
@@ -424,6 +529,7 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 	}
 
 	Vector<DerivationState> frontier;
+	HashSet<String> frontier_state_ids;
 	for (const FSCompletenessAnchor &anchor : p_manifest.anchors) {
 		Vector<Dictionary> expanded_coordinates;
 		if (!anchor.coordinates.has("surface") && !anchor.surfaces.is_empty()) {
@@ -451,13 +557,15 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 			state.coordinates = anchor_coordinates;
 			state.dimensions = anchor.expect.duplicate();
 			state.visited_cells.insert(key);
-			frontier.push_back(state);
-			record_state(state, dispositions);
+			if (append_unique_state(frontier, frontier_state_ids, state)) {
+				record_state(state, dispositions);
+			}
 		}
 	}
 
 	for (int depth = 0; depth < p_manifest.max_chain_length; depth++) {
 		Vector<DerivationState> next_frontier;
+		HashSet<String> next_frontier_state_ids;
 		for (const DerivationState &state : frontier) {
 			Vector<TransformCandidate> candidates;
 			for (int relation_index = 0; relation_index < p_manifest.relations.size(); relation_index++) {
@@ -654,8 +762,9 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 				step.output_dimensions = application.output_dimensions;
 				next.provenance.push_back(step);
 
-				next_frontier.push_back(next);
-				record_state(next, dispositions);
+				if (append_unique_state(next_frontier, next_frontier_state_ids, next)) {
+					record_state(next, dispositions);
+				}
 			}
 		}
 		frontier = next_frontier;
@@ -670,7 +779,9 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 
 		Vector<String> dimension_names;
 		for (const DimensionDispositions &dimension : cell_dispositions.dimensions) {
-			dimension_names.push_back(dimension.dimension);
+			if (!dimension.dispositions.is_empty()) {
+				dimension_names.push_back(dimension.dimension);
+			}
 		}
 		dimension_names.sort();
 		for (const String &dimension_name : dimension_names) {
@@ -698,28 +809,48 @@ Error FSCompletenessGraph::resolve(const FSCompletenessManifest &p_manifest, con
 			FSCompletenessResolvedDimension resolved_dimension;
 			resolved_dimension.dimension = dimension_name;
 			resolved_dimension.expected = expected;
-			resolved_dimension.canonical_provenance = dimension->dispositions[0].provenance;
+			HashSet<String> provenance_ids;
 			for (const ReachableDisposition &disposition : dimension->dispositions) {
-				resolved_dimension.agreeing_provenance.push_back(disposition.provenance);
-				if (provenance_less(disposition.provenance, resolved_dimension.canonical_provenance)) {
-					resolved_dimension.canonical_provenance = disposition.provenance;
+				const String identity = provenance_identity(disposition.provenance);
+				if (provenance_ids.has(identity)) {
+					continue;
 				}
-				resolved.max_observed_chain_length = MAX(
-						resolved.max_observed_chain_length, disposition.provenance.size());
+				provenance_ids.insert(identity);
+				resolved_dimension.agreeing_provenance.push_back(disposition.provenance);
+			}
+			sort_provenance_paths(resolved_dimension.agreeing_provenance);
+			if (!resolved_dimension.agreeing_provenance.is_empty()) {
+				resolved_dimension.canonical_provenance = resolved_dimension.agreeing_provenance[0];
+			}
+			for (const Vector<FSCompletenessProvenanceStep> &path : resolved_dimension.agreeing_provenance) {
+				resolved.max_observed_chain_length = MAX(resolved.max_observed_chain_length, path.size());
 			}
 			resolved_cell.dimensions.insert(dimension_name, resolved_dimension);
 		}
 
+		if (dimension_names.is_empty()) {
+			append_unique_error(r_errors, emitted_errors,
+					vformat("cell {%s} has no reachable disposition",
+							coordinate_description(cell_dispositions.coordinates, p_manifest.domain_axis_order)));
+			continue;
+		}
+
+		Vector<String> required_dimensions;
 		for (const FSCompletenessRequiredDimension &required : p_manifest.required_dimensions) {
 			if (!predicate_matches(required.when, cell_dispositions.coordinates, p_catalog)) {
 				continue;
 			}
-			if (resolved_cell.find_dimension(required.dimension) == nullptr) {
+			append_unique_dimension(required_dimensions, required.dimension);
+		}
+		required_dimensions.sort();
+		for (const String &required_dimension : required_dimensions) {
+			const DimensionDispositions *reachable = find_dimension_dispositions(cell_dispositions, required_dimension);
+			if (reachable == nullptr || reachable->dispositions.is_empty()) {
 				resolved.uncovered_dimension_count++;
 				append_unique_error(r_errors, emitted_errors,
 						vformat("cell {%s} required dimension '%s' has no reachable disposition",
 								coordinate_description(cell_dispositions.coordinates, p_manifest.domain_axis_order),
-								required.dimension));
+								required_dimension));
 			}
 		}
 	}
