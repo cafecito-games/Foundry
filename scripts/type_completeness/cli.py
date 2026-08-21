@@ -19,9 +19,30 @@ def _write_json(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+# Exit code of a comparison that refused to draw a verdict, matching the runner's own vocabulary:
+# 1 is a product mismatch, 2 is a structural failure. It is returned whatever --fail-on-regression
+# says, because the refusal is not a regression judgment.
+STRUCTURAL_FAILURE_EXIT_CODE = 2
+
+
 def _compare(arguments: argparse.Namespace) -> int:
     branch = report.load_report_file(Path(arguments.branch_report))
     develop = report.load_report_file(Path(arguments.develop_report))
+    # A structural failure is a statement about the run, not about the product: the harness broke, or
+    # the run crossed its budget and was republished with every case it had already collected still
+    # reading "passed". Comparing such a report case by case would produce a clean verdict for a run
+    # that never finished, so no comparison is drawn from it at all. A product mismatch is different -
+    # classifying those is precisely what a comparison is for.
+    refusals = [
+        f"the {label} report is a structural failure (success={loaded.success!r}, outcome={loaded.outcome!r})"
+        for label, loaded in (("branch", branch), ("develop", develop))
+        if loaded.is_structural_failure
+    ]
+    if refusals:
+        _write_json(Path(arguments.output), comparator.serialize_structural_failure(refusals))
+        for reason in refusals:
+            print(f"structural_failure {reason}")
+        return STRUCTURAL_FAILURE_EXIT_CODE
     capabilities = report.load_capabilities_file(Path(arguments.capabilities))
     artifacts = comparator.compare_reports(branch, develop, arguments.configuration, capabilities)
     _write_json(Path(arguments.output), comparator.serialize_many(artifacts))

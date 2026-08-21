@@ -1336,6 +1336,21 @@ struct StageTimings {
 // A run that outlives its budget is a harness-level failure, not a product observation: the evidence
 // it would have published is incomplete, so it publishes a partial report naming the stage it was in
 // and nothing that could be read as a verdict about the product.
+// Turns a published report document into the structural failure a crossed budget makes it. The
+// evidence the run did gather stays exactly as it was observed; only the verdict changes, and the
+// record naming the crossing is appended last because that is when it happened.
+static Dictionary document_with_timeout_verdict(const Dictionary &p_document, const String &p_detail) {
+	Dictionary document = p_document.duplicate(true);
+	FSCompletenessStructuralFailure failure =
+			make_structural_failure("run_timeout", p_detail, String(), String(), String(), ERR_TIMEOUT);
+	Array failures = document.get("structural_failures", Array());
+	failures.push_back(structural_failure_report(failure));
+	document["structural_failures"] = failures;
+	document["success"] = false;
+	document["outcome"] = "structural_failure";
+	return document;
+}
+
 static Dictionary timeout_report(const String &p_family, const StageTimings &p_timings,
 		const Vector<FSCompletenessStructuralFailure> &p_failures) {
 	Dictionary report;
@@ -1946,17 +1961,11 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// crossed there would otherwise be published as an in-budget run and read by a gate as a clean one.
 	// The evidence stays in the document; only the verdict it carries changes.
 	if (deadline_exceeded()) {
-		structural_failures.push_back(make_structural_failure("run_timeout",
-				"The run exceeded its wall-clock budget while publishing its report.", String(), String(),
-				String(), ERR_TIMEOUT));
+		const String timeout_detail = "The run exceeded its wall-clock budget while publishing its report.";
+		structural_failures.push_back(make_structural_failure(
+				"run_timeout", timeout_detail, String(), String(), String(), ERR_TIMEOUT));
 		sort_structural_failures(structural_failures);
-		Array timed_out_failures;
-		for (const FSCompletenessStructuralFailure &failure : structural_failures) {
-			timed_out_failures.push_back(structural_failure_report(failure));
-		}
-		report["success"] = false;
-		report["outcome"] = "structural_failure";
-		report["structural_failures"] = timed_out_failures;
+		report = document_with_timeout_verdict(report, timeout_detail);
 		timings.total = StageTimings::since(run_started_at);
 		report["timings_ms"] = timings.to_report();
 		const Error republish_error = write_report_atomically(canonical_scratch_root,
@@ -2010,6 +2019,26 @@ Error FSCompletenessRunner::publish_owned_document(const String &p_scratch_root,
 	}
 	return write_report_atomically(
 			canonical_scratch_root, p_catalog_root, p_document_path, p_document, nullptr);
+}
+
+Error FSCompletenessRunner::republish_timed_out_document(const String &p_scratch_root,
+		const String &p_catalog_root, const String &p_document_path, const String &p_detail) {
+	Error read_error = OK;
+	const String source = FileAccess::get_file_as_string(p_document_path, &read_error);
+	if (read_error != OK) {
+		return read_error;
+	}
+	Variant data;
+	Vector<String> parse_errors;
+	const Error parse_error = parse_type_completeness_json(source, p_document_path, data, parse_errors);
+	if (parse_error != OK) {
+		return parse_error;
+	}
+	if (data.get_type() != Variant::DICTIONARY) {
+		return ERR_INVALID_DATA;
+	}
+	return publish_owned_document(p_scratch_root, p_catalog_root, p_document_path,
+			document_with_timeout_verdict(data, p_detail));
 }
 
 Error FSCompletenessRunner::run(

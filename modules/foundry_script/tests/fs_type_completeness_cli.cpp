@@ -158,6 +158,7 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 	bool timed_out = false;
 	bool unpublished = false;
 	Array family_entries;
+	Vector<String> published_report_paths;
 	for (const String &family : families) {
 		FSCompletenessRunOptions options;
 		options.catalog_root = p_options.catalog_root;
@@ -178,14 +179,18 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 		timed_out = timed_out || error == ERR_TIMEOUT;
 		unpublished = unpublished || !published;
 		worst = worse_outcome(worst, result.outcome);
-		if (published && r_published_paths != nullptr) {
+		if (published) {
 			// Recorded here, before any later family runs and before the index is attempted, so a
-			// failure after this point cannot make this report look unpublished.
-			r_published_paths->push_back(options.report_path);
-			if (!r_published_paths->has(p_options.scratch_root)) {
-				// The scratch tree holds this report and the artifacts it references; naming the tree
-				// keeps them all, whatever the invocation does afterwards.
-				r_published_paths->push_back(p_options.scratch_root);
+			// failure after this point cannot make this report look unpublished - and so the settling
+			// step below knows exactly which documents it may have to rewrite.
+			published_report_paths.push_back(options.report_path);
+			if (r_published_paths != nullptr) {
+				r_published_paths->push_back(options.report_path);
+				if (!r_published_paths->has(p_options.scratch_root)) {
+					// The scratch tree holds this report and the artifacts it references; naming the
+					// tree keeps them all, whatever the invocation does afterwards.
+					r_published_paths->push_back(p_options.scratch_root);
+				}
 			}
 		}
 		if (!published) {
@@ -203,29 +208,66 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 		worst = "structural_failure";
 	}
 
-	if (!single_family) {
+	// Settle and publish. The verdict is taken from one clock read, written into the index with the
+	// outcome it implies, and then confirmed by a read taken after that write - the last write this
+	// invocation performs. A crossing that only the confirming read sees rewrites every document this
+	// invocation published, so a report, the index over it, and the exit code derived from them can
+	// never say different things.
+	timed_out = timed_out || clock() >= deadline_usec;
+	const auto publish_index = [&]() -> Error {
+		if (single_family) {
+			return OK;
+		}
 		Dictionary index;
 		index["schema_version"] = 1.0;
 		index["families"] = family_entries;
-		index["outcome"] = worst;
-		const Error write_error = FSCompletenessRunner::publish_owned_document(
+		index["outcome"] = timed_out ? String("structural_failure") : worst;
+		return FSCompletenessRunner::publish_owned_document(
 				p_options.scratch_root, p_options.catalog_root, p_options.report_path, index);
-		if (write_error != OK) {
-			return refuse(vformat("could not write the report index at %s (error %d).",
-					p_options.report_path, write_error));
+	};
+	if (timed_out) {
+		worst = "structural_failure";
+	}
+	const Error write_error = publish_index();
+	if (write_error != OK) {
+		return refuse(vformat(
+				"could not write the report index at %s (error %d).", p_options.report_path, write_error));
+	}
+	if (!single_family && r_published_paths != nullptr) {
+		r_published_paths->push_back(p_options.report_path);
+	}
+
+	if (!timed_out && clock() >= deadline_usec) {
+		timed_out = true;
+		worst = "structural_failure";
+		const String detail = "The invocation exceeded its wall-clock budget while publishing its reports.";
+		for (const String &report_path : published_report_paths) {
+			// Every family entry the index carries is rewritten too, so the index cannot keep calling a
+			// report passing after that report has been rewritten as a structural failure.
+			const Error republish_error = FSCompletenessRunner::republish_timed_out_document(
+					p_options.scratch_root, p_options.catalog_root, report_path, detail);
+			if (republish_error != OK) {
+				return refuse(vformat("could not republish the timed-out report at %s (error %d).",
+						report_path, republish_error));
+			}
 		}
-		if (r_published_paths != nullptr) {
-			r_published_paths->push_back(p_options.report_path);
+		for (int index = 0; index < family_entries.size(); index++) {
+			Dictionary entry = family_entries[index];
+			if (bool(entry.get("published", false))) {
+				entry["outcome"] = "structural_failure";
+			}
+			family_entries[index] = entry;
+		}
+		const Error republish_index_error = publish_index();
+		if (republish_index_error != OK) {
+			return refuse(vformat("could not republish the timed-out report index at %s (error %d).",
+					p_options.report_path, republish_index_error));
 		}
 	}
 
-	// One last read, after the last write this invocation performs. Each family run decides its own
-	// verdict after publishing its report, but the index is written afterwards and can carry the
-	// invocation past its budget on its own.
-	timed_out = timed_out || clock() >= deadline_usec;
 	// Missing evidence outranks every other verdict: a family that never published cannot be judged at
 	// all. Otherwise a timeout gets its own exit code, so a scheduler can tell an over-budget run from
-	// a broken one even though the partial report calls it a structural failure.
+	// a broken one even though the published documents call it a structural failure.
 	if (unpublished) {
 		return EXIT_STRUCTURAL_FAILURE;
 	}

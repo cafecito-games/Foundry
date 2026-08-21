@@ -115,6 +115,13 @@ public:
 	// artifact tree, and the file is replaced atomically.
 	static Error publish_owned_document(const String &p_scratch_root, const String &p_catalog_root,
 			const String &p_document_path, const Dictionary &p_document);
+
+	// Rewrites an already published document's verdict into the structural failure a crossed budget
+	// makes it, and republishes it. A run notices its own crossing after its last write; the command
+	// driving several runs can only notice after the last write of the whole invocation. Both go
+	// through this, so a report, an index over it, and the exit code derived from them cannot disagree.
+	static Error republish_timed_out_document(const String &p_scratch_root, const String &p_catalog_root,
+			const String &p_document_path, const String &p_detail);
 };
 
 } // namespace FSTests

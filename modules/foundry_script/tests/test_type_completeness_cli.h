@@ -201,6 +201,35 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		CHECK_MESSAGE(created_user_roots.is_empty(), String(", ").join(created_user_roots));
 	}
 
+	TEST_CASE("TypeCompleteness CLI republishes a published report as a timed-out one") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_cli_republish_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const FSCompletenessCLI::Options options = completeness_cli_options(tree);
+		REQUIRE_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_PASSED);
+		const Dictionary passing = completeness_cli_read_json(options.report_path);
+		REQUIRE_EQ(String(passing.get("outcome", String())), "passed");
+
+		// The command notices a crossing only after the last write of the whole invocation, and this is
+		// how it makes the documents it already published agree with the verdict it reports.
+		REQUIRE_EQ(FSCompletenessRunner::republish_timed_out_document(options.scratch_root,
+						   options.catalog_root, options.report_path,
+						   "The invocation exceeded its wall-clock budget while publishing its reports."),
+				OK);
+		const Dictionary republished = completeness_cli_read_json(options.report_path);
+		CHECK_EQ(String(republished.get("outcome", String())), "structural_failure");
+		CHECK_EQ(bool(republished.get("success", true)), false);
+		const Array failures = republished.get("structural_failures", Array());
+		REQUIRE_EQ(failures.size(), 1);
+		CHECK_EQ(String(Dictionary(failures[0]).get("stage", String())), "run_timeout");
+		// Every other member, and every case, survives the rewrite unchanged.
+		CHECK_EQ(Array(republished.get("cases", Array())).size(), Array(passing.get("cases", Array())).size());
+		CHECK_EQ(republished.get("family", String()), passing.get("family", String()));
+		CHECK_EQ(republished.get("cell_count", -1.0), passing.get("cell_count", 0.0));
+		CHECK_EQ(Completeness::sorted_dictionary_keys(republished),
+				Completeness::sorted_dictionary_keys(passing));
+	}
+
 	TEST_CASE("TypeCompleteness CLI publishes only the selected surface") {
 		TemporaryProjectTree tree(
 				vformat("type_completeness_cli_surface_%d", OS::get_singleton()->get_process_id()));

@@ -302,10 +302,28 @@ def serialize_many(artifacts: list[ComparisonArtifact]) -> str:
     return json.dumps(payload, sort_keys=True, indent=2) + "\n"
 
 
+def serialize_structural_failure(reasons: list[str]) -> str:
+    """A comparison that refuses to draw a verdict, in the same envelope a real comparison uses.
+
+    ``artifacts`` is empty on purpose: there is no case-level conclusion to publish, and a consumer
+    that reads only the artifact list therefore sees nothing it could mistake for "unchanged".
+    """
+    payload = {
+        "schema_version": COMPARISON_SCHEMA_VERSION,
+        "artifacts": [],
+        "structural_failure": {"reasons": list(reasons)},
+    }
+    return json.dumps(payload, sort_keys=True, indent=2) + "\n"
+
+
 def deserialize_many(text: str) -> list[ComparisonArtifact]:
     data = json.loads(text)
     if not schema_version_matches(data.get("schema_version"), COMPARISON_SCHEMA_VERSION):
         raise ReportError("unsupported comparison schema_version")
+    if "structural_failure" in data:
+        # A refusal carries no conclusions; reading it as an empty, clean comparison is exactly the
+        # mistake the refusal exists to prevent.
+        raise ReportError(f"comparison refused to draw a verdict: {data['structural_failure']}")
     try:
         return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]
     except (KeyError, TypeError) as error:

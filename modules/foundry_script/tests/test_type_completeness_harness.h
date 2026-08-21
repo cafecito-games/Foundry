@@ -566,6 +566,24 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 		CHECK(published_the_timeout);
 		// The evidence the run did gather stays in the document; only the verdict changes.
 		CHECK_FALSE(Array(published.get("cases", Array())).is_empty());
+
+		// The document a consumer has to be able to refuse. Its member set is the one every report
+		// carries, and each structural-failure record carries exactly these members: the Python
+		// comparator's timeout fixture is written to this shape, so a change here has to change it too.
+		CHECK_EQ(Completeness::sorted_dictionary_keys(published),
+				Vector<String>({ "cases", "cell_count", "coverage_by_chain_length", "coverage_by_dimension",
+						"exceptions", "executed_by_surface", "family", "findings", "ledger", "outcome",
+						"published_surface", "schema_version", "structural_failures", "success",
+						"text_bytecode_parity_failures", "timings_ms", "uncovered_required_dimensions" }));
+		for (int index = 0; index < published_failures.size(); index++) {
+			CAPTURE(index);
+			const Dictionary record = published_failures[index];
+			CHECK_EQ(Completeness::sorted_dictionary_keys(record),
+					Vector<String>({ "case_id", "detail", "error_code", "exception_id", "stage",
+							"witness_id" }));
+			CHECK_EQ(Variant(record["error_code"]).get_type(), Variant::FLOAT);
+			CHECK_EQ(double(record["error_code"]), double(ERR_TIMEOUT));
+		}
 		completeness_publication_clock_usec.set(0);
 	}
 
