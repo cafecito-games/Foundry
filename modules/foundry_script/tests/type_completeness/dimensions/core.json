@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "adapter": "core",
+  "dimensions": [
+    {
+      "id": "analysis",
+      "outcomes": [
+        "accept",
+        "reject"
+      ]
+    },
+    {
+      "id": "runtime_obligation",
+      "outcomes": [
+        "typed_destination_check",
+        "union_membership_check"
+      ]
+    },
+    {
+      "id": "stored_carrier",
+      "outcomes": [
+        "plain_destination",
+        "admitting_alternative"
+      ]
+    }
+  ]
+}

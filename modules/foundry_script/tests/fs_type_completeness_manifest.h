@@ -82,4 +82,32 @@ struct FSCompletenessManifest {
 	static Error load(const String &p_path, FSCompletenessManifest &r_manifest, Vector<String> &r_errors);
 };
 
+struct FSCompletenessPartition {
+	int schema_version = 0;
+	String axis;
+	Vector<String> leaves;
+	HashMap<String, HashSet<String>> classes;
+};
+
+struct FSCompletenessDimension {
+	String id;
+	HashSet<String> outcomes;
+};
+
+class FSCompletenessCatalog {
+	HashMap<String, FSCompletenessPartition> partitions;
+	HashMap<String, FSCompletenessDimension> dimensions;
+	friend Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
+			const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors);
+
+public:
+	Error load(const String &p_root, Vector<String> &r_errors);
+	bool axis_has_leaf(const String &p_axis, const String &p_leaf) const;
+	bool class_contains(const String &p_axis, const String &p_class, const String &p_leaf) const;
+	bool dimension_has_outcome(const String &p_dimension, const String &p_outcome) const;
+};
+
+Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
+		const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors);
+
 } // namespace FSTests
