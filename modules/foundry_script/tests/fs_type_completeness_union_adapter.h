@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_union_adapter.h                                 */
+/*  fs_type_completeness_union_adapter.h                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */

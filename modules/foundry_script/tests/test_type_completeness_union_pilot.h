@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_type_completeness_union_pilot.h                                 */
+/*  test_type_completeness_union_pilot.h                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -1599,7 +1599,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		Dictionary coordinates;
 		REQUIRE_EQ(FSUnionCompletenessAdapter::witness_coordinates(
-					   "text_gradual_argument_binding", coordinates),
+						   "text_gradual_argument_binding", coordinates),
 				OK);
 		union_pilot_mutated_case_id.clear();
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
@@ -1752,7 +1752,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(filesystem.is_valid());
 		const String linked_finding_path = catalog_root.path_join("findings/" + finding_id + ".json");
 		REQUIRE_EQ(filesystem->create_link(
-					   neighbor.root.path_join("outside-finding.json"), linked_finding_path),
+						   neighbor.root.path_join("outside-finding.json"), linked_finding_path),
 				OK);
 		tree.write_file("report.json", "prior report sentinel\n");
 
@@ -1796,7 +1796,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 	}]
 }
 )JSON",
-				old_case_id, union_pilot_mutated_pair_text_id, union_pilot_mutated_pair_bytecode_id));
+															  old_case_id, union_pilot_mutated_pair_text_id, union_pilot_mutated_pair_bytecode_id));
 		tree.write_file("catalog/findings/" + finding_id + ".json",
 				union_pilot_finding_record(finding_id, old_case_id, "product_defect"));
 
@@ -1819,10 +1819,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_EQ(String(finding.get("migrated_from", String())), old_case_id);
 			const Array resolved_ids = finding.get("resolved_case_ids", Array());
 			REQUIRE_EQ(resolved_ids.size(), 2);
-			CHECK_EQ(String(resolved_ids[0]), union_pilot_mutated_pair_text_id < union_pilot_mutated_pair_bytecode_id ?
-					union_pilot_mutated_pair_text_id : union_pilot_mutated_pair_bytecode_id);
-			CHECK_EQ(String(resolved_ids[1]), union_pilot_mutated_pair_text_id < union_pilot_mutated_pair_bytecode_id ?
-					union_pilot_mutated_pair_bytecode_id : union_pilot_mutated_pair_text_id);
+			CHECK_EQ(String(resolved_ids[0]), union_pilot_mutated_pair_text_id < union_pilot_mutated_pair_bytecode_id ? union_pilot_mutated_pair_text_id : union_pilot_mutated_pair_bytecode_id);
+			CHECK_EQ(String(resolved_ids[1]), union_pilot_mutated_pair_text_id < union_pilot_mutated_pair_bytecode_id ? union_pilot_mutated_pair_bytecode_id : union_pilot_mutated_pair_text_id);
 		}
 	}
 

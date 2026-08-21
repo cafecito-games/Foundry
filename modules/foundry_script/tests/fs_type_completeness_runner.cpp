@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_runner.cpp                                      */
+/*  fs_type_completeness_runner.cpp                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -276,11 +276,7 @@ static void sort_findings(Vector<FSCompletenessFinding> &r_findings) {
 	for (int i = 1; i < r_findings.size(); i++) {
 		const FSCompletenessFinding finding = r_findings[i];
 		int position = i;
-		while (position > 0 && (finding.finding_id < r_findings[position - 1].finding_id ||
-					(finding.finding_id == r_findings[position - 1].finding_id &&
-							(finding.case_id < r_findings[position - 1].case_id ||
-									(finding.case_id == r_findings[position - 1].case_id &&
-											finding.dimension < r_findings[position - 1].dimension))))) {
+		while (position > 0 && (finding.finding_id < r_findings[position - 1].finding_id || (finding.finding_id == r_findings[position - 1].finding_id && (finding.case_id < r_findings[position - 1].case_id || (finding.case_id == r_findings[position - 1].case_id && finding.dimension < r_findings[position - 1].dimension))))) {
 			r_findings.write[position] = r_findings[position - 1];
 			position--;
 		}
@@ -976,10 +972,10 @@ static Error replace_report_file(const String &p_temporary_path, const String &p
 	const Char16String report_utf16 = p_report_path.utf16();
 	if (FileAccess::exists(p_report_path)) {
 		return ReplaceFileW((LPCWSTR)report_utf16.get_data(), (LPCWSTR)temporary_utf16.get_data(),
-				nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS,
-				nullptr, nullptr) != 0 ?
-				OK :
-				FAILED;
+					   nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS,
+					   nullptr, nullptr) != 0
+				? OK
+				: FAILED;
 	}
 	return MoveFileW((LPCWSTR)temporary_utf16.get_data(), (LPCWSTR)report_utf16.get_data()) != 0 ? OK : FAILED;
 #else

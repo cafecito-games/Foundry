@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_union_adapter.cpp                               */
+/*  fs_type_completeness_union_adapter.cpp                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -401,7 +401,7 @@ static RuntimeInspectionStepResult runtime_inspection_failure(
 		const Error p_error, const RuntimeInspectionDisposition p_disposition) {
 	RuntimeInspectionStepResult result;
 	result.disposition = p_disposition == RUNTIME_INSPECTION_STRUCTURAL_FAILURE ||
-			is_runtime_inspection_resource_failure(p_error)
+					is_runtime_inspection_resource_failure(p_error)
 			? RUNTIME_INSPECTION_STRUCTURAL_FAILURE
 			: RUNTIME_INSPECTION_PRODUCT_FAILURE;
 	result.error = p_error == OK ? ERR_INVALID_DATA : p_error;
