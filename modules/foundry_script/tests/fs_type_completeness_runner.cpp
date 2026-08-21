@@ -220,16 +220,6 @@ static String make_finding_id(const String &p_case_id, const String &p_dimension
 	return "fstcf-v1-" + (p_case_id + "|" + p_dimension).sha256_text().substr(0, 20);
 }
 
-static FSCompletenessFinding *find_direct_finding(Vector<FSCompletenessFinding> &r_findings,
-		const String &p_case_id, const String &p_dimension) {
-	for (FSCompletenessFinding &finding : r_findings) {
-		if (finding.case_id == p_case_id && finding.dimension == p_dimension) {
-			return &finding;
-		}
-	}
-	return nullptr;
-}
-
 static Dictionary parity_evidence(const Variant &p_text, const Variant &p_bytecode,
 		const String &p_text_case_id, const String &p_bytecode_case_id) {
 	Dictionary evidence;
@@ -295,9 +285,6 @@ static Error validate_witness_observations(const FSCompletenessManifest &p_manif
 					continue;
 				}
 				observed_exception_dimension = true;
-				if (actual->dimensions.get(dimension.key, Variant()) != dimension.value.expected) {
-					return ERR_INVALID_DATA;
-				}
 			}
 			if (!observed_exception_dimension) {
 				return ERR_INVALID_DATA;
@@ -323,9 +310,6 @@ static Error validate_witness_observations(const FSCompletenessManifest &p_manif
 					continue;
 				}
 				observed_parent_dimension = true;
-				if (actual->dimensions.get(dimension.key, Variant()) != dimension.value.expected) {
-					return ERR_INVALID_DATA;
-				}
 			}
 			if (!observed_parent_dimension) {
 				return ERR_INVALID_DATA;
@@ -333,6 +317,88 @@ static Error validate_witness_observations(const FSCompletenessManifest &p_manif
 		}
 	}
 	return OK;
+}
+
+static const FSCompletenessProgram *find_program_by_id(
+		const Vector<FSCompletenessProgram> &p_programs, const String &p_case_id) {
+	for (const FSCompletenessProgram &program : p_programs) {
+		if (program.case_id == p_case_id) {
+			return &program;
+		}
+	}
+	return nullptr;
+}
+
+static Dictionary runtime_status(bool p_passed, const String &p_status) {
+	Dictionary status;
+	status["passed"] = p_passed;
+	status["status"] = p_status;
+	return status;
+}
+
+static void append_finding(Vector<FSCompletenessFinding> &r_findings,
+		const String &p_family, const String &p_case_id, const String &p_dimension,
+		const Variant &p_expected, const Variant &p_actual, const String &p_artifact_path) {
+	FSCompletenessFinding finding;
+	finding.finding_id = make_finding_id(p_case_id, p_dimension);
+	finding.case_id = p_case_id;
+	finding.family = p_family;
+	finding.dimension = p_dimension;
+	finding.expected = p_expected;
+	finding.actual = p_actual;
+	finding.artifact_path = p_artifact_path;
+	r_findings.push_back(finding);
+}
+
+static Dictionary aggregate_parity_evidence(const FSCompletenessResolvedCell &p_text_cell,
+		const FSCompletenessResolvedCell &p_bytecode_cell,
+		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode) {
+	Dictionary evidence;
+	evidence["text_case_id"] = p_text.case_id;
+	evidence["bytecode_case_id"] = p_bytecode.case_id;
+	bool has_primary = false;
+	if (p_text.produced_output != p_bytecode.produced_output) {
+		const Dictionary output = parity_evidence(
+				p_text.produced_output, p_bytecode.produced_output, p_text.case_id, p_bytecode.case_id);
+		evidence["output"] = output;
+		evidence["text"] = p_text.produced_output;
+		evidence["bytecode"] = p_bytecode.produced_output;
+		has_primary = true;
+	}
+	if (p_text.diagnostics != p_bytecode.diagnostics) {
+		evidence["diagnostics"] = parity_evidence(
+				p_text.diagnostics, p_bytecode.diagnostics, p_text.case_id, p_bytecode.case_id);
+	}
+	if (p_text.passed != p_bytecode.passed || p_text.status != p_bytecode.status) {
+		evidence["runtime_status"] = parity_evidence(
+				runtime_status(p_text.passed, p_text.status),
+				runtime_status(p_bytecode.passed, p_bytecode.status), p_text.case_id, p_bytecode.case_id);
+	}
+
+	Vector<String> dimension_names = sorted_dimension_keys(p_text_cell.dimensions);
+	for (const String &dimension_name : sorted_dimension_keys(p_bytecode_cell.dimensions)) {
+		if (!dimension_names.has(dimension_name)) {
+			dimension_names.push_back(dimension_name);
+		}
+	}
+	dimension_names.sort();
+	Dictionary dimensions;
+	for (const String &dimension_name : dimension_names) {
+		const Variant text_value = p_text.dimensions.get(dimension_name, Variant());
+		const Variant bytecode_value = p_bytecode.dimensions.get(dimension_name, Variant());
+		if (text_value == bytecode_value) {
+			continue;
+		}
+		dimensions[dimension_name] = parity_evidence(
+				text_value, bytecode_value, p_text.case_id, p_bytecode.case_id);
+		if (!has_primary) {
+			evidence["text"] = text_value;
+			evidence["bytecode"] = bytecode_value;
+			has_primary = true;
+		}
+	}
+	evidence["dimensions"] = dimensions;
+	return evidence;
 }
 
 static bool parse_schema_version(const Variant &p_value) {
@@ -801,8 +867,22 @@ Error FSCompletenessRunner::run(
 	Vector<FSCompletenessFinding> findings;
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
-		if (actual == nullptr) {
+		const FSCompletenessProgram *program = find_program_by_id(programs, cell.case_id);
+		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
+		}
+		const String artifact_path = canonical_scratch_root.path_join(cell.case_id + ".fs");
+		if (!actual->passed || actual->status != "ok") {
+			append_finding(findings, p_options.family, cell.case_id, "runtime_status",
+					runtime_status(true, "ok"), runtime_status(actual->passed, actual->status), artifact_path);
+		}
+		if (!actual->diagnostics.is_empty()) {
+			append_finding(findings, p_options.family, cell.case_id, "diagnostics",
+					PackedStringArray(), actual->diagnostics, artifact_path);
+		}
+		if (actual->produced_output != program->expected_output) {
+			append_finding(findings, p_options.family, cell.case_id, "output",
+					program->expected_output, actual->produced_output, artifact_path);
 		}
 		for (const String &dimension_name : sorted_dimension_keys(cell.dimensions)) {
 			const FSCompletenessResolvedDimension &dimension = cell.dimensions[dimension_name];
@@ -810,15 +890,8 @@ Error FSCompletenessRunner::run(
 			if (observed == dimension.expected) {
 				continue;
 			}
-			FSCompletenessFinding finding;
-			finding.finding_id = make_finding_id(cell.case_id, dimension_name);
-			finding.case_id = cell.case_id;
-			finding.family = p_options.family;
-			finding.dimension = dimension_name;
-			finding.expected = dimension.expected;
-			finding.actual = observed;
-			finding.artifact_path = canonical_scratch_root.path_join(cell.case_id + ".fs");
-			findings.push_back(finding);
+			append_finding(findings, p_options.family, cell.case_id, dimension_name,
+					dimension.expected, observed, artifact_path);
 		}
 	}
 
@@ -852,6 +925,7 @@ Error FSCompletenessRunner::run(
 	}
 	pair_keys.sort();
 	int parity_failures = 0;
+	HashSet<String> parity_case_ids;
 	for (const String &pair_key : pair_keys) {
 		const SurfacePair &pair = pairs[pair_key];
 		if (pair.text == nullptr || pair.bytecode == nullptr) {
@@ -863,37 +937,22 @@ Error FSCompletenessRunner::run(
 			return ERR_INVALID_DATA;
 		}
 
-		Vector<String> dimension_names = sorted_dimension_keys(pair.text->dimensions);
-		for (const String &dimension_name : sorted_dimension_keys(pair.bytecode->dimensions)) {
-			if (!dimension_names.has(dimension_name)) {
-				dimension_names.push_back(dimension_name);
-			}
-		}
-		dimension_names.sort();
-		bool pair_failed = text->produced_output != bytecode->produced_output;
-		bool parity_attached = false;
-		for (const String &dimension_name : dimension_names) {
-			const Variant text_value = text->dimensions.get(dimension_name, Variant());
-			const Variant bytecode_value = bytecode->dimensions.get(dimension_name, Variant());
-			if (text_value == bytecode_value) {
-				continue;
-			}
-			pair_failed = true;
-			FSCompletenessFinding *direct =
-					find_direct_finding(findings, pair.text->case_id, dimension_name);
-			if (direct == nullptr) {
-				direct = find_direct_finding(findings, pair.bytecode->case_id, dimension_name);
-			}
-			if (direct != nullptr) {
-				direct->parity_evidence = parity_evidence(
-						text_value, bytecode_value, pair.text->case_id, pair.bytecode->case_id);
-				parity_attached = true;
-			}
-		}
+		const Dictionary evidence = aggregate_parity_evidence(*pair.text, *pair.bytecode, *text, *bytecode);
+		const bool pair_failed = evidence.has("output") || evidence.has("diagnostics") ||
+				evidence.has("runtime_status") || !Dictionary(evidence.get("dimensions", Dictionary())).is_empty();
 		if (!pair_failed) {
 			continue;
 		}
 		parity_failures++;
+		parity_case_ids.insert(pair.text->case_id);
+		parity_case_ids.insert(pair.bytecode->case_id);
+		bool parity_attached = false;
+		for (FSCompletenessFinding &finding : findings) {
+			if (finding.case_id == pair.text->case_id || finding.case_id == pair.bytecode->case_id) {
+				finding.parity_evidence = evidence;
+				parity_attached = true;
+			}
+		}
 		if (!parity_attached) {
 			FSCompletenessFinding finding;
 			finding.case_id = pair.text->case_id;
@@ -901,8 +960,7 @@ Error FSCompletenessRunner::run(
 			finding.dimension = "text_bytecode_parity";
 			finding.finding_id = make_finding_id(finding.case_id, finding.dimension);
 			finding.expected = "matching_surface_observations";
-			finding.parity_evidence = parity_evidence(text->produced_output,
-					bytecode->produced_output, pair.text->case_id, pair.bytecode->case_id);
+			finding.parity_evidence = evidence;
 			finding.actual = finding.parity_evidence;
 			finding.artifact_path = canonical_scratch_root.path_join(pair.text->case_id + ".fs");
 			findings.push_back(finding);
@@ -952,11 +1010,13 @@ Error FSCompletenessRunner::run(
 	Array cases;
 	for (const FSCompletenessResolvedCell *cell : sorted_cells) {
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(*cell, batch);
-		if (actual == nullptr) {
+		const FSCompletenessProgram *program = find_program_by_id(programs, cell->case_id);
+		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
-		bool passed = actual->passed && actual->diagnostics.is_empty() &&
-				observed_expected_dimensions(*cell, *actual);
+		bool passed = actual->passed && actual->status == "ok" && actual->diagnostics.is_empty() &&
+				actual->produced_output == program->expected_output &&
+				observed_expected_dimensions(*cell, *actual) && !parity_case_ids.has(cell->case_id);
 		for (const FSCompletenessFinding &finding : findings) {
 			if (finding.case_id == cell->case_id) {
 				passed = false;
@@ -971,6 +1031,15 @@ Error FSCompletenessRunner::run(
 		case_report["canonical_provenance"] = canonical_provenance(*cell);
 		case_report["agreeing_provenance"] = all_agreeing_provenance(*cell);
 		case_report["status"] = passed ? "passed" : "failed";
+		case_report["passed"] = actual->passed;
+		case_report["runtime_status"] = actual->status;
+		Array diagnostics;
+		for (const String &diagnostic : actual->diagnostics) {
+			diagnostics.push_back(diagnostic);
+		}
+		case_report["diagnostics"] = diagnostics;
+		case_report["produced_output"] = actual->produced_output;
+		case_report["expected_output"] = program->expected_output;
 		case_report["artifact_path"] = canonical_scratch_root.path_join(cell->case_id + ".fs");
 		cases.push_back(case_report);
 	}

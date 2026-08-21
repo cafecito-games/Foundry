@@ -460,6 +460,8 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 }
 
 static String union_pilot_mutated_case_id;
+static String union_pilot_mutated_pair_text_id;
+static String union_pilot_mutated_pair_bytecode_id;
 static int union_pilot_mutation_count = 0;
 
 static void corrupt_union_pilot_stored_carrier(FSCompletenessObservation &r_observation) {
@@ -467,6 +469,61 @@ static void corrupt_union_pilot_stored_carrier(FSCompletenessObservation &r_obse
 		r_observation.dimensions["stored_carrier"] = "plain_destination";
 		union_pilot_mutation_count++;
 	}
+}
+
+static void corrupt_union_pilot_both_outputs(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_pair_text_id ||
+			r_observation.case_id == union_pilot_mutated_pair_bytecode_id) {
+		r_observation.produced_output = "wrong output\n";
+	}
+}
+
+static void corrupt_union_pilot_text_output(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_pair_text_id) {
+		r_observation.produced_output = "wrong output\n";
+	}
+}
+
+static void add_union_pilot_diagnostic(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_case_id) {
+		r_observation.diagnostics.push_back("injected diagnostic");
+	}
+}
+
+static void corrupt_union_pilot_witness_dimension(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_case_id) {
+		r_observation.dimensions["runtime_obligation"] = "typed_destination_check";
+	}
+}
+
+static void corrupt_union_pilot_multiple_observations(FSCompletenessObservation &r_observation) {
+	if (r_observation.case_id == union_pilot_mutated_pair_text_id) {
+		r_observation.produced_output = "wrong text output\n";
+		r_observation.dimensions["analysis"] = "reject";
+		r_observation.dimensions["stored_carrier"] = "plain_destination";
+	} else if (r_observation.case_id == union_pilot_mutated_pair_bytecode_id) {
+		r_observation.dimensions["stored_carrier"] = "wrong_bytecode_carrier";
+	}
+}
+
+static void select_union_pilot_pair(const FSCompletenessResolution &p_resolution,
+		const String &p_destination, const String &p_source_proof, const String &p_boundary) {
+	union_pilot_mutated_pair_text_id.clear();
+	union_pilot_mutated_pair_bytecode_id.clear();
+	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
+		if (cell.coordinates.get("destination", String()) != p_destination ||
+				cell.coordinates.get("source_proof", String()) != p_source_proof ||
+				cell.coordinates.get("boundary", String()) != p_boundary) {
+			continue;
+		}
+		if (cell.coordinates.get("surface", String()) == "text") {
+			union_pilot_mutated_pair_text_id = cell.case_id;
+		} else {
+			union_pilot_mutated_pair_bytecode_id = cell.case_id;
+		}
+	}
+	REQUIRE_FALSE(union_pilot_mutated_pair_text_id.is_empty());
+	REQUIRE_FALSE(union_pilot_mutated_pair_bytecode_id.is_empty());
 }
 
 static String stage_union_pilot_completeness_catalog(TemporaryProjectTree &p_tree) {
@@ -710,6 +767,190 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		JSON json;
 		REQUIRE_EQ(json.parse(report_source), OK);
 		CHECK_EQ(Dictionary(json.get_data()), report);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner rejects matching wrong output without parity") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "plain", "static_member", "reflective_write");
+		TemporaryProjectTree tree(vformat("type_completeness_union_wrong_output_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_both_outputs;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
+		REQUIRE_EQ(result.findings.size(), 2);
+		for (const FSCompletenessFinding &finding : result.findings) {
+			CHECK_EQ(finding.dimension, "output");
+			CHECK_EQ(String(finding.expected), "uint 5\n");
+			CHECK_EQ(String(finding.actual), "wrong output\n");
+			CHECK(finding.parity_evidence.is_empty());
+		}
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", -1)), 0);
+		const Array cases = result.report.get("cases", Array());
+		int observed_cases = 0;
+		for (int i = 0; i < cases.size(); i++) {
+			const Dictionary case_report = cases[i];
+			const String case_id = case_report.get("case_id", String());
+			if (case_id != union_pilot_mutated_pair_text_id &&
+					case_id != union_pilot_mutated_pair_bytecode_id) {
+				continue;
+			}
+			observed_cases++;
+			CHECK_EQ(String(case_report.get("status", String())), "failed");
+			CHECK_EQ(bool(case_report.get("passed", false)), true);
+			CHECK_EQ(String(case_report.get("runtime_status", String())), "ok");
+			CHECK(Array(case_report.get("diagnostics", Array())).is_empty());
+			CHECK_EQ(String(case_report.get("produced_output", String())), "wrong output\n");
+			CHECK_EQ(String(case_report.get("expected_output", String())), "uint 5\n");
+		}
+		CHECK_EQ(observed_cases, 2);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner attaches output parity to a direct finding") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "plain", "static_member", "reflective_write");
+		TemporaryProjectTree tree(vformat("type_completeness_union_one_output_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_text_output;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].case_id, union_pilot_mutated_pair_text_id);
+		CHECK_EQ(result.findings[0].dimension, "output");
+		const Dictionary output_evidence = result.findings[0].parity_evidence.get("output", Dictionary());
+		CHECK_EQ(String(output_evidence.get("text", String())), "wrong output\n");
+		CHECK_EQ(String(output_evidence.get("bytecode", String())), "uint 5\n");
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+		int failed_pair_cases = 0;
+		const Array cases = result.report.get("cases", Array());
+		for (int i = 0; i < cases.size(); i++) {
+			const Dictionary case_report = cases[i];
+			const String case_id = case_report.get("case_id", String());
+			if (case_id == union_pilot_mutated_pair_text_id ||
+					case_id == union_pilot_mutated_pair_bytecode_id) {
+				CHECK_EQ(String(case_report.get("status", String())), "failed");
+				failed_pair_cases++;
+			}
+		}
+		CHECK_EQ(failed_pair_cases, 2);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner reports diagnostics on a non witness") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates.get("surface", String()) == "text" &&
+					cell.coordinates.get("destination", String()) == "plain" &&
+					cell.coordinates.get("source_proof", String()) == "static_member" &&
+					cell.coordinates.get("boundary", String()) == "reflective_write") {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		TemporaryProjectTree tree(vformat("type_completeness_union_diagnostic_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = add_union_pilot_diagnostic;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].case_id, union_pilot_mutated_case_id);
+		CHECK_EQ(result.findings[0].dimension, "diagnostics");
+		const PackedStringArray actual = result.findings[0].actual;
+		REQUIRE_EQ(actual.size(), 1);
+		CHECK_EQ(actual[0], "injected diagnostic");
+		CHECK(FileAccess::exists(options.report_path));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner reports witness observation regressions") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		Dictionary coordinates;
+		REQUIRE_EQ(FSUnionCompletenessAdapter::witness_coordinates(
+					   "text_gradual_argument_binding", coordinates),
+				OK);
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			if (cell.coordinates == coordinates) {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		TemporaryProjectTree tree(vformat("type_completeness_union_witness_regression_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_witness_dimension;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 1);
+		if (result.findings.size() != 1) {
+			return;
+		}
+		CHECK_EQ(result.findings[0].case_id, union_pilot_mutated_case_id);
+		CHECK_EQ(result.findings[0].dimension, "runtime_obligation");
+		CHECK_EQ(String(result.findings[0].expected), "union_membership_check");
+		CHECK_EQ(String(result.findings[0].actual), "typed_destination_check");
+		CHECK(FileAccess::exists(options.report_path));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner preserves all pair disagreement evidence") {
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		select_union_pilot_pair(resolution, "union", "numeric_constant", "argument_binding");
+		TemporaryProjectTree tree(vformat("type_completeness_union_multiple_mismatch_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = corrupt_union_pilot_multiple_observations;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		REQUIRE_EQ(result.findings.size(), 4);
+		int bytecode_direct_findings = 0;
+		for (const FSCompletenessFinding &finding : result.findings) {
+			const Dictionary evidence = finding.parity_evidence;
+			CHECK_FALSE(evidence.is_empty());
+			CHECK_FALSE(Dictionary(evidence.get("output", Dictionary())).is_empty());
+			const Dictionary dimensions = evidence.get("dimensions", Dictionary());
+			CHECK(dimensions.has("analysis"));
+			CHECK(dimensions.has("stored_carrier"));
+			if (finding.case_id == union_pilot_mutated_pair_bytecode_id) {
+				bytecode_direct_findings++;
+			}
+		}
+		CHECK_EQ(bytecode_direct_findings, 1);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner reconciles a terminal ledger entry") {
