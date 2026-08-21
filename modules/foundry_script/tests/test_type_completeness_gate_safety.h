@@ -104,6 +104,30 @@ static String gate_safety_indentation(const String &p_line) {
 	return p_line.substr(0, width);
 }
 
+#ifdef DEBUG_ENABLED
+// The column the front-end itself reports for a code in this exact source, used as an independent
+// oracle for the column the probe must map a diagnostic back to.
+static int gate_safety_warning_column(const String &p_source, FSWarning::Code p_code) {
+	FSParser parser;
+	if (parser.parse(p_source, "res://gate_safety_warning_column.fs", false) != OK) {
+		return -1;
+	}
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	for (const FSWarning &warning : parser.get_warnings()) {
+		if (warning.code == p_code) {
+			return warning.start_column;
+		}
+	}
+	return -1;
+}
+#endif // DEBUG_ENABLED
+
+struct GateSafetySeparatorShape {
+	const char *name = nullptr;
+	const char *separator = nullptr;
+};
+
 struct GateSafetyAnnotationShape {
 	const char *name = nullptr;
 	String source;
@@ -767,6 +791,64 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 						gate_safety_indentation(original_lines[line]).is_empty();
 				CHECK(block_level_kept);
 			}
+		}
+	}
+
+	TEST_CASE("TypeCompleteness GateSafety maps a probe column back through any separator") {
+		Vector<WarningLevelOverride> overrides;
+		WarningLevelOverride unused_variable;
+		unused_variable.code = FSWarning::UNUSED_VARIABLE;
+		unused_variable.level = FSWarning::WARN;
+		overrides.push_back(unused_variable);
+		WarningLevelOverride untyped_declaration;
+		untyped_declaration.code = FSWarning::UNTYPED_DECLARATION;
+		untyped_declaration.level = FSWarning::WARN;
+		overrides.push_back(untyped_declaration);
+		const WarningSettingsScope warning_settings(overrides);
+
+		// Diagnostic columns are display columns, so a tab in the separator advances them by the
+		// tokenizer's tab width rather than by one. Reconciliation compares columns exactly: a shift
+		// measured in characters reports a still-emitted diagnostic as suppressed.
+		const GateSafetySeparatorShape separators[] = {
+			{ "space", " " },
+			{ "tab", "\t" },
+			{ "two_tabs", "\t\t" },
+			{ "tab_then_spaces", "\t  " },
+			{ "spaces_then_tab", "  \t" },
+		};
+
+		for (const GateSafetySeparatorShape &separator : separators) {
+			CAPTURE(String(separator.name));
+			const String source = String("func test() -> void:\n\t@warning_ignore(\"unused_variable\")") +
+					String(separator.separator) + String("var unused_local = 1\n");
+			const int expected_column =
+					gate_safety_warning_column(source, FSWarning::UNTYPED_DECLARATION);
+			REQUIRE_GT(expected_column, 0);
+
+			FSCompletenessProgram program;
+			program.case_id = String("gate_safety_separator_") + separator.name;
+			program.surface = "text";
+			program.source = source;
+			const FSCompletenessObservation observation =
+					FSUnionCompletenessAdapter::analyze(program, "text");
+			CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
+
+			int emitted_records = 0;
+			int ignored_records = 0;
+			for (int index = 0; index < observation.diagnostic_records.size(); index++) {
+				const Dictionary record = observation.diagnostic_records[index];
+				const String code = record.get("code", String());
+				if (code == "UNTYPED_DECLARATION") {
+					emitted_records++;
+					CHECK_EQ(bool(record.get("suppressed", true)), false);
+					CHECK_EQ(int(record.get("column", 0)), expected_column);
+				} else if (code == "UNUSED_VARIABLE") {
+					ignored_records++;
+					CHECK_EQ(bool(record.get("suppressed", false)), true);
+				}
+			}
+			CHECK_EQ(emitted_records, 1);
+			CHECK_EQ(ignored_records, 1);
 		}
 	}
 

@@ -217,6 +217,27 @@ static int offset_for_column(
 	return index;
 }
 
+// The display column of the character at `p_offset`, counted the way the tokenizer counts it.
+static int display_column_at(
+		const String &p_source, int p_line_begin, int p_offset, int p_tab_size) {
+	int column = 1;
+	for (int index = p_line_begin; index < p_offset && index < p_source.length(); index++) {
+		if (p_source[index] == U'\n') {
+			break;
+		}
+		column += p_source[index] == U'\t' ? p_tab_size : 1;
+	}
+	return column;
+}
+
+static int display_width(const String &p_text, int p_tab_size) {
+	int width = 0;
+	for (int index = 0; index < p_text.length(); index++) {
+		width += p_text[index] == U'\t' ? p_tab_size : 1;
+	}
+	return width;
+}
+
 static int token_offset(const String &p_source, const Vector<int> &p_line_offsets, int p_line,
 		int p_column, int p_tab_size) {
 	const int line_index = p_line - 1;
@@ -236,9 +257,9 @@ struct WarningIgnoreAnnotationSpan {
 // literals, comments, and multiline argument lists are recognized the way the language defines them
 // rather than by re-deriving them here, and an annotation is found wherever it may legally appear.
 static Vector<WarningIgnoreAnnotationSpan> find_warning_ignore_annotations(
-		const String &p_source, const Vector<int> &p_line_offsets) {
+		const String &p_source, const Vector<int> &p_line_offsets, int p_tab_size) {
 	Vector<WarningIgnoreAnnotationSpan> spans;
-	const int tab_size = tokenizer_tab_size();
+	const int tab_size = p_tab_size;
 	FSTokenizerText tokenizer;
 	tokenizer.set_source_code(p_source);
 	FSTokenizer::Token token = tokenizer.scan();
@@ -1363,9 +1384,10 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source) {
 	FSCompletenessProbeSource probe;
 	probe.text = p_source;
+	const int tab_size = tokenizer_tab_size();
 	const Vector<int> line_offsets = line_start_offsets(p_source);
 	const Vector<WarningIgnoreAnnotationSpan> spans =
-			find_warning_ignore_annotations(p_source, line_offsets);
+			find_warning_ignore_annotations(p_source, line_offsets, tab_size);
 	if (spans.is_empty()) {
 		return probe;
 	}
@@ -1411,12 +1433,18 @@ FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source)
 		if (crossed_lines) {
 			stripped += statement_indentation;
 		}
+		// Diagnostic columns are display columns, so the shift has to be measured in the same unit: a
+		// tab inside the removed span or the separator counts for the tokenizer's tab width, not one.
 		const int final_line = span.start_line + removed_newlines;
-		const int removed = span_end - final_line_start;
-		const int reinserted = crossed_lines ? statement_indentation.length() : 0;
+		const int surviving_column_before = crossed_lines
+				? display_column_at(p_source, final_line_start, span_end, tab_size)
+				: display_column_at(p_source, line_begin, span_end, tab_size);
+		const int surviving_column_after = crossed_lines
+				? 1 + display_width(statement_indentation, tab_size)
+				: display_column_at(p_source, line_begin, span.start, tab_size);
 		const int *previous_shift = probe.column_shift_by_line.getptr(final_line);
-		probe.column_shift_by_line[final_line] =
-				(previous_shift == nullptr ? 0 : *previous_shift) + removed - reinserted;
+		probe.column_shift_by_line[final_line] = (previous_shift == nullptr ? 0 : *previous_shift) +
+				surviving_column_before - surviving_column_after;
 		copied_from = span_end;
 	}
 	stripped += p_source.substr(copied_from);
