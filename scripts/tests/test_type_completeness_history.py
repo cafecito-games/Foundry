@@ -55,7 +55,7 @@ class HistoryRecordTests(unittest.TestCase):
         coverage = self.report.raw["coverage_by_dimension"]
         mapped = 0
         for path, record in self.records:
-            source = record.get("seed") if record["disposition"] == "seeded" else record["mapping"]
+            source: dict[str, Any] = record["seed"] if record["disposition"] == "seeded" else record["mapping"]
             if "case_coordinates" not in source:
                 continue
             mapped += 1
