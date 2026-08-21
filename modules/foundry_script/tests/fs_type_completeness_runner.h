@@ -60,6 +60,7 @@ struct FSCompletenessRunOptions {
 	String family;
 	String scratch_root;
 	String report_path;
+	void (*program_mutator)(FSCompletenessProgram &) = nullptr;
 	void (*observation_mutator)(FSCompletenessObservation &) = nullptr;
 	void (*runtime_result_mutator)(FSCompletenessRuntimeResult &) = nullptr;
 };

@@ -462,7 +462,27 @@ static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCo
 static String union_pilot_mutated_case_id;
 static String union_pilot_mutated_pair_text_id;
 static String union_pilot_mutated_pair_bytecode_id;
+static String union_pilot_program_mutation_source;
 static int union_pilot_mutation_count = 0;
+static int union_pilot_program_mutation_count = 0;
+static int union_pilot_program_callback_count = 0;
+
+struct UnionPilotProgramMutationScope {
+	~UnionPilotProgramMutationScope() {
+		union_pilot_mutated_case_id.clear();
+		union_pilot_program_mutation_source.clear();
+		union_pilot_program_mutation_count = 0;
+		union_pilot_program_callback_count = 0;
+	}
+};
+
+static void inject_union_pilot_analyzer_error(FSCompletenessProgram &r_program) {
+	union_pilot_program_callback_count++;
+	if (r_program.case_id == union_pilot_mutated_case_id) {
+		r_program.source = union_pilot_program_mutation_source;
+		union_pilot_program_mutation_count++;
+	}
+}
 
 static void corrupt_union_pilot_stored_carrier(FSCompletenessObservation &r_observation) {
 	if (r_observation.case_id == union_pilot_mutated_case_id && r_observation.surface == "text") {
@@ -584,6 +604,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		options.family = "union_destination_membership";
 		options.scratch_root = tree.root;
 		options.report_path = tree.root.path_join("report.json");
+		CHECK(options.program_mutator == nullptr);
 		FSCompletenessRunResult result;
 		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
 		CHECK(result.success);
@@ -695,6 +716,106 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(result.executed_cells, 40);
 		CHECK(DirAccess::dir_exists_absolute(options.scratch_root));
 		CHECK(FileAccess::exists(options.report_path));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot runner reports adapter analyzer failures") {
+		UnionPilotProgramMutationScope mutation_scope;
+		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
+		union_pilot_mutated_case_id.clear();
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			FSCompletenessProgram program;
+			REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+			if (is_union_pilot_adapter_diagnostic_target(program)) {
+				union_pilot_mutated_case_id = cell.case_id;
+				break;
+			}
+		}
+		REQUIRE_FALSE(union_pilot_mutated_case_id.is_empty());
+		Error source_error = OK;
+		union_pilot_program_mutation_source = FileAccess::get_file_as_string(
+				"modules/foundry_script/tests/scripts/analyzer/errors/number_not_an_expression.fs", &source_error);
+		REQUIRE_EQ(source_error, OK);
+		REQUIRE_FALSE(union_pilot_program_mutation_source.is_empty());
+		union_pilot_program_mutation_count = 0;
+		union_pilot_program_callback_count = 0;
+
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_runner_analyzer_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.program_mutator = inject_union_pilot_analyzer_error;
+
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.executed_cells, 40);
+		CHECK_EQ(union_pilot_program_callback_count, 40);
+		CHECK_EQ(union_pilot_program_mutation_count, 1);
+		CHECK_EQ(int(result.report.get("cell_count", 0)), 40);
+		CHECK_EQ(bool(result.report.get("success", true)), false);
+		CHECK_EQ(int(result.report.get("text_bytecode_parity_failures", 0)), 1);
+		CHECK(FileAccess::exists(options.report_path));
+		CHECK_EQ(result.findings.size(), 4);
+
+		HashSet<String> target_dimensions;
+		String target_artifact_path;
+		for (const FSCompletenessFinding &finding : result.findings) {
+			if (finding.case_id != union_pilot_mutated_case_id) {
+				continue;
+			}
+			target_dimensions.insert(finding.dimension);
+			CHECK_EQ(finding.classification, "unclassified");
+			CHECK_FALSE(finding.parity_evidence.is_empty());
+			target_artifact_path = finding.artifact_path;
+			if (finding.dimension == "analysis") {
+				CHECK_EQ(String(finding.expected), "accept");
+				CHECK_EQ(String(finding.actual), "reject");
+			} else if (finding.dimension == "diagnostics") {
+				const PackedStringArray diagnostics = finding.actual;
+				CHECK_FALSE(diagnostics.is_empty());
+			}
+		}
+		CHECK(target_dimensions.has("analysis"));
+		CHECK(target_dimensions.has("diagnostics"));
+		CHECK(target_dimensions.has("output"));
+		CHECK(target_dimensions.has("runtime_status"));
+		CHECK_EQ(target_dimensions.size(), 4);
+		CHECK(FileAccess::exists(target_artifact_path));
+		CHECK_EQ(FileAccess::get_file_as_string(target_artifact_path), union_pilot_program_mutation_source);
+
+		const Array cases = result.report.get("cases", Array());
+		REQUIRE_EQ(cases.size(), 40);
+		int target_case_count = 0;
+		for (int i = 0; i < cases.size(); i++) {
+			const Dictionary case_report = cases[i];
+			if (case_report.get("case_id", String()) != union_pilot_mutated_case_id) {
+				continue;
+			}
+			target_case_count++;
+			CHECK_EQ(String(case_report.get("status", String())), "failed");
+			CHECK_FALSE(bool(case_report.get("passed", true)));
+			CHECK_EQ(String(case_report.get("runtime_status", String())), "analyzer_error");
+			CHECK_FALSE(Array(case_report.get("diagnostics", Array())).is_empty());
+			CHECK(String(case_report.get("produced_output", String())).begins_with("FS_TEST_ANALYZER_ERROR\n"));
+			CHECK_EQ(String(case_report.get("expected_output", String())), "uint 5\n");
+			CHECK_EQ(String(Dictionary(case_report.get("actual", Dictionary())).get("analysis", String())), "reject");
+		}
+		CHECK_EQ(target_case_count, 1);
+
+		Error report_error = OK;
+		const String report_source = FileAccess::get_file_as_string(options.report_path, &report_error);
+		REQUIRE_EQ(report_error, OK);
+		JSON json;
+		REQUIRE_EQ(json.parse(report_source), OK);
+		const Dictionary parsed_report = json.get_data();
+		CHECK_EQ(bool(parsed_report.get("success", true)), false);
+		CHECK_EQ(int(parsed_report.get("cell_count", 0)), 40);
+		CHECK_EQ(Array(parsed_report.get("findings", Array())).size(), 4);
+		CHECK_EQ(Array(parsed_report.get("cases", Array())).size(), 40);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot runner rejects a report path through an outside symlink") {

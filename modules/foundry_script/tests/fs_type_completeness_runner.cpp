@@ -1055,11 +1055,10 @@ Error FSCompletenessRunner::run(
 		if (error != OK) {
 			return error;
 		}
-		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::analyze(program, program.surface);
-		if (!analysis.diagnostics.is_empty() || analysis.dimensions.get("analysis", String()) != "accept") {
-			return ERR_INVALID_DATA;
+		if (p_options.program_mutator != nullptr) {
+			p_options.program_mutator(program);
 		}
+		(void)FSUnionCompletenessAdapter::analyze(program, program.surface);
 		programs.push_back(program);
 	}
 	ReportArtifactScope artifact_scope;
