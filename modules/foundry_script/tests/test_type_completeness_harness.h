@@ -91,6 +91,12 @@ static void completeness_inject_diagnostic(FSCompletenessObservation &r_observat
 	r_observation.diagnostics.push_back("injected completeness harness diagnostic");
 }
 
+// Always past any deadline a caller can set, so a timeout is proven by the contract rather than by
+// racing a real clock.
+static uint64_t completeness_elapsed_clock() {
+	return UINT64_MAX;
+}
+
 struct CompletenessCacheProbe {
 	String root;
 	String family;
@@ -497,6 +503,36 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 		CHECK_EQ(resolution.find_cell_by_coordinates(Dictionary(), missing_matches), nullptr);
 		CHECK_EQ(missing_matches, 0);
 		CHECK_EQ(resolution.find_cell_by_id("absent"), nullptr);
+	}
+
+	TEST_CASE("TypeCompleteness Harness a timeout that cannot publish carries no report") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_timeout_unwritable_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("report.json", "caller report sentinel\n");
+		for (int attempt = 0; attempt < 128; attempt++) {
+			tree.write_file(vformat("report.json.tmp.%d.%d", OS::get_singleton()->get_process_id(), attempt),
+					"occupied temp\n");
+		}
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = tracked_catalog_root();
+		options.family = completeness_family;
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.deadline_usec = 1;
+		options.clock = completeness_elapsed_clock;
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_TIMEOUT);
+		CHECK_EQ(result.outcome, "structural_failure");
+		CHECK(result.report.is_empty());
+		bool named_the_unwritable_report = false;
+		for (const FSCompletenessStructuralFailure &failure : result.structural_failures) {
+			named_the_unwritable_report =
+					named_the_unwritable_report || failure.stage == "run_timeout_report_unwritable";
+		}
+		CHECK(named_the_unwritable_report);
+		CHECK_EQ(FileAccess::get_file_as_string(options.report_path), "caller report sentinel\n");
 	}
 
 	TEST_CASE("TypeCompleteness Harness the baseline refuses a scratch root it does not own") {

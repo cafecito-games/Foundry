@@ -1404,10 +1404,20 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 				vformat("The run exceeded its wall-clock budget during the %s stage.", p_stage), String(),
 				String(), String(), ERR_TIMEOUT));
 		const Dictionary partial_report = timeout_report(p_options.family, timings, failures);
-		write_report_atomically(canonical_scratch_root, p_options.catalog_root, p_options.report_path,
-				partial_report, p_options.persisted_write_hook);
+		const Error publish_error = write_report_atomically(canonical_scratch_root, p_options.catalog_root,
+				p_options.report_path, partial_report, p_options.persisted_write_hook);
 		r_result.success = false;
 		r_result.outcome = "structural_failure";
+		if (publish_error != OK) {
+			// Nothing reached disk, so the result must not carry a report either: a consumer that reads
+			// one would credit this run with evidence it never published.
+			failures.push_back(make_structural_failure("run_timeout_report_unwritable",
+					"The partial report of a run that exceeded its budget could not be published.", String(),
+					String(), String(), publish_error));
+			sort_structural_failures(failures);
+			r_result.structural_failures = failures;
+			return true;
+		}
 		r_result.structural_failures = failures;
 		r_result.report = partial_report;
 		return true;

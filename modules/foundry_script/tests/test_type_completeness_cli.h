@@ -283,6 +283,26 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 	// Only the pilot family has an adapter today, so a multi-family invocation is exercised with one
 	// runnable family and one that cannot run. That is also the fail-closed case that matters: an
 	// index must never report a family it never published as if it had a verdict.
+	TEST_CASE("TypeCompleteness CLI refuses a timeout whose partial report cannot be published") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_cli_unwritable_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		tree.write_file("report.json", "caller report sentinel\n");
+		// The atomic write needs a free temporary name beside the report; occupying every candidate is
+		// how an unpublishable report is produced without touching the filesystem's permissions.
+		for (int attempt = 0; attempt < 128; attempt++) {
+			tree.write_file(vformat("report.json.tmp.%d.%d", OS::get_singleton()->get_process_id(), attempt),
+					"occupied temp\n");
+		}
+
+		FSCompletenessCLI::Options options = completeness_cli_options(tree);
+		options.timeout_seconds = 1;
+		options.clock = completeness_cli_advancing_clock;
+		// A timed-out run that published nothing is missing evidence, not merely over budget.
+		CHECK_EQ(FSCompletenessCLI::run(options), FSCompletenessCLI::EXIT_STRUCTURAL_FAILURE);
+		CHECK_EQ(FileAccess::get_file_as_string(options.report_path), "caller report sentinel\n");
+	}
+
 	TEST_CASE("TypeCompleteness CLI refuses an index path that resolves through a link") {
 		TemporaryProjectTree tree(vformat("type_completeness_cli_link_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
