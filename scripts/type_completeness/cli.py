@@ -11,6 +11,15 @@ from typing import Optional
 
 from . import comparator, deadline, ledger, provisional, reconcile, report
 
+DEFAULT_CAPABILITIES_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "modules"
+    / "foundry_script"
+    / "tests"
+    / "type_completeness"
+    / "capabilities.json"
+)
+
 
 def _write_json(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -20,7 +29,8 @@ def _write_json(path: Path, text: str) -> None:
 def _compare(arguments: argparse.Namespace) -> int:
     branch = report.load_report_file(Path(arguments.branch_report))
     develop = report.load_report_file(Path(arguments.develop_report))
-    artifacts = comparator.compare_reports(branch, develop, arguments.configuration)
+    capabilities = report.load_capabilities_file(Path(arguments.capabilities))
+    artifacts = comparator.compare_reports(branch, develop, arguments.configuration, capabilities)
     _write_json(Path(arguments.output), comparator.serialize_many(artifacts))
     blocking = [artifact for artifact in artifacts if artifact.status in comparator.REGRESSION_STATUSES]
     for artifact in artifacts:
@@ -44,6 +54,24 @@ def _propose(arguments: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if artifact.capability_slice is None:
+        if not arguments.capability_path:
+            print(
+                "comparison artifact carries no capability slice; pass --capability-path explicitly",
+                file=sys.stderr,
+            )
+            return 2
+        capability_paths = list(arguments.capability_path)
+    else:
+        producing = artifact.capability_slice.paths
+        capability_paths = list(arguments.capability_path or producing)
+        outside = sorted(set(capability_paths) - set(producing))
+        if outside:
+            print(
+                f"--capability-path {outside} lies outside the producing capability slice {list(producing)}",
+                file=sys.stderr,
+            )
+            return 2
     payload = ledger.proposed_record(
         finding_id=str(findings[0]["finding_id"]),
         family=artifact.family,
@@ -59,7 +87,7 @@ def _propose(arguments: argparse.Namespace) -> int:
     record = provisional.ProvisionalRecord.create(
         finding_id=payload["finding_id"],
         payload=payload,
-        capability_slice=arguments.capability_path,
+        capability_slice=capability_paths,
         workstream_owner=arguments.workstream_owner,
         detection_artifact=arguments.detection_artifact,
         develop_comparison=artifact.to_dict(),
@@ -107,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--branch-report", required=True)
     compare.add_argument("--develop-report", required=True)
     compare.add_argument("--configuration", required=True, help="capability configuration label, e.g. text")
+    compare.add_argument(
+        "--capabilities",
+        default=str(DEFAULT_CAPABILITIES_PATH),
+        help="capabilities manifest mapping families to production paths (default: the repository manifest)",
+    )
     compare.add_argument("--output", required=True)
     compare.add_argument("--fail-on-regression", action="store_true")
     compare.set_defaults(handler=_compare)
@@ -118,7 +151,12 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("--issue-url", required=True)
     propose.add_argument("--closure-packet-url", required=True)
     propose.add_argument("--permanent-test-path", action="append", required=True)
-    propose.add_argument("--capability-path", action="append", required=True)
+    propose.add_argument(
+        "--capability-path",
+        action="append",
+        default=None,
+        help="narrow the producing capability slice; defaults to the slice on the comparison artifact",
+    )
     propose.add_argument("--workstream-owner", required=True)
     propose.add_argument("--detection-artifact", required=True)
     propose.add_argument("--detected-at", help="ISO-8601 timestamp with offset; defaults to now")

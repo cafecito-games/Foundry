@@ -16,6 +16,8 @@ Run it from the repository root as `python3 -m scripts.type_completeness <comman
   (`missing`). Each artifact carries the case ID, family, configuration, coordinates, both
   observations with their canonical SHA-256 digests, and a stable `comparison_id`. `--fail-on-regression`
   exits non-zero when any artifact is `new`, `worsened`, or `missing`. The same inputs always yield byte-identical output.
+  Each artifact also carries the producing capability slice, resolved from the report's family through
+  `modules/foundry_script/tests/type_completeness/capabilities.json` (`--capabilities` overrides the manifest).
 - `propose --comparison comparison.json --case-id ID ...` writes the proposed per-finding ledger file
   (`<finding_id>.json`, exactly the fields the runner validates; the finding ID is the one the runner emitted
   for that case and dimension, never recomputed), the machine-readable provisional record
@@ -52,6 +54,17 @@ While the bot path is unavailable, a human follows the same contract:
    reviewed pull request; never auto-merge it.
 5. Run `reconcile` until it reports `merged`. Manual records carry `"origin": "manual"` and otherwise have the
    same fields, deadline, reconciliation, and blocking semantics as automated ones.
+
+`propose` takes the capability slice from the artifact; `--capability-path` may only narrow it and any path
+outside the producing slice is rejected, so a provisional record cannot block a capability that did not produce
+the finding.
+
+## Deferred to the #2477 reconciliation
+
+The runner on `develop` emits no per-case `outcome`, `structural_failures`, `diagnostic_records`, or
+`diagnostic_severity`; those belong to the gate-safe evidence contract #2477 is introducing. This package
+deliberately does not read or invent them. Once #2477 lands, the comparator's category handling (`report.Category`)
+and the digest projection are the two places to extend, and the reconciliation relay tracks that work.
 
 ## Runner numbers
 

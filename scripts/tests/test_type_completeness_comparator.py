@@ -114,6 +114,19 @@ def _report(
     }
 
 
+CAPABILITIES = {
+    "schema_version": 1,
+    "production": [
+        {
+            "paths": ["modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/fs_vm.cpp"],
+            "families": ["union_destination_membership"],
+        }
+    ],
+    "nonproduction_prefixes": ["docs/"],
+    "broad_core_families": ["union_destination_membership"],
+}
+
+
 def _ny(year: int, month: int, day: int, hour: int, minute: int = 0, second: int = 0) -> datetime:
     return datetime(year, month, day, hour, minute, second, tzinfo=NY)
 
@@ -438,7 +451,7 @@ class ComparatorTests(unittest.TestCase):
             artifact_path="/branch/worktree/scratch/a.fs",
             issue_url="https://x/issues/9",
             classification="product_defect",
-            parity_evidence={"text": "/branch/a.txt"},
+            parity_evidence={"artifact_path": "/branch/a.txt"},
         )
         develop_finding = dict(_finding("a", "destination"), artifact_path="/develop/worktree/scratch/a.fs")
         branch = report.load_report(
@@ -451,6 +464,35 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(artifact.status, comparator.Status.UNCHANGED)
         self.assertEqual(artifact.branch_digest, artifact.develop_digest)
 
+    def test_parity_evidence_differing_only_by_path_is_unchanged(self) -> None:
+        evidence = {
+            "text_case_id": "a.text",
+            "bytecode_case_id": "a.bytecode",
+            "output": {"text": "1", "bytecode": "2", "text_case_id": "a.text", "bytecode_case_id": "a.bytecode"},
+            "dimensions": {"destination": {"text": "accept", "bytecode": "reject"}},
+        }
+        branch_finding = dict(
+            _finding("a", "destination"), parity_evidence=dict(evidence, artifact_path="/branch/a.fs")
+        )
+        develop_finding = dict(
+            _finding("a", "destination"), parity_evidence=dict(evidence, artifact_path="/develop/a.fs")
+        )
+        branch = report.load_report(_report([_case("a", passed=False)], findings=[branch_finding]))
+        develop = report.load_report(_report([_case("a", passed=False)], findings=[develop_finding]))
+        artifact = comparator.compare_case(branch, develop, "a", configuration="text")
+        self.assertEqual(artifact.status, comparator.Status.UNCHANGED)
+
+    def test_semantic_parity_evidence_change_is_worsened(self) -> None:
+        evidence = {"output": {"text": "1", "bytecode": "2"}}
+        branch_finding = dict(
+            _finding("a", "destination"), parity_evidence={"output": {"text": "1", "bytecode": "crash"}}
+        )
+        develop_finding = dict(_finding("a", "destination"), parity_evidence=evidence)
+        branch = report.load_report(_report([_case("a", passed=False)], findings=[branch_finding]))
+        develop = report.load_report(_report([_case("a", passed=False)], findings=[develop_finding]))
+        artifact = comparator.compare_case(branch, develop, "a", configuration="text")
+        self.assertEqual(artifact.status, comparator.Status.WORSENED)
+
     def test_semantic_finding_change_is_worsened(self) -> None:
         branch = report.load_report(
             _report([_case("a", passed=False)], findings=[dict(_finding("a", "destination"), actual="crash")])
@@ -458,6 +500,22 @@ class ComparatorTests(unittest.TestCase):
         develop = report.load_report(_report([_case("a", passed=False)], findings=[_finding("a", "destination")]))
         artifact = comparator.compare_case(branch, develop, "a", configuration="text")
         self.assertEqual(artifact.status, comparator.Status.WORSENED)
+
+    def test_artifact_carries_capability_slice_from_manifest(self) -> None:
+        branch = report.load_report(_report([_case("a", passed=False)]))
+        develop = report.load_report(_report([_case("a", passed=True)]))
+        artifacts = comparator.compare_reports(branch, develop, configuration="text", capabilities=CAPABILITIES)
+        payload = artifacts[0].to_dict()
+        self.assertEqual(
+            payload["capability_slice"],
+            {
+                "family": "union_destination_membership",
+                "paths": ["modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/fs_vm.cpp"],
+                "broad_core": True,
+            },
+        )
+        round_trip = comparator.deserialize_many(comparator.serialize_many(artifacts))[0]
+        self.assertEqual(round_trip.capability_slice, artifacts[0].capability_slice)
 
     def test_compare_report_emits_one_artifact_per_branch_failure(self) -> None:
         branch = report.load_report(
@@ -1101,6 +1159,74 @@ class CliTests(unittest.TestCase):
             self.assertEqual(record.finding_id, _runner_finding_id("a", "destination"))
             ledger_file = root / "out" / (record.finding_id + ".json")
             self.assertEqual(ledger.read_record(ledger_file), record.payload)
+
+    def _comparison_with_slice(self, root: Path) -> None:
+        findings = [_finding("a", "destination")]
+        branch = report.load_report(_report([_case("a", passed=False)], findings=findings))
+        artifact = comparator.compare_reports(branch, branch, configuration="text", capabilities=CAPABILITIES)[0]
+        (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
+
+    def _propose_arguments(self, root: Path) -> list[str]:
+        return [
+            "propose",
+            "--comparison",
+            str(root / "comparison.json"),
+            "--case-id",
+            "a",
+            "--dimension",
+            "destination",
+            "--issue-url",
+            "https://x/1",
+            "--closure-packet-url",
+            "https://x/2",
+            "--permanent-test-path",
+            "p",
+            "--workstream-owner",
+            "o",
+            "--detection-artifact",
+            "d",
+            "--detected-at",
+            "2026-08-17T10:00:00-04:00",
+            "--output-dir",
+            str(root / "out"),
+        ]
+
+    def test_propose_defaults_capability_slice_to_the_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._comparison_with_slice(root)
+            self.assertEqual(cli.main(self._propose_arguments(root)), 0)
+            record = provisional.ProvisionalRecord.from_dict(
+                json.loads((root / "out" / "provisional.json").read_text())
+            )
+            self.assertEqual(
+                record.capability_slice,
+                ("modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/fs_vm.cpp"),
+            )
+
+    def test_propose_rejects_capability_path_outside_the_artifact_slice(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._comparison_with_slice(root)
+            arguments = self._propose_arguments(root) + ["--capability-path", "editor/editor_node.cpp"]
+            self.assertEqual(cli.main(arguments), 2)
+            self.assertFalse((root / "out").exists())
+            narrowed = self._propose_arguments(root) + ["--capability-path", "modules/foundry_script/fs_vm.cpp"]
+            self.assertEqual(cli.main(narrowed), 0)
+            record = provisional.ProvisionalRecord.from_dict(
+                json.loads((root / "out" / "provisional.json").read_text())
+            )
+            self.assertEqual(record.capability_slice, ("modules/foundry_script/fs_vm.cpp",))
+
+    def test_propose_without_slice_on_artifact_requires_explicit_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            findings = [_finding("a", "destination")]
+            branch = report.load_report(_report([_case("a", passed=False)], findings=findings))
+            artifact = comparator.compare_reports(branch, branch, configuration="text")[0]
+            (root / "comparison.json").write_text(comparator.serialize_many([artifact]))
+            self.assertEqual(cli.main(self._propose_arguments(root)), 2)
+            self.assertFalse((root / "out").exists())
 
     def test_propose_command_refuses_a_dimension_the_report_did_not_find(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

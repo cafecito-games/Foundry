@@ -181,6 +181,23 @@ class CapabilitySlice:
     def to_dict(self) -> dict[str, Any]:
         return {"family": self.family, "paths": list(self.paths), "broad_core": self.broad_core}
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> CapabilitySlice:
+        paths = data.get("paths")
+        if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or not path for path in paths):
+            raise ReportError("capability_slice.paths must be a non-empty array of path strings")
+        return cls(family=str(data["family"]), paths=tuple(paths), broad_core=bool(data.get("broad_core", False)))
+
+
+def load_capabilities_file(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ReportError(f"cannot read capabilities manifest {path}: {error}") from error
+    if not isinstance(data, dict):
+        raise ReportError(f"capabilities manifest {path} must contain a JSON object")
+    return data
+
 
 def capability_slice_for_family(manifest: Mapping[str, Any], family: str) -> CapabilitySlice:
     paths: list[str] = []
