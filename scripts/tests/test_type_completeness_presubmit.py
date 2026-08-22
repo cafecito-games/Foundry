@@ -129,6 +129,17 @@ class StatusDispositionTests(unittest.TestCase):
         }
         self.assertEqual(known, set(comparator.KNOWN_BASELINE_STATUSES))
 
+    def test_the_ignored_statuses_conclude_nothing_against_the_branch(self) -> None:
+        # A status is ignored only because the branch has nothing to answer for: it no longer fails, or
+        # neither side reached a verdict to compare. Pinning the set to those partitions keeps a status
+        # from being made harmless one entry at a time.
+        ignored = {
+            status
+            for status, disposition in presubmit.STATUS_DISPOSITION.items()
+            if disposition is presubmit.Disposition.IGNORED
+        }
+        self.assertEqual(ignored, set(comparator.NO_LONGER_FAILING_STATUSES) | set(comparator.NOT_COMPARABLE_STATUSES))
+
     def test_an_unlisted_status_is_refused_rather_than_ignored(self) -> None:
         with self.assertRaises(presubmit.PresubmitError):
             presubmit.disposition_of("not_a_status")  # type: ignore[arg-type]

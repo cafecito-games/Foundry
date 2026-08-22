@@ -1309,6 +1309,112 @@ class ProvisionalRecordTests(unittest.TestCase):
         self.assertEqual(manual.origin, "manual")
 
 
+class SidePresenceAndCoverageTests(unittest.TestCase):
+    """Every combination of what each side of a comparison says about a case, including saying nothing."""
+
+    # One report per side state. "absent" reports no such case at all; "not_covered" reports it as a case the
+    # build made no judgment about; "worse" fails it with a different observation than "failed".
+    def _side_report(self, state: str) -> Any:
+        if state == "absent":
+            return report.load_report(_report([]))
+        if state == "passed":
+            return report.load_report(_report([_case("a", passed=True)]))
+        if state == "failed":
+            return report.load_report(_report([_case("a", passed=False)], findings=[_finding("a", "destination")]))
+        if state == "worse":
+            worse = _case("a", passed=False, runtime_status="crash", runtime_passed=False)
+            return report.load_report(_report([worse], findings=[_finding("a", "destination")]))
+        if state == "not_covered":
+            not_covered = _case(
+                "a",
+                passed=False,
+                status="not_covered",
+                category="not_covered",
+                not_covered_reason="diagnostics_unavailable_in_configuration",
+            )
+            return report.load_report(_report([not_covered]))
+        raise AssertionError(state)
+
+    # branch state, develop state, expected status. Read down the develop column: a case the branch no longer
+    # reports is a regression whatever develop said about it, and a case only the branch reports has nothing
+    # to compare against whatever the branch could observe.
+    TABLE = (
+        ("absent", "passed", comparator.Status.VANISHED),
+        ("absent", "failed", comparator.Status.MISSING),
+        ("absent", "not_covered", comparator.Status.VANISHED),
+        ("passed", "absent", comparator.Status.PASSING),
+        ("passed", "passed", comparator.Status.PASSING),
+        ("passed", "failed", comparator.Status.RESOLVED),
+        ("passed", "not_covered", comparator.Status.PASSING),
+        ("failed", "absent", comparator.Status.NEW),
+        ("failed", "passed", comparator.Status.NEW),
+        ("failed", "failed", comparator.Status.UNCHANGED),
+        ("worse", "failed", comparator.Status.WORSENED),
+        ("failed", "not_covered", comparator.Status.NEW),
+        ("not_covered", "absent", comparator.Status.NEW),
+        ("not_covered", "passed", comparator.Status.NOT_COVERED),
+        ("not_covered", "failed", comparator.Status.NOT_COVERED),
+        ("not_covered", "not_covered", comparator.Status.NOT_COVERED),
+    )
+
+    def test_every_pair_of_side_states_classifies_and_round_trips(self) -> None:
+        for branch_state, develop_state, expected in self.TABLE:
+            with self.subTest(branch=branch_state, develop=develop_state):
+                artifact = comparator.compare_case(
+                    self._side_report(branch_state),
+                    self._side_report(develop_state),
+                    "a",
+                    configuration="text",
+                    capabilities=CAPABILITIES,
+                )
+                self.assertEqual(expected, artifact.status)
+                # The status is re-derived from the sides at load, so a table the classifier disagreed with
+                # would be refused rather than silently accepted.
+                restored = comparator.deserialize_many(comparator.serialize_many([artifact]))[0]
+                self.assertEqual(artifact.to_dict(), restored.to_dict())
+
+    def test_the_table_covers_every_pair_of_side_states(self) -> None:
+        states = {"absent", "passed", "failed", "not_covered"}
+        covered = {(branch, develop) for branch, develop, _ in self.TABLE}
+        # "worse" is a second shape of "failed" on the branch, so it is not a state of its own here.
+        expected = {(branch, develop) for branch in states for develop in states} - {("absent", "absent")}
+        self.assertEqual(expected, covered - {("worse", "failed")})
+        with self.assertRaises(KeyError):
+            comparator.compare_case(
+                self._side_report("absent"),
+                self._side_report("absent"),
+                "a",
+                configuration="text",
+                capabilities=CAPABILITIES,
+            )
+
+    def test_losing_a_case_blocks_whatever_develop_could_judge(self) -> None:
+        # A cell that leaves the matrix is lost coverage, and a develop side that reached no verdict must not
+        # turn that into an ignored comparison: the gate would then accept a branch that dropped the cell.
+        for develop_state in ("passed", "failed", "not_covered"):
+            with self.subTest(develop=develop_state):
+                artifact = comparator.compare_case(
+                    self._side_report("absent"),
+                    self._side_report(develop_state),
+                    "a",
+                    configuration="text",
+                    capabilities=CAPABILITIES,
+                )
+                self.assertIn(artifact.status, comparator.REGRESSION_STATUSES)
+                self.assertNotIn(artifact.status, comparator.NOT_COMPARABLE_STATUSES)
+
+    def test_a_branch_failure_is_never_ignored_because_develop_reached_no_verdict(self) -> None:
+        artifact = comparator.compare_case(
+            self._side_report("failed"),
+            self._side_report("not_covered"),
+            "a",
+            configuration="text",
+            capabilities=CAPABILITIES,
+        )
+        self.assertEqual(comparator.Status.NEW, artifact.status)
+        self.assertIn(artifact.status, comparator.REGRESSION_STATUSES)
+
+
 class SchemaVersionContractTests(unittest.TestCase):
     """A document whose digests were taken over another formula is refused by name, never by mismatch."""
 

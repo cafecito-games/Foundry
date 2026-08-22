@@ -130,9 +130,15 @@ present (`product_finding`, `structural_failure`, `failed_witness`, `stale_ledge
 
 `not_covered` is the one category that is not a verdict about the product: the build that produced the report
 could not observe what the case expects - a release build asked for an analyzer warning, say - so the run made
-no judgment. Such a case is neither passed nor failed, a comparison where either side carries it reports itself
-as `not_covered` and the gate ignores it, and the claim is refused unless the report carries the whole of it:
-`status`, `category`, a `not_covered_reason`, a verdict that is not a pass, and no finding targeting the case.
+no judgment. Such a case is neither passed nor failed, and the claim is refused unless the report carries the
+whole of it: `status`, `category`, a `not_covered_reason`, a verdict that is not a pass, and no finding
+targeting the case.
+
+A comparison reports itself `not_covered` - the one status the gate ignores because nothing was concluded -
+only when both sides report the case and the *branch* made no judgment about it. Presence is decided first: a
+case the branch no longer reports is lost coverage (`vanished`) even when develop could not judge it either,
+and a case only the branch reports is `new`. A develop side that reached no verdict has no failure the branch
+could have resolved and none it could reproduce, so a branch failure against it is `new` rather than ignored.
 
 ## Presubmit gate
 

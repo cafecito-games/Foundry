@@ -226,20 +226,39 @@ def _made_no_judgment(side: Mapping[str, Any]) -> bool:
     return bool(side.get("present")) and side.get("category") == Category.NOT_COVERED.value
 
 
+def _judged(side: Mapping[str, Any]) -> bool:
+    """True when the side is present and its build actually reached a verdict about the case."""
+    return bool(side.get("present")) and not _made_no_judgment(side)
+
+
 def classify(branch: Mapping[str, Any], develop: Mapping[str, Any]) -> Status:
     """The one status classifier, defined over the serialized sides so a deserialized artifact re-derives its
-    status from exactly the data it carries."""
+    status from exactly the data it carries.
+
+    Presence is decided before coverage. Whether a case is still in the matrix at all is a fact about the
+    matrix, not about what either build concluded, so a case the branch no longer reports is lost coverage
+    even when develop could not judge it - reading that as "nothing to compare" would let a cell leave the
+    matrix without blocking. Only a case both reports can be uncomparable, and only the branch - the side
+    under test - can make it so: a develop side that reached no verdict has no failure the branch could
+    have resolved and none it could reproduce, so a branch failure against it is new evidence.
+    """
     if not branch.get("present") and not develop.get("present"):
         raise ReportError("a comparison artifact needs at least one side")
+    if not branch.get("present"):
+        # A develop side that reached no verdict was not failing, so its case did not go missing: it was
+        # covered and now is not.
+        return Status.MISSING if _judged(develop) and not develop.get("passed") else Status.VANISHED
+    if branch.get("passed"):
+        return Status.RESOLVED if _judged(develop) and not develop.get("passed") else Status.PASSING
+    if not develop.get("present"):
+        # A case only the branch reports has no develop verdict to compare against, whatever the branch
+        # build could observe about it.
+        return Status.NEW
     # A side that made no judgment carries `passed: false` because it did not pass, not because it failed.
     # Reading that as a failure would turn one build's missing surface into a regression of the product.
-    if _made_no_judgment(branch) or _made_no_judgment(develop):
+    if _made_no_judgment(branch):
         return Status.NOT_COVERED
-    if not branch.get("present"):
-        return Status.VANISHED if develop.get("passed") else Status.MISSING
-    if branch.get("passed"):
-        return Status.RESOLVED if develop.get("present") and not develop.get("passed") else Status.PASSING
-    if not develop.get("present") or develop.get("passed"):
+    if not _judged(develop) or develop.get("passed"):
         return Status.NEW
     if branch.get("digest") == develop.get("digest"):
         return Status.UNCHANGED
