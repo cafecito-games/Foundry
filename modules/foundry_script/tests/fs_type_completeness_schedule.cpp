@@ -46,6 +46,13 @@ FSCompletenessScheduleController::~FSCompletenessScheduleController() {
 
 Error FSCompletenessScheduleController::declare(
 		const Vector<String> &p_barrier_names, int p_participant_count) {
+#ifndef THREADS_ENABLED
+	// A schedule rendezvouses at least two participants, and this build has one thread: Thread::start
+	// never runs its callback and a wait can never be notified. Refusing the schedule outright is the
+	// only reading that is not a lie - a cell that cannot impose its interleaving has observed
+	// nothing, and a controller that let it try would spin instead of saying so.
+	return ERR_UNAVAILABLE;
+#else
 	MutexLock lock(mutex);
 	if (!barriers.is_empty()) {
 		return ERR_ALREADY_IN_USE;
@@ -68,6 +75,7 @@ Error FSCompletenessScheduleController::declare(
 	barrier_index = declared;
 	participants = p_participant_count;
 	return OK;
+#endif
 }
 
 Error FSCompletenessScheduleController::arrive(const String &p_name) {

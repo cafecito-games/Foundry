@@ -41,6 +41,8 @@
 
 namespace FSTests {
 
+#ifdef THREADS_ENABLED
+
 namespace {
 
 // One concurrent cell reduced to its schedule: a writer that publishes and a reader that may only
@@ -181,5 +183,20 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Schedule") {
 		CHECK_FALSE(controller.timed_out());
 	}
 }
+
+#else // No threads.
+
+TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Schedule") {
+	TEST_CASE("TypeCompleteness Schedule refuses a schedule this build cannot run") {
+		// One thread cannot rendezvous two participants, so the schedule is refused rather than
+		// attempted. Anything else would let a concurrency cell report an interleaving it never had.
+		FSCompletenessScheduleController controller;
+		CHECK_EQ(controller.declare(Vector<String>({ "write_published" }), 2), ERR_UNAVAILABLE);
+		CHECK_FALSE(controller.timed_out());
+		CHECK(controller.trace().is_empty());
+	}
+}
+
+#endif // THREADS_ENABLED
 
 } // namespace FSTests

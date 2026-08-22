@@ -74,7 +74,8 @@ public:
 
 	// Fixes the schedule: the barrier names in release order and how many participants take part.
 	// Refuses an empty name, a repeated name, an empty schedule, fewer than two participants, and any
-	// second declaration, because a schedule that can change while it runs is not a schedule.
+	// second declaration, because a schedule that can change while it runs is not a schedule. A build
+	// without threads is refused with ERR_UNAVAILABLE: it cannot run two participants at all.
 	Error declare(const Vector<String> &p_barrier_names, int p_participant_count);
 
 	// Records that the calling participant reached p_name. Ordering evidence only: arriving neither
