@@ -1309,6 +1309,58 @@ class ProvisionalRecordTests(unittest.TestCase):
         self.assertEqual(manual.origin, "manual")
 
 
+class SchemaVersionContractTests(unittest.TestCase):
+    """A document whose digests were taken over another formula is refused by name, never by mismatch."""
+
+    def _record_dict(self) -> dict[str, Any]:
+        record: dict[str, Any] = ProvisionalRecordTests()._record().to_dict()
+        return record
+
+    def test_the_producers_write_the_versions_their_loaders_check(self) -> None:
+        artifact = _artifact_with_status(comparator.Status.UNCHANGED)
+        self.assertEqual(comparator.COMPARISON_SCHEMA_VERSION, artifact.to_dict()["schema_version"])
+        envelope = json.loads(comparator.serialize_many([artifact]))
+        self.assertEqual(comparator.COMPARISON_SCHEMA_VERSION, envelope["schema_version"])
+        refusal = json.loads(comparator.serialize_structural_failure(["nothing to compare"]))
+        self.assertEqual(comparator.COMPARISON_SCHEMA_VERSION, refusal["schema_version"])
+        self.assertEqual(provisional.PROVISIONAL_SCHEMA_VERSION, self._record_dict()["schema_version"])
+
+    def test_a_previous_comparison_version_is_refused_by_name(self) -> None:
+        artifact = _artifact_with_status(comparator.Status.NEW).to_dict()
+        for envelope in (
+            {"schema_version": 1, "artifacts": [artifact]},
+            {"schema_version": comparator.COMPARISON_SCHEMA_VERSION + 1, "artifacts": [artifact]},
+            {"artifacts": [artifact]},
+        ):
+            with self.subTest(schema_version=envelope.get("schema_version")):
+                with self.assertRaises(report.ReportError) as refusal:
+                    comparator.deserialize_many(json.dumps(envelope))
+                self.assertIn("is not supported", str(refusal.exception))
+                self.assertIn("Regenerate", str(refusal.exception))
+                self.assertNotIn("digest", str(refusal.exception))
+
+    def test_an_artifact_of_a_previous_version_is_refused_wherever_it_travels(self) -> None:
+        # An artifact embedded in a provisional record never passes through the envelope check, so it
+        # carries its own version rather than inheriting whatever document carried it.
+        stale = dict(_artifact_with_status(comparator.Status.UNCHANGED).to_dict(), schema_version=1)
+        with self.assertRaises(report.ReportError) as refusal:
+            comparator.ComparisonArtifact.from_dict(stale)
+        self.assertIn("is not supported", str(refusal.exception))
+        with self.assertRaises(provisional.ProvisionalError) as embedded_refusal:
+            ProvisionalRecordTests()._record(develop_comparison=stale)
+        self.assertIn("is not supported", str(embedded_refusal.exception))
+
+    def test_a_previous_provisional_version_is_refused_by_name(self) -> None:
+        for version in (1, provisional.PROVISIONAL_SCHEMA_VERSION + 1, "2"):
+            with self.subTest(schema_version=version):
+                stale = dict(self._record_dict(), schema_version=version)
+                with self.assertRaises(provisional.ProvisionalError) as refusal:
+                    provisional.ProvisionalRecord.from_dict(stale, capabilities=CAPABILITIES)
+                self.assertIn("is not supported", str(refusal.exception))
+                self.assertIn("Regenerate", str(refusal.exception))
+                self.assertNotIn("digest", str(refusal.exception))
+
+
 class ReconciliationTests(unittest.TestCase):
     def _provisional(self, **overrides: Any) -> Any:
         payload = ledger.proposed_record(
@@ -1640,15 +1692,21 @@ class EveryStatusConsumerTests(unittest.TestCase):
         artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
         artifact["branch"] = dict(artifact["branch"], present=False)
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [artifact]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [artifact]})
+            )
         vanished = _artifact_with_status(comparator.Status.VANISHED).to_dict()
         vanished["status"] = "new"
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [vanished]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [vanished]})
+            )
         unknown = _artifact_with_status(comparator.Status.NEW).to_dict()
         unknown["status"] = "sideways"
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [unknown]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [unknown]})
+            )
 
     def test_relabelled_status_is_rejected_for_every_pair(self) -> None:
         for status in comparator.Status:
@@ -1659,7 +1717,11 @@ class EveryStatusConsumerTests(unittest.TestCase):
                 with self.subTest(status=status.value, relabelled=other.value):
                     tampered = dict(artifact, status=other.value)
                     with self.assertRaises(report.ReportError):
-                        comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+                        comparator.deserialize_many(
+                            json.dumps(
+                                {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]}
+                            )
+                        )
 
     def test_a_side_relabelled_as_not_covered_is_rejected(self) -> None:
         # A blocking artifact re-tagged as a judgment the build never made would be ignored by the gate,
@@ -1668,7 +1730,9 @@ class EveryStatusConsumerTests(unittest.TestCase):
         self.assertEqual(comparator.Status.NEW.value, artifact["status"])
         tampered = dict(artifact, branch=dict(artifact["branch"], category=report.Category.NOT_COVERED.value))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
         # Relabelling the status alongside it does not help: the digest no longer matches the side either way.
         tampered = dict(
             tampered,
@@ -1676,27 +1740,37 @@ class EveryStatusConsumerTests(unittest.TestCase):
             comparison_id=artifact["comparison_id"],
         )
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
 
     def test_tampered_side_values_are_rejected(self) -> None:
         artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
         # Claim the branch passes while keeping the 'unchanged' label.
         tampered = dict(artifact, branch=dict(artifact["branch"], passed=True))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
         # Claim a different develop digest while keeping the 'unchanged' label.
         tampered = dict(artifact, develop=dict(artifact["develop"], digest="0" * 64))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
         # A digest that does not match the recorded observation is rejected too.
         tampered = dict(artifact, branch=dict(artifact["branch"], digest="0" * 64))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
 
     def _reject(self, artifact: dict[str, Any], label: str) -> None:
         with self.subTest(edit=label):
             with self.assertRaises(report.ReportError):
-                comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [artifact]}))
+                comparator.deserialize_many(
+                    json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [artifact]})
+                )
 
     def test_every_identity_field_is_bound(self) -> None:
         base = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()

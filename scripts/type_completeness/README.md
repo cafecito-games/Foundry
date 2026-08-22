@@ -107,11 +107,32 @@ its document from a Dictionary holding `int64_t` members, so `JSON::stringify` r
 as a JSON integer. Neither producer is normalized to match the other: both spellings are accepted wherever a
 version or a count is read, and `scripts/tests/fixtures/type_completeness/` holds captured samples of each.
 
+## Document versions
+
+Three documents carry independent `schema_version` members and they do not move together. A *runner report* and
+a per-finding *ledger record* are version 1. A *comparison* is version 2, and a *provisional record* - which
+embeds the develop comparison it stands on - is version 2 with it.
+
+The comparison version is part of a digest contract rather than a formatting note. Every digest, every status
+and every `comparison_id` is re-derived when a document is read, and a side's digest covers its own verdict
+(`passed`, `category`) alongside its evidence, so a document produced under an earlier formula cannot be
+validated by this tooling. Both loaders therefore check the version first and refuse an older document by name
+(`schema_version 1 is not supported; expected 2. Regenerate ...`) rather than letting it fail later as a digest
+mismatch, which would read as tampering instead of staleness. There is no compatibility path: regenerate the
+comparison, and the provisional record built from it, with the current tooling. Bump both versions with any
+change to what a digest is taken over.
+
 ## Runner categories
 
 Every failed case with no `category` member is treated as `product_finding`. When a `category` member is
 present (`product_finding`, `structural_failure`, `failed_witness`, `stale_ledger_entry`,
-`resolved_ledger_entry`) it is consumed as-is and recorded on each comparison artifact.
+`resolved_ledger_entry`, `not_covered`) it is consumed as-is and recorded on each comparison artifact.
+
+`not_covered` is the one category that is not a verdict about the product: the build that produced the report
+could not observe what the case expects - a release build asked for an analyzer warning, say - so the run made
+no judgment. Such a case is neither passed nor failed, a comparison where either side carries it reports itself
+as `not_covered` and the gate ignores it, and the claim is refused unless the report carries the whole of it:
+`status`, `category`, a `not_covered_reason`, a verdict that is not a pass, and no finding targeting the case.
 
 ## Presubmit gate
 

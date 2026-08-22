@@ -19,7 +19,11 @@ from .report import (
     schema_version_matches,
 )
 
-COMPARISON_SCHEMA_VERSION = 1
+# The digest formula is part of this document's contract: a consumer re-derives every digest and every status
+# from what the document carries, so a comparison written under an older formula is unreadable rather than
+# merely older. Version 2 covers each side's own verdict (`passed`, `category`) alongside its evidence. Bump it
+# with any change to what a digest is taken over, and let a document of an older version be refused by name.
+COMPARISON_SCHEMA_VERSION = 2
 
 
 class Status(str, enum.Enum):
@@ -190,6 +194,9 @@ class ComparisonArtifact:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ComparisonArtifact:
+        # An artifact travels inside other documents - a provisional record embeds the develop comparison it
+        # stands on - so it checks its own version rather than trusting whatever envelope carried it here.
+        _check_comparison_schema_version(data.get("schema_version"), "comparison artifact")
         try:
             status = Status(str(data["status"]))
         except ValueError as error:
@@ -345,10 +352,23 @@ def serialize_structural_failure(reasons: list[str]) -> str:
     return json.dumps(payload, sort_keys=True, indent=2) + "\n"
 
 
+def _check_comparison_schema_version(value: Any, context: str) -> None:
+    """Refuse a comparison written under another version of the digest contract, by name.
+
+    Every digest and every status is re-derived at load, so a document of another version would otherwise be
+    refused as a digest mismatch - which reads as tampering rather than as the stale artifact it is.
+    """
+    if schema_version_matches(value, COMPARISON_SCHEMA_VERSION):
+        return
+    raise ReportError(
+        f"{context} schema_version {value!r} is not supported; expected {COMPARISON_SCHEMA_VERSION}. "
+        "Regenerate the comparison with this version of the tooling."
+    )
+
+
 def deserialize_many(text: str) -> list[ComparisonArtifact]:
     data = json.loads(text)
-    if not schema_version_matches(data.get("schema_version"), COMPARISON_SCHEMA_VERSION):
-        raise ReportError("unsupported comparison schema_version")
+    _check_comparison_schema_version(data.get("schema_version"), "comparison")
     if "structural_failure" in data:
         # A refusal carries no conclusions; reading it as an empty, clean comparison is exactly the
         # mistake the refusal exists to prevent.

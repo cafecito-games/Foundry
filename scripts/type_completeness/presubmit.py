@@ -568,7 +568,10 @@ def run_gate(arguments: argparse.Namespace) -> int:
             gate.record(Verdict.SELECTOR_VALIDATION_FAILED, error_text)
     elif not selection.families:
         gate.record(Verdict.NOTHING_SELECTED, "no changed path maps to a type-completeness family")
-        write_json(gate.output_dir / "comparison.json", {"schema_version": 1, "artifacts": []})
+        write_json(
+            gate.output_dir / "comparison.json",
+            {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": []},
+        )
         return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
 
     artifacts: list[comparator.ComparisonArtifact] = []
