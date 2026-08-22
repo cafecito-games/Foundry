@@ -1250,6 +1250,7 @@ static Dictionary timeout_report(const String &p_family, const StageTimings &p_t
 	report["exceptions"] = Array();
 	report["cases"] = Array();
 	report["timings_ms"] = p_timings.to_report();
+	report["configuration"] = FSCompletenessRunner::configuration_report();
 	return report;
 }
 
@@ -1990,6 +1991,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["cases"] = cases;
 	report["published_surface"] = p_options.published_surface;
 	report["census"] = FSCompletenessCensus::summary_report(census_summary);
+	report["configuration"] = FSCompletenessRunner::configuration_report();
 	// The last thing decided before a document is published is whether it carries evidence at all. A
 	// document that claims a matrix and observes nothing for it is a defect in whatever produced it,
 	// and every path that assembles one arrives here, so none of them can publish a clean verdict.
@@ -2193,6 +2195,28 @@ Dictionary FSCompletenessRunner::structural_failure_report(
 	report["exception_id"] = p_failure.exception_id;
 	report["error_code"] = double(int(p_failure.error_code));
 	return report;
+}
+
+Dictionary FSCompletenessRunner::configuration_report() {
+	Dictionary configuration;
+	// Whether the editor tooling surfaces are compiled into this binary at all. It is deliberately not
+	// the same question as whether debugging checks are on: a template build with tests enabled runs
+	// this harness with no tooling surface to observe.
+#ifdef TOOLS_ENABLED
+	configuration["tools_enabled"] = true;
+#else
+	configuration["tools_enabled"] = false;
+#endif
+	Array adapters;
+	for (const String &adapter_id : FSCompletenessAdapterRegistry::ids()) {
+		adapters.push_back(adapter_id);
+	}
+	configuration["adapters"] = adapters;
+	return configuration;
+}
+
+Vector<String> FSCompletenessRunner::non_evidence_report_members() {
+	return Vector<String>({ "timings_ms", "configuration" });
 }
 
 Error FSCompletenessRunner::publish_owned_document(const String &p_scratch_root,

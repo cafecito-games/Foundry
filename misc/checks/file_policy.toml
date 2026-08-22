@@ -872,3 +872,17 @@ name = "foundry-script-tests-assume-the-front-end"
 reason = "`tests=yes` with `foundry_script_frontend=no` is rejected in modules/foundry_script/SCsub, so no test translation unit ever sees FOUNDRY_SCRIPT_NO_FRONTEND. A guard for it is a branch for a build that cannot be configured, and the corpus already uses front-end-only declarations unguarded in nine other files."
 paths = ["modules/foundry_script/tests/**/*.h", "modules/foundry_script/tests/**/*.cpp"]
 forbidden = ["FOUNDRY_SCRIPT_NO_FRONTEND"]
+
+# ---------------------------------------------------------------------------
+# Type-completeness harness: concurrency is scheduled, never timed.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "type-completeness-harness-schedules-instead-of-sleeping"
+reason = "A concurrency cell that waits out a delay observes whatever the machine happened to do, so its evidence is not reproducible and a real ordering defect reads as a flaky pass. FSCompletenessScheduleController imposes the declared interleaving through named barriers instead, and a wait that cannot be satisfied is decided by proof rather than by a clock."
+paths = [
+  "modules/foundry_script/tests/fs_type_completeness_*.cpp",
+  "modules/foundry_script/tests/fs_type_completeness_*.h",
+  "modules/foundry_script/tests/test_type_completeness_*.h",
+]
+forbidden = ["delay_usec", "delay_msec", "usleep", "sleep_for", "sleep(", "Sleep("]

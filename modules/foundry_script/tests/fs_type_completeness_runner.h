@@ -196,6 +196,17 @@ public:
 	// The report record of one structural failure. The one place a failure becomes a document.
 	static Dictionary structural_failure_report(const FSCompletenessStructuralFailure &p_failure);
 
+	// What this binary could have observed at all: whether it was built with the editor tooling
+	// surfaces compiled in, and which adapter ids the registry hands out. A surface that is not in the
+	// build is a property of the build rather than of the product, so every report carries the
+	// configuration it was produced under and no consumer has to infer it from missing cases.
+	static Dictionary configuration_report();
+
+	// Report members that describe the run or the build rather than the product it observed. They
+	// differ between two runs that saw exactly the same thing, so they may never reach a digest, a
+	// comparison, or a tracked evidence document.
+	static Vector<String> non_evidence_report_members();
+
 	// False when a document claims a matrix and reports nothing observed for it. Such a document has no
 	// reading under which the absence of findings means agreement, so it may never be published as a
 	// clean run whatever produced it.
