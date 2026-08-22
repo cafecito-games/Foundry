@@ -47,6 +47,13 @@ void set_corrupt_transition_artifact_for_test(bool p_corrupt);
 // visible to the stale stage, which is what proves that stage detects the regression it names.
 void set_load_transition_artifact_from_source_for_test(bool p_load_from_source);
 
+// Test seam: makes a transition hand back whatever the subsystem already held for the identity
+// instead of re-deriving it, which is what a reload, a cache replacement, or a reinitialization that
+// quietly kept its old answer would do. It is invisible to every stage whose identity still serves
+// what it was compiled from, and visible on the stale stage, which is what proves those families
+// re-derive rather than remember.
+void set_skip_transition_invalidation_for_test(bool p_skip);
+
 } // namespace LifecycleInternal
 
 // The leaves this adapter renders on each axis. Declared once here and returned verbatim by
@@ -89,8 +96,10 @@ public:
 	// `r_structural_error`, when given, reports whether the observation failed as a harness defect
 	// rather than as an observation about the product: a run that could not carry out its transition
 	// at all has no reading under which its silence means the type survived.
-	FSCompletenessObservation observe_transition(
-			const FSCompletenessProgram &p_program, Error *r_structural_error = nullptr) const;
+	// p_family names the transition to carry the program's declared type across; a rendered program
+	// carries its coordinates and its identity but never its family.
+	FSCompletenessObservation observe_transition(const FSCompletenessProgram &p_program,
+			const String &p_family, Error *r_structural_error = nullptr) const;
 };
 
 } // namespace FSTests

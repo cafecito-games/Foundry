@@ -52,6 +52,7 @@ namespace {
 static const String lifecycle_adapter_id = "lifecycle";
 static thread_local bool corrupt_transition_artifact_for_test = false;
 static thread_local bool load_transition_artifact_from_source_for_test = false;
+static thread_local bool skip_transition_invalidation_for_test = false;
 
 // One member type the transition has to carry, and a value it can be initialized with. The spelling
 // is the declaration the program contains; the observation renders what came back out of the
@@ -169,6 +170,15 @@ public:
 			boot_owns_language() = false;
 			FSLanguage::get_singleton()->finish();
 		}
+	}
+
+	// Takes the language down and brings it back, which is the transition the shutdown family carries a
+	// type across. It runs under the same lock the boot count is decided under, so a cycle can never
+	// interleave with another run's decision to bring the language up or take it down.
+	static void cycle() {
+		MutexLock lock(boot_mutex());
+		FSLanguage::get_singleton()->finish();
+		FSLanguage::get_singleton()->init();
 	}
 
 	LifecycleLanguageBoot(const LifecycleLanguageBoot &) = delete;
@@ -308,9 +318,13 @@ static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<Fo
 }
 
 // Replaces what the identity an artifact recorded now serves. The artifact keeps the path it was
-// taken at, so rewriting the file behind that path is what makes the artifact stale: a loader that
-// reached back to the source instead of reading its own bytes would hand back the revision. The cache
-// entries for the path go with it, otherwise the revision would only exist on disk.
+// taken at, so rewriting the file behind that path is what makes the artifact stale: a transition
+// that reached back to the source, or that re-derived from the identity, hands back the revision
+// while one that reads its own bytes does not.
+//
+// The cache entries for the identity are deliberately left alone. Invalidating them is the work a
+// re-deriving transition has to do for itself, and a stage that did it on the transition's behalf
+// could not tell a transition that invalidates from one that hands back what it already had.
 static Error revise_source_at(const String &p_path, const String &p_source) {
 	Error error = OK;
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &error);
@@ -319,13 +333,7 @@ static Error revise_source_at(const String &p_path, const String &p_source) {
 	}
 	file->store_string(p_source);
 	file->close();
-	if (!FileAccess::exists(p_path)) {
-		return ERR_FILE_CANT_WRITE;
-	}
-	FSCache::clear_source_override(p_path);
-	FSCache::remove_parser(p_path);
-	FSCache::remove_script(p_path);
-	return OK;
+	return FileAccess::exists(p_path) ? OK : ERR_FILE_CANT_WRITE;
 }
 
 // Test seam: reconstructs the artifact by recompiling whatever the path it recorded serves now,
@@ -375,6 +383,221 @@ static bool spelling_is_erased(const String &p_spelling) {
 	return p_spelling.is_empty() || p_spelling == "Variant";
 }
 
+// What one family asks of the subsystem it names, and everything that subsystem needs to know about
+// the stage it is being asked in. A family is a carry function here rather than a family-shaped copy
+// of the whole adapter, so a stage means the same thing in every family and only the subsystem
+// differs.
+struct LifecycleCarryRequest {
+	Ref<FoundryScript> subject;
+	// The identity the subject was compiled at. What lives behind it may have been revised since.
+	String path;
+	// Damage the transition's own output. The failure_recovery stage needs a transition that can be
+	// made to produce something unusable, and the corruption seam needs the same thing.
+	bool damaged = false;
+	// Hand back whatever the subsystem already had instead of doing the work the transition names.
+	// This is the fault a re-deriving transition has to be visible against.
+	bool skip_invalidation = false;
+	// Reconstruct from whatever the identity serves now rather than from the artifact's own bytes.
+	bool from_source = false;
+	// Apply the transition to its own output once more.
+	bool twice = false;
+};
+
+// Carries the declared type across one family's transition and renders what came out. An empty
+// reading means the transition refused, which is an observation about the transition rather than a
+// harness failure.
+using LifecycleCarry = Error (*)(const LifecycleCarryRequest &p_request, String &r_after);
+
+static Error carry_bytecode_export_load(const LifecycleCarryRequest &p_request, String &r_after) {
+	r_after = String();
+	LifecycleArtifact artifact;
+	Error error = export_lifecycle_artifact(p_request.subject, p_request.path, artifact);
+	if (error != OK) {
+		return error;
+	}
+	if (p_request.damaged) {
+		artifact = corrupted_artifact(artifact);
+	}
+	Ref<FoundryScript> carried;
+	error = p_request.from_source ? load_lifecycle_artifact_from_source(artifact, carried)
+								  : load_lifecycle_artifact(artifact, carried);
+	if (error != OK || carried.is_null()) {
+		return OK;
+	}
+	if (p_request.twice) {
+		// A second export and load of what the first one produced. A transition that loses nothing
+		// once but loses something the second time is not carrying the type, it is decaying it.
+		LifecycleArtifact second;
+		error = export_lifecycle_artifact(carried, p_request.path, second);
+		Ref<FoundryScript> again;
+		if (error == OK) {
+			error = load_lifecycle_artifact(second, again);
+		}
+		if (error != OK || again.is_null()) {
+			return OK;
+		}
+		carried = again;
+	}
+	r_after = carried_type_spelling(carried);
+	return OK;
+}
+
+// The declared type as the reflection surface describes it. A property record spells a Variant type,
+// a class name, and a hint, so what survives the projection is exactly what this renders.
+static String render_property_info(const PropertyInfo &p_property) {
+	if (p_property.type == Variant::NIL) {
+		return "Variant";
+	}
+	const String base = p_property.class_name != StringName() ? String(p_property.class_name)
+															  : String(Variant::get_type_name(p_property.type));
+	return p_property.hint_string.is_empty() ? base : base + "[" + p_property.hint_string + "]";
+}
+
+static Error carry_proxy_reflection(const LifecycleCarryRequest &p_request, String &r_after) {
+	r_after = String();
+	if (p_request.subject.is_null()) {
+		return ERR_INVALID_PARAMETER;
+	}
+	const Ref<FoundryScript> *holder = p_request.subject->get_subclasses().getptr(SNAME("Holder"));
+	if (holder == nullptr || holder->is_null()) {
+		return ERR_INVALID_DATA;
+	}
+	const auto describe = [&holder](String &r_description) -> Error {
+		List<PropertyInfo> properties;
+		(*holder)->get_script_property_list(&properties);
+		for (const PropertyInfo &property : properties) {
+			if (property.name == SNAME("value")) {
+				r_description = render_property_info(property);
+				return OK;
+			}
+		}
+		return ERR_DOES_NOT_EXIST;
+	};
+	if (p_request.damaged) {
+		// A projection that carried nothing: what the surface would describe if the declared type had
+		// not reached it at all.
+		r_after = render_property_info(PropertyInfo());
+		return OK;
+	}
+	Error error = describe(r_after);
+	if (error != OK) {
+		r_after = String();
+		return OK;
+	}
+	if (p_request.twice) {
+		// Describing the same member twice has to describe the same type, or the surface is not a
+		// projection of the declared type but a function of when it was asked.
+		String again;
+		error = describe(again);
+		if (error != OK || again != r_after) {
+			r_after = String();
+		}
+	}
+	return OK;
+}
+
+// The identity is compiled again, which is what a reload and a cache replacement both come down to.
+// `p_through_cache` decides where the reading is taken from: the object the compiler wrote, or what
+// the cache hands back for the identity afterwards.
+static Error carry_by_recompiling(
+		const LifecycleCarryRequest &p_request, bool p_through_cache, String &r_after) {
+	r_after = String();
+	if (p_request.skip_invalidation) {
+		// The subsystem hands back what it already had for the identity instead of re-deriving it.
+		// Nothing else about the cell changes, so a stage whose identity now serves a different
+		// declaration is the one this is visible in.
+		Error cache_error = OK;
+		const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
+		if (cache_error != OK || cached.is_null()) {
+			return cache_error == OK ? ERR_INVALID_DATA : cache_error;
+		}
+		r_after = carried_type_spelling(cached);
+		return OK;
+	}
+	FSCache::remove_parser(p_request.path);
+	FSCache::remove_script(p_request.path);
+	String source = "class Holder:\n\tvar value: NoSuchTypeExists = 0\n\tvar marker: int = 0\n";
+	if (!p_request.damaged) {
+		Error read_error = OK;
+		source = FileAccess::get_file_as_string(p_request.path, &read_error);
+		if (read_error != OK || source.is_empty()) {
+			return OK;
+		}
+	}
+	FSParser parser;
+	Ref<FoundryScript> reloaded;
+	const Error error = compile_lifecycle_source(source, p_request.path, parser, reloaded);
+	if (error != OK || reloaded.is_null()) {
+		return OK;
+	}
+	if (p_through_cache) {
+		Error cache_error = OK;
+		const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
+		if (cache_error != OK || cached.is_null()) {
+			return cache_error == OK ? ERR_INVALID_DATA : cache_error;
+		}
+		reloaded = cached;
+	}
+	if (p_request.twice) {
+		LifecycleCarryRequest once_more = p_request;
+		once_more.twice = false;
+		return carry_by_recompiling(once_more, p_through_cache, r_after);
+	}
+	r_after = carried_type_spelling(reloaded);
+	return OK;
+}
+
+static Error carry_reload(const LifecycleCarryRequest &p_request, String &r_after) {
+	return carry_by_recompiling(p_request, false, r_after);
+}
+
+static Error carry_cache_replacement(const LifecycleCarryRequest &p_request, String &r_after) {
+	return carry_by_recompiling(p_request, true, r_after);
+}
+
+static Error carry_shutdown_reinitialization(const LifecycleCarryRequest &p_request, String &r_after) {
+	if (!p_request.skip_invalidation) {
+		// Everything the language holds for the identity goes with it, so what comes back can only
+		// have been rebuilt from the source rather than remembered.
+		LifecycleLanguageBoot::cycle();
+	}
+	return carry_by_recompiling(p_request, false, r_after);
+}
+
+struct LifecycleFamilyShape {
+	const char *family;
+	LifecycleCarry carry;
+};
+
+static const LifecycleFamilyShape lifecycle_family_shapes[] = {
+	{ "lifecycle_bytecode_export_load", carry_bytecode_export_load },
+	{ "lifecycle_cache_replacement", carry_cache_replacement },
+	{ "lifecycle_proxy_reflection", carry_proxy_reflection },
+	{ "lifecycle_reload", carry_reload },
+	{ "lifecycle_shutdown_reinitialization", carry_shutdown_reinitialization },
+};
+
+// The family a rendered program was derived under. A program carries its coordinates and its identity
+// but never its family, so the identity is what says which one it belongs to: a case ID is the
+// canonical identity of its coordinates under exactly one family.
+static String family_of_program(const FSCompletenessProgram &p_program) {
+	for (const LifecycleFamilyShape &shape : lifecycle_family_shapes) {
+		if (p_program.case_id == FSCompletenessCaseID::make(shape.family, p_program.coordinates)) {
+			return shape.family;
+		}
+	}
+	return String();
+}
+
+static const LifecycleFamilyShape *find_family_shape(const String &p_family) {
+	for (const LifecycleFamilyShape &shape : lifecycle_family_shapes) {
+		if (p_family == shape.family) {
+			return &shape;
+		}
+	}
+	return nullptr;
+}
+
 // The one place a pair of spellings becomes an outcome. A cell never derives this from its
 // coordinates: both spellings are read off artifacts the transition produced.
 static String classify_semantic_identity(const String &p_before, const String &p_after) {
@@ -397,6 +620,10 @@ void LifecycleInternal::set_load_transition_artifact_from_source_for_test(bool p
 	load_transition_artifact_from_source_for_test = p_load_from_source;
 }
 
+void LifecycleInternal::set_skip_transition_invalidation_for_test(bool p_skip) {
+	skip_transition_invalidation_for_test = p_skip;
+}
+
 Vector<String> lifecycle_destinations() {
 	Vector<String> leaves;
 	for (const LifecycleDestinationShape &shape : lifecycle_destination_shapes) {
@@ -416,7 +643,12 @@ const FSLifecycleAdapter &FSLifecycleAdapter::shared() {
 }
 
 Vector<String> FSLifecycleAdapter::families() {
-	return Vector<String>({ "lifecycle_bytecode_export_load" });
+	Vector<String> registered;
+	for (const LifecycleFamilyShape &shape : lifecycle_family_shapes) {
+		registered.push_back(shape.family);
+	}
+	registered.sort();
+	return registered;
 }
 
 String FSLifecycleAdapter::id() const {
@@ -477,17 +709,26 @@ FSCompletenessObservation FSLifecycleAdapter::analyze(
 						p_surface));
 		return observation;
 	}
-	return observe_transition(p_program, nullptr);
+	return observe_transition(p_program, family_of_program(p_program), nullptr);
 }
 
-FSCompletenessObservation FSLifecycleAdapter::observe_transition(
-		const FSCompletenessProgram &p_program, Error *r_structural_error) const {
+FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSCompletenessProgram &p_program,
+		const String &p_family, Error *r_structural_error) const {
 	if (r_structural_error != nullptr) {
 		*r_structural_error = OK;
 	}
 	FSCompletenessObservation observation;
 	observation.case_id = p_program.case_id;
 	observation.surface = p_program.surface;
+	const LifecycleFamilyShape *family = find_family_shape(p_family);
+	if (family == nullptr) {
+		append_diagnostic(observation, "family_unknown",
+				vformat("Family '%s' names no lifecycle transition.", p_family));
+		if (r_structural_error != nullptr) {
+			*r_structural_error = ERR_INVALID_DATA;
+		}
+		return observation;
+	}
 	String destination;
 	String state;
 	if (!read_coordinate(p_program.coordinates, "destination", destination) ||
@@ -513,8 +754,8 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 	// that could not carry out its transition has no reading under which its silence means the type
 	// survived.
 	append_diagnostic(observation, "transition_unavailable_in_configuration",
-			"The bytecode export this transition carries a declared type through is not compiled into "
-			"this build.");
+			"The bytecode writer every lifecycle transition stages its subject through is not compiled "
+			"into this build.");
 	if (r_structural_error != nullptr) {
 		*r_structural_error = ERR_UNAVAILABLE;
 	}
@@ -546,8 +787,8 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 
 	// What the transition has to carry is the type the source declared, so the reading it is compared
 	// against is taken from the freshly compiled script whatever surface the cell runs on. Taking it
-	// off the restored artifact instead would compare a round trip against its own output, which is
-	// blind to an erasure that is already in the artifact it started from.
+	// off the transition's own input instead would compare a round trip against its own output, which
+	// is blind to an erasure that is already in the artifact it started from.
 	const String before = carried_type_spelling(compiled);
 	if (before.is_empty()) {
 		append_diagnostic(observation, "carried_member_absent",
@@ -579,26 +820,43 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 		}
 	}
 
-	LifecycleArtifact artifact;
-	error = export_lifecycle_artifact(subject, path, artifact);
-	if (error != OK) {
-		append_diagnostic(observation, "export_failed",
-				vformat("The lifecycle artifact could not be exported (error %d).", error));
-		if (r_structural_error != nullptr) {
-			*r_structural_error = error;
-		}
-		return observation;
-	}
-
-	// Every stage is a different artifact to load, never a different way of reading the result: what
-	// makes a stage a stage is the state the transition's input is in.
+	// What makes a stage a stage is the state the transition's input is in, never a different way of
+	// reading the result.
 	String outcome = "completed";
 	if (state == "stale") {
-		// The source behind the very path the artifact recorded is revised after the artifact was
-		// taken, so that identity now declares a type the artifact does not. A loader that resolved
-		// against the source instead of against its own bytes hands back the revision here, which is
-		// the regression this stage exists to catch.
+		// The source behind the very identity the subject was compiled at is revised, so that identity
+		// now declares a type the subject does not. A transition that reads its own bytes still carries
+		// the original; one that re-derives from the identity carries the revision. Both are correct
+		// answers to different questions, and which one a family gives is exactly what this stage pins.
 		const String revised = render_lifecycle_source(*shape, state, true);
+		{
+			// The revision is only usable as evidence if it declares something the original did not,
+			// and that is checked at an identity of its own so the cache entry behind `path` keeps
+			// describing what was compiled there.
+			ReleasableSourceScope probe("lifecycle_revision_probe_" + p_program.case_id, revised);
+			FSParser probe_parser;
+			Ref<FoundryScript> probe_script;
+			error = probe.is_available()
+					? compile_lifecycle_source(revised, probe.get_path(), probe_parser, probe_script)
+					: ERR_CANT_CREATE;
+			if (error != OK) {
+				append_diagnostic(observation, "revision_failed",
+						vformat("The revised lifecycle program did not compile (error %d).", error));
+				if (r_structural_error != nullptr) {
+					*r_structural_error = error;
+				}
+				return observation;
+			}
+			if (carried_type_spelling(probe_script) == before) {
+				append_diagnostic(observation, "revision_indistinguishable",
+						"The revised program declares the same type, so a stale identity cannot be told "
+						"apart.");
+				if (r_structural_error != nullptr) {
+					*r_structural_error = ERR_INVALID_DATA;
+				}
+				return observation;
+			}
+		}
 		error = revise_source_at(path, revised);
 		if (error != OK) {
 			append_diagnostic(observation, "revision_failed",
@@ -608,35 +866,34 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 			}
 			return observation;
 		}
-		FSParser revised_parser;
-		Ref<FoundryScript> revised_script;
-		error = compile_lifecycle_source(revised, path, revised_parser, revised_script);
-		if (error != OK) {
-			append_diagnostic(observation, "revision_failed",
-					vformat("The revised lifecycle program did not compile (error %d).", error));
-			if (r_structural_error != nullptr) {
-				*r_structural_error = error;
-			}
-			return observation;
-		}
-		if (carried_type_spelling(revised_script) == before) {
-			append_diagnostic(observation, "revision_indistinguishable",
-					"The revised program declares the same type, so a stale artifact cannot be told apart.");
-			if (r_structural_error != nullptr) {
-				*r_structural_error = ERR_INVALID_DATA;
-			}
-			return observation;
-		}
 	}
 
-	Ref<FoundryScript> carried;
+	LifecycleCarryRequest request;
+	request.subject = subject;
+	request.path = path;
+	request.from_source = load_transition_artifact_from_source_for_test;
+	request.skip_invalidation = skip_transition_invalidation_for_test;
+	request.twice = state == "incremental";
+
 	if (state == "failure_recovery") {
-		// The recovery only proves something if the attempt it recovers from actually failed.
-		Ref<FoundryScript> refused;
-		const Error refusal = load_lifecycle_artifact(corrupted_artifact(artifact), refused);
-		if (refusal == OK) {
+		// The recovery only proves something if the attempt it recovers from produced something else.
+		LifecycleCarryRequest damaged = request;
+		damaged.damaged = true;
+		damaged.twice = false;
+		String damaged_reading;
+		const Error damage_error = family->carry(damaged, damaged_reading);
+		if (damage_error != OK) {
+			append_diagnostic(observation, "recovery_unavailable",
+					vformat("The damaged attempt could not be carried out (error %d).", damage_error));
+			if (r_structural_error != nullptr) {
+				*r_structural_error = damage_error;
+			}
+			return observation;
+		}
+		if (!damaged_reading.is_empty() && damaged_reading == before) {
 			append_diagnostic(observation, "recovery_unproven",
-					"The corrupted artifact loaded, so the recovery stage proves nothing.");
+					"The damaged transition carried the declared type anyway, so the recovery proves "
+					"nothing.");
 			if (r_structural_error != nullptr) {
 				*r_structural_error = ERR_INVALID_DATA;
 			}
@@ -645,44 +902,24 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 		outcome = "recovered";
 	}
 	if (state == "missing") {
-		// The identity the artifact was taken at is gone before it is loaded, so nothing the loader
-		// needs may come from the source the artifact was compiled from.
+		// The identity the subject was compiled at is gone before the transition runs, so nothing it
+		// carries may come from a source anyone can still read.
 		synthetic_source.release();
 	}
 
-	LifecycleArtifact loaded_artifact = artifact;
-	if (corrupt_transition_artifact_for_test) {
-		loaded_artifact = corrupted_artifact(artifact);
-	}
-	error = load_transition_artifact_from_source_for_test
-			? load_lifecycle_artifact_from_source(loaded_artifact, carried)
-			: load_lifecycle_artifact(loaded_artifact, carried);
-	if (error != OK || carried.is_null()) {
-		observation.dimensions["semantic_identity"] = "rejected";
-		observation.dimensions["transition_outcome"] = "refused";
-		observation.produced_output = String();
+	request.damaged = corrupt_transition_artifact_for_test;
+	String after;
+	error = family->carry(request, after);
+	if (error != OK) {
+		append_diagnostic(observation, "transition_failed",
+				vformat("The lifecycle transition could not be carried out (error %d).", error));
+		if (r_structural_error != nullptr) {
+			*r_structural_error = error;
+		}
 		return observation;
 	}
-	if (state == "incremental") {
-		// A second export and load of what the first one produced. A transition that loses nothing
-		// once but loses something the second time is not carrying the type, it is decaying it.
-		LifecycleArtifact second;
-		error = export_lifecycle_artifact(carried, path, second);
-		Ref<FoundryScript> twice;
-		if (error == OK) {
-			error = load_lifecycle_artifact(second, twice);
-		}
-		if (error != OK || twice.is_null()) {
-			observation.dimensions["semantic_identity"] = "rejected";
-			observation.dimensions["transition_outcome"] = "refused";
-			return observation;
-		}
-		carried = twice;
-	}
-
-	const String after = carried_type_spelling(carried);
 	observation.dimensions["semantic_identity"] = classify_semantic_identity(before, after);
-	observation.dimensions["transition_outcome"] = outcome;
+	observation.dimensions["transition_outcome"] = after.is_empty() ? "refused" : outcome;
 	observation.produced_output = String();
 	return observation;
 #endif // TOOLS_ENABLED
@@ -708,12 +945,7 @@ Error FSLifecycleAdapter::execute(const String &p_scratch_root,
 			return ERR_INVALID_DATA;
 		}
 		if (batch_family.is_empty()) {
-			for (const String &candidate : FSLifecycleAdapter::families()) {
-				if (program.case_id == FSCompletenessCaseID::make(candidate, program.coordinates)) {
-					batch_family = candidate;
-					break;
-				}
-			}
+			batch_family = family_of_program(program);
 			if (batch_family.is_empty()) {
 				return ERR_INVALID_DATA;
 			}
@@ -726,7 +958,8 @@ Error FSLifecycleAdapter::execute(const String &p_scratch_root,
 			return results == nullptr ? ERR_INVALID_DATA : ERR_ALREADY_IN_USE;
 		}
 		Error structural_error = OK;
-		FSCompletenessObservation observation = observe_transition(program, &structural_error);
+		FSCompletenessObservation observation =
+				observe_transition(program, batch_family, &structural_error);
 		if (structural_error != OK) {
 			return structural_error;
 		}

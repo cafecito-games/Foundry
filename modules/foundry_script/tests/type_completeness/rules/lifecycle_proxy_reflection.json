@@ -1,0 +1,182 @@
+{
+  "schema_version": 2,
+  "family": "lifecycle_proxy_reflection",
+  "adapter": "lifecycle",
+  "domain": {
+    "destination": [
+      "plain",
+      "union",
+      "optional",
+      "container_element",
+      "tuple_field"
+    ],
+    "lifecycle_state": [
+      "clean",
+      "incremental",
+      "stale",
+      "missing",
+      "reordered",
+      "failure_recovery"
+    ],
+    "surface": [
+      "text",
+      "bytecode"
+    ]
+  },
+  "required_dimensions": [
+    {
+      "dimension": "semantic_identity",
+      "when": {}
+    },
+    {
+      "dimension": "transition_outcome",
+      "when": {}
+    }
+  ],
+  "anchors": [
+    {
+      "id": "plain_clean",
+      "coordinates": {
+        "destination": "plain",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "union_clean",
+      "coordinates": {
+        "destination": "union",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "erased",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "optional_clean",
+      "coordinates": {
+        "destination": "optional",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "projected",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "container_element_clean",
+      "coordinates": {
+        "destination": "container_element",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "tuple_field_clean",
+      "coordinates": {
+        "destination": "tuple_field",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "clean_to_incremental",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "incremental"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_stale",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "stale"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_missing",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "missing"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_reordered",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "reordered"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_failure_recovery",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "failure_recovery"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "recovered"
+      }
+    }
+  ],
+  "exceptions": [],
+  "max_chain_length": 3
+}
