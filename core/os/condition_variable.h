@@ -76,6 +76,12 @@ public:
 				THREADING_NAMESPACE::cv_status::timeout;
 	}
 
+	template <int Tag>
+	_ALWAYS_INLINE_ bool wait_for(const MutexLock<SafeBinaryMutex<Tag>> &p_lock, uint64_t p_msec) const {
+		return condition.wait_for(p_lock.mutex._get_lock(), std::chrono::milliseconds(p_msec)) !=
+				THREADING_NAMESPACE::cv_status::timeout;
+	}
+
 	_ALWAYS_INLINE_ void notify_one() const {
 		condition.notify_one();
 	}
