@@ -62,6 +62,11 @@ using PersistedWriteTestHook = void (*)(const String &);
 
 void set_persisted_write_test_hook(PersistedWriteTestHook p_hook);
 
+// Test seam: makes the reflection observation report what a regression that stopped populating
+// an exported property's hint would report, so a census cell that claims to observe the hint
+// string can be proven to fail when it is lost.
+void set_blank_reflection_hint_for_test(bool p_blank);
+
 // Serializes the whole lifetime of one synthetic source file: the tree, the cache overrides keyed by
 // its path, and its removal. The lock is a member so it is released exactly when the scope ends,
 // whichever way the constructor left the scope unusable.
@@ -91,6 +96,10 @@ Vector<String> destination_wrapper_destinations();
 Vector<String> destination_wrapper_boundaries();
 Vector<String> destination_wrapper_source_proofs();
 Vector<String> destination_wrapper_census_children();
+
+// Census child slots this adapter renders a witness for but cannot read back at the representation
+// the leaf names, so they are deliberately not renderable and no family may select one.
+Vector<String> destination_wrapper_unobserved_census_children();
 
 class FSDestinationWrapperAdapter : public FSCompletenessFamilyAdapter {
 public:

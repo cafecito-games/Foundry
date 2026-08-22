@@ -292,15 +292,111 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 		CHECK_EQ(declared.size(), expected_leaves.size());
 	}
 
-	TEST_CASE("TypeCompleteness DestinationWrapper renders every census_child leaf the catalog declares") {
+	TEST_CASE("TypeCompleteness DestinationWrapper partitions the census inventory into observed and not") {
 		const Dictionary partition = destination_wrapper_tracked_document("partitions/census_child.json");
 		const Array declared_leaves = partition["leaves"];
 		const FSCompletenessFamilyAdapter &adapter = FSDestinationWrapperAdapter::shared();
+		HashSet<String> observed;
+		for (const String &leaf : destination_wrapper_census_children()) {
+			observed.insert(leaf);
+		}
+		HashSet<String> unobserved;
+		for (const String &leaf : destination_wrapper_unobserved_census_children()) {
+			CHECK_FALSE(observed.has(leaf));
+			unobserved.insert(leaf);
+		}
+		// A leaf is renderable exactly when the adapter can read the child back out of the
+		// representation it names. A renderable leaf the adapter never reads would let a family claim
+		// a census child while observing nothing about it.
 		for (int index = 0; index < declared_leaves.size(); index++) {
 			const String leaf = declared_leaves[index];
 			CAPTURE(leaf);
-			CHECK(adapter.can_render("census_child", leaf));
+			CHECK_EQ(adapter.can_render("census_child", leaf), observed.has(leaf));
+			const bool classified = observed.has(leaf) || unobserved.has(leaf);
+			CHECK(classified);
 		}
+		CHECK_EQ(observed.size() + unobserved.size(), declared_leaves.size());
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper observes every census child a family may select") {
+		for (const String &leaf : destination_wrapper_census_children()) {
+			CAPTURE(leaf);
+			FSCompletenessResolvedCell cell;
+			cell.coordinates["destination"] = "plain";
+			cell.coordinates["source_proof"] = "static_member";
+			cell.coordinates["boundary"] = "argument_binding";
+			cell.coordinates["census_child"] = leaf;
+			cell.coordinates["surface"] = "text";
+			cell.case_id = FSCompletenessCaseID::make("wrapper_parity_argument_binding", cell.coordinates);
+
+			FSCompletenessProgram program;
+			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
+			Dictionary runtime_context;
+			runtime_context["produced_output"] = program.expected_output;
+			const FSCompletenessObservation observation =
+					FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
+			CHECK_MESSAGE(observation.diagnostics.is_empty(), String(" | ").join(observation.diagnostics));
+			const String evidence = observation.dimensions.get("census_child_evidence", String());
+			CHECK_FALSE(evidence.is_empty());
+			const bool reports_absent = evidence == "absent";
+			const bool is_the_absent_leaf = leaf == "none";
+			CHECK_EQ(reports_absent, is_the_absent_leaf);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper refuses a census child it cannot observe") {
+		const Vector<String> unobserved = destination_wrapper_unobserved_census_children();
+		REQUIRE_FALSE(unobserved.is_empty());
+		for (const String &leaf : unobserved) {
+			CAPTURE(leaf);
+			CHECK_FALSE(FSDestinationWrapperAdapter::shared().can_render("census_child", leaf));
+			FSCompletenessResolvedCell cell;
+			cell.coordinates["destination"] = "plain";
+			cell.coordinates["source_proof"] = "static_member";
+			cell.coordinates["boundary"] = "argument_binding";
+			cell.coordinates["census_child"] = leaf;
+			cell.coordinates["surface"] = "text";
+			cell.case_id = FSCompletenessCaseID::make("wrapper_parity_argument_binding", cell.coordinates);
+			FSCompletenessProgram program;
+			CHECK_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), ERR_INVALID_DATA);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper fails the census cell when a reflection hint is lost") {
+		// Restores the seam however the case leaves, so one failing expectation cannot make every later
+		// test in the process observe a blanked hint.
+		struct BlankedReflectionHint {
+			BlankedReflectionHint() { DestinationWrapperInternal::set_blank_reflection_hint_for_test(true); }
+			~BlankedReflectionHint() { DestinationWrapperInternal::set_blank_reflection_hint_for_test(false); }
+		};
+
+		TemporaryProjectTree tree(vformat("type_completeness_blank_hint_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = destination_wrapper_catalog_root;
+		options.family = "wrapper_parity_reflective_write";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+
+		FSCompletenessRunResult result;
+		{
+			BlankedReflectionHint blanked;
+			REQUIRE_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		}
+		CHECK(result.structural_failures.is_empty());
+		CHECK_EQ(result.outcome, "product_mismatch");
+		CHECK_FALSE(result.success);
+
+		int census_findings = 0;
+		for (const FSCompletenessFinding &finding : result.findings) {
+			if (finding.dimension == "census_child_evidence") {
+				census_findings++;
+				CHECK_EQ(String(finding.expected), "reflection_hint_23_39");
+				CHECK_NE(String(finding.actual), String(finding.expected));
+			}
+		}
+		// One cell per destination, source proof, and surface of the hint-string leaf.
+		CHECK_EQ(census_findings, 126);
 	}
 
 	TEST_CASE("TypeCompleteness DestinationWrapper refuses a destination a boundary cannot spell") {

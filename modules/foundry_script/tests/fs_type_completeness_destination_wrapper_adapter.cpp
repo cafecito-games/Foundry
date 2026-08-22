@@ -57,6 +57,7 @@ namespace {
 
 static const String destination_wrapper_adapter_id = "destination_wrapper";
 static thread_local DestinationWrapperInternal::PersistedWriteTestHook persisted_write_test_hook = nullptr;
+static thread_local bool blank_reflection_hint_for_test = false;
 
 static bool read_coordinate(const Dictionary &p_coordinates, const String &p_axis, String &r_value) {
 	const Variant value = p_coordinates.get(p_axis, Variant());
@@ -171,6 +172,10 @@ struct CensusWitnessShape {
 	// Body statement that consumes the declaration. A declaration nothing reads could be elided before
 	// it ever reaches the representation the coordinate names, so every witness is used.
 	const char *use_statement;
+	// Whether the adapter can read this child back out of the representation the leaf names. A leaf it
+	// cannot read is not renderable: a cell whose named child is never observed would pass whatever
+	// happened to that child, which is a coverage claim the run cannot support.
+	bool observed;
 };
 
 static const char *census_container_witness = "var census_container: Array[uint] = [5U]";
@@ -181,43 +186,52 @@ static const char *census_union_witness = "var census_union: uint | String = 0U"
 static const char *census_union_use = "var _census_use: Variant = census_union";
 
 static const CensusWitnessShape census_witness_shapes[] = {
-	{ "none", "", "" },
-	{ "parser_data_type.container_element_types", census_container_witness, census_container_use },
-	{ "parser_data_type.union_members", census_union_witness, census_union_use },
-	{ "parser_data_type.type_arguments", census_arguments_witness, census_arguments_use },
+	{ "none", "", "", true },
+	{ "parser_data_type.container_element_types", census_container_witness, census_container_use, true },
+	{ "parser_data_type.union_members", census_union_witness, census_union_use, true },
+	{ "parser_data_type.type_arguments", census_arguments_witness, census_arguments_use, true },
 	{ "parser_data_type.type_parameter_bound",
-			"func census_bounded[T: RefCounted](value: T) -> T:\n\treturn value",
-			"var _census_use: Variant = census_bounded(Carrier.new())" },
+			"class CensusBounded[T: RefCounted] extends RefCounted:\n\tvar value: T",
+			"var _census_use: Variant = CensusBounded.new()", true },
 	{ "parser_data_type.method_parameter_types",
 			"func census_parameters(first: uint, second: String) -> String:\n\treturn second + str(first)",
-			"var _census_use: Variant = census_parameters(5U, \"tag\")" },
+			"var _census_use: Variant = census_parameters(5U, \"tag\")", true },
 	{ "parser_data_type.method_return_type", "func census_return() -> uint:\n\treturn 5U",
-			"var _census_use: Variant = census_return()" },
+			"var _census_use: Variant = census_return()", true },
 	{ "parser_data_type.method_rest_parameter_type",
 			"func census_rest(...values: Array[uint]) -> int:\n\treturn values.size()",
-			"var _census_use: Variant = census_rest(5U)" },
+			"var _census_use: Variant = census_rest(5U)", true },
 	{ "parser_data_type.enum_case_payload_field_types",
 			"enum CensusPayloadTypes:\n\tNumeric(amount: uint)\n\tEmpty",
-			"var _census_use: Variant = CensusPayloadTypes.Numeric(5U)" },
+			"var _census_use: Variant = CensusPayloadTypes.Numeric(5U)", true },
 	{ "parser_data_type.enum_case_payload_field_names",
 			"enum CensusPayloadNames:\n\tLabelled(label: String)\n\tEmpty",
-			"var _census_use: Variant = CensusPayloadNames.Labelled(\"tag\")" },
-	{ "runtime_data_type.container_element_types", census_container_witness, census_container_use },
-	{ "runtime_data_type.type_arguments", census_arguments_witness, census_arguments_use },
-	{ "runtime_data_type.union_alternatives", census_union_witness, census_union_use },
-	{ "container_descriptor.element_types", census_container_witness, census_container_use },
-	{ "container_descriptor.type_arguments", census_arguments_witness, census_arguments_use },
+			"var _census_use: Variant = CensusPayloadNames.Labelled(\"tag\")", true },
+	{ "runtime_data_type.container_element_types", census_container_witness, census_container_use, true },
+	{ "runtime_data_type.type_arguments", census_arguments_witness, census_arguments_use, true },
+	{ "runtime_data_type.union_alternatives", census_union_witness, census_union_use, true },
+	// The live container descriptor of a value, the serialized type record, and an instance's reified
+	// specialization evidence are representations this adapter has no read path to from a compiled
+	// script, so their child slots stay unrenderable rather than being claimed by a cell that would
+	// observe nothing.
+	{ "container_descriptor.element_types", census_container_witness, census_container_use, false },
+	{ "container_descriptor.type_arguments", census_arguments_witness, census_arguments_use, false },
 	{ "bytecode_serialized_type.serialized_container_element_types", census_container_witness,
-			census_container_use },
-	{ "bytecode_serialized_type.serialized_type_arguments", census_arguments_witness, census_arguments_use },
-	{ "bytecode_serialized_type.serialized_union_alternatives", census_union_witness, census_union_use },
-	{ "member_binding_descriptor.fixed", "var census_fixed: uint = 5U",
-			"var _census_use: Variant = census_fixed" },
+			census_container_use, false },
+	{ "bytecode_serialized_type.serialized_type_arguments", census_arguments_witness, census_arguments_use,
+			false },
+	{ "bytecode_serialized_type.serialized_union_alternatives", census_union_witness, census_union_use,
+			false },
+	{ "member_binding_descriptor.fixed",
+			"class CensusOpen[T] extends RefCounted:\n\tvar value: T\n\n"
+			"class CensusFixed extends CensusOpen[uint]:\n\tfunc fixed_value() -> Variant:\n\t\treturn value",
+			"var _census_use: Variant = CensusFixed.new().fixed_value()", true },
 	{ "member_binding_descriptor.tuple_slot_shape", "var census_tuple: (uint, String) = (5U, \"tag\")",
-			"var _census_use: Variant = census_tuple" },
+			"var _census_use: Variant = census_tuple", true },
 	{ "reflection_property_info.hint_string", "@export var census_exported: Array[uint] = [5U]",
-			"var _census_use: Variant = census_exported" },
-	{ "specialization_evidence.evidence_type_arguments", census_arguments_witness, census_arguments_use },
+			"var _census_use: Variant = census_exported", true },
+	{ "specialization_evidence.evidence_type_arguments", census_arguments_witness, census_arguments_use,
+			false },
 };
 
 static const DestinationShape *find_destination_shape(const String &p_leaf) {
@@ -250,7 +264,7 @@ static const SourceProofShape *find_source_proof_shape(const String &p_leaf) {
 static const CensusWitnessShape *find_census_witness_shape(const String &p_leaf) {
 	for (const CensusWitnessShape &shape : census_witness_shapes) {
 		if (p_leaf == shape.leaf) {
-			return &shape;
+			return shape.observed ? &shape : nullptr;
 		}
 	}
 	return nullptr;
@@ -1227,6 +1241,258 @@ static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const 
 	return RuntimeInspectionStepResult();
 }
 
+// Folds a type spelling into a stable outcome token. An observation has to be comparable against the
+// outcome a manifest declares, and a spelling carries characters an outcome id may not.
+static String census_evidence_token(const String &p_prefix, const String &p_spelling) {
+	String folded;
+	bool pending_separator = false;
+	for (int index = 0; index < p_spelling.length(); index++) {
+		const char32_t character = p_spelling[index];
+		const bool alphanumeric = (character >= 'a' && character <= 'z') ||
+				(character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9');
+		if (!alphanumeric) {
+			pending_separator = !folded.is_empty();
+			continue;
+		}
+		if (pending_separator) {
+			folded += "_";
+			pending_separator = false;
+		}
+		folded += String::chr(character >= 'A' && character <= 'Z' ? character + 32 : character);
+	}
+	return folded.is_empty() ? p_prefix + "_absent" : p_prefix + "_" + folded;
+}
+
+static String joined_parser_spelling(const Vector<FSParser::DataType> &p_types) {
+	String spelling;
+	for (int index = 0; index < p_types.size(); index++) {
+		spelling += (index == 0 ? "" : " ") + p_types[index].to_string();
+	}
+	return spelling;
+}
+
+static String joined_runtime_spelling(const Vector<FSDataType> &p_types) {
+	String spelling;
+	for (int index = 0; index < p_types.size(); index++) {
+		spelling += (index == 0 ? "" : " ") + p_types[index].get_source_type_name();
+	}
+	return spelling;
+}
+
+static const FSParser::DataType *parser_member_type(
+		FSParser::ClassNode *p_tree, const StringName &p_member, FSParser::DataType &r_storage) {
+	if (p_tree == nullptr || !p_tree->has_member(p_member)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member member = p_tree->get_member(p_member);
+	if (member.type != FSParser::ClassNode::Member::VARIABLE || member.variable == nullptr) {
+		return nullptr;
+	}
+	r_storage = member.variable->get_datatype();
+	return &r_storage;
+}
+
+static FSParser::FunctionNode *parser_member_function(FSParser::ClassNode *p_tree, const StringName &p_member) {
+	if (p_tree == nullptr || !p_tree->has_member(p_member)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member member = p_tree->get_member(p_member);
+	return member.type == FSParser::ClassNode::Member::FUNCTION ? member.function : nullptr;
+}
+
+static FSParser::EnumNode *parser_member_enum(FSParser::ClassNode *p_tree, const StringName &p_member) {
+	if (p_tree == nullptr || !p_tree->has_member(p_member)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member member = p_tree->get_member(p_member);
+	return member.type == FSParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
+}
+
+// The named child slot read out of the analyzer's own resolved record. Returns an empty string when
+// the slot cannot be read, which the caller reports rather than silently passing.
+static String parser_census_evidence(FSParser::ClassNode *p_tree, const String &p_census_child) {
+	FSParser::DataType storage;
+	if (p_census_child == "parser_data_type.container_element_types") {
+		const FSParser::DataType *type = parser_member_type(p_tree, SNAME("census_container"), storage);
+		return type == nullptr ? String()
+							   : census_evidence_token("parser_element",
+										 joined_parser_spelling(type->container_element_types));
+	}
+	if (p_census_child == "parser_data_type.union_members") {
+		const FSParser::DataType *type = parser_member_type(p_tree, SNAME("census_union"), storage);
+		return type == nullptr
+				? String()
+				: census_evidence_token("parser_union", joined_parser_spelling(type->union_members));
+	}
+	if (p_census_child == "parser_data_type.type_arguments") {
+		const FSParser::DataType *type = parser_member_type(p_tree, SNAME("census_arguments"), storage);
+		return type == nullptr
+				? String()
+				: census_evidence_token("parser_argument", joined_parser_spelling(type->type_arguments));
+	}
+	if (p_census_child == "parser_data_type.type_parameter_bound") {
+		if (p_tree == nullptr || !p_tree->has_member(SNAME("CensusBounded"))) {
+			return String();
+		}
+		const FSParser::ClassNode::Member member = p_tree->get_member(SNAME("CensusBounded"));
+		if (member.type != FSParser::ClassNode::Member::CLASS || member.m_class == nullptr ||
+				member.m_class->type_parameters.is_empty() || member.m_class->type_parameters[0] == nullptr) {
+			return String();
+		}
+		return census_evidence_token(
+				"parser_bound", member.m_class->type_parameters[0]->resolved_bound.to_string());
+	}
+	if (p_census_child == "parser_data_type.method_parameter_types") {
+		FSParser::FunctionNode *function = parser_member_function(p_tree, SNAME("census_parameters"));
+		if (function == nullptr) {
+			return String();
+		}
+		Vector<FSParser::DataType> parameters;
+		for (FSParser::ParameterNode *parameter : function->parameters) {
+			if (parameter == nullptr) {
+				return String();
+			}
+			parameters.push_back(parameter->get_datatype());
+		}
+		return census_evidence_token("parser_parameters", joined_parser_spelling(parameters));
+	}
+	if (p_census_child == "parser_data_type.method_return_type") {
+		FSParser::FunctionNode *function = parser_member_function(p_tree, SNAME("census_return"));
+		return function == nullptr
+				? String()
+				: census_evidence_token("parser_return", function->get_datatype().to_string());
+	}
+	if (p_census_child == "parser_data_type.method_rest_parameter_type") {
+		FSParser::FunctionNode *function = parser_member_function(p_tree, SNAME("census_rest"));
+		if (function == nullptr || function->rest_parameter == nullptr) {
+			return String();
+		}
+		return census_evidence_token("parser_rest", function->rest_parameter->get_datatype().to_string());
+	}
+	if (p_census_child == "parser_data_type.enum_case_payload_field_types" ||
+			p_census_child == "parser_data_type.enum_case_payload_field_names") {
+		const bool names = p_census_child.ends_with("field_names");
+		FSParser::EnumNode *enumeration =
+				parser_member_enum(p_tree, names ? SNAME("CensusPayloadNames") : SNAME("CensusPayloadTypes"));
+		if (enumeration == nullptr) {
+			return String();
+		}
+		String spelling;
+		for (const FSParser::EnumNode::Value &value : enumeration->values) {
+			for (const FSParser::EnumNode::PayloadField &field : value.payload_fields) {
+				if (names) {
+					if (field.identifier == nullptr) {
+						return String();
+					}
+					spelling += String(field.identifier->name) + " ";
+				} else {
+					if (field.type == nullptr) {
+						return String();
+					}
+					spelling += field.type->get_datatype().to_string() + " ";
+				}
+			}
+		}
+		return spelling.is_empty()
+				? String()
+				: census_evidence_token(names ? "parser_payload_names" : "parser_payload_types", spelling);
+	}
+	return String();
+}
+
+// The named child slot read out of the compiled script: the runtime type record, the member binding
+// descriptor, or the reflected property info, whichever representation the coordinate names.
+static String runtime_census_evidence(const Ref<FoundryScript> &p_inspected, const String &p_census_child) {
+	if (p_inspected.is_null()) {
+		return String();
+	}
+	if (p_census_child == "runtime_data_type.container_element_types") {
+		const FSDataType *type = p_inspected->find_member_data_type(SNAME("census_container"));
+		return type == nullptr ? String()
+							   : census_evidence_token("runtime_element",
+										 joined_runtime_spelling(type->container_element_types));
+	}
+	if (p_census_child == "runtime_data_type.type_arguments") {
+		const FSDataType *type = p_inspected->find_member_data_type(SNAME("census_arguments"));
+		return type == nullptr
+				? String()
+				: census_evidence_token("runtime_argument", joined_runtime_spelling(type->type_arguments));
+	}
+	if (p_census_child == "runtime_data_type.union_alternatives") {
+		const FSDataType *type = p_inspected->find_member_data_type(SNAME("census_union"));
+		return type == nullptr ? String()
+							   : census_evidence_token("runtime_union",
+										 joined_runtime_spelling(type->union_alternatives));
+	}
+	if (p_census_child == "member_binding_descriptor.fixed") {
+		const Ref<FoundryScript> *fixed = p_inspected->get_subclasses().getptr(SNAME("CensusFixed"));
+		if (fixed == nullptr || fixed->is_null()) {
+			return String();
+		}
+		const auto *member = (*fixed)->debug_get_member_indices().getptr(SNAME("value"));
+		if (member == nullptr) {
+			return String();
+		}
+		return census_evidence_token("binding_fixed",
+				vformat("%d %s", int(member->type_argument_binding.kind),
+						member->type_argument_binding.fixed.get_source_type_name()));
+	}
+	if (p_census_child == "member_binding_descriptor.tuple_slot_shape") {
+		const auto *member = p_inspected->debug_get_member_indices().getptr(SNAME("census_tuple"));
+		if (member == nullptr) {
+			return String();
+		}
+		return census_evidence_token(
+				"binding_tuple", joined_runtime_spelling(member->tuple_slot_shape.container_element_types));
+	}
+	if (p_census_child == "reflection_property_info.hint_string") {
+		// Read through the script's own reflection surface rather than off the type record: the hint
+		// string is what an inspector, an export, and a tool see, and it is produced by a different
+		// path than the descriptor the store consults.
+		List<PropertyInfo> properties;
+		p_inspected->get_script_property_list(&properties);
+		for (const PropertyInfo &property : properties) {
+			if (property.name != SNAME("census_exported")) {
+				continue;
+			}
+			// Test seam: proves the cell is decided by the observed hint rather than by the
+			// coordinates, by producing exactly what a regression that stops populating it would.
+			const String hint_string = blank_reflection_hint_for_test ? String() : property.hint_string;
+			return census_evidence_token("reflection_hint",
+					vformat("%d %s", blank_reflection_hint_for_test ? 0 : int(property.hint), hint_string));
+		}
+		return String();
+	}
+	return String();
+}
+
+// The named census child slot, read from the representation the leaf names. `none` is the one leaf
+// with nothing to read, and it is still an observation: a program that grew a census declaration it
+// was not supposed to have would stop reporting it.
+static String observe_census_child(const FSCompletenessProgram &p_program,
+		const Ref<FoundryScript> &p_inspected, const String &p_census_child) {
+	if (p_census_child == "none") {
+		return "absent";
+	}
+	if (!p_census_child.begins_with("parser_data_type.")) {
+		return runtime_census_evidence(p_inspected, p_census_child);
+	}
+	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
+			"census_child_" + p_program.case_id, p_program.source);
+	if (!synthetic_source.is_available()) {
+		return String();
+	}
+	FSParser parser;
+	if (parser.parse(p_program.source, synthetic_source.get_path(), false) != OK) {
+		return String();
+	}
+	FSAnalyzer analyzer(&parser);
+	if (analyzer.analyze() != OK) {
+		return String();
+	}
+	return parser_census_evidence(parser.get_tree(), p_census_child);
+}
+
 static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outcome) {
 	const String status_line = "FS_TEST_OK\n";
 	if (p_outcome.output.begins_with(status_line)) {
@@ -1239,6 +1505,10 @@ static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outco
 
 void DestinationWrapperInternal::set_persisted_write_test_hook(PersistedWriteTestHook p_hook) {
 	persisted_write_test_hook = p_hook;
+}
+
+void DestinationWrapperInternal::set_blank_reflection_hint_for_test(bool p_blank) {
+	blank_reflection_hint_for_test = p_blank;
 }
 
 DestinationWrapperInternal::SyntheticSourceScope::SyntheticSourceScope(
@@ -1299,7 +1569,19 @@ Vector<String> destination_wrapper_source_proofs() {
 Vector<String> destination_wrapper_census_children() {
 	Vector<String> leaves;
 	for (const CensusWitnessShape &shape : census_witness_shapes) {
-		leaves.push_back(shape.leaf);
+		if (shape.observed) {
+			leaves.push_back(shape.leaf);
+		}
+	}
+	return leaves;
+}
+
+Vector<String> destination_wrapper_unobserved_census_children() {
+	Vector<String> leaves;
+	for (const CensusWitnessShape &shape : census_witness_shapes) {
+		if (!shape.observed) {
+			leaves.push_back(shape.leaf);
+		}
 	}
 	return leaves;
 }
@@ -1324,8 +1606,8 @@ Vector<String> FSDestinationWrapperAdapter::families() {
 }
 
 HashSet<String> FSDestinationWrapperAdapter::observable_dimensions() const {
-	return HashSet<String>(
-			{ "analysis", "runtime_obligation", "stored_carrier", "diagnostic_severity" });
+	return HashSet<String>({ "analysis", "runtime_obligation", "stored_carrier", "diagnostic_severity",
+			"census_child_evidence" });
 }
 
 HashMap<String, Vector<String>> FSDestinationWrapperAdapter::renderable_leaves() const {
@@ -1572,6 +1854,17 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 	}
 	if (source_proof_shape->carrier_provable) {
 		observation.dimensions["stored_carrier"] = destination_shape->stored_carrier;
+	}
+
+	if (coordinates.names_census_child) {
+		const String evidence = observe_census_child(p_program, inspected, coordinates.census_child);
+		if (evidence.is_empty()) {
+			observation.diagnostics.push_back(vformat(
+					"Census child '%s' could not be read from the representation it names.",
+					coordinates.census_child));
+			return observation;
+		}
+		observation.dimensions["census_child_evidence"] = evidence;
 	}
 	return observation;
 }
