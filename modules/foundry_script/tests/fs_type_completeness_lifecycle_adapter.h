@@ -41,11 +41,11 @@ namespace LifecycleInternal {
 // does not. A dimension nothing can flip is a dimension nobody is observing.
 void set_corrupt_transition_artifact_for_test(bool p_corrupt);
 
-// Test seam: makes the transition hand back the type it was given instead of the type the
-// transition produced, which is what a lifecycle stage that quietly reuses a stale artifact would
-// do. It flips `semantic_identity` only for the stages whose declared type differs from the stale
-// one, so it proves those cells read the post-transition artifact rather than the pre-transition one.
-void set_reuse_pretransition_artifact_for_test(bool p_reuse);
+// Test seam: reconstructs the artifact by recompiling whatever the identity it recorded serves at
+// load time, which is what a loader that resolved a serialized type against current state instead of
+// against its own bytes would arrive at. It is invisible to every stage whose source is unchanged and
+// visible to the stale stage, which is what proves that stage detects the regression it names.
+void set_load_transition_artifact_from_source_for_test(bool p_load_from_source);
 
 } // namespace LifecycleInternal
 

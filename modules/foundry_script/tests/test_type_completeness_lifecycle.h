@@ -149,9 +149,13 @@ struct CorruptedTransitionArtifact {
 	~CorruptedTransitionArtifact() { LifecycleInternal::set_corrupt_transition_artifact_for_test(false); }
 };
 
-struct ReusedPretransitionArtifact {
-	ReusedPretransitionArtifact() { LifecycleInternal::set_reuse_pretransition_artifact_for_test(true); }
-	~ReusedPretransitionArtifact() { LifecycleInternal::set_reuse_pretransition_artifact_for_test(false); }
+struct ArtifactLoadedFromSource {
+	ArtifactLoadedFromSource() {
+		LifecycleInternal::set_load_transition_artifact_from_source_for_test(true);
+	}
+	~ArtifactLoadedFromSource() {
+		LifecycleInternal::set_load_transition_artifact_from_source_for_test(false);
+	}
 };
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
@@ -229,33 +233,32 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		CHECK_EQ(String(restored.dimensions.get("semantic_identity", String())), "preserved");
 	}
 
-	TEST_CASE("TypeCompleteness Lifecycle reads the post-transition artifact, not the one it started from") {
-		// Reusing the pre-transition spelling makes every cell report `preserved` whatever the
-		// transition did, so a stage whose artifact records a different type has to disagree with it.
-		// The stale stage is the one that can tell them apart: it is the only stage whose artifact was
-		// taken before the source was revised.
-		const FSCompletenessProgram program =
+	TEST_CASE("TypeCompleteness Lifecycle stale stage catches a loader that reaches back to the source") {
+		// The stale stage revises the source behind the very identity the artifact recorded. A loader
+		// that resolved the serialized type against that source instead of against its own bytes would
+		// hand back the revision, and this is the stage that has to see it.
+		const FSCompletenessProgram stale =
 				lifecycle_program("lifecycle_bytecode_export_load", "plain", "stale", "text");
+		const FSCompletenessProgram clean =
+				lifecycle_program("lifecycle_bytecode_export_load", "plain", "clean", "text");
 		Error structural_error = ERR_BUG;
-		const FSCompletenessObservation observed =
-				FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
+		CHECK_EQ(String(FSLifecycleAdapter::shared()
+								 .observe_transition(stale, &structural_error)
+								 .dimensions.get("semantic_identity", String())),
+				"preserved");
 		REQUIRE_EQ(structural_error, OK);
-		CHECK_EQ(String(observed.dimensions.get("semantic_identity", String())), "preserved");
 
-		ReusedPretransitionArtifact reused;
-		const FSCompletenessObservation blind =
-				FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
+		ArtifactLoadedFromSource from_source;
+		const FSCompletenessObservation reaching_stale =
+				FSLifecycleAdapter::shared().observe_transition(stale, &structural_error);
 		CHECK_EQ(structural_error, OK);
-		// The seam cannot change what a correct transition reports, which is what makes the reading of
-		// a correct transition indistinguishable evidence: it is the corrupted case above that proves
-		// the observation is taken from the artifact.
-		CHECK_EQ(String(blind.dimensions.get("semantic_identity", String())), "preserved");
-		{
-			CorruptedTransitionArtifact corrupted;
-			const FSCompletenessObservation blinded_failure =
-					FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
-			CHECK_EQ(String(blinded_failure.dimensions.get("semantic_identity", String())), "rejected");
-		}
+		CHECK_EQ(String(reaching_stale.dimensions.get("semantic_identity", String())), "projected");
+		// A stage whose source nobody revised cannot tell the two loaders apart, which is why the
+		// stale stage exists rather than the clean one carrying this evidence.
+		const FSCompletenessObservation reaching_clean =
+				FSLifecycleAdapter::shared().observe_transition(clean, &structural_error);
+		CHECK_EQ(structural_error, OK);
+		CHECK_EQ(String(reaching_clean.dimensions.get("semantic_identity", String())), "preserved");
 	}
 
 	TEST_CASE("TypeCompleteness Lifecycle families resolve every required dimension") {

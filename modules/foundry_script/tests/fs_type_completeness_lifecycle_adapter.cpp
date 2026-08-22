@@ -41,7 +41,9 @@
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 
+#include "core/io/file_access.h"
 #include "core/object/ref_counted.h"
+#include "core/os/mutex.h"
 
 namespace FSTests {
 
@@ -49,7 +51,7 @@ namespace {
 
 static const String lifecycle_adapter_id = "lifecycle";
 static thread_local bool corrupt_transition_artifact_for_test = false;
-static thread_local bool reuse_pretransition_artifact_for_test = false;
+static thread_local bool load_transition_artifact_from_source_for_test = false;
 
 // One member type the transition has to carry, and a value it can be initialized with. The spelling
 // is the declaration the program contains; the observation renders what came back out of the
@@ -128,14 +130,43 @@ public:
 // usually already initialized the language, and from `foundry test completeness run`, where nothing
 // has. Compiling without it fails as an internal error rather than as a program that did not compile,
 // which is a harness defect reported as a product observation.
+//
+// The language is process-wide and the registry hands one adapter instance to every run, so the
+// decision to bring it up and the decision to take it down are counted under one lock. Testing the
+// language and then acting on the answer without the count would let one run tear the language down
+// while another was compiling against it.
 class LifecycleLanguageBoot {
-	bool owned = false;
+	static Mutex &boot_mutex() {
+		static Mutex mutex;
+		return mutex;
+	}
+
+	// Live boot scopes, and whether the first of them is the one that initialized the language.
+	// Both are read and written only under `boot_mutex`.
+	static int &boot_depth() {
+		static int depth = 0;
+		return depth;
+	}
+
+	static bool &boot_owns_language() {
+		static bool owns = false;
+		return owns;
+	}
 
 public:
-	LifecycleLanguageBoot() { owned = ensure_fs_language_initialized(); }
+	LifecycleLanguageBoot() {
+		MutexLock lock(boot_mutex());
+		if (boot_depth() == 0) {
+			boot_owns_language() = ensure_fs_language_initialized();
+		}
+		boot_depth()++;
+	}
 
 	~LifecycleLanguageBoot() {
-		if (owned) {
+		MutexLock lock(boot_mutex());
+		boot_depth()--;
+		if (boot_depth() == 0 && boot_owns_language()) {
+			boot_owns_language() = false;
 			FSLanguage::get_singleton()->finish();
 		}
 	}
@@ -276,6 +307,43 @@ static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<Fo
 #endif
 }
 
+// Replaces what the identity an artifact recorded now serves. The artifact keeps the path it was
+// taken at, so rewriting the file behind that path is what makes the artifact stale: a loader that
+// reached back to the source instead of reading its own bytes would hand back the revision. The cache
+// entries for the path go with it, otherwise the revision would only exist on disk.
+static Error revise_source_at(const String &p_path, const String &p_source) {
+	Error error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &error);
+	if (file.is_null()) {
+		return error == OK ? ERR_FILE_CANT_WRITE : error;
+	}
+	file->store_string(p_source);
+	file->close();
+	if (!FileAccess::exists(p_path)) {
+		return ERR_FILE_CANT_WRITE;
+	}
+	FSCache::clear_source_override(p_path);
+	FSCache::remove_parser(p_path);
+	FSCache::remove_script(p_path);
+	return OK;
+}
+
+// Test seam: reconstructs the artifact by recompiling whatever the path it recorded serves now,
+// which is what a loader that resolved a serialized type against current state instead of against
+// its own bytes would arrive at. Every stage whose source is unchanged is unaffected; the stale stage,
+// whose source was revised behind that path, is exactly the one this has to be visible in.
+static Error load_lifecycle_artifact_from_source(
+		const LifecycleArtifact &p_artifact, Ref<FoundryScript> &r_loaded) {
+	r_loaded.unref();
+	Error error = OK;
+	const String source = FileAccess::get_file_as_string(p_artifact.path, &error);
+	if (error != OK || source.is_empty()) {
+		return error == OK ? ERR_FILE_NOT_FOUND : error;
+	}
+	FSParser parser;
+	return compile_lifecycle_source(source, p_artifact.path, parser, r_loaded);
+}
+
 // An artifact no loader can accept. The corruption is applied to the payload rather than to the
 // header so the refusal comes from the type payload the transition is being measured on.
 static LifecycleArtifact corrupted_artifact(const LifecycleArtifact &p_artifact) {
@@ -325,8 +393,8 @@ void LifecycleInternal::set_corrupt_transition_artifact_for_test(bool p_corrupt)
 	corrupt_transition_artifact_for_test = p_corrupt;
 }
 
-void LifecycleInternal::set_reuse_pretransition_artifact_for_test(bool p_reuse) {
-	reuse_pretransition_artifact_for_test = p_reuse;
+void LifecycleInternal::set_load_transition_artifact_from_source_for_test(bool p_load_from_source) {
+	load_transition_artifact_from_source_for_test = p_load_from_source;
 }
 
 Vector<String> lifecycle_destinations() {
@@ -513,22 +581,23 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 	// makes a stage a stage is the state the transition's input is in.
 	String outcome = "completed";
 	if (state == "stale") {
-		// The source is revised after the artifact was taken, so the artifact describes a type the
-		// current source no longer declares. A loader that resolved against current state instead of
-		// against the artifact would hand back the revised type here.
+		// The source behind the very path the artifact recorded is revised after the artifact was
+		// taken, so that identity now declares a type the artifact does not. A loader that resolved
+		// against the source instead of against its own bytes hands back the revision here, which is
+		// the regression this stage exists to catch.
 		const String revised = render_lifecycle_source(*shape, state, true);
-		ReleasableSourceScope revised_source("lifecycle_revised_" + p_program.case_id, revised);
-		if (!revised_source.is_available()) {
-			append_diagnostic(observation, "identity_unavailable",
-					"Revised lifecycle source identity is unavailable.");
+		error = revise_source_at(path, revised);
+		if (error != OK) {
+			append_diagnostic(observation, "revision_failed",
+					vformat("The lifecycle source could not be revised in place (error %d).", error));
 			if (r_structural_error != nullptr) {
-				*r_structural_error = ERR_CANT_CREATE;
+				*r_structural_error = error;
 			}
 			return observation;
 		}
 		FSParser revised_parser;
 		Ref<FoundryScript> revised_script;
-		error = compile_lifecycle_source(revised, revised_source.get_path(), revised_parser, revised_script);
+		error = compile_lifecycle_source(revised, path, revised_parser, revised_script);
 		if (error != OK) {
 			append_diagnostic(observation, "revision_failed",
 					vformat("The revised lifecycle program did not compile (error %d).", error));
@@ -572,7 +641,9 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 	if (corrupt_transition_artifact_for_test) {
 		loaded_artifact = corrupted_artifact(artifact);
 	}
-	error = load_lifecycle_artifact(loaded_artifact, carried);
+	error = load_transition_artifact_from_source_for_test
+			? load_lifecycle_artifact_from_source(loaded_artifact, carried)
+			: load_lifecycle_artifact(loaded_artifact, carried);
 	if (error != OK || carried.is_null()) {
 		observation.dimensions["semantic_identity"] = "rejected";
 		observation.dimensions["transition_outcome"] = "refused";
@@ -596,7 +667,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 		carried = twice;
 	}
 
-	const String after = reuse_pretransition_artifact_for_test ? before : carried_type_spelling(carried);
+	const String after = carried_type_spelling(carried);
 	observation.dimensions["semantic_identity"] = classify_semantic_identity(before, after);
 	observation.dimensions["transition_outcome"] = outcome;
 	observation.produced_output = String();
