@@ -1417,8 +1417,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			selected_surfaces.push_back(surface);
 		}
 	}
-	if (selected_surfaces.size() != (p_options.surfaces.is_empty() ? domain_surfaces->size()
-																  : p_options.surfaces.size())) {
+	if (selected_surfaces.size() != (p_options.surfaces.is_empty() ? domain_surfaces->size() : p_options.surfaces.size())) {
 		return ERR_INVALID_PARAMETER;
 	}
 	HashSet<String> selected_surface_set;

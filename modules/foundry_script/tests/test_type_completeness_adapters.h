@@ -320,7 +320,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 
 		FSCompletenessRunResult refused;
 		CHECK_EQ(run_synthetic_family(tree, catalog_root, "bad-scratch",
-						  HashSet<String>({ "text", "assembly" }), refused),
+						 HashSet<String>({ "text", "assembly" }), refused),
 				ERR_INVALID_PARAMETER);
 		CHECK_FALSE(refused.success);
 		CHECK_EQ(refused.outcome, "structural_failure");
@@ -626,7 +626,6 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 					OK);
 		}
 	}
-
 }
 
 } // namespace FSTests
