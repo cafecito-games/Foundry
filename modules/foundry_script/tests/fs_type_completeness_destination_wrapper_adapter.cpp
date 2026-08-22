@@ -265,7 +265,10 @@ static bool destination_crosses_boundary(const String &p_destination, const Stri
 
 static String source_expression_for(const String &p_source_proof) {
 	const SourceProofShape *shape = find_source_proof_shape(p_source_proof);
-	return shape == nullptr ? String("variant_source") : String(shape->expression);
+	// Every caller validates the leaf through `can_render` first, so a missing shape is a defect in the
+	// vocabulary tables rather than an input to fall back from.
+	ERR_FAIL_NULL_V(shape, String());
+	return shape->expression;
 }
 
 static String boundary_body_for(const String &p_boundary) {
@@ -318,10 +321,10 @@ func carrier_of(value: Variant) -> String:
 	return "other"
 )FS";
 
-// The program one wrapper-parity cell observes. The destination type is declared four times over -
-// on the evidence member, on the boundary's own site, on the wrapper local, and on the transported
-// local - so the runtime descriptor of the destination is inspectable even for a boundary whose slot
-// is a local the compiled script does not expose.
+// The program one wrapper-parity cell observes. Every program declares the destination type on a
+// class member of its own besides declaring it wherever the boundary needs it, so the runtime
+// descriptor of the destination is inspectable even for a boundary whose slot is a local the compiled
+// script never exposes.
 static String render_wrapper_parity_source(const DestinationShape &p_destination,
 		const BoundaryShape &p_boundary, const SourceProofShape &p_source_proof,
 		const CensusWitnessShape &p_census_witness) {
