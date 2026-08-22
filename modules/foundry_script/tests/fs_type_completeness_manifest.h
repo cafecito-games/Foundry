@@ -104,6 +104,11 @@ struct FSCompletenessPartition {
 struct FSCompletenessDimension {
 	String id;
 	HashSet<String> outcomes;
+	// Adapter that declared this dimension, and the catalog file it was declared in. Ownership is
+	// retained rather than only validated at load: a family may only name dimensions its own adapter
+	// declared, and a refusal has to be able to say which file misfiled it.
+	String adapter;
+	String source_file;
 };
 
 struct FSCompletenessSelection {

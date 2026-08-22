@@ -813,6 +813,10 @@ static Error validate_owned_report_path(const String &p_canonical_scratch_root,
 
 class ReportArtifactScope {
 	String artifact_root;
+	// The surfaces this run executes, taken from the run rather than enumerated again here. An artifact
+	// tree that offered a directory for a surface the run never observed would advertise evidence that
+	// cannot exist.
+	HashSet<String> staged_surfaces;
 	Vector<String> created_files;
 	Vector<String> created_directories;
 	bool committed = false;
@@ -847,7 +851,7 @@ class ReportArtifactScope {
 	Error validate_artifact_target(const String &p_canonical_scratch_root,
 			const FSCompletenessResolvedCell &p_cell, const String &p_path) const {
 		const String surface = p_cell.coordinates.get("surface", String());
-		if (surface != "text" && surface != "bytecode") {
+		if (!staged_surfaces.has(surface)) {
 			return ERR_INVALID_DATA;
 		}
 		const String surface_root = artifact_root.path_join(surface);
@@ -892,10 +896,14 @@ public:
 		}
 	}
 
-	Error stage(const String &p_canonical_scratch_root,
+	Error stage(const String &p_canonical_scratch_root, const Vector<String> &p_surfaces,
 			const Vector<const FSCompletenessResolvedCell *> &p_cells,
 			const ProgramIndex &p_program_index,
 			FSCompletenessPersistedWriteHook p_persisted_write_hook) {
+		staged_surfaces.clear();
+		for (const String &surface : p_surfaces) {
+			staged_surfaces.insert(surface);
+		}
 		artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
 		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, artifact_root)) {
 			return ERR_UNAUTHORIZED;
@@ -904,7 +912,7 @@ public:
 		if (error != OK) {
 			return error;
 		}
-		for (const String &surface : { String("text"), String("bytecode") }) {
+		for (const String &surface : p_surfaces) {
 			error = ensure_directory(p_canonical_scratch_root, artifact_root.path_join(surface));
 			if (error != OK) {
 				return error;
@@ -1466,23 +1474,6 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	if (error != OK) {
 		return error;
 	}
-	if (selected_cells.size() != resolution.cells.size()) {
-		// A ledger entry about a case this run did not execute was neither reconciled nor contradicted,
-		// so it is not stale either. A parity classification is in the same position whenever a pair was
-		// observed on one surface: the evidence that would contradict it was never gathered.
-		HashSet<String> selected_case_ids;
-		for (const FSCompletenessResolvedCell *cell : selected_cells) {
-			selected_case_ids.insert(cell->case_id);
-		}
-		HashMap<String, FSCompletenessFinding> scoped_ledger;
-		for (const KeyValue<String, FSCompletenessFinding> &entry : ledger) {
-			if (selected_case_ids.has(entry.value.case_id) &&
-					entry.value.dimension != FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION) {
-				scoped_ledger.insert(entry.key, entry.value);
-			}
-		}
-		ledger = scoped_ledger;
-	}
 	timings.load += StageTimings::since(stage_started_at);
 
 	stage_started_at = StageTimings::now();
@@ -1535,8 +1526,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 						selected_cells.size()));
 		return ERR_INVALID_DATA;
 	}
-	error = artifact_scope.stage(
-			canonical_scratch_root, selected_cells, program_index, p_options.persisted_write_hook);
+	error = artifact_scope.stage(canonical_scratch_root, selected_surfaces, selected_cells, program_index,
+			p_options.persisted_write_hook);
 	if (error != OK) {
 		return error;
 	}
@@ -1662,8 +1653,14 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			pairs[pair_key] = SurfacePair();
 			pair = pairs.getptr(pair_key);
 		}
-		const FSCompletenessResolvedCell **slot =
-				cell->coordinates.get("surface", String()) == "text" ? &pair->text : &pair->bytecode;
+		const String cell_surface = cell->coordinates.get("surface", String());
+		if (cell_surface != "text" && cell_surface != "bytecode") {
+			// The batch files results under exactly these two surfaces, so a cell on any other one could
+			// never be paired with anything; refusing it here keeps it from being silently filed as
+			// bytecode.
+			return ERR_INVALID_DATA;
+		}
+		const FSCompletenessResolvedCell **slot = cell_surface == "text" ? &pair->text : &pair->bytecode;
 		if (*slot != nullptr) {
 			duplicated_pair_keys.push_back(pair_key);
 			continue;
@@ -1695,6 +1692,10 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		}
 	}
 	int parity_failures = 0;
+	// The one derivation of which pairs could be compared at all. Parity verdicts and ledger
+	// reconciliation both read it, so a pair can never be compared by one and assumed by the other.
+	int compared_surface_pairs = 0;
+	HashSet<String> compared_case_ids;
 	HashSet<String> parity_case_ids;
 	HashMap<String, Dictionary> parity_evidence_by_case;
 	HashMap<String, String> parity_partner_case_id;
@@ -1710,6 +1711,9 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		if (text == nullptr || bytecode == nullptr) {
 			return ERR_INVALID_DATA;
 		}
+		compared_surface_pairs++;
+		compared_case_ids.insert(pair.text->case_id);
+		compared_case_ids.insert(pair.bytecode->case_id);
 
 		const Dictionary evidence = aggregate_parity_evidence(*pair.text, *pair.bytecode, *text, *bytecode);
 		const bool pair_failed = evidence.has("output") || evidence.has("diagnostics") ||
@@ -1749,6 +1753,28 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			findings.push_back(finding);
 		}
 	}
+	// A ledger entry is in scope only when this run could have contradicted it: its case must have been
+	// executed, and a parity classification additionally needs the pair it names to have been compared.
+	// Both conditions read the same derivation the parity verdicts came from, so an entry can never be
+	// called stale on evidence the run never gathered - whether the missing surface was excluded by a
+	// filter or was never in the family's domain at all.
+	HashSet<String> executed_case_ids;
+	for (const FSCompletenessResolvedCell *cell : selected_cells) {
+		executed_case_ids.insert(cell->case_id);
+	}
+	HashMap<String, FSCompletenessFinding> reconcilable_ledger;
+	for (const KeyValue<String, FSCompletenessFinding> &entry : ledger) {
+		if (!executed_case_ids.has(entry.value.case_id)) {
+			continue;
+		}
+		if (entry.value.dimension == FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION &&
+				!compared_case_ids.has(entry.value.case_id)) {
+			continue;
+		}
+		reconcilable_ledger.insert(entry.key, entry.value);
+	}
+	ledger = reconcilable_ledger;
+
 	HashSet<String> reconciled_ledger_entries;
 	for (FSCompletenessFinding &finding : findings) {
 		const String reconciliation_key = finding.case_id + "|" + finding.dimension;
@@ -2047,6 +2073,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 				p_options.catalog_root, p_options.report_path, report, p_options.persisted_write_hook);
 		r_result.success = false;
 		r_result.executed_cells = selected_cells.size();
+		r_result.compared_surface_pairs = compared_surface_pairs;
 		r_result.findings = findings;
 		r_result.outcome = "structural_failure";
 		if (republish_error != OK) {
@@ -2068,6 +2095,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	FSCompletenessRunResult completed;
 	completed.success = success;
 	completed.executed_cells = selected_cells.size();
+	completed.compared_surface_pairs = compared_surface_pairs;
 	completed.findings = findings;
 	completed.structural_failures = structural_failures;
 	completed.outcome = outcome;

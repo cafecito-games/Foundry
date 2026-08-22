@@ -150,6 +150,10 @@ struct FSCompletenessStructuralFailure {
 struct FSCompletenessRunResult {
 	bool success = false;
 	int executed_cells = 0;
+	// Semantic pairs whose surfaces were all observed, and so could be compared. A pair the run saw on
+	// one surface only is not compared and is not evidence of agreement, so nothing may reconcile
+	// against it.
+	int compared_surface_pairs = 0;
 	Vector<FSCompletenessFinding> findings;
 	Vector<FSCompletenessStructuralFailure> structural_failures;
 	String outcome = "not_run";

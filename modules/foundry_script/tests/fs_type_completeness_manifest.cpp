@@ -1041,6 +1041,7 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 	int schema_version = 0;
 	parse_catalog_schema_version(root, schema_version, file_errors);
 	String adapter;
+	const String source_file = String("dimensions").path_join(p_path.get_file());
 	if (require_string(root, SNAME("adapter"), "$.adapter", adapter, file_errors)) {
 		if (adapter.is_empty()) {
 			append_error(file_errors, "$.adapter", "must be non-empty");
@@ -1062,6 +1063,8 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 			}
 			validate_allowed_fields(record_object, Vector<String>({ "id", "outcomes" }), record_path, file_errors);
 			FSCompletenessDimension dimension;
+			dimension.adapter = adapter;
+			dimension.source_file = source_file;
 			const bool has_id = require_string(record_object, SNAME("id"), record_path + ".id", dimension.id, file_errors);
 			if (has_id) {
 				if (dimension.id.is_empty()) {
@@ -1393,6 +1396,12 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 				continue;
 			}
 			previous = dimension_name;
+			const FSCompletenessDimension *declared = p_catalog.dimensions.getptr(dimension_name);
+			if (declared != nullptr && declared->adapter != adapter->id()) {
+				r_errors.push_back(
+						vformat("dimension '%s' is declared in %s for adapter '%s', not for adapter '%s'",
+								dimension_name, declared->source_file, declared->adapter, adapter->id()));
+			}
 			if (!observable.has(dimension_name)) {
 				r_errors.push_back(vformat("dimension '%s' is not observable by adapter '%s'",
 						dimension_name, adapter->id()));

@@ -109,6 +109,36 @@ static String synthetic_rule_document(bool p_with_triple, const String &p_adapte
 						  : "");
 }
 
+// A family whose domain declares one surface. Its cells are a whole matrix, not a narrowed run, so
+// nothing about it is filtered - and nothing in it can ever be compared across surfaces.
+static String synthetic_single_surface_rule_document() {
+	return vformat(R"JSON({
+  "schema_version": 2,
+  "family": "%s",
+  "adapter": "%s",
+  "domain": {
+    "synthetic_shape": ["scalar", "pair"],
+    "surface": ["text"]
+  },
+  "required_dimensions": [{"dimension": "synthetic_identity", "when": {}}],
+  "anchors": [{
+    "id": "scalar_anchor",
+    "coordinates": {"synthetic_shape": "scalar"},
+    "expect": {"synthetic_identity": "identical"},
+    "surfaces": ["text"]
+  }],
+  "relations": [{
+    "id": "scalar_to_pair",
+    "from": {"synthetic_shape": "scalar"},
+    "to": {"synthetic_shape": "pair"},
+    "derive": {"synthetic_identity": "same"}
+  }],
+  "exceptions": []
+}
+)JSON",
+			synthetic_completeness_family, synthetic_completeness_adapter_id);
+}
+
 // Stages a copy of the tracked catalog and adds the test-only family to it. Nothing synthetic is
 // tracked, so the reachability the capability map validates over the tracked rule directory is
 // unaffected by anything this file does.
@@ -645,6 +675,68 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 								  "declared in the manifest domain"),
 					String(" | ").join(errors));
 		}
+	}
+
+	TEST_CASE("TypeCompleteness Adapters a single-surface family never reconciles a parity classification") {
+		TemporaryProjectTree tree(synthetic_tree_name("synthetic_single_surface"));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_synthetic_completeness_catalog(
+				tree, "catalog", false, synthetic_single_surface_rule_document());
+		const FSCompletenessCatalogRecord *record = nullptr;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(
+				FSCompletenessCatalogCache::get(TemporaryProjectTree::canonicalize_existing_path(catalog_root),
+						synthetic_completeness_family, record, errors) == OK,
+				String(" | ").join(errors));
+		REQUIRE(record != nullptr);
+		REQUIRE_EQ(record->resolution.cells.size(), 2);
+		const String case_id = record->resolution.cells[0].case_id;
+
+		// A parity classification about a family that has one surface can never be contradicted: there
+		// is no second observation to compare. It is not reconciled, and it is not stale either.
+		const String parity_finding_id = "fstcf-v1-singlesurfaceparity";
+		tree.write_file(String("catalog/findings").path_join(parity_finding_id + ".json"),
+				synthetic_finding_record(parity_finding_id, case_id, "text_bytecode_parity"));
+
+		const String scratch_root = tree.root.path_join("scratch");
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(scratch_root), OK);
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = synthetic_completeness_family;
+		options.scratch_root = scratch_root;
+		options.report_path = scratch_root.path_join("report.json");
+		options.tracked_file_probe = synthetic_tracked_file_probe;
+
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.outcome, "passed");
+		CHECK(result.structural_failures.is_empty());
+		CHECK_EQ(result.executed_cells, 2);
+		// Nothing was filtered: the whole resolution ran, and still no pair could be compared.
+		CHECK_EQ(result.compared_surface_pairs, 0);
+		CHECK_EQ(int(double(result.report["cell_count"])), 2);
+		CHECK(Array(Dictionary(result.report["ledger"])["stale"]).is_empty());
+		CHECK(Array(Dictionary(result.report["ledger"])["reconciled"]).is_empty());
+		CHECK_EQ(int(double(result.report["text_bytecode_parity_failures"])), 0);
+	}
+
+	TEST_CASE("TypeCompleteness Adapters a dimension declared for another adapter is refused") {
+		TemporaryProjectTree tree(synthetic_tree_name("synthetic_dimension_owner"));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_synthetic_completeness_catalog(tree, "catalog", false);
+		// The dimension the synthetic family requires, misfiled under another adapter's declaration.
+		tree.write_file("catalog/dimensions/synthetic.json",
+				synthetic_dimension_document().replace(
+						synthetic_completeness_adapter_id, "union_destination_membership"));
+
+		Vector<String> errors;
+		CHECK_EQ(load_synthetic_catalog_errors(catalog_root, errors), ERR_INVALID_DATA);
+		CHECK_MESSAGE(completeness_error_reported(errors,
+							  "dimension 'synthetic_identity' is declared in dimensions/synthetic.json for "
+							  "adapter 'union_destination_membership', not for adapter "
+							  "'synthetic_pair_identity'"),
+				String(" | ").join(errors));
 	}
 
 	TEST_CASE("TypeCompleteness Adapters a ledger entry may only classify a dimension the family observes") {
