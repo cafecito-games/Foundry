@@ -120,6 +120,9 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 			return WAIT_RELEASED;
 		}
 		if (abandoned) {
+			// The schedule was already abandoned when this participant asked, so no abandonment could
+			// have recorded the wait it is about to lose. The record it owes the trace is its own.
+			recorded_trace.push_back("timeout:" + p_name);
 			return WAIT_TIMED_OUT;
 		}
 		// A participant waiting for a barrier that is not released yet cannot release anything, so a
@@ -144,6 +147,8 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 				return WAIT_RELEASED;
 			}
 			if (abandoned) {
+				// Abandonment recorded this participant's timeout while it was still parked, which is
+				// where its barrier was still known. Recording again here would double it.
 				return WAIT_TIMED_OUT;
 			}
 		}
@@ -181,6 +186,21 @@ void FSCompletenessScheduleController::abandon_locked(bool p_timed_out) {
 		return;
 	}
 	abandoned = true;
+	if (p_timed_out) {
+		// Every participant parked on a barrier the schedule can no longer reach ends in a timeout, and
+		// the trace has to name the barrier each one was blocked on: that is what makes the trace a
+		// diagnosis rather than a notice. The records are appended here, in declared barrier order,
+		// rather than by each woken participant, because the order threads wake in is not the schedule's
+		// and a trace that varies between two identical runs is not evidence.
+		for (const Barrier &barrier : barriers) {
+			if (barrier.released) {
+				continue;
+			}
+			for (int waiter = 0; waiter < barrier.waiting; waiter++) {
+				recorded_trace.push_back("timeout:" + barrier.name);
+			}
+		}
+	}
 	signal.notify_all();
 }
 

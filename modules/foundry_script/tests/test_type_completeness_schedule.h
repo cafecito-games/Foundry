@@ -34,6 +34,7 @@
 
 #include "core/os/mutex.h"
 #include "core/os/os.h"
+#include "core/os/semaphore.h"
 #include "core/os/thread.h"
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
@@ -80,6 +81,30 @@ void schedule_stuck_participant(void *p_controller) {
 	FSCompletenessScheduleController *controller =
 			static_cast<FSCompletenessScheduleController *>(p_controller);
 	controller->wait("never_released", 0);
+}
+
+// Two participants parked on two different barriers of one schedule, so an abandonment has to name
+// both positions rather than only the one the deciding participant was at.
+struct ScheduleStandstill {
+	FSCompletenessScheduleController controller;
+	FSCompletenessScheduleController::WaitOutcome first_outcome =
+			FSCompletenessScheduleController::WAIT_RELEASED;
+	FSCompletenessScheduleController::WaitOutcome second_outcome =
+			FSCompletenessScheduleController::WAIT_RELEASED;
+	Semaphore first_parked;
+	Semaphore second_parked;
+};
+
+void schedule_standstill_first(void *p_standstill) {
+	ScheduleStandstill *standstill = static_cast<ScheduleStandstill *>(p_standstill);
+	standstill->first_parked.post();
+	standstill->first_outcome = standstill->controller.wait("first_barrier", 0);
+}
+
+void schedule_standstill_second(void *p_standstill) {
+	ScheduleStandstill *standstill = static_cast<ScheduleStandstill *>(p_standstill);
+	standstill->second_parked.post();
+	standstill->second_outcome = standstill->controller.wait("second_barrier", 0);
 }
 
 Vector<String> run_publish_then_read_rehearsal(ScheduleRehearsal &r_rehearsal) {
@@ -132,10 +157,45 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Schedule") {
 
 		CHECK_EQ(outcome, FSCompletenessScheduleController::WAIT_TIMED_OUT);
 		CHECK(controller.timed_out());
-		const Vector<String> trace = controller.trace();
-		REQUIRE_FALSE(trace.is_empty());
-		CHECK_EQ(trace[trace.size() - 1], "timeout:never_released");
+		// Both participants lost a wait, so both are in the trace: the one that proved the schedule
+		// stuck and the one that was parked when it did.
+		CHECK_EQ(controller.trace(),
+				Vector<String>({ "timeout:never_released", "timeout:never_released" }));
 		CHECK_EQ(String(FSCompletenessScheduleController::SCHEDULE_TIMEOUT_STATUS), "schedule_timeout");
+	}
+
+	TEST_CASE("TypeCompleteness Schedule names every parked participant when it abandons a schedule") {
+		// The trace is what a timed-out cell retains as its diagnosis, so it has to say where each
+		// participant was standing, not only where the one that noticed was standing.
+		ScheduleStandstill standstill;
+		REQUIRE_EQ(standstill.controller.declare(
+						   Vector<String>({ "first_barrier", "second_barrier", "third_barrier" }), 3),
+				OK);
+		Thread first;
+		Thread second;
+		first.start(schedule_standstill_first, &standstill);
+		second.start(schedule_standstill_second, &standstill);
+		standstill.first_parked.wait();
+		standstill.second_parked.wait();
+		// A budget rather than the stuck proof, because the two participants may not have reached
+		// their waits yet; either way the schedule can never reach a barrier nobody releases.
+		const FSCompletenessScheduleController::WaitOutcome deciding =
+				standstill.controller.wait("third_barrier", 2000);
+		first.wait_to_finish();
+		second.wait_to_finish();
+
+		CHECK_EQ(deciding, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+		CHECK_EQ(standstill.first_outcome, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+		CHECK_EQ(standstill.second_outcome, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+		CHECK(standstill.controller.timed_out());
+		// One record per participant, each naming the barrier that participant was standing at. Which
+		// of the three notices the standstill first is not the schedule's business - a stuck schedule
+		// has no order left to impose - so the records are compared as a set.
+		Vector<String> trace = standstill.controller.trace();
+		trace.sort();
+		CHECK_EQ(trace,
+				Vector<String>({ "timeout:first_barrier", "timeout:second_barrier",
+						"timeout:third_barrier" }));
 	}
 
 	TEST_CASE("TypeCompleteness Schedule ends a wait whose budget elapses outside the controller") {

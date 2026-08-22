@@ -92,9 +92,14 @@ public:
 	// participant is inside the controller, because the stuck-schedule proof is then the bound.
 	WaitOutcome wait(const String &p_name, uint32_t p_budget_msec);
 
-	// Every participant must have finished before the controller is destroyed. Every arrival, release,
-	// and timeout in the order it happened, as "arrive:<name>",
-	// "release:<name>", and "timeout:<name>". This is the schedule trace a timed-out cell retains.
+	// Every arrival, release, and timeout in the order it happened, as "arrive:<name>",
+	// "release:<name>", and "timeout:<name>". Every wait that ends without its barrier being released
+	// contributes one timeout record naming the barrier that participant was blocked on, including the
+	// ones that were parked when the schedule was abandoned, so the trace of a stuck schedule names
+	// every participant's position rather than only the one that noticed. This is the schedule trace a
+	// timed-out cell retains.
+	//
+	// Every participant must have finished before the controller is destroyed.
 	Vector<String> trace() const;
 
 	// True once any wait ended without its barrier being released.
