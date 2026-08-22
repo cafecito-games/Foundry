@@ -1035,7 +1035,6 @@ static Error validate_runtime_staging_whitelist(
 	return observed_files.size() == p_expected_files.size() ? OK : ERR_INVALID_DATA;
 }
 
-#ifdef TOOLS_ENABLED
 class DestinationWrapperBytecodeResolver : public FSBytecodeExternalResolver {
 public:
 	virtual Ref<Resource> resolve_resource(const String &) override {
@@ -1047,7 +1046,6 @@ public:
 		return Ref<Script>();
 	}
 };
-#endif
 
 enum RuntimeInspectionDisposition {
 	RUNTIME_INSPECTION_COMPLETE,
@@ -1135,7 +1133,6 @@ static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompl
 
 	r_inspected = r_original;
 	if (p_program.surface == "bytecode") {
-#ifdef TOOLS_ENABLED
 		FSBytecodeExporter exporter;
 		Vector<uint8_t> buffer;
 		error = exporter.serialize(r_original, buffer);
@@ -1166,10 +1163,6 @@ static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompl
 			return runtime_inspection_failure(error, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 		}
 		r_inspected = restored;
-#else
-		r_diagnostics.push_back("Runtime contract bytecode reload is unavailable in this build.");
-		return runtime_inspection_failure(ERR_UNAVAILABLE, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
-#endif
 	}
 	return RuntimeInspectionStepResult();
 }
