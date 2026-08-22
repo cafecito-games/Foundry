@@ -36,6 +36,7 @@
 #include "fs_type_completeness_common.h"
 #include "fs_type_completeness_json.h"
 
+#include "core/error/error_macros.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/templates/hash_map.h"
@@ -99,6 +100,20 @@ bool resolve_tracked_fixture_reference(const String &p_root, const String &p_ref
 	if (probe_error == OK && exit_code == 1) {
 		r_detail = vformat("fixture '%s' is not tracked", p_reference);
 		return false;
+	}
+	if (probe_error != OK || exit_code != 0) {
+		// The witness exists at a canonical path inside the repository; only its tracked status is
+		// unverifiable here. Environments without a usable git - a source tree without a repository, a
+		// sandbox that refuses to launch it - would otherwise turn every fixture witness into an
+		// unresolved one, which is a verdict about the environment rather than about the census. The
+		// refusal is reported once per process so a run that verified nothing is still visible.
+		static bool reported_unavailable_probe = false;
+		if (!reported_unavailable_probe) {
+			reported_unavailable_probe = true;
+			WARN_PRINT(vformat("Git tracked-file verification is unavailable (error %d, exit %d); census "
+							   "fixture witnesses are accepted on canonical existence alone.",
+					probe_error, exit_code));
+		}
 	}
 	return true;
 }
@@ -424,16 +439,26 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 					census_directory(p_root).path_join("representations.json"), index));
 			continue;
 		}
+		Array child_slots;
+		if (!require_object_array(representation, "child_slots",
+					vformat("%s:$.representations[%d].child_slots",
+							census_directory(p_root).path_join("representations.json"), index),
+					child_slots, r_errors)) {
+			continue;
+		}
 		HashSet<String> slots;
-		for (const Dictionary &slot : census_dictionary_array(representation, "child_slots")) {
+		for (int slot_index = 0; slot_index < child_slots.size(); slot_index++) {
+			const Dictionary slot = child_slots[slot_index];
 			const String slot_id = census_string(slot, "id");
 			if (slot_id.is_empty()) {
-				r_errors.push_back(vformat("%s: a child slot of '%s' names no id",
-						census_directory(p_root).path_join("representations.json"), id));
+				r_errors.push_back(vformat("%s:$.representations[%d].child_slots[%d]: names no id",
+						census_directory(p_root).path_join("representations.json"), index, slot_index));
 				continue;
 			}
 			slots.insert(slot_id);
 		}
+		// A representation with no recursive children is a leaf of the census, not a defect: it
+		// contributes no policy cell at all.
 		slots_by_representation.insert(id, slots);
 	}
 

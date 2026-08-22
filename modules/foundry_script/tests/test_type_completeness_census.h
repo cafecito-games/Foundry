@@ -492,6 +492,28 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			CHECK_MESSAGE(census_errors_mention(errors, "policies for"), String(" | ").join(errors));
 		}
 
+		SUBCASE("a malformed child-slot inventory is refused rather than read as fewer slots") {
+			// The inventory decides how many cells the matrix must carry, so a slot list of the wrong
+			// type may not read as a representation with no children.
+			Vector<String> inventory_errors;
+			Variant representations_data;
+			REQUIRE_MESSAGE(census_read_json("representations.json", representations_data, inventory_errors),
+					String(" | ").join(inventory_errors));
+			Dictionary representations = Dictionary(representations_data).duplicate(true);
+			Array inventory = representations["representations"];
+			Dictionary representation = inventory[0];
+			representation["child_slots"] = "not an array";
+			inventory[0] = representation;
+			representations["representations"] = inventory;
+			tree.write_file("catalog/census/representations.json", JSON::stringify(representations, "\t") + "\n");
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "child_slots: must be an array"),
+					String(" | ").join(errors));
+		}
+
 		SUBCASE("a policy for a slot the inventory does not declare is refused") {
 			Dictionary policies = Dictionary(policies_data).duplicate(true);
 			Array policy_entries = policies["entries"];
