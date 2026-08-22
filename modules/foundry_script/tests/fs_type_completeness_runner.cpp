@@ -1147,9 +1147,16 @@ static String diagnostic_severity_profile(const FSCompletenessObservation &p_obs
 	return has_warning ? "warning" : "none";
 }
 
-static bool observed_expected_dimensions(
-		const FSCompletenessResolvedCell &p_cell, const FSCompletenessRuntimeResult &p_actual) {
+// The one dimension whose expected value can be an analyzer warning. A build whose analyzer emits none
+// observes "no warning" for it whatever the product does, so that observation decides nothing.
+static const char *DIAGNOSTIC_SEVERITY_DIMENSION = "diagnostic_severity";
+
+static bool observed_expected_dimensions(const FSCompletenessResolvedCell &p_cell,
+		const FSCompletenessRuntimeResult &p_actual, bool p_skip_diagnostic_severity) {
 	for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : p_cell.dimensions) {
+		if (p_skip_diagnostic_severity && dimension.key == DIAGNOSTIC_SEVERITY_DIMENSION) {
+			continue;
+		}
 		if (p_actual.dimensions.get(dimension.key, Variant()) != dimension.value.expected) {
 			return false;
 		}
@@ -1542,32 +1549,24 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// that produced it can never disagree about which cells were in scope.
 	const Dictionary configuration = FSCompletenessRunner::configuration_report();
 	const bool analyzer_warnings = bool(configuration.get("analyzer_warnings", true));
-	HashSet<String> not_covered_case_ids;
+	HashSet<String> diagnostics_unobservable_case_ids;
 	if (!analyzer_warnings) {
 		for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
 			if (FSCompletenessRunner::expectation_requires_analyzer_warnings(
 						expected_dimensions(*selected_cell))) {
-				not_covered_case_ids.insert(selected_cell->case_id);
-				r_result.not_covered_case_ids.push_back(selected_cell->case_id);
+				diagnostics_unobservable_case_ids.insert(selected_cell->case_id);
 			}
 		}
-	}
-	r_result.not_covered_case_ids.sort();
-	if (!r_result.not_covered_case_ids.is_empty()) {
-		WARN_PRINT(vformat("Family '%s' left %d of %d selected cells uncovered in this build: %s.",
-				p_options.family, r_result.not_covered_case_ids.size(), selected_cells.size(),
-				FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
 	}
 
 	Vector<FSCompletenessFinding> findings;
 	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
 		const FSCompletenessResolvedCell &cell = *selected_cell;
-		// A cell whose expected evidence this build cannot produce is published as not covered rather
-		// than compared: an observation of "no warning" from an analyzer that never warns contradicts
-		// nothing, so deriving a finding from it would report a defect the run did not observe.
-		if (not_covered_case_ids.has(cell.case_id)) {
-			continue;
-		}
+		// Only the expectation this build cannot observe is exempt. Everything else the cell declares -
+		// its output, its runtime status, its analyzer verdict and every other dimension - is observed
+		// here exactly as it is anywhere, so a regression in a cell that also expects a warning is
+		// reported by the build that cannot see the warning.
+		const bool diagnostics_unobservable = diagnostics_unobservable_case_ids.has(cell.case_id);
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
 		const FSCompletenessProgram *program = program_index.find(cell.case_id);
 		if (actual == nullptr || program == nullptr) {
@@ -1599,6 +1598,9 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			}
 		}
 		for (const String &dimension_name : sorted_dimension_keys(cell.dimensions)) {
+			if (diagnostics_unobservable && dimension_name == DIAGNOSTIC_SEVERITY_DIMENSION) {
+				continue;
+			}
 			const FSCompletenessResolvedDimension &dimension = cell.dimensions[dimension_name];
 			const Variant observed = actual->dimensions.get(dimension_name, Variant());
 			if (observed == dimension.expected) {
@@ -1675,12 +1677,6 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			// pair has nothing to compare, and must not report agreement it never observed.
 			continue;
 		}
-		if (not_covered_case_ids.has(pair.text->case_id) ||
-				not_covered_case_ids.has(pair.bytecode->case_id)) {
-			// A cell this build could not judge is not an observation, so the pair it belongs to has
-			// nothing to agree about on either surface.
-			continue;
-		}
 		const FSCompletenessRuntimeResult *text = runtime_result_for(*pair.text, batch);
 		const FSCompletenessRuntimeResult *bytecode = runtime_result_for(*pair.bytecode, batch);
 		if (text == nullptr || bytecode == nullptr) {
@@ -1735,11 +1731,6 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// filter or was never in the family's domain at all.
 	HashSet<String> executed_case_ids;
 	for (const FSCompletenessResolvedCell *cell : selected_cells) {
-		if (not_covered_case_ids.has(cell->case_id)) {
-			// The run gathered no evidence about this cell, so nothing it did could contradict an entry
-			// that classifies it.
-			continue;
-		}
 		executed_case_ids.insert(cell->case_id);
 	}
 	HashMap<String, FSCompletenessFinding> reconcilable_ledger;
@@ -1749,6 +1740,12 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		}
 		if (entry.value.dimension == FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION &&
 				!compared_case_ids.has(entry.value.case_id)) {
+			continue;
+		}
+		// An entry classifying the one dimension this build could not observe is beyond its reach: the
+		// run gathered nothing that could reproduce it or contradict it.
+		if (entry.value.dimension == DIAGNOSTIC_SEVERITY_DIMENSION &&
+				diagnostics_unobservable_case_ids.has(entry.value.case_id)) {
 			continue;
 		}
 		reconcilable_ledger.insert(entry.key, entry.value);
@@ -1845,6 +1842,25 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			}
 		}
 	}
+	// A cell that failed on evidence this build did gather is a failure; a cell that survived everything
+	// observable and left an expectation unobserved is the one this build could not judge. Deciding it
+	// here means the case records, the exception records and the run result cannot disagree about it.
+	HashSet<String> not_covered_case_ids;
+	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
+		if (!diagnostics_unobservable_case_ids.has(selected_cell->case_id) ||
+				blocking_finding_ids_by_case.getptr(selected_cell->case_id) != nullptr) {
+			continue;
+		}
+		not_covered_case_ids.insert(selected_cell->case_id);
+		r_result.not_covered_case_ids.push_back(selected_cell->case_id);
+	}
+	r_result.not_covered_case_ids.sort();
+	if (!r_result.not_covered_case_ids.is_empty()) {
+		WARN_PRINT(vformat("Family '%s' left %d of %d selected cells uncovered in this build: %s.",
+				p_options.family, r_result.not_covered_case_ids.size(), selected_cells.size(),
+				FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+	}
+
 	HashMap<String, Dictionary> exception_reports;
 	Vector<String> exception_ids;
 	HashMap<String, int> declared_witness_count;
@@ -1953,16 +1969,17 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		const bool not_covered = not_covered_case_ids.has(cell->case_id);
 		bool passed = actual->passed && actual->status == "ok" && actual->diagnostics.is_empty() &&
 				actual->produced_output == program->expected_output &&
-				observed_expected_dimensions(*cell, *actual) && !parity_case_ids.has(cell->case_id);
+				observed_expected_dimensions(
+						*cell, *actual, diagnostics_unobservable_case_ids.has(cell->case_id)) &&
+				!parity_case_ids.has(cell->case_id);
 		for (const FSCompletenessFinding &finding : findings) {
 			if (finding.case_id == cell->case_id) {
 				passed = false;
 				break;
 			}
 		}
-		// A cell this build could not judge is neither passed nor failed. Publishing it as failed would
-		// report a defect nothing observed; publishing it as passed would claim evidence nothing
-		// gathered.
+		// A cell this build could not judge is neither passed nor failed: publishing it as a pass would
+		// claim evidence nothing gathered.
 		if (not_covered) {
 			passed = false;
 		}

@@ -219,6 +219,37 @@ def _load_unconfirmed_census_witnesses(data: Mapping[str, Any]) -> tuple[str, ..
     return tuple(unconfirmed)
 
 
+def _check_not_covered_coherence(
+    case: Mapping[str, Any], case_id: str, passed: bool, findings: list[dict[str, Any]]
+) -> None:
+    """Refuse a case that claims the build made no judgment about it while carrying one.
+
+    The category is what makes a case non-failing, so on its own it would be enough to hide a real failure
+    from every consumer. The runner writes the whole claim together - the status, the reason, a verdict that
+    is not a pass, and no finding - so a document where those disagree is malformed rather than a report of a
+    case nothing judged.
+    """
+    status = str(case.get("status", ""))
+    category = str(case.get("category", "")) if case.get("category") is not None else ""
+    not_covered = category == Category.NOT_COVERED.value
+    if not not_covered and status != "not_covered":
+        return
+    if not_covered != (status == "not_covered"):
+        raise ReportError(
+            f"case {case_id!r} is {status!r} but categorized {category!r}; a case the build could not judge "
+            "carries both"
+        )
+    if not str(case.get("not_covered_reason", "")):
+        raise ReportError(f"case {case_id!r} claims to be not covered without naming a reason")
+    if passed:
+        raise ReportError(f"case {case_id!r} claims to be not covered and to have passed")
+    if findings:
+        raise ReportError(
+            f"case {case_id!r} claims the build made no judgment about it, but findings target it: "
+            f"{[finding['dimension'] for finding in findings]}"
+        )
+
+
 def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
     if key not in mapping:
         raise ReportError(f"{context} is missing required member {key!r}")
@@ -274,6 +305,7 @@ def load_report(data: Mapping[str, Any]) -> Report:
         context = f"case {case_id!r}"
         for field in CASE_REQUIRED_FIELDS:
             _require(raw_case, field, context)
+        _check_not_covered_coherence(raw_case, case_id, passed, findings_by_case.get(case_id, []))
         observation = {field: raw_case[field] for field in OBSERVATION_FIELDS}
         cases.append(
             CaseResult(

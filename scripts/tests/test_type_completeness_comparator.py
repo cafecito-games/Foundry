@@ -561,8 +561,34 @@ class ReportLoadingTests(unittest.TestCase):
 
     def test_every_category_value_loads(self) -> None:
         for category in report.Category:
-            loaded = report.load_report(_report([_case("a", passed=False, category=category.value)]))
+            extra: dict[str, Any] = {}
+            if category is report.Category.NOT_COVERED:
+                # The claim travels whole; a category on its own is refused, which its own case covers.
+                extra = {"status": "not_covered", "not_covered_reason": "diagnostics_unavailable_in_configuration"}
+            loaded = report.load_report(_report([_case("a", passed=False, category=category.value, **extra)]))
             self.assertEqual(loaded.case("a").category, category)
+
+    def test_a_not_covered_claim_is_refused_unless_the_whole_claim_agrees(self) -> None:
+        whole = {
+            "status": "not_covered",
+            "category": "not_covered",
+            "not_covered_reason": "diagnostics_unavailable_in_configuration",
+        }
+        report.load_report(_report([_case("a", passed=False, **whole)]))
+        # The category alone is what makes a case non-failing, so on its own it would hide a real failure.
+        for broken in (
+            {**whole, "status": "failed"},
+            {**whole, "category": "product_finding"},
+            {**whole, "not_covered_reason": ""},
+        ):
+            with self.subTest(broken=broken):
+                with self.assertRaises(report.ReportError):
+                    report.load_report(_report([_case("a", passed=False, **broken)]))
+        with self.assertRaises(report.ReportError):
+            report.load_report(_report([_case("a", passed=True, **whole)]))
+        # A finding targets a case only when the run judged it, so it contradicts the claim outright.
+        with self.assertRaises(report.ReportError):
+            report.load_report(_report([_case("a", passed=False, **whole)], findings=[_finding("a", "destination")]))
 
     def test_default_category_is_product_finding_until_runner_emits_categories(self) -> None:
         loaded = report.load_report(_report([_case("b", passed=False)]))

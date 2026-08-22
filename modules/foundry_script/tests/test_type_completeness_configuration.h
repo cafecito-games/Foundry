@@ -30,11 +30,13 @@
 
 #pragma once
 
+#include "modules/foundry_script/tests/fs_temporary_project_tree.h"
 #include "modules/foundry_script/tests/fs_type_completeness_cache.h"
 #include "modules/foundry_script/tests/fs_type_completeness_common.h"
 #include "modules/foundry_script/tests/fs_type_completeness_runner.h"
 
 #include "core/io/json.h"
+#include "core/os/os.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 
@@ -50,6 +52,11 @@ static const char *configuration_warning_observing_family = "union_destination_m
 
 static bool configuration_analyzer_warnings() {
 	return bool(FSCompletenessRunner::configuration_report().get("analyzer_warnings", true));
+}
+
+// Breaks the one thing every cell of every family is judged on, whatever else it expects.
+static void configuration_corrupt_produced_output(FSCompletenessObservation &r_observation) {
+	r_observation.produced_output = "corrupted by the configuration probe\n";
 }
 
 static Dictionary configuration_with_analyzer_warnings(bool p_analyzer_warnings) {
@@ -206,6 +213,50 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Configuration]") {
 		} else {
 			CHECK_FALSE(baseline->not_covered_case_ids.is_empty());
 		}
+	}
+
+	TEST_CASE("TypeCompleteness Configuration judges a cell on everything the build can observe") {
+		// A cell expecting a warning is exempt from that expectation on a build that emits none, and from
+		// nothing else: its output, its runtime status and its other dimensions are observed here exactly
+		// as they are anywhere, so a regression in one of them is reported by this build too.
+		TemporaryProjectTree tree(vformat("type_completeness_configuration_evidence_%d",
+				OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = tracked_catalog_root();
+		options.family = configuration_warning_expecting_family;
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.observation_mutator = configuration_corrupt_produced_output;
+
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
+		CHECK_EQ(result.outcome, "product_mismatch");
+		CHECK_FALSE(result.success);
+		CHECK(result.structural_failures.is_empty());
+		// Nothing is published as unjudged when every cell failed on evidence this build did gather.
+		CHECK(result.not_covered_case_ids.is_empty());
+
+		HashSet<String> findings_by_case;
+		for (const FSCompletenessFinding &finding : result.findings) {
+			findings_by_case.insert(finding.case_id);
+		}
+		int warning_expecting_cases = 0;
+		const Array cases = Dictionary(result.report).get("cases", Array());
+		REQUIRE_FALSE(cases.is_empty());
+		for (int index = 0; index < cases.size(); index++) {
+			const Dictionary case_record = cases[index];
+			if (!FSCompletenessRunner::expectation_requires_analyzer_warnings(
+						case_record.get("expected", Dictionary()))) {
+				continue;
+			}
+			warning_expecting_cases++;
+			CAPTURE(String(case_record.get("case_id", String())));
+			CHECK_EQ(String(case_record.get("status", String())), "failed");
+			CHECK_FALSE(case_record.has("not_covered_reason"));
+			CHECK(findings_by_case.has(String(case_record.get("case_id", String()))));
+		}
+		CHECK_GT(warning_expecting_cases, 0);
 	}
 
 	TEST_CASE("TypeCompleteness Configuration compares only what a build could observe") {
