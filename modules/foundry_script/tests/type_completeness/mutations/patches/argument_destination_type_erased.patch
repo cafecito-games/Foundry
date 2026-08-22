@@ -1,0 +1,13 @@
+diff --git a/modules/foundry_script/fs_byte_codegen.cpp b/modules/foundry_script/fs_byte_codegen.cpp
+index af8e46a756..e3c2bd5f8e 100644
+--- a/modules/foundry_script/fs_byte_codegen.cpp
++++ b/modules/foundry_script/fs_byte_codegen.cpp
+@@ -469,7 +469,7 @@ int FSByteCodeGenerator::get_native_type_pos(const FSDataType &p_type) {
+ 
+ uint32_t FSByteCodeGenerator::add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_slot_type, const FSDataType &p_validation_type) {
+ 	function->_argument_count++;
+-	function->argument_types.push_back(p_validation_type);
++	function->argument_types.push_back(FSDataType());
+ 	if (p_is_optional) {
+ 		function->_default_arg_count++;
+ 	}

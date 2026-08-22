@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "dimensions": [
     {
       "id": "analysis",
@@ -20,7 +20,43 @@
       "id": "stored_carrier",
       "outcomes": [
         "plain_destination",
-        "admitting_alternative"
+        "admitting_alternative",
+        "optional_payload",
+        "element_slot",
+        "reified_argument",
+        "tuple_slot",
+        "callable_slot",
+        "nominal_instance",
+        "trait_witness"
+      ]
+    },
+    {
+      "id": "diagnostic_severity",
+      "outcomes": [
+        "none",
+        "warning",
+        "error"
+      ]
+    },
+    {
+      "id": "census_child_evidence",
+      "outcomes": [
+        "absent",
+        "binding_fixed_1_uint",
+        "binding_tuple_uint_string",
+        "parser_argument_uint",
+        "parser_bound_refcounted",
+        "parser_element_uint",
+        "parser_parameters_uint_string",
+        "parser_payload_names_label",
+        "parser_payload_types_uint",
+        "parser_rest_array_uint",
+        "parser_return_uint",
+        "parser_union_string_uint",
+        "reflection_hint_23_39",
+        "runtime_argument_uint",
+        "runtime_element_uint",
+        "runtime_union_string_uint"
       ]
     }
   ]

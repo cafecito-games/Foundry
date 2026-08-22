@@ -23,6 +23,12 @@ WORKFLOW = REPO_ROOT / ".github/workflows/type_completeness_nightly.yml"
 SHARDS = REPO_ROOT / "modules/foundry_script/tests/type_completeness/mutations/shards.json"
 JOB = "mutation-shard"
 
+# Wall clock the job spends outside the recipe loop: checkout, Python and build tooling install, and
+# catalog validation before it, the summary and the artifact upload after it. Generous on purpose -
+# the point is that a shard's own budgets can never claim the whole job.
+SETUP_SECONDS = 300
+TEARDOWN_SECONDS = 120
+
 
 class TypeCompletenessNightlyTests(unittest.TestCase):
     workflow: workflow_graph.Workflow
@@ -60,6 +66,25 @@ class TypeCompletenessNightlyTests(unittest.TestCase):
     def test_shard_job_has_the_forty_minute_timeout(self) -> None:
         self.assertEqual(self.workflow.job_key(JOB, "timeout-minutes"), 40)
         self.assertFalse(self.workflow.strategy(JOB)["fail-fast"])
+
+    def test_every_shard_fits_its_recipes_inside_the_job_timeout(self) -> None:
+        # A shard whose recipes can outlast the job has no failure mode a reader can trust: the
+        # runner kills the job mid-recipe, so a legitimate timeout in the first recipe silently
+        # starves every later one instead of each writing its own terminal verdict.
+        job_seconds = self.workflow.job_key(JOB, "timeout-minutes") * 60
+        for shard in self.shards:
+            with self.subTest(shard=shard["shard_id"]):
+                recipe_seconds = len(shard["recipes"]) * shard["budget_seconds"]
+                self.assertLessEqual(SETUP_SECONDS + recipe_seconds + TEARDOWN_SECONDS, job_seconds)
+
+    def test_no_shard_is_empty_and_every_recipe_is_scheduled_exactly_once(self) -> None:
+        scheduled: list[str] = []
+        for shard in self.shards:
+            self.assertTrue(shard["recipes"])
+            scheduled.extend(shard["recipes"])
+        self.assertEqual(sorted(scheduled), sorted(set(scheduled)))
+        catalog = {path.stem for path in (SHARDS.parent).glob("*.json") if path.name != SHARDS.name}
+        self.assertEqual(set(scheduled), catalog)
 
     def test_results_are_uploaded_per_shard_and_run_with_fourteen_day_retention(self) -> None:
         upload = self.workflow.step_with(JOB, "Upload mutation results")

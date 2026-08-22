@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "recipe_id": "tuple_carrier_arity_check_inverted",
+  "description": "FSDataType::tuple_carrier_matches demands more elements than the tuple declares, so every store into a tuple-shaped destination is refused at run time however the value reached it.",
+  "escape_class": "invert_composite_arity_guard",
+  "expected_detectors": [
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "numeric_constant",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "numeric_constant",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "gradual",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "gradual",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "erased",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "erased",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "variant",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "variant",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "inferred",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "inferred",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "nested_child",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "nested_child",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    }
+  ]
+}

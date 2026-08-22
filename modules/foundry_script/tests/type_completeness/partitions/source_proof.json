@@ -6,13 +6,20 @@
     "numeric_constant",
     "gradual",
     "erased",
-    "variant"
+    "variant",
+    "inferred",
+    "nested_child"
   ],
   "classes": {
     "unproven": [
       "gradual",
       "erased",
-      "variant"
+      "variant",
+      "nested_child"
+    ],
+    "provable_carrier": [
+      "numeric_constant",
+      "inferred"
     ]
   }
 }

@@ -1,0 +1,13 @@
+diff --git a/modules/foundry_script/fs_compiler.cpp b/modules/foundry_script/fs_compiler.cpp
+index 6c075ffd3e..8fc5ebfb53 100644
+--- a/modules/foundry_script/fs_compiler.cpp
++++ b/modules/foundry_script/fs_compiler.cpp
+@@ -5170,7 +5170,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
+ 	if (p_func) {
+ 		// Abstract functions have no executable body, but MethodInfo must still expose annotated return contracts.
+ 		if ((p_func->is_abstract && p_func->return_type != nullptr) || p_func->body->has_return) {
+-			gd_function->return_type = _gdtype_from_datatype(function_datatype, p_script);
++			gd_function->return_type = FSDataType();
+ 			method_info.return_val = function_datatype.to_property_info(String());
+ 		} else {
+ 			// If no `return` statement, then return type is `void`, not `Variant`.

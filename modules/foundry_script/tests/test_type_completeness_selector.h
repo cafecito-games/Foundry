@@ -101,6 +101,27 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Selector]") {
 		CHECK(completeness_selector_strings(document["families"]).has("union_destination_membership"));
 	}
 
+	// A rule manifest is a family's own definition, so a change set that only edits one has to select
+	// that family and nothing else. A wrapper-parity rule that selected nothing would let a weakened
+	// rule and its regenerated evidence through a gate that compared neither.
+	TEST_CASE("TypeCompleteness selector maps a wrapper-parity rule manifest to its own family") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_selector_rule_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		int exit_code = -1;
+		const Dictionary document = completeness_selector_parse(completeness_selector_run(tree,
+				Vector<String>({ "modules/foundry_script/tests/type_completeness/rules/"
+								 "wrapper_parity_reflective_write.json" }),
+				exit_code));
+
+		CHECK_EQ(exit_code, FSCompletenessSelectCLI::EXIT_SELECTED);
+		CHECK_EQ(bool(document["used_broad_core_fallback"]), false);
+		CHECK(completeness_selector_strings(document["validation_errors"]).is_empty());
+		const PackedStringArray families = completeness_selector_strings(document["families"]);
+		REQUIRE_EQ(families.size(), 1);
+		CHECK_EQ(families[0], "wrapper_parity_reflective_write");
+	}
+
 	// The document is the gate's input, so two change sets that differ only in the order or multiplicity
 	// of their lines must not be able to produce two different gates.
 	TEST_CASE("TypeCompleteness selector is invariant under reordering and duplication") {

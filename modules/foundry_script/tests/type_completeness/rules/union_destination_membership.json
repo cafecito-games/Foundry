@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "family": "union_destination_membership",
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "domain": {
     "destination": [
       "plain",

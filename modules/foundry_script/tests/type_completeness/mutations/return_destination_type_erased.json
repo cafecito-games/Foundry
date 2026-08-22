@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "recipe_id": "return_destination_type_erased",
+  "description": "FSCompiler stops recording a function's return type on the compiled function, so a return boundary's destination is no longer described and nothing validates what a typed return stores.",
+  "escape_class": "erase_boundary_destination_record",
+  "expected_detectors": [
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "generic_argument",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "generic_argument",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "callable_slot",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "callable_slot",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "nominal_class",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "nominal_class",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "trait",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "trait",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    }
+  ]
+}

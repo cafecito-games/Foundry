@@ -7,6 +7,27 @@
         "union_membership_drops_last_alternative"
       ],
       "budget_seconds": 1800
+    },
+    {
+      "shard_id": "wrapper_parity_argument_destination_type_erased",
+      "recipes": [
+        "argument_destination_type_erased"
+      ],
+      "budget_seconds": 1800
+    },
+    {
+      "shard_id": "wrapper_parity_return_destination_type_erased",
+      "recipes": [
+        "return_destination_type_erased"
+      ],
+      "budget_seconds": 1800
+    },
+    {
+      "shard_id": "wrapper_parity_tuple_carrier_arity_check_inverted",
+      "recipes": [
+        "tuple_carrier_arity_check_inverted"
+      ],
+      "budget_seconds": 1800
     }
   ]
 }

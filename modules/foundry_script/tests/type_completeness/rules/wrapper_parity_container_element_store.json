@@ -1,0 +1,405 @@
+{
+  "schema_version": 2,
+  "family": "wrapper_parity_container_element_store",
+  "adapter": "destination_wrapper",
+  "domain": {
+    "destination": [
+      "plain",
+      "optional",
+      "container_element",
+      "generic_argument",
+      "tuple_field",
+      "callable_slot",
+      "nominal_class",
+      "trait"
+    ],
+    "source_proof": [
+      "static_member",
+      "numeric_constant",
+      "gradual",
+      "erased",
+      "variant",
+      "inferred",
+      "nested_child"
+    ],
+    "boundary": [
+      "container_element_store"
+    ],
+    "census_child": [
+      "none",
+      "parser_data_type.container_element_types",
+      "runtime_data_type.container_element_types",
+      "parser_data_type.method_rest_parameter_type"
+    ],
+    "surface": [
+      "text",
+      "bytecode"
+    ]
+  },
+  "required_dimensions": [
+    {
+      "dimension": "analysis",
+      "when": {}
+    },
+    {
+      "dimension": "diagnostic_severity",
+      "when": {}
+    },
+    {
+      "dimension": "census_child_evidence",
+      "when": {}
+    },
+    {
+      "dimension": "runtime_obligation",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      }
+    },
+    {
+      "dimension": "stored_carrier",
+      "when": {}
+    }
+  ],
+  "anchors": [
+    {
+      "id": "plain_static_member",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "container_element_store",
+        "census_child": "none"
+      },
+      "expect": {
+        "analysis": "accept",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "absent",
+        "stored_carrier": "plain_destination"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "plain_numeric_constant",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "numeric_constant",
+        "boundary": "container_element_store",
+        "census_child": "none"
+      },
+      "expect": {
+        "analysis": "accept",
+        "stored_carrier": "plain_destination",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "absent"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "plain_gradual",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "gradual",
+        "boundary": "container_element_store",
+        "census_child": "none"
+      },
+      "expect": {
+        "analysis": "accept",
+        "runtime_obligation": "typed_destination_check",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "absent",
+        "stored_carrier": "plain_destination"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "gradual_to_erased_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "erased"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "gradual_to_variant_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "variant"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "gradual_to_nested_child_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "nested_child"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "numeric_constant_to_inferred_parity",
+      "from": {
+        "source_proof": "numeric_constant"
+      },
+      "to": {
+        "source_proof": "inferred"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "census_child_parity_parser_data_type_container_element_types",
+      "from": {
+        "census_child": "none"
+      },
+      "to": {
+        "census_child": "parser_data_type.container_element_types"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "parser_element_uint"
+      }
+    },
+    {
+      "id": "census_child_parity_runtime_data_type_container_element_types",
+      "from": {
+        "census_child": "none"
+      },
+      "to": {
+        "census_child": "runtime_data_type.container_element_types"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "runtime_element_uint"
+      }
+    },
+    {
+      "id": "census_child_parity_parser_data_type_method_rest_parameter_type",
+      "from": {
+        "census_child": "none"
+      },
+      "to": {
+        "census_child": "parser_data_type.method_rest_parameter_type"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "parser_rest_array_uint"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_optional",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "optional"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "optional_payload",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_container_element",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "container_element"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "element_slot",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_generic_argument",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "generic_argument"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "reified_argument",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_tuple_field",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "tuple_field"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "tuple_slot",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_callable_slot",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "callable_slot"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "callable_slot",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_nominal_class",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "nominal_class"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "nominal_instance",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_trait",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "trait"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "trait_witness",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "unproven_source_warns_at_callable_slot",
+      "parent": "wrapper_parity_to_callable_slot",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "callable_slot",
+        "diagnostic_severity": "warning",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A callable destination is reached through a call, so an unproven source is an unsafe call argument there and carries a warning no other destination carries.",
+      "positive_witnesses": [
+        {
+          "id": "text_callable_slot_gradual",
+          "coordinates": {
+            "destination": "callable_slot",
+            "source_proof": "gradual",
+            "boundary": "container_element_store",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_callable_slot_gradual",
+          "coordinates": {
+            "destination": "callable_slot",
+            "source_proof": "gradual",
+            "boundary": "container_element_store",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "bytecode_callable_slot_static_member_boundary",
+          "coordinates": {
+            "destination": "callable_slot",
+            "source_proof": "static_member",
+            "boundary": "container_element_store",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ]
+    }
+  ],
+  "max_chain_length": 3
+}

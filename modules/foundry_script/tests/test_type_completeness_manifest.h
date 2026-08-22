@@ -30,9 +30,15 @@
 
 #pragma once
 
+#include "fs_type_completeness_common.h"
+#include "fs_type_completeness_json.h"
 #include "fs_type_completeness_manifest.h"
 
 #include "fs_temporary_project_tree.h"
+
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -72,7 +78,7 @@ static bool completeness_errors_contain_text(const Vector<String> &p_errors, con
 static String write_representative_completeness_manifest(TemporaryProjectTree &p_tree) {
 	return write_completeness_manifest(p_tree, R"JSON({
   "schema_version": 2,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "family": "assignment_compatibility",
   "domain": {
     "destination": ["plain", "union"],
@@ -167,6 +173,48 @@ static String make_completeness_rule(const String &p_family) {
   "exceptions": []
 })JSON",
 			p_family);
+}
+
+// Repository-relative paths a unified diff modifies, read from its own `+++ b/` headers. A recipe
+// declares its patch by file rather than by a list, so the patch is the only description of what it
+// touches.
+static Vector<String> completeness_patched_paths(const String &p_patch_path) {
+	Error read_error = OK;
+	const String patch = FileAccess::get_file_as_string(p_patch_path, &read_error);
+	Vector<String> paths;
+	if (read_error != OK) {
+		return paths;
+	}
+	for (const String &line : patch.split("\n")) {
+		if (!line.begins_with("+++ b/")) {
+			continue;
+		}
+		const String path = line.trim_prefix("+++ b/").strip_edges();
+		if (!path.is_empty() && !paths.has(path)) {
+			paths.push_back(path);
+		}
+	}
+	return paths;
+}
+
+// Recipe documents of the mutation catalog. `enumerate_json_directory` refuses a directory holding a
+// subdirectory, and this one holds `patches/`, so the listing is done here.
+static Vector<String> completeness_mutation_recipe_files(const String &p_directory) {
+	Vector<String> files;
+	Ref<DirAccess> directory = DirAccess::open(p_directory);
+	if (directory.is_null()) {
+		return files;
+	}
+	directory->list_dir_begin();
+	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+		if (directory->current_is_dir() || !entry.ends_with(".json") || entry == "shards.json") {
+			continue;
+		}
+		files.push_back(p_directory.path_join(entry));
+	}
+	directory->list_dir_end();
+	files.sort();
+	return files;
 }
 
 static bool selection_has_only_family(const FSCompletenessSelection &p_selection, const String &p_family) {
@@ -539,7 +587,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/shape.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("partitions/.DS_Store", "filesystem metadata");
 		tree.write_file("dimensions/.metadata.json", "not catalog data");
 
@@ -557,7 +605,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/shape.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("partitions/notes.txt", "unexpected");
 		tree.write_file("dimensions/nested/metadata.json", "unexpected");
 
@@ -780,7 +828,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/b.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["union"],"classes":{}})JSON");
 		tree.write_file("dimensions/a.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("dimensions/b.json",
 				R"JSON({"schema_version":1,"adapter":"synthetic_pair_identity","dimensions":[{"id":"analysis","outcomes":["reject"]}]})JSON");
 
@@ -810,7 +858,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
   }
 })JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 
 		FSCompletenessCatalog catalog;
 		Vector<String> errors;
@@ -852,7 +900,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 				R"JSON({"schema_version":1,"axis":"a_shape","leaves":["plain"],"classes":{},"a_typo":true})JSON");
 		tree.write_file("dimensions/core.json", R"JSON({
   "schema_version": 1,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "dimensions": [{"id": "analysis", "outcomes": ["accept"], "outcome": "accept"}],
   "dimensionz": []
 })JSON");
@@ -882,7 +930,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 })JSON");
 		tree.write_file("dimensions/duplicate.json", R"JSON({
   "schema_version": 1,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "dimensions": [{
     "id": "analysis",
     "outcomes": ["accept"],
@@ -917,7 +965,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 
 		const FSCompletenessSelection compiler =
 				capability_map.select(Vector<String>({ "modules/foundry_script/fs_compiler.cpp" }));
-		CHECK(selection_has_only_family(compiler, "union_destination_membership"));
+		CHECK(compiler.families.has("union_destination_membership"));
+		CHECK(compiler.families.has("wrapper_parity_argument_binding"));
 		CHECK_FALSE(compiler.used_broad_core_fallback);
 		CHECK(compiler.validation_errors.is_empty());
 
@@ -1470,6 +1519,93 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 			CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors),
 					ERR_INVALID_DATA);
 			CHECK(completeness_errors_contain_text(errors, test_case.diagnostic));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest every rule manifest selects exactly its own family") {
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(capability_map.load(type_completeness_capability_path, errors) == OK,
+				String(" | ").join(errors));
+
+		const String rules_directory = String(type_completeness_catalog_root).path_join("rules");
+		Vector<String> rule_files;
+		Vector<Completeness::JsonDirectoryError> directory_errors;
+		REQUIRE_EQ(Completeness::enumerate_json_directory(rules_directory,
+						   Completeness::JsonDirectoryPolicy(), rule_files, directory_errors),
+				OK);
+		REQUIRE_FALSE(rule_files.is_empty());
+
+		for (const String &rule_file : rule_files) {
+			CAPTURE(rule_file);
+			FSCompletenessManifest manifest;
+			Vector<String> load_errors;
+			REQUIRE_MESSAGE(FSCompletenessManifest::load(rule_file, manifest, load_errors) == OK,
+					String(" | ").join(load_errors));
+			// A rule manifest is its family's own definition. A change that weakens a rule and
+			// regenerates that family's evidence has to select the family, or the gate compares the
+			// weakened rule against nothing and reports a clean run. The map is keyed by
+			// repository-relative paths, which is what a change set carries; the enumeration resolves
+			// to absolute ones.
+			const String changed_path = rules_directory.path_join(rule_file.get_file());
+			const FSCompletenessSelection selection = capability_map.select(Vector<String>({ changed_path }));
+			CHECK_MESSAGE(selection_has_only_family(selection, manifest.family),
+					vformat("%s selected %d families instead of only '%s'", changed_path,
+							selection.families.size(), manifest.family));
+			CHECK_FALSE(selection.used_broad_core_fallback);
+			CHECK_MESSAGE(selection.validation_errors.is_empty(),
+					String(" | ").join(selection.validation_errors));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest every mutation recipe's patched paths select its detectors") {
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(capability_map.load(type_completeness_capability_path, errors) == OK,
+				String(" | ").join(errors));
+
+		const String mutations_directory = String(type_completeness_catalog_root).path_join("mutations");
+		const Vector<String> recipe_files = completeness_mutation_recipe_files(mutations_directory);
+		REQUIRE_FALSE(recipe_files.is_empty());
+
+		for (const String &recipe_file : recipe_files) {
+			const String recipe_id = recipe_file.get_file().get_basename();
+			CAPTURE(recipe_id);
+			Error read_error = OK;
+			const String source = FileAccess::get_file_as_string(recipe_file, &read_error);
+			REQUIRE_EQ(read_error, OK);
+			Variant document;
+			Vector<String> parse_errors;
+			REQUIRE_MESSAGE(parse_type_completeness_json(source, recipe_file, document, parse_errors) == OK,
+					String(" | ").join(parse_errors));
+			REQUIRE_EQ(document.get_type(), Variant::DICTIONARY);
+			const Dictionary recipe = document;
+			const Array detectors = recipe["expected_detectors"];
+			REQUIRE_FALSE(detectors.is_empty());
+			HashSet<String> detector_families;
+			for (int index = 0; index < detectors.size(); index++) {
+				const Dictionary detector = detectors[index];
+				detector_families.insert(detector["family"]);
+			}
+
+			const Vector<String> patched_paths = completeness_patched_paths(
+					mutations_directory.path_join("patches").path_join(recipe_id + ".patch"));
+			REQUIRE_FALSE(patched_paths.is_empty());
+			for (const String &patched_path : patched_paths) {
+				CAPTURE(patched_path);
+				// A recipe proves its families catch a defect in the file it patches. If a change to
+				// that file does not select those families, the gate never runs the only families that
+				// would have caught the defect the campaign is evidence for.
+				const FSCompletenessSelection selection =
+						capability_map.select(Vector<String>({ patched_path }));
+				CHECK_FALSE(selection.used_broad_core_fallback);
+				CHECK_MESSAGE(selection.validation_errors.is_empty(),
+						String(" | ").join(selection.validation_errors));
+				for (const String &family : detector_families) {
+					CHECK_MESSAGE(selection.families.has(family),
+							vformat("%s is not selected by a change to %s", family, patched_path));
+				}
+			}
 		}
 	}
 

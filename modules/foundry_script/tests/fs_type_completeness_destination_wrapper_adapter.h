@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_union_adapter.h                                  */
+/*  fs_type_completeness_destination_wrapper_adapter.h                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -56,11 +56,16 @@ FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source)
 
 struct TemporaryProjectTree;
 
-namespace UnionCompletenessInternal {
+namespace DestinationWrapperInternal {
 
 using PersistedWriteTestHook = void (*)(const String &);
 
 void set_persisted_write_test_hook(PersistedWriteTestHook p_hook);
+
+// Test seam: makes the reflection observation report what a regression that stopped populating
+// an exported property's hint would report, so a census cell that claims to observe the hint
+// string can be proven to fail when it is lost.
+void set_blank_reflection_hint_for_test(bool p_blank);
 
 // Serializes the whole lifetime of one synthetic source file: the tree, the cache overrides keyed by
 // its path, and its removal. The lock is a member so it is released exactly when the scope ends,
@@ -82,12 +87,30 @@ public:
 	const String &get_path() const { return path; }
 };
 
-} // namespace UnionCompletenessInternal
+} // namespace DestinationWrapperInternal
 
-class FSUnionCompletenessAdapter : public FSCompletenessFamilyAdapter {
+// The leaves this adapter renders on each axis. Declared once here and returned verbatim by
+// `renderable_leaves()`, so a manifest domain, a partition test, and the renderer cannot disagree
+// about what the adapter covers.
+Vector<String> destination_wrapper_destinations();
+Vector<String> destination_wrapper_boundaries();
+Vector<String> destination_wrapper_source_proofs();
+Vector<String> destination_wrapper_census_children();
+
+// Census child slots this adapter renders a witness for but cannot read back at the representation
+// the leaf names, so they are deliberately not renderable and no family may select one.
+Vector<String> destination_wrapper_unobserved_census_children();
+
+class FSDestinationWrapperAdapter : public FSCompletenessFamilyAdapter {
 public:
 	// The one instance of this adapter, and the one the registry hands out.
-	static const FSUnionCompletenessAdapter &shared();
+	static const FSDestinationWrapperAdapter &shared();
+
+	// Families whose rule manifests name this adapter. A rendered program carries its coordinates and
+	// its identity but never the family that derived them, so the adapter needs the list to prove a
+	// batch's case IDs are the canonical identities of their coordinates under one family. The rule
+	// directory is the source of truth; a test holds this list and that directory together.
+	static Vector<String> families();
 
 	String id() const override;
 	Error render(const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) const override;
@@ -98,8 +121,12 @@ public:
 	HashSet<String> observable_dimensions() const override;
 	HashMap<String, Vector<String>> renderable_leaves() const override;
 
-	FSCompletenessObservation inspect_runtime_contract(
-			const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) const;
+	// `r_structural_error`, when given, reports whether the observation failed as a harness or catalog
+	// defect rather than as an observation about the product. The two are not interchangeable: a run
+	// that could not observe a required dimension has no reading under which its silence means
+	// agreement.
+	FSCompletenessObservation inspect_runtime_contract(const FSCompletenessProgram &p_program,
+			const Dictionary &p_runtime_context, Error *r_structural_error = nullptr) const;
 };
 
 } // namespace FSTests

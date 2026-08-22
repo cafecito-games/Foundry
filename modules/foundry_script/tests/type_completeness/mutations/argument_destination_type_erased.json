@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "recipe_id": "argument_destination_type_erased",
+  "description": "FSByteCodeGenerator::add_parameter records an untyped parameter, so an argument-binding boundary's destination is no longer described and nothing validates what a binding stores.",
+  "escape_class": "erase_boundary_destination_record",
+  "expected_detectors": [
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "generic_argument",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "generic_argument",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "callable_slot",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "callable_slot",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "nominal_class",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "nominal_class",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "trait",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_argument_binding",
+      "case_coordinates": {
+        "destination": "trait",
+        "source_proof": "static_member",
+        "boundary": "argument_binding",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    }
+  ]
+}

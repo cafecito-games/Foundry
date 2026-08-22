@@ -1,0 +1,728 @@
+{
+  "schema_version": 2,
+  "family": "wrapper_parity_reflective_write",
+  "adapter": "destination_wrapper",
+  "domain": {
+    "destination": [
+      "plain",
+      "union",
+      "optional",
+      "container_element",
+      "generic_argument",
+      "tuple_field",
+      "callable_slot",
+      "nominal_class",
+      "trait"
+    ],
+    "source_proof": [
+      "static_member",
+      "numeric_constant",
+      "gradual",
+      "erased",
+      "variant",
+      "inferred",
+      "nested_child"
+    ],
+    "boundary": [
+      "reflective_write"
+    ],
+    "census_child": [
+      "none",
+      "reflection_property_info.hint_string",
+      "parser_data_type.enum_case_payload_field_types",
+      "parser_data_type.enum_case_payload_field_names"
+    ],
+    "surface": [
+      "text",
+      "bytecode"
+    ]
+  },
+  "required_dimensions": [
+    {
+      "dimension": "analysis",
+      "when": {}
+    },
+    {
+      "dimension": "diagnostic_severity",
+      "when": {}
+    },
+    {
+      "dimension": "census_child_evidence",
+      "when": {}
+    },
+    {
+      "dimension": "runtime_obligation",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      }
+    },
+    {
+      "dimension": "stored_carrier",
+      "when": {}
+    }
+  ],
+  "anchors": [
+    {
+      "id": "plain_static_member",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "reflective_write",
+        "census_child": "none"
+      },
+      "expect": {
+        "analysis": "accept",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "absent",
+        "stored_carrier": "plain_destination"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "plain_numeric_constant",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "numeric_constant",
+        "boundary": "reflective_write",
+        "census_child": "none"
+      },
+      "expect": {
+        "analysis": "accept",
+        "stored_carrier": "plain_destination",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "absent"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "plain_gradual",
+      "coordinates": {
+        "destination": "plain",
+        "source_proof": "gradual",
+        "boundary": "reflective_write",
+        "census_child": "none"
+      },
+      "expect": {
+        "analysis": "accept",
+        "runtime_obligation": "typed_destination_check",
+        "diagnostic_severity": "warning",
+        "census_child_evidence": "absent",
+        "stored_carrier": "plain_destination"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "gradual_to_erased_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "erased"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "gradual_to_variant_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "variant"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "gradual_to_nested_child_parity",
+      "from": {
+        "source_proof": "gradual"
+      },
+      "to": {
+        "source_proof": "nested_child"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "numeric_constant_to_inferred_parity",
+      "from": {
+        "source_proof": "numeric_constant"
+      },
+      "to": {
+        "source_proof": "inferred"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "census_child_parity_reflection_property_info_hint_string",
+      "from": {
+        "census_child": "none"
+      },
+      "to": {
+        "census_child": "reflection_property_info.hint_string"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "reflection_hint_23_39"
+      }
+    },
+    {
+      "id": "census_child_parity_parser_data_type_enum_case_payload_field_types",
+      "from": {
+        "census_child": "none"
+      },
+      "to": {
+        "census_child": "parser_data_type.enum_case_payload_field_types"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "parser_payload_types_uint"
+      }
+    },
+    {
+      "id": "census_child_parity_parser_data_type_enum_case_payload_field_names",
+      "from": {
+        "census_child": "none"
+      },
+      "to": {
+        "census_child": "parser_data_type.enum_case_payload_field_names"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "same",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "parser_payload_names_label"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_union",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "union"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "admitting_alternative",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_optional",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "optional"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "optional_payload",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_container_element",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "container_element"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "element_slot",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_generic_argument",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "generic_argument"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "reified_argument",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_tuple_field",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "tuple_field"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "tuple_slot",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_callable_slot",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "callable_slot"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "callable_slot",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_nominal_class",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "nominal_class"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "nominal_instance",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    },
+    {
+      "id": "wrapper_parity_to_trait",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "trait"
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "trait_witness",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "staged_wrapper_proves_source_at_container_element",
+      "parent": "wrapper_parity_to_container_element",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "element_slot",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A container element value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_container_element_gradual_staged",
+          "coordinates": {
+            "destination": "container_element",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_container_element_gradual_staged",
+          "coordinates": {
+            "destination": "container_element",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_container_element_static_member_staged",
+          "coordinates": {
+            "destination": "container_element",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_generic_argument",
+      "parent": "wrapper_parity_to_generic_argument",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "reified_argument",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A generic argument value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_generic_argument_gradual_staged",
+          "coordinates": {
+            "destination": "generic_argument",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_generic_argument_gradual_staged",
+          "coordinates": {
+            "destination": "generic_argument",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_generic_argument_static_member_staged",
+          "coordinates": {
+            "destination": "generic_argument",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_tuple_field",
+      "parent": "wrapper_parity_to_tuple_field",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "tuple_slot",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A tuple field value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_tuple_field_gradual_staged",
+          "coordinates": {
+            "destination": "tuple_field",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_tuple_field_gradual_staged",
+          "coordinates": {
+            "destination": "tuple_field",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_tuple_field_static_member_staged",
+          "coordinates": {
+            "destination": "tuple_field",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_nominal_class",
+      "parent": "wrapper_parity_to_nominal_class",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "nominal_instance",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A nominal class value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_nominal_class_gradual_staged",
+          "coordinates": {
+            "destination": "nominal_class",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_nominal_class_gradual_staged",
+          "coordinates": {
+            "destination": "nominal_class",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_nominal_class_static_member_staged",
+          "coordinates": {
+            "destination": "nominal_class",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_trait",
+      "parent": "wrapper_parity_to_trait",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "trait_witness",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A trait value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_trait_gradual_staged",
+          "coordinates": {
+            "destination": "trait",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_trait_gradual_staged",
+          "coordinates": {
+            "destination": "trait",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_trait_static_member_staged",
+          "coordinates": {
+            "destination": "trait",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "unproven_source_warns_at_callable_slot",
+      "parent": "wrapper_parity_to_callable_slot",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "callable_slot",
+        "diagnostic_severity": "warning",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A callable destination is reached through a call, so an unproven source is an unsafe call argument there and carries a warning no other destination carries.",
+      "positive_witnesses": [
+        {
+          "id": "text_callable_slot_gradual",
+          "coordinates": {
+            "destination": "callable_slot",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_callable_slot_gradual",
+          "coordinates": {
+            "destination": "callable_slot",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "bytecode_callable_slot_static_member_boundary",
+          "coordinates": {
+            "destination": "callable_slot",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ]
+    },
+    {
+      "id": "unproven_source_requires_membership",
+      "parent": "wrapper_parity_to_union",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "union_membership_check",
+        "stored_carrier": "admitting_alternative",
+        "diagnostic_severity": "same",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A union destination must prove membership when the source cannot.",
+      "positive_witnesses": [
+        {
+          "id": "text_union_gradual",
+          "coordinates": {
+            "destination": "union",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_union_gradual",
+          "coordinates": {
+            "destination": "union",
+            "source_proof": "gradual",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "bytecode_union_static_member_boundary",
+          "coordinates": {
+            "destination": "union",
+            "source_proof": "static_member",
+            "boundary": "reflective_write",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ]
+    }
+  ],
+  "max_chain_length": 3
+}

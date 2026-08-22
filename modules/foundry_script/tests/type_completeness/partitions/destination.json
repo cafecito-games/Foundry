@@ -3,7 +3,14 @@
   "axis": "destination",
   "leaves": [
     "plain",
-    "union"
+    "union",
+    "optional",
+    "container_element",
+    "generic_argument",
+    "tuple_field",
+    "callable_slot",
+    "nominal_class",
+    "trait"
   ],
   "classes": {}
 }

@@ -1,0 +1,13 @@
+diff --git a/modules/foundry_script/fs_function.h b/modules/foundry_script/fs_function.h
+index 124b0fd2c3..8bf0ba53f0 100644
+--- a/modules/foundry_script/fs_function.h
++++ b/modules/foundry_script/fs_function.h
+@@ -210,7 +210,7 @@ public:
+ 		if (kind != TUPLE || p_value.get_type() != Variant::ARRAY) {
+ 			return false;
+ 		}
+-		return Array(p_value).size() == container_element_types.size();
++		return Array(p_value).size() > container_element_types.size();
+ 	}
+ 
+ 	// One element against its declared element type, this type being that element type.
