@@ -44,6 +44,8 @@
 #define THREADING_NAMESPACE std
 #endif
 
+#include <chrono>
+
 // An object one or multiple threads can wait on a be notified by some other.
 // Normally, you want to use a semaphore for such scenarios, but when the
 // condition is something different than a count being greater than zero
@@ -64,6 +66,16 @@ public:
 		condition.wait(p_lock.mutex._get_lock());
 	}
 
+	// Waits until notified or until p_msec have elapsed, whichever happens first. True when the wait
+	// ended in a notification, false when the budget elapsed. A caller that must not block forever
+	// needs this: without it the only way to bound a wait is to poll a clock between short sleeps,
+	// which turns a deterministic hand-off into a race with the scheduler.
+	template <typename BinaryMutexT>
+	_ALWAYS_INLINE_ bool wait_for(const MutexLock<BinaryMutexT> &p_lock, uint64_t p_msec) const {
+		return condition.wait_for(p_lock._get_lock(), std::chrono::milliseconds(p_msec)) !=
+				THREADING_NAMESPACE::cv_status::timeout;
+	}
+
 	_ALWAYS_INLINE_ void notify_one() const {
 		condition.notify_one();
 	}
@@ -79,6 +91,13 @@ class ConditionVariable {
 public:
 	template <typename BinaryMutexT>
 	void wait(const MutexLock<BinaryMutexT> &p_lock) const {}
+
+	// Without threads nothing can notify, so a bounded wait can only report that its budget elapsed.
+	template <typename BinaryMutexT>
+	bool wait_for(const MutexLock<BinaryMutexT> &p_lock, uint64_t p_msec) const {
+		return false;
+	}
+
 	void notify_one() const {}
 	void notify_all() const {}
 };

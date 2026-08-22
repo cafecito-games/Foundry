@@ -658,13 +658,18 @@ class ReportConfigurationMemberTests(unittest.TestCase):
         self.assertIn("destination_wrapper", loaded.configuration.adapters)
         self.assertEqual(loaded.configuration.adapters, tuple(sorted(loaded.configuration.adapters)))
 
-    def test_a_report_without_a_configuration_is_refused(self) -> None:
+    def test_a_report_from_a_producer_that_predates_the_member_still_loads(self) -> None:
+        # The presubmit gate's develop baseline is a report published by the binary at the merge base.
+        # Refusing it would turn every comparison against an older baseline into a gate refusal, so an
+        # absent configuration reads as "the producer did not record one" rather than as a malformation.
         document = self._fixture_report()
         del document["configuration"]
-        with self.assertRaises(report.ReportError):
-            report.load_report(document)
+        loaded = report.load_report(document)
+        self.assertIsNone(loaded.configuration)
+        self.assertEqual(loaded.raw, report.load_report(self._fixture_report()).raw)
 
     def test_a_malformed_configuration_is_refused(self) -> None:
+        # Present and wrong is a claim about the build, so unlike an omission it can never be read past.
         malformed = [
             "tools_enabled",
             {"adapters": []},

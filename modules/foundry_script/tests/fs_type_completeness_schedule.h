@@ -31,8 +31,8 @@
 #pragma once
 
 #include "core/error/error_list.h"
+#include "core/os/condition_variable.h"
 #include "core/os/mutex.h"
-#include "core/os/semaphore.h"
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/local_vector.h"
@@ -48,9 +48,10 @@ namespace FSTests {
 // interleaving a cell observes is the one its manifest names and not the one the machine happened to
 // produce. Nothing here sleeps or spins: a wait ends when the barrier is released, when the
 // controller can prove no participant can ever release it because every participant is already
-// blocked, or when the declared budget has elapsed at a point where the schedule was re-evaluated.
-// The proof is what makes a concurrency cell reproducible; the budget only bounds a participant that
-// is stuck outside the controller.
+// blocked, or when the declared budget elapses. The proof is what makes a concurrency cell
+// reproducible - it fires long before any budget could and does not depend on how long anything
+// took; the budget only bounds a participant stuck outside the controller, where no proof is
+// available, so that such a schedule ends in a verdict rather than in a hung run.
 //
 // A schedule that ends any other way than by releasing every barrier is a `schedule_timeout` runtime
 // status on the cell, never a passing observation: an interleaving the harness could not impose is
@@ -60,7 +61,8 @@ public:
 	enum WaitOutcome {
 		// The barrier was released while this participant waited for it, or before it waited.
 		WAIT_RELEASED,
-		// The schedule cannot reach this barrier: every participant is blocked, or the budget elapsed.
+		// The schedule cannot reach this barrier: every participant is blocked on an unreleased
+		// barrier, or the budget elapsed with the barrier still unreleased.
 		WAIT_TIMED_OUT,
 		// The name is not part of the declared schedule. A defect in the cell, not in the product.
 		WAIT_UNDECLARED,
@@ -84,11 +86,13 @@ public:
 	// a schedule whose releases can be reordered is not the schedule the manifest declared.
 	Error release(const String &p_name);
 
-	// Blocks the calling participant until p_name is released or the schedule is proven stuck.
-	// p_budget_msec bounds a participant stuck outside the controller; zero waits without a budget.
+	// Blocks the calling participant until p_name is released, until the schedule is proven stuck, or
+	// until p_budget_msec have elapsed. Zero waits without a budget, which is only safe when every
+	// participant is inside the controller, because the stuck-schedule proof is then the bound.
 	WaitOutcome wait(const String &p_name, uint32_t p_budget_msec);
 
-	// Every arrival, release, and timeout in the order it happened, as "arrive:<name>",
+	// Every participant must have finished before the controller is destroyed. Every arrival, release,
+	// and timeout in the order it happened, as "arrive:<name>",
 	// "release:<name>", and "timeout:<name>". This is the schedule trace a timed-out cell retains.
 	Vector<String> trace() const;
 
@@ -106,13 +110,16 @@ private:
 		String name;
 		bool released = false;
 		int waiting = 0;
-		Semaphore gate;
 	};
 
-	mutable Mutex mutex;
-	// Owned by pointer because a Semaphore is neither copyable nor movable and the barrier list is
-	// built once, at declaration, from a Vector.
-	LocalVector<Barrier *> barriers;
+	// Binary rather than recursive: a condition variable can only wait on a lock that is released
+	// exactly once, and no path here takes the lock twice.
+	mutable BinaryMutex mutex;
+	// One condition variable for the whole schedule rather than one gate per barrier: every state
+	// change is relevant to every waiter, because a waiter re-tests both its own barrier and the
+	// stuck-schedule proof, and a bounded wait has to be able to end on either.
+	ConditionVariable signal;
+	LocalVector<Barrier> barriers;
 	HashMap<String, int> barrier_index;
 	Vector<String> recorded_trace;
 	int participants = 0;

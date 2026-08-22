@@ -37,16 +37,11 @@ namespace FSTests {
 const char *FSCompletenessScheduleController::SCHEDULE_TIMEOUT_STATUS = "schedule_timeout";
 
 FSCompletenessScheduleController::~FSCompletenessScheduleController() {
-	// A blocked participant holds a reference to a gate this destructor is about to free, so the
-	// schedule is abandoned first and every waiter is woken before anything is released.
-	{
-		MutexLock lock(mutex);
-		abandon_locked(false);
-	}
-	for (Barrier *barrier : barriers) {
-		memdelete(barrier);
-	}
-	barriers.clear();
+	// Every participant is required to have finished before the controller goes away. Abandoning the
+	// schedule here ends any wait that outlived that contract instead of leaving it parked on a
+	// condition variable that is about to be destroyed.
+	MutexLock lock(mutex);
+	abandon_locked(false);
 }
 
 Error FSCompletenessScheduleController::declare(
@@ -66,8 +61,8 @@ Error FSCompletenessScheduleController::declare(
 		declared.insert(name, declared.size());
 	}
 	for (const String &name : p_barrier_names) {
-		Barrier *barrier = memnew(Barrier);
-		barrier->name = name;
+		Barrier barrier;
+		barrier.name = name;
 		barriers.push_back(barrier);
 	}
 	barrier_index = declared;
@@ -96,13 +91,10 @@ Error FSCompletenessScheduleController::release(const String &p_name) {
 	if (*index != next_release) {
 		return ERR_UNAVAILABLE;
 	}
-	Barrier *barrier = barriers[*index];
-	barrier->released = true;
+	barriers[*index].released = true;
 	next_release++;
 	recorded_trace.push_back("release:" + p_name);
-	if (barrier->waiting > 0) {
-		barrier->gate.post(barrier->waiting);
-	}
+	signal.notify_all();
 	return OK;
 }
 
@@ -114,9 +106,9 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 	if (index == nullptr) {
 		return WAIT_UNDECLARED;
 	}
-	Barrier *barrier = barriers[*index];
+	Barrier &barrier = barriers[*index];
 	while (true) {
-		if (barrier->released) {
+		if (barrier.released) {
 			return WAIT_RELEASED;
 		}
 		if (abandoned) {
@@ -127,27 +119,31 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 		// Proving that is what replaces a sleeping retry loop: the outcome does not depend on how long
 		// anything took. A participant whose barrier was already released is runnable even though it
 		// has not woken yet, so it is not counted.
-		if (stuck_participants_locked() + 1 >= participants) {
+		bool decided = stuck_participants_locked() + 1 >= participants;
+		if (!decided) {
+			barrier.waiting++;
+			if (p_budget_msec == 0) {
+				signal.wait(lock);
+			} else {
+				// The elapsed time is re-read on every pass, so a wait woken by an unrelated state
+				// change resumes with what is left of the budget rather than restarting it.
+				const uint64_t elapsed_msec = OS::get_singleton()->get_ticks_msec() - started_at_msec;
+				decided = elapsed_msec >= p_budget_msec ||
+						!signal.wait_for(lock, p_budget_msec - elapsed_msec);
+			}
+			barrier.waiting--;
+			if (barrier.released) {
+				return WAIT_RELEASED;
+			}
+			if (abandoned) {
+				return WAIT_TIMED_OUT;
+			}
+		}
+		if (decided) {
 			recorded_trace.push_back("timeout:" + p_name);
 			abandon_locked(true);
 			return WAIT_TIMED_OUT;
 		}
-		if (p_budget_msec != 0 && OS::get_singleton()->get_ticks_msec() - started_at_msec >= p_budget_msec) {
-			recorded_trace.push_back("timeout:" + p_name);
-			abandon_locked(true);
-			return WAIT_TIMED_OUT;
-		}
-		barrier->waiting++;
-		// The controller's own state has to stay reachable while this participant is parked, so the
-		// lock is handed back for the duration of the park and taken again on the way out. The scope's
-		// lock still owns the mutex either way, so it is released exactly once however this loop ends.
-		// A gate may carry a post more than the waiter it was meant for - a release and an abandon can
-		// both post the same barrier - which only ever wakes a participant that re-tests the loop
-		// condition and parks again.
-		mutex.unlock();
-		barrier->gate.wait();
-		mutex.lock();
-		barrier->waiting--;
 	}
 }
 
@@ -163,9 +159,9 @@ bool FSCompletenessScheduleController::timed_out() const {
 
 int FSCompletenessScheduleController::stuck_participants_locked() const {
 	int stuck = 0;
-	for (const Barrier *barrier : barriers) {
-		if (!barrier->released) {
-			stuck += barrier->waiting;
+	for (const Barrier &barrier : barriers) {
+		if (!barrier.released) {
+			stuck += barrier.waiting;
 		}
 	}
 	return stuck;
@@ -177,11 +173,7 @@ void FSCompletenessScheduleController::abandon_locked(bool p_timed_out) {
 		return;
 	}
 	abandoned = true;
-	for (Barrier *barrier : barriers) {
-		if (barrier->waiting > 0) {
-			barrier->gate.post(barrier->waiting);
-		}
-	}
+	signal.notify_all();
 }
 
 } // namespace FSTests

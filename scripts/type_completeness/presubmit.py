@@ -222,9 +222,6 @@ def absent_baseline_report(family: str) -> dict[str, Any]:
         "outcome": "passed",
         "cases": [],
         "findings": [],
-        # No run produced this document, so it claims no surface and no adapter. Anything else would
-        # assert that a baseline observed something on a build nobody ran.
-        "configuration": {"tools_enabled": False, "adapters": []},
     }
 
 

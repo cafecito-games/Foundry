@@ -127,7 +127,7 @@ class Report:
     success: bool
     outcome: str
     cases: tuple[CaseResult, ...]
-    configuration: Configuration
+    configuration: Optional[Configuration]
     raw: dict[str, Any]
 
     @property
@@ -163,8 +163,18 @@ class Report:
         return [case for case in self.cases if case.failed]
 
 
-def _load_configuration(data: Mapping[str, Any]) -> Configuration:
-    raw = _require(data, "configuration", "report")
+def _load_configuration(data: Mapping[str, Any]) -> Optional[Configuration]:
+    """The configuration a report was produced under, or ``None`` when the producer did not record one.
+
+    Absence is evidence about the producer rather than a malformation: this loader also reads artifacts
+    written by the binary at another commit - the presubmit gate's ``develop`` baseline is exactly that -
+    and a report from a binary that predates the member is still a perfectly readable report. What makes
+    the member mandatory is the producer's own contract, asserted where the runner publishes. A member
+    that is present and wrong is refused, because a wrong configuration is a claim, not an omission.
+    """
+    if "configuration" not in data:
+        return None
+    raw = data["configuration"]
     if not isinstance(raw, Mapping):
         raise ReportError(f"report member 'configuration' must be an object; got {raw!r}")
     tools_enabled = _require(raw, "tools_enabled", "report configuration")

@@ -33,6 +33,7 @@
 #include "fs_type_completeness_schedule.h"
 
 #include "core/os/mutex.h"
+#include "core/os/os.h"
 #include "core/os/thread.h"
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
@@ -133,6 +134,24 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Schedule") {
 		REQUIRE_FALSE(trace.is_empty());
 		CHECK_EQ(trace[trace.size() - 1], "timeout:never_released");
 		CHECK_EQ(String(FSCompletenessScheduleController::SCHEDULE_TIMEOUT_STATUS), "schedule_timeout");
+	}
+
+	TEST_CASE("TypeCompleteness Schedule ends a wait whose budget elapses outside the controller") {
+		// The stuck-schedule proof only covers participants that are inside the controller. A
+		// participant that never reaches it - stalled in product code, or gone - leaves no proof to
+		// draw, and the budget is the only thing between that and a run that never ends.
+		FSCompletenessScheduleController controller;
+		REQUIRE_EQ(controller.declare(Vector<String>({ "released_by_the_absent_participant" }), 2), OK);
+		const uint64_t started_at_msec = OS::get_singleton()->get_ticks_msec();
+		const FSCompletenessScheduleController::WaitOutcome outcome =
+				controller.wait("released_by_the_absent_participant", 50);
+		const uint64_t elapsed_msec = OS::get_singleton()->get_ticks_msec() - started_at_msec;
+
+		CHECK_EQ(outcome, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+		CHECK(controller.timed_out());
+		CHECK_GE(elapsed_msec, uint64_t(50));
+		CHECK_EQ(controller.trace(),
+				Vector<String>({ "timeout:released_by_the_absent_participant" }));
 	}
 
 	TEST_CASE("TypeCompleteness Schedule refuses a schedule that could change while it runs") {
