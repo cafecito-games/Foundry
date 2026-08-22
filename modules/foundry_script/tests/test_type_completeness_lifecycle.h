@@ -158,7 +158,26 @@ struct TransitionInvalidationSkipped {
 	}
 };
 
-// The dimension one cell observed, so a fault can be stated as the value it changed.
+// The dimensions one cell observed, so a fault can be stated as the values it changed.
+static FSCompletenessObservation lifecycle_observation_of(const String &p_family,
+		const String &p_destination, const String &p_state, const String &p_surface) {
+	const FSCompletenessProgram program =
+			lifecycle_program(p_family, p_destination, p_state, p_surface);
+	Error structural_error = ERR_BUG;
+	const FSCompletenessObservation observation =
+			FSLifecycleAdapter::shared().observe_transition(program, p_family, &structural_error);
+	CHECK_EQ(structural_error, OK);
+	CHECK_MESSAGE(observation.diagnostics.is_empty(),
+			String(" | ").join(Vector<String>(observation.diagnostics)));
+	return observation;
+}
+
+static String lifecycle_outcome_of(const String &p_family, const String &p_destination,
+		const String &p_state, const String &p_surface) {
+	return lifecycle_observation_of(p_family, p_destination, p_state, p_surface)
+			.dimensions.get("transition_outcome", String());
+}
+
 static String lifecycle_identity_of(const String &p_family, const String &p_destination,
 		const String &p_state, const String &p_surface) {
 	const FSCompletenessProgram program =
@@ -300,6 +319,40 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Lifecycle a recovery is measured against the healthy reading") {
+		// A damaged attempt is only evidence of a recovery if it reads differently from a healthy one.
+		// The reflection surface spells a union member as an untyped slot, which is also what it spells
+		// when nothing reached it, so that cell recovers from nothing it can observe and says so.
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_proxy_reflection", "union", "failure_recovery", "text"),
+				"indistinguishable");
+		// The same stage on a destination the surface can spell does observe the difference, so the
+		// verdict is a property of what the surface carries rather than of the stage.
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_proxy_reflection", "plain", "failure_recovery", "text"),
+				"recovered");
+		// A transition that refuses a damaged input reads differently from a healthy one whatever the
+		// declared type is, so no destination of those families is ever indistinguishable.
+		for (const String &family : { String("lifecycle_bytecode_export_load"), String("lifecycle_reload"),
+					 String("lifecycle_cache_replacement"),
+					 String("lifecycle_shutdown_reinitialization") }) {
+			CAPTURE(family);
+			CHECK_EQ(lifecycle_outcome_of(family, "union", "failure_recovery", "text"), "recovered");
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a reload updates the entry the identity already holds") {
+		// A reload and a replacement both re-read the identity from disk and differ in what happens to
+		// the entry the cache holds for it. Each family refuses the other's outcome, so a "reload" that
+		// installed a fresh object could not report a carried type.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "clean", "text"), "preserved");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "clean", "text"),
+				"preserved");
+		// Both re-read the identity, so both carry the revision the stale stage put behind it - which a
+		// transition that re-parsed the source the script already held would not.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "stale", "text"), "projected");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "text"),
+				"projected");
+	}
+
 	TEST_CASE("TypeCompleteness Lifecycle a cache replacement has to replace the entry") {
 		// Reading the type back through the cache is only evidence of a replacement if the entry that
 		// comes back is not the one that went in. Handing back the entry the replacement was supposed to
@@ -419,11 +472,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 			CHECK(result.success);
 			CHECK(FSCompletenessRunner::report_carries_evidence(result.report));
 
-			// The family declares no carve-out: every stage of the transition is expected to carry the
-			// declared type, and the one stage that reports a different transition outcome reports it
-			// from its relation rather than from an exception to one.
+			// A family declares a carve-out only where one destination answers differently from the rest;
+			// everything a whole stage does belongs to that stage's relation. Whichever it is, an
+			// exception nothing observes is a carve-out no cell exercises.
 			const Array exceptions = result.report["exceptions"];
-			CHECK(exceptions.is_empty());
+			for (int index = 0; index < exceptions.size(); index++) {
+				const Dictionary exception_report = exceptions[index];
+				CAPTURE(String(exception_report["exception_id"]));
+				CHECK(bool(exception_report["witnessed"]));
+			}
 
 			// The tracked document was captured on one configuration. Narrowing both sides to what this
 			// build could have observed is the identity on that configuration, so this stays the same

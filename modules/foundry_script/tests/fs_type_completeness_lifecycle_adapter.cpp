@@ -486,91 +486,107 @@ static Error carry_proxy_reflection(const LifecycleCarryRequest &p_request, Stri
 	return OK;
 }
 
-// The identity is compiled again, which is what a reload and a cache replacement both come down to.
-// `p_through_cache` decides where the reading is taken from: the object the compiler wrote, or what
-// the cache hands back for the identity afterwards.
-static Error carry_by_recompiling(const LifecycleCarryRequest &p_request, bool p_through_cache,
-		void (*p_before_each_pass)(), String &r_after) {
+// A program the front-end cannot accept, used to damage what a re-deriving transition will read.
+static const char *lifecycle_damaged_source =
+		"class Holder:\n\tvar value: NoSuchTypeExists = 0\n\tvar marker: int = 0\n";
+
+// Whether the entry the identity held has to survive the transition or be retired by it. It is the
+// difference between the two families that both re-read the identity from disk: a reload updates the
+// script the cache already holds, and a replacement installs a different one. Checking it is what
+// keeps either family from passing on the other's behavior - a "reload" that compiled a fresh object
+// would otherwise read exactly like one that updated the old.
+enum LifecycleEntryExpectation {
+	ENTRY_SURVIVES_THE_TRANSITION,
+	ENTRY_IS_RETIRED_BY_THE_TRANSITION,
+};
+
+// Re-reads the identity from disk through the cache, which is the path an editor takes when a file
+// changes. `FoundryScript::reload` on its own re-parses the source the script already holds, so it is
+// reached through the cache entry that updates it from disk rather than called directly.
+static Error carry_through_cache(const LifecycleCarryRequest &p_request,
+		LifecycleEntryExpectation p_expectation, void (*p_before_each_pass)(), String &r_after) {
 	r_after = String();
 	if (p_request.skip_invalidation) {
 		// The subsystem hands back what it already had for the identity instead of re-deriving it.
 		// Nothing else about the cell changes, so a stage whose identity now serves a different
 		// declaration is the one this is visible in.
-		Error cache_error = OK;
-		const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
-		if (cache_error != OK || cached.is_null()) {
-			return cache_error == OK ? ERR_INVALID_DATA : cache_error;
+		const Ref<FoundryScript> held = FSCache::get_cached_script(p_request.path);
+		if (held.is_null()) {
+			return ERR_INVALID_DATA;
 		}
-		r_after = carried_type_spelling(cached);
+		r_after = carried_type_spelling(held);
 		return OK;
 	}
 	// Applying the transition to its own output means the whole transition again, including whatever
 	// the family does before re-deriving. A second pass that skipped that would report one shutdown
-	// followed by two recompilations as if the subsystem had been taken down twice.
+	// followed by two re-derivations as if the subsystem had been taken down twice.
 	const int passes = p_request.twice ? 2 : 1;
 	for (int pass = 0; pass < passes; pass++) {
 		if (p_before_each_pass != nullptr) {
 			p_before_each_pass();
 		}
-		// Which entry the cache holds for the identity before the replacement. Reading the type back
-		// through the cache is only evidence of a replacement if the entry that comes back is not the
-		// one that went in: an eviction that regressed would leave the old object installed, and
-		// compiling into it would make a stale entry read exactly like a replaced one.
-		ObjectID retired_entry;
-		if (p_through_cache) {
-			Error probe_error = OK;
-			const Ref<FoundryScript> retired = FSCache::get_shallow_script(p_request.path, probe_error);
-			if (probe_error == OK && retired.is_valid()) {
-				retired_entry = retired->get_instance_id();
-			}
-		}
-		FSCache::remove_parser(p_request.path);
-		FSCache::remove_script(p_request.path);
-		String source = "class Holder:\n\tvar value: NoSuchTypeExists = 0\n\tvar marker: int = 0\n";
-		if (!p_request.damaged) {
+		const Ref<FoundryScript> held = FSCache::get_cached_script(p_request.path);
+		const ObjectID entry_before = held.is_valid() ? held->get_instance_id() : ObjectID();
+
+		// Damaging a re-deriving transition means damaging what it will read. The identity has to serve
+		// the healthy program again afterwards, because the stage that damages it goes on to ask for
+		// the same transition undamaged.
+		String healthy_source;
+		if (p_request.damaged) {
 			Error read_error = OK;
-			source = FileAccess::get_file_as_string(p_request.path, &read_error);
-			if (read_error != OK || source.is_empty()) {
-				return OK;
+			healthy_source = FileAccess::get_file_as_string(p_request.path, &read_error);
+			if (read_error != OK) {
+				return read_error;
+			}
+			const Error damage_error = revise_source_at(p_request.path, lifecycle_damaged_source);
+			if (damage_error != OK) {
+				return damage_error;
 			}
 		}
-		FSParser parser;
-		Ref<FoundryScript> reloaded;
-		const Error error = compile_lifecycle_source(source, p_request.path, parser, reloaded);
-		if (error != OK || reloaded.is_null()) {
+		if (p_expectation == ENTRY_IS_RETIRED_BY_THE_TRANSITION) {
+			FSCache::remove_parser(p_request.path);
+			FSCache::remove_script(p_request.path);
+		}
+		Error error = OK;
+		const Ref<FoundryScript> reloaded =
+				FSCache::get_full_script(p_request.path, error, String(), true);
+		if (p_request.damaged) {
+			const Error restore_error = revise_source_at(p_request.path, healthy_source);
+			if (restore_error != OK) {
+				return restore_error;
+			}
+		}
+		if (error != OK || reloaded.is_null() || !reloaded->is_valid()) {
 			return OK;
 		}
-		if (p_through_cache) {
-			Error cache_error = OK;
-			const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
-			if (cache_error != OK || cached.is_null()) {
-				return cache_error == OK ? ERR_INVALID_DATA : cache_error;
-			}
-			if (retired_entry.is_valid() && cached->get_instance_id() == retired_entry) {
-				// The cache handed back the entry the replacement was supposed to retire, so nothing was
-				// replaced and there is no reading to take from it.
-				r_after = String();
-				return OK;
-			}
-			reloaded = cached;
+		const bool entry_survived = entry_before.is_valid() && reloaded->get_instance_id() == entry_before;
+		if (p_expectation == ENTRY_SURVIVES_THE_TRANSITION ? !entry_survived : entry_survived) {
+			// The subsystem did the other family's job. There is no reading to take from that: what it
+			// handed back is not the artifact this transition was supposed to produce.
+			return OK;
 		}
 		r_after = carried_type_spelling(reloaded);
+		if (r_after.is_empty()) {
+			return OK;
+		}
 	}
 	return OK;
 }
 
 static Error carry_reload(const LifecycleCarryRequest &p_request, String &r_after) {
-	return carry_by_recompiling(p_request, false, nullptr, r_after);
+	return carry_through_cache(p_request, ENTRY_SURVIVES_THE_TRANSITION, nullptr, r_after);
 }
 
 static Error carry_cache_replacement(const LifecycleCarryRequest &p_request, String &r_after) {
-	return carry_by_recompiling(p_request, true, nullptr, r_after);
+	return carry_through_cache(p_request, ENTRY_IS_RETIRED_BY_THE_TRANSITION, nullptr, r_after);
 }
 
 static Error carry_shutdown_reinitialization(const LifecycleCarryRequest &p_request, String &r_after) {
 	// Everything the language holds for the identity goes down with it before each pass, so what comes
-	// back can only have been rebuilt from the source rather than remembered.
-	return carry_by_recompiling(p_request, false, LifecycleLanguageBoot::cycle, r_after);
+	// back can only have been rebuilt rather than remembered - which is why the entry it held cannot
+	// survive.
+	return carry_through_cache(
+			p_request, ENTRY_IS_RETIRED_BY_THE_TRANSITION, LifecycleLanguageBoot::cycle, r_after);
 }
 
 struct LifecycleFamilyShape {
@@ -880,32 +896,6 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	request.skip_invalidation = skip_transition_invalidation_for_test;
 	request.twice = state == "incremental";
 
-	if (state == "failure_recovery") {
-		// The recovery only proves something if the attempt it recovers from produced something else.
-		LifecycleCarryRequest damaged = request;
-		damaged.damaged = true;
-		damaged.twice = false;
-		String damaged_reading;
-		const Error damage_error = family->carry(damaged, damaged_reading);
-		if (damage_error != OK) {
-			append_diagnostic(observation, "recovery_unavailable",
-					vformat("The damaged attempt could not be carried out (error %d).", damage_error));
-			if (r_structural_error != nullptr) {
-				*r_structural_error = damage_error;
-			}
-			return observation;
-		}
-		if (!damaged_reading.is_empty() && damaged_reading == before) {
-			append_diagnostic(observation, "recovery_unproven",
-					"The damaged transition carried the declared type anyway, so the recovery proves "
-					"nothing.");
-			if (r_structural_error != nullptr) {
-				*r_structural_error = ERR_INVALID_DATA;
-			}
-			return observation;
-		}
-		outcome = "recovered";
-	}
 	if (state == "missing") {
 		// The identity the subject was compiled at stops serving anything before the transition runs,
 		// so nothing it carries may come from a source anyone can still read.
@@ -931,6 +921,51 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		}
 		return observation;
 	}
+
+	if (state == "failure_recovery") {
+		// A recovery is only observable against what this transition reads when it is healthy.
+		// Comparing the damaged attempt to the declared type instead calls a union "recovered" on a
+		// surface that describes the healthy and the damaged reading alike, which is a recovery nobody
+		// saw.
+		LifecycleCarryRequest damaged = request;
+		damaged.damaged = true;
+		damaged.twice = false;
+		String damaged_reading;
+		error = family->carry(damaged, damaged_reading);
+		if (error != OK) {
+			append_diagnostic(observation, "recovery_unavailable",
+					vformat("The damaged attempt could not be carried out (error %d).", error));
+			if (r_structural_error != nullptr) {
+				*r_structural_error = error;
+			}
+			return observation;
+		}
+		String recovered_reading;
+		error = family->carry(request, recovered_reading);
+		if (error != OK) {
+			append_diagnostic(observation, "recovery_unavailable",
+					vformat("The transition could not be carried out again (error %d).", error));
+			if (r_structural_error != nullptr) {
+				*r_structural_error = error;
+			}
+			return observation;
+		}
+		// Two healthy readings of the same transition that disagree are not evidence of anything, and
+		// nothing about the recovery could be read past that.
+		if (recovered_reading != after) {
+			append_diagnostic(observation, "transition_not_reproducible",
+					vformat("The transition read '%s' and then '%s' from the same healthy input.", after,
+							recovered_reading));
+			if (r_structural_error != nullptr) {
+				*r_structural_error = ERR_INVALID_DATA;
+			}
+			return observation;
+		}
+		// A damaged attempt nothing can tell apart from a healthy one is reported as itself rather
+		// than as a recovery, so a cell that recovered from nothing is visible instead of passing.
+		outcome = damaged_reading == after ? "indistinguishable" : "recovered";
+	}
+
 	observation.dimensions["semantic_identity"] = classify_semantic_identity(before, after);
 	observation.dimensions["transition_outcome"] = after.is_empty() ? "refused" : outcome;
 	observation.produced_output = String();

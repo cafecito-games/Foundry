@@ -26,7 +26,35 @@
 		"reconciled": [],
 		"stale": []
 	},
-	"exceptions": [],
+	"exceptions": [
+		{
+			"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
+			"parent": "clean_to_failure_recovery",
+			"witnessed": true,
+			"positive_witnesses": [
+				{
+					"witness_id": "text_union_failure_recovery",
+					"case_id": "fstc-v1-e49a1508a575de4af806",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				},
+				{
+					"witness_id": "bytecode_union_failure_recovery",
+					"case_id": "fstc-v1-37888835a8b4d95259cf",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			],
+			"boundary_witnesses": [
+				{
+					"witness_id": "bytecode_plain_failure_recovery_boundary",
+					"case_id": "fstc-v1-934d402f6f8bbc543a67",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			]
+		}
+	],
 	"cases": [
 		{
 			"case_id": "fstc-v1-0214aa4db5c5596ed3fa",
@@ -1949,17 +1977,17 @@
 			},
 			"expected": {
 				"semantic_identity": "erased",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "erased",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -1976,14 +2004,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "erased",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -2000,7 +2028,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "erased",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -2010,7 +2038,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -2027,7 +2055,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "erased",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -2036,7 +2064,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -2053,7 +2081,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "erased",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -6545,17 +6573,17 @@
 			},
 			"expected": {
 				"semantic_identity": "erased",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "erased",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -6572,14 +6600,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "erased",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -6596,7 +6624,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "erased",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -6606,7 +6634,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -6623,7 +6651,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "erased",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -6632,7 +6660,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -6649,7 +6677,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "erased",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -8148,12 +8176,12 @@
 	},
 	"unconfirmed_census_witnesses": [],
 	"timings_ms": {
-		"load": 33.699,
-		"resolve": 0.001,
-		"render": 49.763,
-		"analyze": 1.478,
-		"execute": 214.267,
-		"report": 254.381,
-		"total": 554.337
+		"load": 34.603,
+		"resolve": 0.117,
+		"render": 51.065,
+		"analyze": 1.488,
+		"execute": 233.266,
+		"report": 253.839,
+		"total": 575.07
 	}
 }

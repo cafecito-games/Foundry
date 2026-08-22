@@ -177,6 +177,47 @@
       }
     }
   ],
-  "exceptions": [],
+  "exceptions": [
+    {
+      "id": "a_surface_that_spells_neither_reading_cannot_show_a_recovery",
+      "parent": "clean_to_failure_recovery",
+      "when": {
+        "destination": "union"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "indistinguishable"
+      },
+      "rationale": "A property record spells a union member as an untyped slot, which is also what it spells when the declared type never reached it. The damaged attempt and the healthy one therefore read the same, so this cell recovers from nothing it could observe and says so instead of claiming a recovery no reading supports.",
+      "positive_witnesses": [
+        {
+          "id": "text_union_failure_recovery",
+          "coordinates": {
+            "destination": "union",
+            "lifecycle_state": "failure_recovery",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_union_failure_recovery",
+          "coordinates": {
+            "destination": "union",
+            "lifecycle_state": "failure_recovery",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "bytecode_plain_failure_recovery_boundary",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "failure_recovery",
+            "surface": "bytecode"
+          }
+        }
+      ]
+    }
+  ],
   "max_chain_length": 3
 }
