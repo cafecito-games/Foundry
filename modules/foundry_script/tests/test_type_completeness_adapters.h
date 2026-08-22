@@ -156,6 +156,32 @@ static Error run_synthetic_family(TemporaryProjectTree &p_tree, const String &p_
 	return FSCompletenessRunner::run(options, r_result);
 }
 
+static Error synthetic_tracked_file_probe(
+		const String &p_repository_root, const String &p_path, String &r_output, int &r_exit_code) {
+	(void)p_repository_root;
+	(void)p_path;
+	r_output = String();
+	r_exit_code = 0;
+	return OK;
+}
+
+static String synthetic_finding_record(
+		const String &p_finding_id, const String &p_case_id, const String &p_dimension) {
+	return vformat(R"JSON({
+  "schema_version": 1,
+  "finding_id": "%s",
+  "case_id": "%s",
+  "family": "%s",
+  "dimension": "%s",
+  "classification": "harness_defect",
+  "issue_url": "https://example.invalid/issues/1",
+  "closure_packet_url": "https://example.invalid/closure/1",
+  "permanent_test_paths": ["modules/foundry_script/tests/test_type_completeness_adapters.h"]
+}
+)JSON",
+			p_finding_id, p_case_id, synthetic_completeness_family, p_dimension);
+}
+
 static String synthetic_tree_name(const String &p_purpose) {
 	return vformat("type_completeness_%s_%d", p_purpose, OS::get_singleton()->get_process_id());
 }
@@ -498,8 +524,55 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 		}
 	}
 
-	TEST_CASE("TypeCompleteness Adapters a ledger dimension is known only when it is observed") {
-		TemporaryProjectTree tree(synthetic_tree_name("synthetic_ledger_dimension"));
+	TEST_CASE("TypeCompleteness Adapters witness coordinates must name one domain leaf on every axis") {
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(catalog.load(tracked_catalog_root(), errors) == OK, String(" | ").join(errors));
+		FSCompletenessManifest tracked;
+		REQUIRE_MESSAGE(FSCompletenessManifest::load(
+								tracked_catalog_root().path_join("rules/union_destination_membership.json"),
+								tracked, errors) == OK,
+				String(" | ").join(errors));
+		REQUIRE_FALSE(tracked.exceptions.is_empty());
+		REQUIRE_FALSE(tracked.exceptions[0].positive_witnesses.is_empty());
+		REQUIRE_MESSAGE(
+				validate_manifest_vocabulary(tracked, catalog, errors) == OK, String(" | ").join(errors));
+
+		SUBCASE("an axis of the domain the witness leaves out") {
+			FSCompletenessManifest manifest = tracked;
+			manifest.exceptions.write[0].positive_witnesses.write[0].coordinates.erase("boundary");
+			CHECK_EQ(validate_manifest_vocabulary(manifest, catalog, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(completeness_error_reported(errors,
+								  "$.exceptions[0].positive_witnesses[0].coordinates.boundary: required domain "
+								  "axis is missing"),
+					String(" | ").join(errors));
+		}
+
+		SUBCASE("a class selector where a leaf belongs") {
+			FSCompletenessManifest manifest = tracked;
+			Dictionary selector;
+			selector["class"] = "unproven";
+			manifest.exceptions.write[0].positive_witnesses.write[0].coordinates["source_proof"] = selector;
+			CHECK_EQ(validate_manifest_vocabulary(manifest, catalog, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(completeness_error_reported(errors,
+								  "$.exceptions[0].positive_witnesses[0].coordinates.source_proof: must be a "
+								  "string leaf, not a class selector"),
+					String(" | ").join(errors));
+		}
+
+		SUBCASE("an axis the domain never declared") {
+			FSCompletenessManifest manifest = tracked;
+			manifest.exceptions.write[0].boundary_witnesses.write[0].coordinates["shape"] = "plain";
+			CHECK_EQ(validate_manifest_vocabulary(manifest, catalog, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(completeness_error_reported(errors,
+								  "$.exceptions[0].boundary_witnesses[0].coordinates.shape: axis 'shape' is not "
+								  "declared in the manifest domain"),
+					String(" | ").join(errors));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Adapters a ledger entry may only classify a dimension the family observes") {
+		TemporaryProjectTree tree(synthetic_tree_name("synthetic_ledger"));
 		REQUIRE(tree.is_valid());
 		const String catalog_root = stage_synthetic_completeness_catalog(tree, "catalog", false);
 		const FSCompletenessCatalogRecord *record = nullptr;
@@ -510,12 +583,50 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 				String(" | ").join(errors));
 		REQUIRE(record != nullptr);
 		REQUIRE_FALSE(record->resolution.cells.is_empty());
-		const FSCompletenessResolvedCell &cell = record->resolution.cells[0];
-		CHECK(cell.dimensions.has("synthetic_identity"));
-		CHECK_FALSE(cell.dimensions.has("no_such_dimension"));
-		CHECK(FSCompletenessRunner::builtin_dimensions().has("runtime_status"));
-		CHECK_FALSE(FSCompletenessRunner::builtin_dimensions().has("synthetic_identity"));
+		const String case_id = record->resolution.cells[0].case_id;
+
+		struct LedgerCase {
+			const char *dimension;
+			bool known;
+		};
+		const LedgerCase ledger_cases[] = {
+			// Declared by the family's own dimension file.
+			{ "synthetic_identity", true },
+			// Observed by the runner for every family, whatever its adapter declares.
+			{ "runtime_status", true },
+			{ "no_such_dimension", false },
+		};
+		int index = 0;
+		for (const LedgerCase &ledger_case : ledger_cases) {
+			CAPTURE(ledger_case.dimension);
+			const String finding_id = vformat("fstcf-v1-syntheticledger%d", index);
+			const String scratch_relative_root = vformat("ledger-scratch%d", index++);
+			tree.write_file(String("catalog/findings").path_join(finding_id + ".json"),
+					synthetic_finding_record(finding_id, case_id, ledger_case.dimension));
+
+			const String scratch_root = tree.root.path_join(scratch_relative_root);
+			REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(scratch_root), OK);
+			FSCompletenessRunOptions options;
+			options.catalog_root = catalog_root;
+			options.family = synthetic_completeness_family;
+			options.scratch_root = scratch_root;
+			options.report_path = scratch_root.path_join("report.json");
+			options.tracked_file_probe = synthetic_tracked_file_probe;
+			FSCompletenessRunResult result;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_EQ(result.outcome, "structural_failure");
+			REQUIRE_FALSE(result.structural_failures.is_empty());
+			// A known dimension is loaded and then reported stale, because nothing reproduces it. An
+			// unknown one is refused while the ledger is loaded, before any evidence is gathered.
+			CHECK_EQ(result.structural_failures[0].stage,
+					ledger_case.known ? FSCompletenessStructuralStage::LEDGER_ENTRY_STALE
+									  : FSCompletenessStructuralStage::RUN_ABORTED);
+			REQUIRE_EQ(DirAccess::remove_absolute(
+							   catalog_root.path_join("findings").path_join(finding_id + ".json")),
+					OK);
+		}
 	}
+
 }
 
 } // namespace FSTests

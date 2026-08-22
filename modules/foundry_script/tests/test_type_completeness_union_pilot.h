@@ -31,6 +31,8 @@
 #pragma once
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_cache.h"
+#include "fs_type_completeness_json.h"
 #include "fs_type_completeness_runner.h"
 #include "fs_type_completeness_union_adapter.h"
 
@@ -49,6 +51,32 @@
 namespace FSTests {
 
 static const String type_completeness_union_pilot_root = "modules/foundry_script/tests/type_completeness";
+
+// The report without the members whose values are properties of the run rather than of the evidence:
+// artifact paths live in a scratch root that differs per run, and stage timings are wall-clock. What
+// is left is comparable against a document captured from a different run in a different scratch root.
+static Variant union_pilot_scratch_independent_evidence(const Variant &p_value) {
+	if (p_value.get_type() == Variant::DICTIONARY) {
+		const Dictionary source = p_value;
+		Dictionary evidence;
+		for (const String &key : Completeness::sorted_dictionary_keys(source)) {
+			if (key == "artifact_path" || key == "timings_ms") {
+				continue;
+			}
+			evidence[key] = union_pilot_scratch_independent_evidence(source[key]);
+		}
+		return evidence;
+	}
+	if (p_value.get_type() == Variant::ARRAY) {
+		const Array source = p_value;
+		Array evidence;
+		for (int index = 0; index < source.size(); index++) {
+			evidence.push_back(union_pilot_scratch_independent_evidence(source[index]));
+		}
+		return evidence;
+	}
+	return p_value;
+}
 
 static FSCompletenessManifest load_union_pilot_completeness_manifest() {
 	FSCompletenessManifest manifest;
@@ -2919,6 +2947,30 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		FSCompletenessProgram program = stale_union_pilot_program();
 		CHECK_EQ(FSUnionCompletenessAdapter::shared().render(empty_case, program), ERR_INVALID_DATA);
 		check_union_pilot_program_cleared(program);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot report matches the captured evidence document") {
+		const FSCompletenessRunResult *baseline =
+				FSCompletenessBaseline::shared_or_skip("union_destination_membership");
+		if (baseline == nullptr) {
+			return;
+		}
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(
+				type_completeness_union_pilot_root.path_join(
+						"expected_reports/union_destination_membership.json"),
+				&read_error);
+		REQUIRE_EQ(read_error, OK);
+		Variant expected;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(parse_type_completeness_json(source, String(), expected, errors) == OK,
+				String(" | ").join(errors));
+
+		const String produced_document =
+				JSON::stringify(union_pilot_scratch_independent_evidence(baseline->report), "  ");
+		const String expected_document =
+				JSON::stringify(union_pilot_scratch_independent_evidence(expected), "  ");
+		CHECK_EQ(produced_document, expected_document);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot witnesses resolve closed complete coordinates") {
