@@ -2978,6 +2978,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_EQ(String(case_report["status"]), "passed");
 		}
 
+		// The exception declares a witness on the surface this run did not execute, so it is not
+		// witnessed by this run whatever the observed witnesses did.
+		const Array exceptions = result.report["exceptions"];
+		REQUIRE_EQ(exceptions.size(), 1);
+		const Dictionary exception_report = exceptions[0];
+		CHECK_EQ(bool(exception_report["witnessed"]), false);
+		CHECK_EQ(Array(exception_report["positive_witnesses"]).size(), 1);
+		CHECK_EQ(Array(exception_report["boundary_witnesses"]).size(), 1);
+
 		FSCompletenessRunOptions refused = options;
 		refused.surfaces.insert("assembly");
 		refused.scratch_root = tree.root.path_join("refused");

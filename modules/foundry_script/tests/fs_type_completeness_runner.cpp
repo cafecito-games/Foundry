@@ -1825,6 +1825,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 	HashMap<String, Dictionary> exception_reports;
 	Vector<String> exception_ids;
+	HashMap<String, int> declared_witness_count;
+	HashMap<String, int> executed_witness_count;
 	for (const FSCompletenessException &exception : manifest.exceptions) {
 		Dictionary exception_report;
 		exception_report["exception_id"] = exception.id;
@@ -1834,6 +1836,9 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		exception_report["boundary_witnesses"] = Array();
 		exception_reports[exception.id] = exception_report;
 		exception_ids.push_back(exception.id);
+		declared_witness_count[exception.id] =
+				exception.positive_witnesses.size() + exception.boundary_witnesses.size();
+		executed_witness_count[exception.id] = 0;
 	}
 	for (const FSCompletenessWitnessBinding &binding : executed_witness_bindings) {
 		Dictionary *exception_report = exception_reports.getptr(binding.exception_id);
@@ -1846,10 +1851,23 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		witness_report["case_id"] = binding.cell->case_id;
 		witness_report["witnessed"] = blocking == nullptr;
 		witness_report["blocking_finding_ids"] = blocking == nullptr ? Array() : *blocking;
+		executed_witness_count[binding.exception_id]++;
 		Array witnesses = (*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"];
 		witnesses.push_back(witness_report);
 		(*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"] = witnesses;
 		if (blocking != nullptr) {
+			(*exception_report)["witnessed"] = false;
+		}
+	}
+	// An exception is witnessed only when every witness it declares was observed. A run narrowed to
+	// one surface leaves the witnesses of the other unobserved, and an unobserved witness is not a
+	// satisfied one: reporting otherwise would let a narrowed run publish evidence it never gathered.
+	for (const String &exception_id : exception_ids) {
+		Dictionary *exception_report = exception_reports.getptr(exception_id);
+		if (exception_report == nullptr) {
+			return ERR_INVALID_DATA;
+		}
+		if (executed_witness_count[exception_id] != declared_witness_count[exception_id]) {
 			(*exception_report)["witnessed"] = false;
 		}
 	}
