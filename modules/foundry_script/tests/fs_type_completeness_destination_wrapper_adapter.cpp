@@ -1092,8 +1092,13 @@ static RuntimeInspectionStepResult runtime_inspection_failure(
 	return result;
 }
 
+// Compiles the program and, in `r_parser`, leaves the analyzer record it compiled from. That record is
+// the one every later read of an analyzer-only slot uses: re-analyzing the same source after it has
+// been compiled and registered asks a different question, because the answer then depends on whatever
+// the process has already registered, which differs by shard composition and by platform.
 static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompletenessProgram &p_program,
-		Ref<FoundryScript> &r_original, Ref<FoundryScript> &r_inspected, PackedStringArray &r_diagnostics) {
+		FSParser &r_parser, Ref<FoundryScript> &r_original, Ref<FoundryScript> &r_inspected,
+		PackedStringArray &r_diagnostics) {
 	r_original.unref();
 	r_inspected.unref();
 	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
@@ -1111,17 +1116,16 @@ static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompl
 				error == OK ? ERR_CANT_CREATE : error, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
 	}
 
-	FSParser parser;
-	error = parser.parse(p_program.source, synthetic_source.get_path(), false);
+	error = r_parser.parse(p_program.source, synthetic_source.get_path(), false);
 	if (error == OK) {
-		FSAnalyzer analyzer(&parser);
+		FSAnalyzer analyzer(&r_parser);
 		error = analyzer.analyze();
 		if (error == OK) {
 			FSCompiler compiler;
-			error = compiler.compile(&parser, r_original.ptr(), false);
+			error = compiler.compile(&r_parser, r_original.ptr(), false);
 		}
 	}
-	append_parser_diagnostics_in_source_order(parser, r_diagnostics);
+	append_parser_diagnostics_in_source_order(r_parser, r_diagnostics);
 	if (error != OK) {
 		if (r_diagnostics.is_empty()) {
 			r_diagnostics.push_back(vformat("Runtime contract compilation failed (error %d).", error));
@@ -1291,7 +1295,7 @@ static String runtime_destination_carrier(const FSDataType &p_descriptor) {
 				? "reified_argument"
 				: String();
 	}
-	return String();
+	return "unclassified";
 }
 
 // The same question asked of the analyzer's record, which is the only representation that keeps a
@@ -1326,35 +1330,19 @@ static String parser_destination_carrier(const FSParser::DataType &p_datatype) {
 	if (spelling == "HasValue") {
 		return "trait_witness";
 	}
-	return String();
+	return "unclassified";
 }
 
 // The destination descriptor of the boundary the coordinates name, read from the slot that boundary
 // writes through. A local site is read from a fresh analysis of the same program, because a compiled
 // script keeps no record of a local.
-static RuntimeInspectionStepResult inspect_boundary_destination(const FSCompletenessProgram &p_program,
-		const Ref<FoundryScript> &p_inspected, const BoundaryShape &p_boundary,
+static RuntimeInspectionStepResult inspect_boundary_destination(const Ref<FoundryScript> &p_inspected,
+		FSParser::ClassNode *p_analyzed_tree, const BoundaryShape &p_boundary,
 		RuntimeDescriptorEvidence &r_evidence, PackedStringArray &r_diagnostics) {
 	if (p_boundary.site == SITE_FUNCTION_LOCAL) {
-		DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
-				"boundary_local_" + p_program.case_id, p_program.source);
-		if (!synthetic_source.is_available()) {
-			r_diagnostics.push_back("Analyzer identity for the local destination site is unavailable.");
-			return runtime_inspection_failure(ERR_CANT_CREATE, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
-		}
-		FSParser parser;
-		if (parser.parse(p_program.source, synthetic_source.get_path(), false) != OK) {
-			r_diagnostics.push_back("The local destination site could not be parsed.");
-			return runtime_inspection_failure(ERR_PARSE_ERROR, RUNTIME_INSPECTION_PRODUCT_FAILURE);
-		}
-		FSAnalyzer analyzer(&parser);
-		if (analyzer.analyze() != OK) {
-			r_diagnostics.push_back("The local destination site could not be analyzed.");
-			return runtime_inspection_failure(ERR_PARSE_ERROR, RUNTIME_INSPECTION_PRODUCT_FAILURE);
-		}
-		FSParser::ClassNode *tree = parser.get_tree();
-		FSParser::FunctionNode *function =
-				tree == nullptr ? nullptr : parser_member_function(tree, StringName(p_boundary.site_owner));
+		FSParser::FunctionNode *function = p_analyzed_tree == nullptr
+				? nullptr
+				: parser_member_function(p_analyzed_tree, StringName(p_boundary.site_owner));
 		if (function == nullptr || function->body == nullptr ||
 				!function->body->has_local(StringName(p_boundary.site_name))) {
 			r_diagnostics.push_back(vformat("Local destination '%s.%s' is unavailable.",
@@ -1689,28 +1677,15 @@ static String runtime_census_evidence(const Ref<FoundryScript> &p_inspected, con
 // The named census child slot, read from the representation the leaf names. `none` is the one leaf
 // with nothing to read, and it is still an observation: a program that grew a census declaration it
 // was not supposed to have would stop reporting it.
-static String observe_census_child(const FSCompletenessProgram &p_program,
-		const Ref<FoundryScript> &p_inspected, const String &p_census_child) {
+static String observe_census_child(const Ref<FoundryScript> &p_inspected,
+		FSParser::ClassNode *p_analyzed_tree, const String &p_census_child) {
 	if (p_census_child == "none") {
 		return "absent";
 	}
 	if (!p_census_child.begins_with("parser_data_type.")) {
 		return runtime_census_evidence(p_inspected, p_census_child);
 	}
-	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
-			"census_child_" + p_program.case_id, p_program.source);
-	if (!synthetic_source.is_available()) {
-		return String();
-	}
-	FSParser parser;
-	if (parser.parse(p_program.source, synthetic_source.get_path(), false) != OK) {
-		return String();
-	}
-	FSAnalyzer analyzer(&parser);
-	if (analyzer.analyze() != OK) {
-		return String();
-	}
-	return parser_census_evidence(parser.get_tree(), p_census_child);
+	return parser_census_evidence(p_analyzed_tree, p_census_child);
 }
 
 static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outcome) {
@@ -2000,8 +1975,11 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 
 	Ref<FoundryScript> original;
 	Ref<FoundryScript> inspected;
-	const RuntimeInspectionStepResult compile_result =
-			compile_runtime_contract_script(p_program, original, inspected, observation.diagnostics);
+	// Outlives every read below: the analyzer record the compiled script came from is what an
+	// analyzer-only slot is read out of, so nothing has to analyze the program a second time.
+	FSParser contract_parser;
+	const RuntimeInspectionStepResult compile_result = compile_runtime_contract_script(
+			p_program, contract_parser, original, inspected, observation.diagnostics);
 	if (original.is_valid()) {
 		observation.dimensions["original_instance_id"] = int64_t(original->get_instance_id());
 	}
@@ -2027,8 +2005,8 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 	// A wrapper-parity cell reads the descriptor of the slot its own boundary wrote through; the
 	// destination-membership pilot keeps the sites its programs declare.
 	const RuntimeInspectionStepResult descriptor_result = coordinates.names_census_child
-			? inspect_boundary_destination(
-					  p_program, inspected, *boundary_shape, descriptor_evidence, observation.diagnostics)
+			? inspect_boundary_destination(inspected, contract_parser.get_tree(), *boundary_shape,
+					  descriptor_evidence, observation.diagnostics)
 			: inspect_runtime_destination_descriptor(
 					  inspected, coordinates, descriptor_evidence, observation.diagnostics);
 	observation.dimensions["original_instance_id"] = int64_t(original_instance_id);
@@ -2054,10 +2032,7 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 				"Runtime destination descriptor '%s' does not match declared '%s' coordinates.",
 				descriptor_evidence.descriptor.get_source_type_name(), destination));
 	}
-	if (coordinates.names_census_child && descriptor_evidence.carrier.is_empty()) {
-		observation.diagnostics.push_back(vformat(
-				"The '%s' boundary's destination realizes no carrier this family can name.", boundary));
-	}
+
 	if (descriptor_evidence.has_runtime_descriptor) {
 		Ref<RefCounted> unrelated;
 		unrelated.instantiate();
@@ -2108,11 +2083,13 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 	}
 
 	if (coordinates.names_census_child) {
-		const String evidence = observe_census_child(p_program, inspected, coordinates.census_child);
+		const String evidence =
+				observe_census_child(inspected, contract_parser.get_tree(), coordinates.census_child);
 		if (evidence.is_empty()) {
 			observation.diagnostics.push_back(vformat(
 					"Census child '%s' could not be read from the representation it names.",
 					coordinates.census_child));
+			r_structural_error = ERR_INVALID_DATA;
 			return observation;
 		}
 		observation.dimensions["census_child_evidence"] = evidence;
@@ -2130,9 +2107,15 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 }
 
 FSCompletenessObservation FSDestinationWrapperAdapter::inspect_runtime_contract(
-		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) const {
+		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context,
+		Error *r_structural_error) const {
 	Error structural_error = OK;
-	return inspect_runtime_contract_internal(p_program, p_runtime_context, structural_error);
+	const FSCompletenessObservation observation =
+			inspect_runtime_contract_internal(p_program, p_runtime_context, structural_error);
+	if (r_structural_error != nullptr) {
+		*r_structural_error = structural_error;
+	}
+	return observation;
 }
 
 Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,

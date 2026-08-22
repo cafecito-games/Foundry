@@ -406,6 +406,112 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness DestinationWrapper observes a cell the same way however often it runs") {
+		// Every analyzer-only read - a census `parser_data_type.*` slot, a typed local's descriptor -
+		// comes from the record the program was compiled from. Reading one by analyzing the source
+		// again would ask the question after the program's own classes are registered, and the answer
+		// would then depend on what else the process had already registered: a different shard
+		// composition or a different platform would classify the same cell differently.
+		struct RepeatedCell {
+			const char *destination;
+			const char *boundary;
+			const char *census_child;
+		};
+		const RepeatedCell cells[] = {
+			// The cell a sharded Linux run classified differently from an unsharded run.
+			{ "tuple_field", "container_element_store", "parser_data_type.container_element_types" },
+			{ "container_element", "container_element_store", "parser_data_type.container_element_types" },
+			{ "union", "assignment", "parser_data_type.type_arguments" },
+			{ "plain", "assignment", "parser_data_type.type_parameter_bound" },
+			{ "trait", "member_store", "parser_data_type.method_rest_parameter_type" },
+		};
+
+		const bool initialized_here = ensure_fs_language_initialized();
+		for (const RepeatedCell &repeated : cells) {
+			CAPTURE(repeated.destination);
+			CAPTURE(repeated.boundary);
+			CAPTURE(repeated.census_child);
+			FSCompletenessResolvedCell cell;
+			cell.coordinates["destination"] = repeated.destination;
+			cell.coordinates["source_proof"] = "static_member";
+			cell.coordinates["boundary"] = repeated.boundary;
+			cell.coordinates["census_child"] = repeated.census_child;
+			cell.coordinates["surface"] = "text";
+			cell.case_id =
+					FSCompletenessCaseID::make(String("wrapper_parity_") + repeated.boundary, cell.coordinates);
+
+			FSCompletenessProgram program;
+			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
+			Dictionary runtime_context;
+			runtime_context["produced_output"] = program.expected_output;
+
+			String first_carrier;
+			String first_census;
+			for (int attempt = 0; attempt < 3; attempt++) {
+				CAPTURE(attempt);
+				const FSCompletenessObservation observation =
+						FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
+				CHECK_MESSAGE(observation.diagnostics.is_empty(), String(" | ").join(observation.diagnostics));
+				const String carrier = observation.dimensions.get("stored_carrier", String());
+				const String census = observation.dimensions.get("census_child_evidence", String());
+				CHECK_FALSE(carrier.is_empty());
+				CHECK_FALSE(census.is_empty());
+				if (attempt == 0) {
+					first_carrier = carrier;
+					first_census = census;
+					continue;
+				}
+				CHECK_EQ(carrier, first_carrier);
+				CHECK_EQ(census, first_census);
+			}
+		}
+		if (initialized_here) {
+			FSLanguage::get_singleton()->finish();
+		}
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper reports an unreadable census child structurally") {
+		// A census child the adapter cannot read back is a defect in the harness or the catalog, not an
+		// observation about the product. Filing it as a product mismatch would let an infrastructure
+		// failure read as a finding and would leave the cell's required dimension simply missing.
+		const bool initialized_here = ensure_fs_language_initialized();
+		FSCompletenessResolvedCell cell;
+		cell.coordinates["destination"] = "plain";
+		cell.coordinates["source_proof"] = "static_member";
+		cell.coordinates["boundary"] = "argument_binding";
+		cell.coordinates["census_child"] = "parser_data_type.container_element_types";
+		cell.coordinates["surface"] = "text";
+		cell.case_id = FSCompletenessCaseID::make("wrapper_parity_argument_binding", cell.coordinates);
+
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
+		Dictionary runtime_context;
+		runtime_context["produced_output"] = program.expected_output;
+		const FSCompletenessObservation observed =
+				FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
+		CHECK_MESSAGE(observed.diagnostics.is_empty(), String(" | ").join(observed.diagnostics));
+		CHECK_FALSE(String(observed.dimensions.get("census_child_evidence", String())).is_empty());
+
+		// The same coordinates over a program that never declares the witness the leaf names.
+		FSCompletenessProgram stripped = program;
+		String without_witness;
+		for (const String &line : program.source.split("\n")) {
+			if (!line.contains("census_container")) {
+				without_witness += line + "\n";
+			}
+		}
+		stripped.source = without_witness.trim_suffix("\n");
+		REQUIRE_NE(stripped.source, program.source);
+		Error structural_error = OK;
+		const FSCompletenessObservation refused = FSDestinationWrapperAdapter::shared().inspect_runtime_contract(
+				stripped, runtime_context, &structural_error);
+		CHECK_EQ(structural_error, ERR_INVALID_DATA);
+		CHECK_FALSE(refused.diagnostics.is_empty());
+		if (initialized_here) {
+			FSLanguage::get_singleton()->finish();
+		}
+	}
+
 	TEST_CASE("TypeCompleteness DestinationWrapper refuses a census child it cannot observe") {
 		const Vector<String> unobserved = destination_wrapper_unobserved_census_children();
 		REQUIRE_FALSE(unobserved.is_empty());

@@ -121,8 +121,12 @@ public:
 	HashSet<String> observable_dimensions() const override;
 	HashMap<String, Vector<String>> renderable_leaves() const override;
 
-	FSCompletenessObservation inspect_runtime_contract(
-			const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) const;
+	// `r_structural_error`, when given, reports whether the observation failed as a harness or catalog
+	// defect rather than as an observation about the product. The two are not interchangeable: a run
+	// that could not observe a required dimension has no reading under which its silence means
+	// agreement.
+	FSCompletenessObservation inspect_runtime_contract(const FSCompletenessProgram &p_program,
+			const Dictionary &p_runtime_context, Error *r_structural_error = nullptr) const;
 };
 
 } // namespace FSTests
