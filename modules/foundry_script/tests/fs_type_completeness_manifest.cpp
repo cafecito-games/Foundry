@@ -31,6 +31,7 @@
 #include "fs_type_completeness_manifest.h"
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_adapter.h"
 #include "fs_type_completeness_common.h"
 #include "fs_type_completeness_json.h"
 
@@ -285,6 +286,35 @@ static void parse_relations(const Array &p_records, FSCompletenessManifest &r_ma
 	}
 }
 
+// Witness records are `{ "id", "coordinates" }`. Only the shape is checked here; whether the
+// coordinates name real leaves of the manifest domain is vocabulary validation, which needs the
+// catalog.
+static void parse_witnesses(const Array &p_records, const String &p_path,
+		Vector<FSCompletenessWitness> &r_witnesses, Vector<String> &r_errors) {
+	if (p_records.is_empty()) {
+		append_error(r_errors, p_path, "must contain at least one witness");
+	}
+	for (int i = 0; i < p_records.size(); i++) {
+		const String record_path = vformat("%s[%d]", p_path, i);
+		Dictionary object;
+		if (!require_dictionary(p_records[i], record_path, object, r_errors)) {
+			continue;
+		}
+		validate_allowed_fields(object, Vector<String>({ "id", "coordinates" }), record_path, r_errors);
+		FSCompletenessWitness witness;
+		if (require_string(object, SNAME("id"), record_path + ".id", witness.id, r_errors) &&
+				witness.id.is_empty()) {
+			append_error(r_errors, record_path + ".id", "must be non-empty");
+		}
+		if (require_dictionary(object, SNAME("coordinates"), record_path + ".coordinates",
+					witness.coordinates, r_errors) &&
+				witness.coordinates.is_empty()) {
+			append_error(r_errors, record_path + ".coordinates", "must be non-empty");
+		}
+		r_witnesses.push_back(witness);
+	}
+}
+
 static void parse_exceptions(const Array &p_records, FSCompletenessManifest &r_manifest, HashSet<String> &r_ids,
 		const HashSet<String> &p_relation_ids, Vector<String> &r_errors) {
 	for (int i = 0; i < p_records.size(); i++) {
@@ -318,11 +348,11 @@ static void parse_exceptions(const Array &p_records, FSCompletenessManifest &r_m
 		}
 		Array positive_witnesses;
 		if (require_array(object, SNAME("positive_witnesses"), record_path + ".positive_witnesses", positive_witnesses, r_errors)) {
-			parse_string_array(positive_witnesses, record_path + ".positive_witnesses", record.positive_witnesses, r_errors, true);
+			parse_witnesses(positive_witnesses, record_path + ".positive_witnesses", record.positive_witnesses, r_errors);
 		}
 		Array boundary_witnesses;
 		if (require_array(object, SNAME("boundary_witnesses"), record_path + ".boundary_witnesses", boundary_witnesses, r_errors)) {
-			parse_string_array(boundary_witnesses, record_path + ".boundary_witnesses", record.boundary_witnesses, r_errors, true);
+			parse_witnesses(boundary_witnesses, record_path + ".boundary_witnesses", record.boundary_witnesses, r_errors);
 		}
 		r_manifest.exceptions.push_back(record);
 	}
@@ -351,18 +381,21 @@ Error FSCompletenessManifest::load(const String &p_path, FSCompletenessManifest 
 	const Dictionary root = json_data;
 	FSCompletenessManifest parsed;
 	validate_allowed_fields(root,
-			Vector<String>({ "schema_version", "family", "domain", "required_dimensions", "anchors", "relations",
-					"exceptions", "max_chain_length" }),
+			Vector<String>({ "schema_version", "family", "adapter", "domain", "required_dimensions", "anchors",
+					"relations", "exceptions", "max_chain_length" }),
 			"$", r_errors);
 	if (!root.has(SNAME("schema_version"))) {
 		append_error(r_errors, "$.schema_version", "required field is missing");
 	} else if (!parse_json_integer(root[SNAME("schema_version")], parsed.schema_version)) {
 		append_error(r_errors, "$.schema_version", "expected an integer");
-	} else if (parsed.schema_version != 1) {
-		append_error(r_errors, "$.schema_version", "must equal 1");
+	} else if (parsed.schema_version != 2) {
+		append_error(r_errors, "$.schema_version", "must equal 2");
 	}
 	if (require_string(root, SNAME("family"), "$.family", parsed.family, r_errors) && parsed.family.is_empty()) {
 		append_error(r_errors, "$.family", "must be non-empty");
+	}
+	if (require_string(root, SNAME("adapter"), "$.adapter", parsed.adapter, r_errors) && parsed.adapter.is_empty()) {
+		append_error(r_errors, "$.adapter", "must be non-empty");
 	}
 
 	Dictionary domain;
@@ -1008,8 +1041,13 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 	int schema_version = 0;
 	parse_catalog_schema_version(root, schema_version, file_errors);
 	String adapter;
-	if (require_string(root, SNAME("adapter"), "$.adapter", adapter, file_errors) && adapter.is_empty()) {
-		append_error(file_errors, "$.adapter", "must be non-empty");
+	const String source_file = String("dimensions").path_join(p_path.get_file());
+	if (require_string(root, SNAME("adapter"), "$.adapter", adapter, file_errors)) {
+		if (adapter.is_empty()) {
+			append_error(file_errors, "$.adapter", "must be non-empty");
+		} else if (FSCompletenessAdapterRegistry::find(adapter) == nullptr) {
+			append_error(file_errors, "$.adapter", vformat("unknown adapter '%s'", adapter));
+		}
 	}
 
 	Array records;
@@ -1025,6 +1063,8 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 			}
 			validate_allowed_fields(record_object, Vector<String>({ "id", "outcomes" }), record_path, file_errors);
 			FSCompletenessDimension dimension;
+			dimension.adapter = adapter;
+			dimension.source_file = source_file;
 			const bool has_id = require_string(record_object, SNAME("id"), record_path + ".id", dimension.id, file_errors);
 			if (has_id) {
 				if (dimension.id.is_empty()) {
@@ -1079,6 +1119,10 @@ Error FSCompletenessCatalog::load(const String &p_root, Vector<String> &r_errors
 	partitions = parsed_partitions;
 	dimensions = parsed_dimensions;
 	return OK;
+}
+
+bool FSCompletenessCatalog::has_axis(const String &p_axis) const {
+	return partitions.has(p_axis);
 }
 
 bool FSCompletenessCatalog::axis_has_leaf(const String &p_axis, const String &p_leaf) const {
@@ -1217,9 +1261,55 @@ static void validate_dimension_outcomes(const Dictionary &p_outcomes, const Stri
 	}
 }
 
+// Every axis of the manifest domain must appear in a witness's coordinates, and every coordinate must
+// name a leaf the domain declares. A witness that omits an axis or names a class selector could match
+// several cells or none, which the runner could only discover as an ambiguous or missing binding after
+// the whole matrix had run.
+static void validate_witness_coordinates(const FSCompletenessManifest &p_manifest,
+		const FSCompletenessCatalog &p_catalog, const FSCompletenessWitness &p_witness,
+		const String &p_path, Vector<String> &r_errors) {
+	const String coordinates_path = p_path + ".coordinates";
+	for (const String &axis : sorted_manifest_axes(p_manifest.domain)) {
+		const String axis_path = append_json_path_member(coordinates_path, axis);
+		if (!p_witness.coordinates.has(axis)) {
+			append_error(r_errors, axis_path, "required domain axis is missing");
+			continue;
+		}
+		const Variant value = p_witness.coordinates[axis];
+		if (value.get_type() != Variant::STRING) {
+			append_error(r_errors, axis_path, "must be a string leaf, not a class selector");
+			continue;
+		}
+		const String leaf = value;
+		if (!p_manifest.domain[axis].has(leaf)) {
+			append_error(r_errors, axis_path,
+					vformat("leaf '%s' is not declared in the manifest domain", leaf));
+		} else if (!p_catalog.axis_has_leaf(axis, leaf)) {
+			append_error(r_errors, axis_path, vformat("unknown leaf '%s'", leaf));
+		}
+	}
+	for (const String &axis : sorted_dictionary_keys(p_witness.coordinates)) {
+		if (!p_manifest.domain.has(axis)) {
+			append_error(r_errors, append_json_path_member(coordinates_path, axis),
+					vformat("axis '%s' is not declared in the manifest domain", axis));
+		}
+	}
+}
+
 Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 		const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors) {
 	r_errors.clear();
+
+	// An unregistered adapter is not a vocabulary defect: the runner reports it as a structural failure
+	// naming the manifest, so a catalog with one still loads and still reports every other defect.
+	const FSCompletenessFamilyAdapter *adapter = FSCompletenessAdapterRegistry::find(p_manifest.adapter);
+	if (adapter != nullptr) {
+		adapter->renderable_coordinates(p_catalog, r_errors);
+	}
+
+	if (!p_manifest.domain.has("surface")) {
+		append_error(r_errors, "$.domain.surface", "required domain axis is missing");
+	}
 
 	for (const String &axis : sorted_manifest_axes(p_manifest.domain)) {
 		const FSCompletenessPartition *partition = p_catalog.partitions.getptr(axis);
@@ -1228,9 +1318,14 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 			continue;
 		}
 		const Vector<String> &leaves = p_manifest.domain[axis];
-		for (const String &leaf : leaves) {
+		for (int index = 0; index < leaves.size(); index++) {
+			const String &leaf = leaves[index];
 			if (!p_catalog.axis_has_leaf(axis, leaf)) {
 				r_errors.push_back(vformat("domain axis '%s' uses unknown leaf '%s'", axis, leaf));
+			} else if (adapter != nullptr && !adapter->can_render(axis, leaf)) {
+				append_error(r_errors,
+						vformat("%s[%d]", append_json_path_member("$.domain", axis), index),
+						vformat("adapter '%s' cannot render leaf '%s'", adapter->id(), leaf));
 			}
 		}
 	}
@@ -1275,13 +1370,78 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 		validate_dimension_outcomes(relation.derive, record, "derives", true, p_catalog.dimensions, r_errors);
 	}
 
-	for (const FSCompletenessException &exception : p_manifest.exceptions) {
+	// Every dimension the manifest names anywhere - required, expected by an anchor, or derived by a
+	// relation or an exception - is compared against what the adapter reports for a cell. One the
+	// adapter cannot observe would be published as a product mismatch instead of the catalog defect it
+	// is, so the whole named set is checked rather than only the required half.
+	if (adapter != nullptr) {
+		const HashSet<String> observable = adapter->observable_dimensions();
+		Vector<String> named_dimensions;
+		for (const FSCompletenessRequiredDimension &required : p_manifest.required_dimensions) {
+			named_dimensions.push_back(required.dimension);
+		}
+		for (const FSCompletenessAnchor &anchor : p_manifest.anchors) {
+			named_dimensions.append_array(sorted_dictionary_keys(anchor.expect));
+		}
+		for (const FSCompletenessRelation &relation : p_manifest.relations) {
+			named_dimensions.append_array(sorted_dictionary_keys(relation.derive));
+		}
+		for (const FSCompletenessException &exception : p_manifest.exceptions) {
+			named_dimensions.append_array(sorted_dictionary_keys(exception.derive));
+		}
+		named_dimensions.sort();
+		String previous;
+		for (const String &dimension_name : named_dimensions) {
+			if (dimension_name == previous || !p_catalog.dimensions.has(dimension_name)) {
+				continue;
+			}
+			previous = dimension_name;
+			const FSCompletenessDimension *declared = p_catalog.dimensions.getptr(dimension_name);
+			if (declared != nullptr && declared->adapter != adapter->id()) {
+				r_errors.push_back(
+						vformat("dimension '%s' is declared in %s for adapter '%s', not for adapter '%s'",
+								dimension_name, declared->source_file, declared->adapter, adapter->id()));
+			}
+			if (!observable.has(dimension_name)) {
+				r_errors.push_back(vformat("dimension '%s' is not observable by adapter '%s'",
+						dimension_name, adapter->id()));
+			}
+		}
+	}
+
+	for (int index = 0; index < p_manifest.exceptions.size(); index++) {
+		const FSCompletenessException &exception = p_manifest.exceptions[index];
 		const String record = vformat("exception '%s'", exception.id);
 		validate_selector(exception.when, record + " when", p_catalog.partitions, nullptr, r_errors);
 		validate_dimension_outcomes(exception.derive, record, "derives", true, p_catalog.dimensions, r_errors);
+		const String record_path = vformat("$.exceptions[%d]", index);
+		for (int witness_index = 0; witness_index < exception.positive_witnesses.size(); witness_index++) {
+			validate_witness_coordinates(p_manifest, p_catalog, exception.positive_witnesses[witness_index],
+					vformat("%s.positive_witnesses[%d]", record_path, witness_index), r_errors);
+		}
+		for (int witness_index = 0; witness_index < exception.boundary_witnesses.size(); witness_index++) {
+			validate_witness_coordinates(p_manifest, p_catalog, exception.boundary_witnesses[witness_index],
+					vformat("%s.boundary_witnesses[%d]", record_path, witness_index), r_errors);
+		}
 	}
 
 	return r_errors.is_empty() ? OK : ERR_INVALID_DATA;
+}
+
+Dictionary manifest_witness_coordinates(
+		const FSCompletenessManifest &p_manifest, const String &p_witness_id) {
+	for (const FSCompletenessException &exception : p_manifest.exceptions) {
+		for (int pass = 0; pass < 2; pass++) {
+			const Vector<FSCompletenessWitness> &declared =
+					pass == 0 ? exception.positive_witnesses : exception.boundary_witnesses;
+			for (const FSCompletenessWitness &witness : declared) {
+				if (witness.id == p_witness_id) {
+					return witness.coordinates;
+				}
+			}
+		}
+	}
+	return Dictionary();
 }
 
 } // namespace FSTests

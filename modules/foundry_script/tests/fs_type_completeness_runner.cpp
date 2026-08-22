@@ -121,14 +121,6 @@ static bool provenance_has_parent_without_exception(
 	return false;
 }
 
-struct FSCompletenessWitnessBinding {
-	String witness_id;
-	String exception_id;
-	String parent_relation_id;
-	bool boundary = false;
-	const FSCompletenessResolvedCell *cell = nullptr;
-};
-
 static FSCompletenessStructuralFailure make_structural_failure(const String &p_stage,
 		const String &p_detail, const String &p_case_id, const String &p_witness_id,
 		const String &p_exception_id, Error p_error) {
@@ -140,17 +132,6 @@ static FSCompletenessStructuralFailure make_structural_failure(const String &p_s
 	failure.exception_id = p_exception_id;
 	failure.error_code = p_error;
 	return failure;
-}
-
-static Dictionary structural_failure_report(const FSCompletenessStructuralFailure &p_failure) {
-	Dictionary report;
-	report["stage"] = p_failure.stage;
-	report["detail"] = p_failure.detail;
-	report["case_id"] = p_failure.case_id;
-	report["witness_id"] = p_failure.witness_id;
-	report["exception_id"] = p_failure.exception_id;
-	report["error_code"] = double(int(p_failure.error_code));
-	return report;
 }
 
 static String structural_failure_sort_key(const FSCompletenessStructuralFailure &p_failure) {
@@ -169,96 +150,34 @@ static void sort_structural_failures(Vector<FSCompletenessStructuralFailure> &r_
 	r_failures.sort_custom<StructuralFailureSortsBefore>();
 }
 
-// Resolves every declared witness to exactly one cell that actually observes the exception (or, for
-// a boundary witness, the unexcepted parent relation). Each way a witness can fail to bind reports a
-// distinct stage so a comparator can tell an unknown witness from an ambiguous or unobserving one.
-static Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
-		const FSCompletenessResolution &p_resolution,
-		Vector<FSCompletenessWitnessBinding> &r_bindings,
-		Vector<FSCompletenessStructuralFailure> &r_failures) {
-	r_bindings.clear();
-	HashSet<String> witness_ids;
-	bool failed = false;
-	for (const FSCompletenessException &exception : p_manifest.exceptions) {
-		for (int pass = 0; pass < 2; pass++) {
-			const bool boundary = pass == 1;
-			const Vector<String> &declared =
-					boundary ? exception.boundary_witnesses : exception.positive_witnesses;
-			for (const String &witness_id : declared) {
-				FSCompletenessWitnessBinding binding;
-				binding.witness_id = witness_id;
-				binding.exception_id = exception.id;
-				binding.parent_relation_id = exception.parent;
-				binding.boundary = boundary;
-				if (witness_ids.has(witness_id)) {
-					r_failures.push_back(make_structural_failure("witness_declared_twice",
-							"A witness ID is declared more than once.", String(), witness_id, exception.id,
-							ERR_INVALID_DATA));
-					failed = true;
-					continue;
-				}
-				witness_ids.insert(witness_id);
-				Dictionary coordinates;
-				if (FSUnionCompletenessAdapter::witness_coordinates(witness_id, coordinates) != OK) {
-					r_failures.push_back(make_structural_failure("witness_id_unknown",
-							"The adapter does not resolve coordinates for this witness ID.", String(),
-							witness_id, exception.id, ERR_INVALID_DATA));
-					failed = true;
-					continue;
-				}
-				int matches = 0;
-				const FSCompletenessResolvedCell *cell =
-						p_resolution.find_cell_by_coordinates(coordinates, matches);
-				if (cell == nullptr || matches == 0) {
-					r_failures.push_back(make_structural_failure("witness_cell_missing",
-							"No resolved cell carries the witness coordinates.", String(), witness_id,
-							exception.id, ERR_INVALID_DATA));
-					failed = true;
-					continue;
-				}
-				if (matches != 1) {
-					r_failures.push_back(make_structural_failure("witness_cell_ambiguous",
-							vformat("%d resolved cells carry the witness coordinates.", matches), String(),
-							witness_id, exception.id, ERR_INVALID_DATA));
-					failed = true;
-					continue;
-				}
-				bool observes = false;
-				for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
-					observes = observes ||
-							(boundary ? provenance_has_parent_without_exception(
-												dimension.value, exception.parent)
-									  : provenance_has_exception_parent(
-												dimension.value, exception.id, exception.parent));
-				}
-				if (!observes) {
-					r_failures.push_back(make_structural_failure(
-							boundary ? "witness_boundary_provenance_missing"
-									 : "witness_exception_provenance_missing",
-							boundary ? "No dimension derives through the parent relation without the exception."
-									 : "No dimension derives through the exception.",
-							cell->case_id, witness_id, exception.id, ERR_INVALID_DATA));
-					failed = true;
-					continue;
-				}
-				binding.cell = cell;
-				r_bindings.push_back(binding);
-			}
+// True when p_coordinates names one string leaf of the manifest domain on every domain axis and on no
+// other axis. Anything else could match several cells or none, so it is refused before it is resolved.
+static bool witness_coordinates_are_resolvable(
+		const FSCompletenessManifest &p_manifest, const Dictionary &p_coordinates) {
+	if (uint32_t(p_coordinates.size()) != p_manifest.domain.size()) {
+		return false;
+	}
+	for (const KeyValue<String, Vector<String>> &axis : p_manifest.domain) {
+		const Variant value = p_coordinates.get(axis.key, Variant());
+		if (value.get_type() != Variant::STRING || !axis.value.has(String(value))) {
+			return false;
 		}
 	}
-	return failed ? ERR_INVALID_DATA : OK;
+	return true;
 }
 
 static const FSCompletenessRuntimeResult *runtime_result_for(
 		const FSCompletenessResolvedCell &p_cell, const FSCompletenessRuntimeBatch &p_batch) {
-	const String surface = p_cell.coordinates.get("surface", String());
-	return surface == "text" ? p_batch.text.getptr(p_cell.case_id) : p_batch.bytecode.getptr(p_cell.case_id);
+	const HashMap<String, FSCompletenessRuntimeResult> *results =
+			p_batch.results_for_surface(p_cell.coordinates.get("surface", String()));
+	return results == nullptr ? nullptr : results->getptr(p_cell.case_id);
 }
 
 static FSCompletenessRuntimeResult *runtime_result_for(
 		const FSCompletenessResolvedCell &p_cell, FSCompletenessRuntimeBatch &r_batch) {
-	const String surface = p_cell.coordinates.get("surface", String());
-	return surface == "text" ? r_batch.text.getptr(p_cell.case_id) : r_batch.bytecode.getptr(p_cell.case_id);
+	HashMap<String, FSCompletenessRuntimeResult> *results =
+			r_batch.results_for_surface(p_cell.coordinates.get("surface", String()));
+	return results == nullptr ? nullptr : results->getptr(p_cell.case_id);
 }
 
 static bool runtime_result_identity_matches(
@@ -335,14 +254,16 @@ static Error validate_witness_runtime_identity(const Vector<FSCompletenessWitnes
 	for (const FSCompletenessWitnessBinding &binding : p_bindings) {
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(*binding.cell, p_batch);
 		if (actual == nullptr) {
-			r_failures.push_back(make_structural_failure("witness_runtime_result_missing",
+			r_failures.push_back(make_structural_failure(
+					FSCompletenessStructuralStage::WITNESS_RUNTIME_RESULT_MISSING,
 					"No runtime result was produced for the witness cell.", binding.cell->case_id,
 					binding.witness_id, binding.exception_id, ERR_INVALID_DATA));
 			failed = true;
 			continue;
 		}
 		if (!runtime_result_identity_matches(*binding.cell, *actual)) {
-			r_failures.push_back(make_structural_failure("witness_runtime_identity_mismatch",
+			r_failures.push_back(make_structural_failure(
+					FSCompletenessStructuralStage::WITNESS_RUNTIME_IDENTITY_MISMATCH,
 					vformat("The runtime result reports case '%s' on surface '%s'.", actual->case_id,
 							actual->surface),
 					binding.cell->case_id, binding.witness_id, binding.exception_id, ERR_INVALID_DATA));
@@ -472,9 +393,8 @@ static bool object_has_exact_fields(const Dictionary &p_object, const Vector<Str
 
 static bool ledger_dimension_is_known(
 		const FSCompletenessResolvedCell &p_cell, const String &p_dimension) {
-	return p_cell.dimensions.has(p_dimension) || p_dimension == "output" ||
-			p_dimension == "diagnostics" || p_dimension == "diagnostic_severity" ||
-			p_dimension == "runtime_status" || p_dimension == "text_bytecode_parity";
+	return p_cell.dimensions.has(p_dimension) ||
+			FSCompletenessRunner::builtin_dimensions().has(p_dimension);
 }
 
 static String find_repository_root_ancestor(const String &p_start_path) {
@@ -893,6 +813,10 @@ static Error validate_owned_report_path(const String &p_canonical_scratch_root,
 
 class ReportArtifactScope {
 	String artifact_root;
+	// The surfaces this run executes, taken from the run rather than enumerated again here. An artifact
+	// tree that offered a directory for a surface the run never observed would advertise evidence that
+	// cannot exist.
+	HashSet<String> staged_surfaces;
 	Vector<String> created_files;
 	Vector<String> created_directories;
 	bool committed = false;
@@ -927,7 +851,7 @@ class ReportArtifactScope {
 	Error validate_artifact_target(const String &p_canonical_scratch_root,
 			const FSCompletenessResolvedCell &p_cell, const String &p_path) const {
 		const String surface = p_cell.coordinates.get("surface", String());
-		if (surface != "text" && surface != "bytecode") {
+		if (!staged_surfaces.has(surface)) {
 			return ERR_INVALID_DATA;
 		}
 		const String surface_root = artifact_root.path_join(surface);
@@ -972,9 +896,14 @@ public:
 		}
 	}
 
-	Error stage(const String &p_canonical_scratch_root, const FSCompletenessResolution &p_resolution,
+	Error stage(const String &p_canonical_scratch_root, const Vector<String> &p_surfaces,
+			const Vector<const FSCompletenessResolvedCell *> &p_cells,
 			const ProgramIndex &p_program_index,
 			FSCompletenessPersistedWriteHook p_persisted_write_hook) {
+		staged_surfaces.clear();
+		for (const String &surface : p_surfaces) {
+			staged_surfaces.insert(surface);
+		}
 		artifact_root = p_canonical_scratch_root.path_join("report-artifacts");
 		if (!TemporaryProjectTree::is_strict_descendant(p_canonical_scratch_root, artifact_root)) {
 			return ERR_UNAUTHORIZED;
@@ -983,7 +912,7 @@ public:
 		if (error != OK) {
 			return error;
 		}
-		for (const String &surface : { String("text"), String("bytecode") }) {
+		for (const String &surface : p_surfaces) {
 			error = ensure_directory(p_canonical_scratch_root, artifact_root.path_join(surface));
 			if (error != OK) {
 				return error;
@@ -994,7 +923,8 @@ public:
 		if (filesystem.is_null()) {
 			return ERR_UNAVAILABLE;
 		}
-		for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
+		for (const FSCompletenessResolvedCell *selected_cell : p_cells) {
+			const FSCompletenessResolvedCell &cell = *selected_cell;
 			const FSCompletenessProgram *program = p_program_index.find(cell.case_id);
 			if (program == nullptr) {
 				return ERR_INVALID_DATA;
@@ -1342,9 +1272,9 @@ struct StageTimings {
 static Dictionary document_with_timeout_verdict(const Dictionary &p_document, const String &p_detail) {
 	Dictionary document = p_document.duplicate(true);
 	FSCompletenessStructuralFailure failure =
-			make_structural_failure("run_timeout", p_detail, String(), String(), String(), ERR_TIMEOUT);
+			make_structural_failure(FSCompletenessStructuralStage::RUN_TIMEOUT, p_detail, String(), String(), String(), ERR_TIMEOUT);
 	Array failures = document.get("structural_failures", Array());
-	failures.push_back(structural_failure_report(failure));
+	failures.push_back(FSCompletenessRunner::structural_failure_report(failure));
 	document["structural_failures"] = failures;
 	document["success"] = false;
 	document["outcome"] = "structural_failure";
@@ -1370,7 +1300,7 @@ static Dictionary timeout_report(const String &p_family, const StageTimings &p_t
 	report["findings"] = Array();
 	Array structural_failures;
 	for (const FSCompletenessStructuralFailure &failure : p_failures) {
-		structural_failures.push_back(structural_failure_report(failure));
+		structural_failures.push_back(FSCompletenessRunner::structural_failure_report(failure));
 	}
 	report["structural_failures"] = structural_failures;
 	Dictionary ledger;
@@ -1392,8 +1322,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return p_options.deadline_usec != 0 && clock() >= p_options.deadline_usec;
 	};
 	if (p_options.catalog_root.is_empty() || p_options.family.is_empty() ||
-			p_options.scratch_root.is_empty() || p_options.report_path.is_empty() ||
-			p_options.family != "union_destination_membership") {
+			p_options.scratch_root.is_empty() || p_options.report_path.is_empty()) {
 		return ERR_INVALID_PARAMETER;
 	}
 	String canonical_scratch_root;
@@ -1415,7 +1344,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		}
 		timings.total = StageTimings::since(run_started_at);
 		Vector<FSCompletenessStructuralFailure> failures;
-		failures.push_back(make_structural_failure("run_timeout",
+		failures.push_back(make_structural_failure(FSCompletenessStructuralStage::RUN_TIMEOUT,
 				vformat("The run exceeded its wall-clock budget during the %s stage.", p_stage), String(),
 				String(), String(), ERR_TIMEOUT));
 		const Dictionary partial_report = timeout_report(p_options.family, timings, failures);
@@ -1426,7 +1355,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		if (publish_error != OK) {
 			// Nothing reached disk, so the result must not carry a report either: a consumer that reads
 			// one would credit this run with evidence it never published.
-			failures.push_back(make_structural_failure("run_timeout_report_unwritable",
+			failures.push_back(make_structural_failure(
+					FSCompletenessStructuralStage::RUN_TIMEOUT_REPORT_UNWRITABLE,
 					"The partial report of a run that exceeded its budget could not be published.", String(),
 					String(), String(), publish_error));
 			sort_structural_failures(failures);
@@ -1460,6 +1390,70 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	const FSCompletenessManifest &manifest = catalog_record->manifest;
 	const FSCompletenessResolution &resolution = catalog_record->resolution;
 	const FSCompletenessMigrations &migrations = catalog_record->migrations;
+
+	// One structural failure is the whole verdict of a run that never got to observe anything.
+	const auto fail_structurally = [&](const char *p_stage, const String &p_detail,
+										   Error p_error = ERR_INVALID_DATA) {
+		Vector<FSCompletenessStructuralFailure> failures;
+		failures.push_back(
+				make_structural_failure(p_stage, p_detail, String(), String(), String(), p_error));
+		r_result.outcome = "structural_failure";
+		r_result.structural_failures = failures;
+	};
+	const String duplicate_adapter_id = FSCompletenessAdapterRegistry::validate();
+	if (!duplicate_adapter_id.is_empty()) {
+		fail_structurally(FSCompletenessStructuralStage::ADAPTER_DUPLICATE,
+				vformat("The adapter registry registers id '%s' more than once.", duplicate_adapter_id));
+		return ERR_INVALID_DATA;
+	}
+	const FSCompletenessFamilyAdapter *adapter = FSCompletenessAdapterRegistry::find(manifest.adapter);
+	if (adapter == nullptr) {
+		fail_structurally(FSCompletenessStructuralStage::ADAPTER_UNKNOWN,
+				vformat("rules/%s.json:$.adapter names adapter '%s', which is not registered.",
+						p_options.family, manifest.adapter));
+		return ERR_INVALID_DATA;
+	}
+
+	const Vector<String> *domain_surfaces = manifest.domain.getptr("surface");
+	if (domain_surfaces == nullptr) {
+		return ERR_INVALID_DATA;
+	}
+	// Selected surfaces keep the manifest's own axis order: the report is a document whose member
+	// order is part of its bytes, and a run must not reorder it by narrowing what it executes.
+	Vector<String> selected_surfaces;
+	for (const String &surface : *domain_surfaces) {
+		if (p_options.surfaces.is_empty() || p_options.surfaces.has(surface)) {
+			selected_surfaces.push_back(surface);
+		}
+	}
+	if (selected_surfaces.size() != (p_options.surfaces.is_empty() ? domain_surfaces->size() : p_options.surfaces.size())) {
+		return ERR_INVALID_PARAMETER;
+	}
+	HashSet<String> selected_surface_set;
+	for (const String &surface : selected_surfaces) {
+		selected_surface_set.insert(surface);
+	}
+	// Publishing a surface the run does not execute would produce a document with a matrix and no case
+	// in it. Refusing the combination here keeps that document from existing at all, rather than
+	// leaving a consumer to notice that a clean-looking report is empty.
+	if (!p_options.published_surface.is_empty() &&
+			!selected_surface_set.has(p_options.published_surface)) {
+		Vector<String> quoted_surfaces;
+		for (const String &surface : selected_surfaces) {
+			quoted_surfaces.push_back(vformat("'%s'", surface));
+		}
+		fail_structurally(FSCompletenessStructuralStage::PUBLISHED_SURFACE_NOT_EXECUTED,
+				vformat("The run publishes surface '%s' but executes only %s.", p_options.published_surface,
+						String(", ").join(quoted_surfaces)),
+				ERR_INVALID_PARAMETER);
+		return ERR_INVALID_PARAMETER;
+	}
+	Vector<const FSCompletenessResolvedCell *> selected_cells;
+	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+		if (selected_surface_set.has(String(cell.coordinates.get("surface", String())))) {
+			selected_cells.push_back(&cell);
+		}
+	}
 	timings.load += StageTimings::since(stage_started_at);
 	if (abort_after_timeout("load")) {
 		return ERR_TIMEOUT;
@@ -1499,10 +1493,11 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 
 	stage_started_at = StageTimings::now();
 	Vector<FSCompletenessProgram> programs;
-	programs.reserve(resolution.cells.size());
-	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+	programs.reserve(selected_cells.size());
+	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
+		const FSCompletenessResolvedCell &cell = *selected_cell;
 		FSCompletenessProgram program;
-		error = FSUnionCompletenessAdapter::render(cell, program);
+		error = adapter->render(cell, program);
 		if (error != OK) {
 			return error;
 		}
@@ -1525,8 +1520,14 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	ReportArtifactScope artifact_scope;
 	ProgramIndex program_index;
 	program_index.build(programs);
-	error = artifact_scope.stage(
-			canonical_scratch_root, resolution, program_index, p_options.persisted_write_hook);
+	if (programs.size() != selected_cells.size()) {
+		fail_structurally(FSCompletenessStructuralStage::PROGRAM_CARDINALITY,
+				vformat("The run rendered %d programs for %d selected cells.", programs.size(),
+						selected_cells.size()));
+		return ERR_INVALID_DATA;
+	}
+	error = artifact_scope.stage(canonical_scratch_root, selected_surfaces, selected_cells, program_index,
+			p_options.persisted_write_hook);
 	if (error != OK) {
 		return error;
 	}
@@ -1538,7 +1539,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 
 	stage_started_at = StageTimings::now();
 	FSCompletenessRuntimeBatch batch;
-	error = FSUnionCompletenessAdapter::execute(canonical_scratch_root, programs, batch);
+	error = adapter->execute(canonical_scratch_root, programs, batch);
 	timings.execute += StageTimings::since(stage_started_at);
 	if (abort_after_timeout("execute")) {
 		return ERR_TIMEOUT;
@@ -1547,38 +1548,47 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return error;
 	}
 	stage_started_at = StageTimings::now();
-	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
-		if (actual == nullptr || !runtime_result_identity_matches(cell, *actual)) {
+	for (const FSCompletenessResolvedCell *cell : selected_cells) {
+		const FSCompletenessRuntimeResult *actual = runtime_result_for(*cell, batch);
+		if (actual == nullptr || !runtime_result_identity_matches(*cell, *actual)) {
 			return ERR_INVALID_DATA;
 		}
 	}
 	if (p_options.observation_mutator != nullptr) {
-		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-			FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
+		for (const FSCompletenessResolvedCell *cell : selected_cells) {
+			FSCompletenessRuntimeResult *actual = runtime_result_for(*cell, batch);
 			if (actual == nullptr) {
 				return ERR_INVALID_DATA;
 			}
 			p_options.observation_mutator(static_cast<FSCompletenessObservation &>(*actual));
-			if (!runtime_result_identity_matches(cell, *actual)) {
+			if (!runtime_result_identity_matches(*cell, *actual)) {
 				return ERR_INVALID_DATA;
 			}
 		}
 	}
 	if (p_options.runtime_result_mutator != nullptr) {
-		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-			FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
+		for (const FSCompletenessResolvedCell *cell : selected_cells) {
+			FSCompletenessRuntimeResult *actual = runtime_result_for(*cell, batch);
 			if (actual == nullptr) {
 				return ERR_INVALID_DATA;
 			}
 			p_options.runtime_result_mutator(*actual);
-			if (!runtime_result_identity_matches(cell, *actual)) {
+			if (!runtime_result_identity_matches(*cell, *actual)) {
 				return ERR_INVALID_DATA;
 			}
 		}
 	}
+	// A witness whose cell this run did not select produced no evidence to identify; the surfaces it
+	// covers are validated by the runs that do select them.
+	Vector<FSCompletenessWitnessBinding> executed_witness_bindings;
+	for (const FSCompletenessWitnessBinding &binding : witness_bindings) {
+		if (binding.cell != nullptr &&
+				selected_surface_set.has(String(binding.cell->coordinates.get("surface", String())))) {
+			executed_witness_bindings.push_back(binding);
+		}
+	}
 	const Error witness_identity_error =
-			validate_witness_runtime_identity(witness_bindings, batch, structural_failures);
+			validate_witness_runtime_identity(executed_witness_bindings, batch, structural_failures);
 	if (witness_identity_error != OK) {
 		sort_structural_failures(structural_failures);
 		r_result.outcome = "structural_failure";
@@ -1587,7 +1597,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 
 	Vector<FSCompletenessFinding> findings;
-	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
+		const FSCompletenessResolvedCell &cell = *selected_cell;
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
 		const FSCompletenessProgram *program = program_index.find(cell.case_id);
 		if (actual == nullptr || program == nullptr) {
@@ -1634,44 +1645,75 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		const FSCompletenessResolvedCell *bytecode = nullptr;
 	};
 	HashMap<String, SurfacePair> pairs;
-	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-		const String pair_key = semantic_pair_key(cell.coordinates, "surface");
+	Vector<String> duplicated_pair_keys;
+	for (const FSCompletenessResolvedCell *cell : selected_cells) {
+		const String pair_key = semantic_pair_key(cell->coordinates, "surface");
 		SurfacePair *pair = pairs.getptr(pair_key);
 		if (pair == nullptr) {
 			pairs[pair_key] = SurfacePair();
 			pair = pairs.getptr(pair_key);
 		}
-		if (cell.coordinates.get("surface", String()) == "text") {
-			if (pair->text != nullptr) {
-				return ERR_INVALID_DATA;
-			}
-			pair->text = &cell;
-		} else {
-			if (pair->bytecode != nullptr) {
-				return ERR_INVALID_DATA;
-			}
-			pair->bytecode = &cell;
+		const String cell_surface = cell->coordinates.get("surface", String());
+		if (cell_surface != "text" && cell_surface != "bytecode") {
+			// The batch files results under exactly these two surfaces, so a cell on any other one could
+			// never be paired with anything; refusing it here keeps it from being silently filed as
+			// bytecode.
+			return ERR_INVALID_DATA;
 		}
+		const FSCompletenessResolvedCell **slot = cell_surface == "text" ? &pair->text : &pair->bytecode;
+		if (*slot != nullptr) {
+			duplicated_pair_keys.push_back(pair_key);
+			continue;
+		}
+		*slot = cell;
 	}
 	Vector<String> pair_keys;
 	for (const KeyValue<String, SurfacePair> &pair : pairs) {
 		pair_keys.push_back(pair.key);
 	}
 	pair_keys.sort();
+	// The cardinality the matrix must have is the domain's: one program per selected surface leaf for
+	// every semantic pair. Naming the pair key keeps a shape defect attributable instead of reported
+	// as an anonymous invalid run.
+	duplicated_pair_keys.sort();
+	for (const String &pair_key : duplicated_pair_keys) {
+		fail_structurally(FSCompletenessStructuralStage::PROGRAM_CARDINALITY,
+				vformat("Semantic pair '%s' carries more than one program on one surface.", pair_key));
+		return ERR_INVALID_DATA;
+	}
+	for (const String &pair_key : pair_keys) {
+		const SurfacePair &pair = pairs[pair_key];
+		const int programs_in_pair = (pair.text != nullptr ? 1 : 0) + (pair.bytecode != nullptr ? 1 : 0);
+		if (programs_in_pair != selected_surfaces.size()) {
+			fail_structurally(FSCompletenessStructuralStage::PROGRAM_CARDINALITY,
+					vformat("Semantic pair '%s' carries %d programs across %d selected surfaces.", pair_key,
+							programs_in_pair, selected_surfaces.size()));
+			return ERR_INVALID_DATA;
+		}
+	}
 	int parity_failures = 0;
+	// The one derivation of which pairs could be compared at all. Parity verdicts and ledger
+	// reconciliation both read it, so a pair can never be compared by one and assumed by the other.
+	int compared_surface_pairs = 0;
+	HashSet<String> compared_case_ids;
 	HashSet<String> parity_case_ids;
 	HashMap<String, Dictionary> parity_evidence_by_case;
 	HashMap<String, String> parity_partner_case_id;
 	for (const String &pair_key : pair_keys) {
 		const SurfacePair &pair = pairs[pair_key];
 		if (pair.text == nullptr || pair.bytecode == nullptr) {
-			return ERR_INVALID_DATA;
+			// Parity is agreement between two observations. A run that executed only one surface of a
+			// pair has nothing to compare, and must not report agreement it never observed.
+			continue;
 		}
 		const FSCompletenessRuntimeResult *text = runtime_result_for(*pair.text, batch);
 		const FSCompletenessRuntimeResult *bytecode = runtime_result_for(*pair.bytecode, batch);
 		if (text == nullptr || bytecode == nullptr) {
 			return ERR_INVALID_DATA;
 		}
+		compared_surface_pairs++;
+		compared_case_ids.insert(pair.text->case_id);
+		compared_case_ids.insert(pair.bytecode->case_id);
 
 		const Dictionary evidence = aggregate_parity_evidence(*pair.text, *pair.bytecode, *text, *bytecode);
 		const bool pair_failed = evidence.has("output") || evidence.has("diagnostics") ||
@@ -1698,7 +1740,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			FSCompletenessFinding finding;
 			finding.case_id = pair.text->case_id;
 			finding.family = p_options.family;
-			finding.dimension = "text_bytecode_parity";
+			finding.dimension = FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION;
 			finding.finding_id = make_finding_id(finding.case_id, finding.dimension);
 			finding.expected = "matching_surface_observations";
 			finding.parity_evidence = evidence;
@@ -1711,6 +1753,28 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			findings.push_back(finding);
 		}
 	}
+	// A ledger entry is in scope only when this run could have contradicted it: its case must have been
+	// executed, and a parity classification additionally needs the pair it names to have been compared.
+	// Both conditions read the same derivation the parity verdicts came from, so an entry can never be
+	// called stale on evidence the run never gathered - whether the missing surface was excluded by a
+	// filter or was never in the family's domain at all.
+	HashSet<String> executed_case_ids;
+	for (const FSCompletenessResolvedCell *cell : selected_cells) {
+		executed_case_ids.insert(cell->case_id);
+	}
+	HashMap<String, FSCompletenessFinding> reconcilable_ledger;
+	for (const KeyValue<String, FSCompletenessFinding> &entry : ledger) {
+		if (!executed_case_ids.has(entry.value.case_id)) {
+			continue;
+		}
+		if (entry.value.dimension == FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION &&
+				!compared_case_ids.has(entry.value.case_id)) {
+			continue;
+		}
+		reconcilable_ledger.insert(entry.key, entry.value);
+	}
+	ledger = reconcilable_ledger;
+
 	HashSet<String> reconciled_ledger_entries;
 	for (FSCompletenessFinding &finding : findings) {
 		const String reconciliation_key = finding.case_id + "|" + finding.dimension;
@@ -1761,7 +1825,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		record["dimension"] = entry.dimension;
 		record["classification"] = entry.classification;
 		stale_report.push_back(record);
-		structural_failures.push_back(make_structural_failure("ledger_entry_stale",
+		structural_failures.push_back(make_structural_failure(
+				FSCompletenessStructuralStage::LEDGER_ENTRY_STALE,
 				vformat("Ledger entry '%s' classifies dimension '%s', which no longer reproduces.",
 						entry.finding_id, entry.dimension),
 				entry.case_id, String(), String(), ERR_INVALID_DATA));
@@ -1802,6 +1867,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 	HashMap<String, Dictionary> exception_reports;
 	Vector<String> exception_ids;
+	HashMap<String, int> declared_witness_count;
+	HashMap<String, int> executed_witness_count;
 	for (const FSCompletenessException &exception : manifest.exceptions) {
 		Dictionary exception_report;
 		exception_report["exception_id"] = exception.id;
@@ -1811,8 +1878,11 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		exception_report["boundary_witnesses"] = Array();
 		exception_reports[exception.id] = exception_report;
 		exception_ids.push_back(exception.id);
+		declared_witness_count[exception.id] =
+				exception.positive_witnesses.size() + exception.boundary_witnesses.size();
+		executed_witness_count[exception.id] = 0;
 	}
-	for (const FSCompletenessWitnessBinding &binding : witness_bindings) {
+	for (const FSCompletenessWitnessBinding &binding : executed_witness_bindings) {
 		Dictionary *exception_report = exception_reports.getptr(binding.exception_id);
 		if (exception_report == nullptr) {
 			return ERR_INVALID_DATA;
@@ -1823,10 +1893,23 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		witness_report["case_id"] = binding.cell->case_id;
 		witness_report["witnessed"] = blocking == nullptr;
 		witness_report["blocking_finding_ids"] = blocking == nullptr ? Array() : *blocking;
+		executed_witness_count[binding.exception_id]++;
 		Array witnesses = (*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"];
 		witnesses.push_back(witness_report);
 		(*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"] = witnesses;
 		if (blocking != nullptr) {
+			(*exception_report)["witnessed"] = false;
+		}
+	}
+	// An exception is witnessed only when every witness it declares was observed. A run narrowed to
+	// one surface leaves the witnesses of the other unobserved, and an unobserved witness is not a
+	// satisfied one: reporting otherwise would let a narrowed run publish evidence it never gathered.
+	for (const String &exception_id : exception_ids) {
+		Dictionary *exception_report = exception_reports.getptr(exception_id);
+		if (exception_report == nullptr) {
+			return ERR_INVALID_DATA;
+		}
+		if (executed_witness_count[exception_id] != declared_witness_count[exception_id]) {
 			(*exception_report)["witnessed"] = false;
 		}
 	}
@@ -1842,15 +1925,17 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 
 	stage_started_at = StageTimings::now();
 	Dictionary executed_by_surface;
-	executed_by_surface["text"] = double(batch.text.size());
-	executed_by_surface["bytecode"] = double(batch.bytecode.size());
+	for (const String &surface : selected_surfaces) {
+		const HashMap<String, FSCompletenessRuntimeResult> *results = batch.results_for_surface(surface);
+		executed_by_surface[surface] = double(results == nullptr ? 0 : results->size());
+	}
 	Dictionary coverage_by_chain_length;
 	for (int length = 0; length <= manifest.max_chain_length; length++) {
 		coverage_by_chain_length[String::num_int64(length)] = 0.0;
 	}
 	Dictionary coverage_by_dimension;
-	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-		for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell.dimensions) {
+	for (const FSCompletenessResolvedCell *cell : selected_cells) {
+		for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
 			const String chain_key = String::num_int64(dimension.value.canonical_provenance.size());
 			coverage_by_chain_length[chain_key] = double(coverage_by_chain_length.get(chain_key, 0.0)) + 1.0;
 			coverage_by_dimension[dimension.key] = double(coverage_by_dimension.get(dimension.key, 0.0)) + 1.0;
@@ -1858,10 +1943,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 	coverage_by_dimension = sorted_dictionary_copy(coverage_by_dimension);
 
-	Vector<const FSCompletenessResolvedCell *> sorted_cells;
-	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
-		sorted_cells.push_back(&cell);
-	}
+	Vector<const FSCompletenessResolvedCell *> sorted_cells = selected_cells;
 	sort_cells_by_id(sorted_cells);
 	Array cases;
 	HashSet<String> published_case_ids;
@@ -1912,7 +1994,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		cases.push_back(case_report);
 	}
 	Array report_findings;
-	const bool success = findings.is_empty() && structural_failures.is_empty();
+	bool success = findings.is_empty() && structural_failures.is_empty();
 	for (const FSCompletenessFinding &finding : findings) {
 		// A published document must stay self-consistent: a finding may only name a case the document
 		// reports. The run-level verdict below still counts every finding the run produced.
@@ -1923,16 +2005,16 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 	Array structural_failures_report;
 	for (const FSCompletenessStructuralFailure &failure : structural_failures) {
-		structural_failures_report.push_back(structural_failure_report(failure));
+		structural_failures_report.push_back(FSCompletenessRunner::structural_failure_report(failure));
 	}
-	const String outcome = !structural_failures.is_empty() ? "structural_failure"
-														   : (findings.is_empty() ? "passed" : "product_mismatch");
+	String outcome = !structural_failures.is_empty() ? "structural_failure"
+													 : (findings.is_empty() ? "passed" : "product_mismatch");
 
 	Dictionary report;
 	report["schema_version"] = 1.0;
 	report["family"] = p_options.family;
 	report["success"] = success;
-	report["cell_count"] = double(resolution.cells.size());
+	report["cell_count"] = double(selected_cells.size());
 	report["executed_by_surface"] = executed_by_surface;
 	report["coverage_by_chain_length"] = coverage_by_chain_length;
 	report["coverage_by_dimension"] = coverage_by_dimension;
@@ -1945,6 +2027,25 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["exceptions"] = exceptions_report;
 	report["cases"] = cases;
 	report["published_surface"] = p_options.published_surface;
+	// The last thing decided before a document is published is whether it carries evidence at all. A
+	// document that claims a matrix and observes nothing for it is a defect in whatever produced it,
+	// and every path that assembles one arrives here, so none of them can publish a clean verdict.
+	if (!FSCompletenessRunner::report_carries_evidence(report)) {
+		structural_failures.push_back(make_structural_failure(FSCompletenessStructuralStage::NO_EVIDENCE,
+				vformat("The report observes no case for the %d cells the run executed.",
+						selected_cells.size()),
+				String(), String(), String(), ERR_INVALID_DATA));
+		sort_structural_failures(structural_failures);
+		Array settled_failures;
+		for (const FSCompletenessStructuralFailure &failure : structural_failures) {
+			settled_failures.push_back(FSCompletenessRunner::structural_failure_report(failure));
+		}
+		report["structural_failures"] = settled_failures;
+		success = false;
+		outcome = "structural_failure";
+		report["success"] = success;
+		report["outcome"] = outcome;
+	}
 	timings.report += StageTimings::since(stage_started_at);
 	timings.total = StageTimings::since(run_started_at);
 	report["timings_ms"] = timings.to_report();
@@ -1963,7 +2064,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	if (deadline_exceeded()) {
 		const String timeout_detail = "The run exceeded its wall-clock budget while publishing its report.";
 		structural_failures.push_back(make_structural_failure(
-				"run_timeout", timeout_detail, String(), String(), String(), ERR_TIMEOUT));
+				FSCompletenessStructuralStage::RUN_TIMEOUT, timeout_detail, String(), String(), String(), ERR_TIMEOUT));
 		sort_structural_failures(structural_failures);
 		report = document_with_timeout_verdict(report, timeout_detail);
 		timings.total = StageTimings::since(run_started_at);
@@ -1971,13 +2072,15 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		const Error republish_error = write_report_atomically(canonical_scratch_root,
 				p_options.catalog_root, p_options.report_path, report, p_options.persisted_write_hook);
 		r_result.success = false;
-		r_result.executed_cells = resolution.cells.size();
+		r_result.executed_cells = selected_cells.size();
+		r_result.compared_surface_pairs = compared_surface_pairs;
 		r_result.findings = findings;
 		r_result.outcome = "structural_failure";
 		if (republish_error != OK) {
 			// The document on disk still claims the run was in budget and nothing replaced it, so the
 			// result must not carry a report a consumer would trust.
-			structural_failures.push_back(make_structural_failure("run_timeout_report_unwritable",
+			structural_failures.push_back(make_structural_failure(
+					FSCompletenessStructuralStage::RUN_TIMEOUT_REPORT_UNWRITABLE,
 					"The verdict of a run that exceeded its budget could not be republished.", String(),
 					String(), String(), republish_error));
 			sort_structural_failures(structural_failures);
@@ -1991,7 +2094,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 
 	FSCompletenessRunResult completed;
 	completed.success = success;
-	completed.executed_cells = resolution.cells.size();
+	completed.executed_cells = selected_cells.size();
+	completed.compared_surface_pairs = compared_surface_pairs;
 	completed.findings = findings;
 	completed.structural_failures = structural_failures;
 	completed.outcome = outcome;
@@ -2004,6 +2108,129 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 }
 
 } // namespace
+
+Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
+		const FSCompletenessResolution &p_resolution,
+		Vector<FSCompletenessWitnessBinding> &r_bindings,
+		Vector<FSCompletenessStructuralFailure> &r_failures) {
+	r_bindings.clear();
+	HashSet<String> witness_ids;
+	HashMap<String, String> witness_id_by_coordinates;
+	bool failed = false;
+	for (const FSCompletenessException &exception : p_manifest.exceptions) {
+		for (int pass = 0; pass < 2; pass++) {
+			const bool boundary = pass == 1;
+			const Vector<FSCompletenessWitness> &declared =
+					boundary ? exception.boundary_witnesses : exception.positive_witnesses;
+			for (const FSCompletenessWitness &witness : declared) {
+				const String &witness_id = witness.id;
+				FSCompletenessWitnessBinding binding;
+				binding.witness_id = witness_id;
+				binding.exception_id = exception.id;
+				binding.parent_relation_id = exception.parent;
+				binding.boundary = boundary;
+				if (witness_ids.has(witness_id)) {
+					r_failures.push_back(make_structural_failure(
+							FSCompletenessStructuralStage::WITNESS_DECLARED_TWICE,
+							"A witness ID is declared more than once.", String(), witness_id, exception.id,
+							ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				witness_ids.insert(witness_id);
+				const Dictionary coordinates = witness.coordinates;
+				if (!witness_coordinates_are_resolvable(p_manifest, coordinates)) {
+					r_failures.push_back(make_structural_failure(
+							FSCompletenessStructuralStage::WITNESS_ID_UNKNOWN,
+							"The declared coordinates do not name a manifest domain leaf on every domain axis.",
+							String(), witness_id, exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				const String coordinate_identity = canonical_variant_identity(coordinates);
+				const String *twin = witness_id_by_coordinates.getptr(coordinate_identity);
+				if (twin != nullptr) {
+					r_failures.push_back(make_structural_failure(
+							FSCompletenessStructuralStage::WITNESS_DECLARED_TWICE,
+							vformat("Witness '%s' declares the same coordinates.", *twin), String(), witness_id,
+							exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				witness_id_by_coordinates.insert(coordinate_identity, witness_id);
+				int matches = 0;
+				const FSCompletenessResolvedCell *cell =
+						p_resolution.find_cell_by_coordinates(coordinates, matches);
+				if (cell == nullptr || matches == 0) {
+					r_failures.push_back(make_structural_failure(
+							FSCompletenessStructuralStage::WITNESS_CELL_MISSING,
+							"No resolved cell carries the witness coordinates.", String(), witness_id,
+							exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				if (matches != 1) {
+					r_failures.push_back(make_structural_failure(
+							FSCompletenessStructuralStage::WITNESS_CELL_AMBIGUOUS,
+							vformat("%d resolved cells carry the witness coordinates.", matches), String(),
+							witness_id, exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				bool observes = false;
+				for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : cell->dimensions) {
+					observes = observes ||
+							(boundary ? provenance_has_parent_without_exception(
+												dimension.value, exception.parent)
+									  : provenance_has_exception_parent(
+												dimension.value, exception.id, exception.parent));
+				}
+				if (!observes) {
+					r_failures.push_back(make_structural_failure(
+							boundary ? FSCompletenessStructuralStage::WITNESS_BOUNDARY_PROVENANCE_MISSING
+									 : FSCompletenessStructuralStage::WITNESS_EXCEPTION_PROVENANCE_MISSING,
+							boundary ? "No dimension derives through the parent relation without the exception."
+									 : "No dimension derives through the exception.",
+							cell->case_id, witness_id, exception.id, ERR_INVALID_DATA));
+					failed = true;
+					continue;
+				}
+				binding.cell = cell;
+				r_bindings.push_back(binding);
+			}
+		}
+	}
+	return failed ? ERR_INVALID_DATA : OK;
+}
+
+HashSet<String> FSCompletenessRunner::builtin_dimensions() {
+	return HashSet<String>({ "output", "diagnostics", "runtime_status",
+			FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION, "diagnostic_severity" });
+}
+
+bool FSCompletenessRunner::report_carries_evidence(const Dictionary &p_report) {
+	const Variant cell_count = p_report.get("cell_count", 0.0);
+	if (cell_count.get_type() != Variant::FLOAT && cell_count.get_type() != Variant::INT) {
+		return false;
+	}
+	if (double(cell_count) <= 0.0) {
+		return true;
+	}
+	const Variant cases = p_report.get("cases", Variant());
+	return cases.get_type() == Variant::ARRAY && !Array(cases).is_empty();
+}
+
+Dictionary FSCompletenessRunner::structural_failure_report(
+		const FSCompletenessStructuralFailure &p_failure) {
+	Dictionary report;
+	report["stage"] = p_failure.stage;
+	report["detail"] = p_failure.detail;
+	report["case_id"] = p_failure.case_id;
+	report["witness_id"] = p_failure.witness_id;
+	report["exception_id"] = p_failure.exception_id;
+	report["error_code"] = double(int(p_failure.error_code));
+	return report;
+}
 
 Error FSCompletenessRunner::publish_owned_document(const String &p_scratch_root,
 		const String &p_catalog_root, const String &p_document_path, const Dictionary &p_document) {
@@ -2051,7 +2278,7 @@ Error FSCompletenessRunner::run(
 		return error;
 	}
 	r_result.outcome = "structural_failure";
-	r_result.structural_failures.push_back(make_structural_failure("run_aborted",
+	r_result.structural_failures.push_back(make_structural_failure(FSCompletenessStructuralStage::RUN_ABORTED,
 			"The run aborted before completeness evidence could be published.", String(), String(),
 			String(), error));
 	return error == FAILED ? ERR_INVALID_DATA : error;

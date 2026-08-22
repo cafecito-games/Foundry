@@ -33,8 +33,10 @@
 #include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_case_id.h"
 #include "fs_type_completeness_graph.h"
+#include "fs_type_completeness_json.h"
 #include "fs_type_completeness_manifest.h"
 
+#include "core/io/file_access.h"
 #include "core/os/os.h"
 #include "tests/test_macros.h"
 
@@ -729,6 +731,48 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Graph]") {
 			FSCompletenessResolution resolution;
 			CHECK_EQ(FSCompletenessGraph::resolve(overlapping, catalog, resolution, errors), ERR_INVALID_DATA);
 			CHECK_EQ(graph_error_count(errors, "required dimension 'stored_carrier' has no reachable disposition"), 1);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Graph union case IDs match the tracked identities") {
+		FSCompletenessCatalog catalog;
+		FSCompletenessManifest manifest;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(catalog.load(type_completeness_graph_root, errors) == OK, String(" | ").join(errors));
+		REQUIRE_MESSAGE(
+				FSCompletenessManifest::load(
+						type_completeness_graph_root.path_join("rules/union_destination_membership.json"),
+						manifest, errors) == OK,
+				String(" | ").join(errors));
+		REQUIRE_MESSAGE(
+				validate_manifest_vocabulary(manifest, catalog, errors) == OK, String(" | ").join(errors));
+		FSCompletenessResolution resolution;
+		REQUIRE_MESSAGE(FSCompletenessGraph::resolve(manifest, catalog, resolution, errors) == OK,
+				String(" | ").join(errors));
+
+		Vector<String> resolved_ids;
+		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
+			resolved_ids.push_back(cell.case_id);
+		}
+		resolved_ids.sort();
+
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(
+				type_completeness_graph_root.path_join(
+						"expected_case_ids/union_destination_membership.json"),
+				&read_error);
+		REQUIRE_EQ(read_error, OK);
+		Variant document;
+		REQUIRE_MESSAGE(
+				parse_type_completeness_json(source, String(), document, errors) == OK, String(" | ").join(errors));
+		REQUIRE_EQ(document.get_type(), Variant::DICTIONARY);
+		const Dictionary expected = document;
+		CHECK_EQ(String(expected["family"]), manifest.family);
+		const Array expected_ids = expected["case_ids"];
+		REQUIRE_EQ(resolved_ids.size(), expected_ids.size());
+		for (int index = 0; index < resolved_ids.size(); index++) {
+			CAPTURE(index);
+			CHECK_EQ(resolved_ids[index], String(expected_ids[index]));
 		}
 	}
 }

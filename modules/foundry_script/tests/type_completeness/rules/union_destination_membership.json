@@ -1,6 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "family": "union_destination_membership",
+  "adapter": "union_destination_membership",
   "domain": {
     "destination": [
       "plain",
@@ -200,11 +201,35 @@
       },
       "rationale": "A union destination must prove membership when the source cannot.",
       "positive_witnesses": [
-        "text_gradual_argument_binding",
-        "bytecode_erased_reflective_write"
+        {
+          "id": "text_gradual_argument_binding",
+          "coordinates": {
+            "destination": "union",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_erased_reflective_write",
+          "coordinates": {
+            "destination": "union",
+            "source_proof": "erased",
+            "boundary": "reflective_write",
+            "surface": "bytecode"
+          }
+        }
       ],
       "boundary_witnesses": [
-        "text_static_member_argument_binding"
+        {
+          "id": "text_static_member_argument_binding",
+          "coordinates": {
+            "destination": "union",
+            "source_proof": "static_member",
+            "boundary": "argument_binding",
+            "surface": "text"
+          }
+        }
       ]
     }
   ],

@@ -30,37 +30,12 @@
 
 #pragma once
 
-#include "fs_type_completeness_graph.h"
+#include "fs_type_completeness_adapter.h"
 
 #include "core/os/mutex.h"
 #include "core/variant/variant.h"
 
 namespace FSTests {
-
-struct FSCompletenessProgram {
-	String case_id;
-	String surface;
-	Dictionary coordinates;
-	String source;
-	String expected_output;
-};
-
-struct FSCompletenessObservation {
-	String case_id;
-	String surface;
-	Dictionary dimensions;
-	PackedStringArray diagnostics;
-	// One dictionary per observed diagnostic carrying "severity", "category", "code", "line",
-	// "column", "message", and "suppressed". Warnings are recorded even when an annotation keeps
-	// them out of `diagnostics`, so a severity regression cannot hide behind warning suppression.
-	Array diagnostic_records;
-	String produced_output;
-};
-
-struct FSCompletenessRuntimeResult : FSCompletenessObservation {
-	bool passed = false;
-	String status;
-};
 
 // The source the unsuppressed-diagnostic probe analyzes: the same program with its warning
 // suppression annotations removed. Removal replaces exactly the annotation's own characters, so the
@@ -78,29 +53,6 @@ struct FSCompletenessProbeSource {
 };
 
 FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source);
-
-// Evidence that must agree between the two surfaces of one semantic case because it does not depend
-// on the surface. The adapter's pair counter and the runner's parity report both derive their
-// verdict from this, so a surface disagreement can never be counted in one and missed in the other.
-struct FSCompletenessSurfaceEvidenceMismatch {
-	bool produced_output = false;
-	bool diagnostics = false;
-	bool diagnostic_records = false;
-	bool runtime_status = false;
-
-	bool any() const {
-		return produced_output || diagnostics || diagnostic_records || runtime_status;
-	}
-};
-
-FSCompletenessSurfaceEvidenceMismatch compare_surface_evidence(
-		const FSCompletenessRuntimeResult &p_text, const FSCompletenessRuntimeResult &p_bytecode);
-
-struct FSCompletenessRuntimeBatch {
-	HashMap<String, FSCompletenessRuntimeResult> text;
-	HashMap<String, FSCompletenessRuntimeResult> bytecode;
-	int parity_failures = 0;
-};
 
 struct TemporaryProjectTree;
 
@@ -132,14 +84,22 @@ public:
 
 } // namespace UnionCompletenessInternal
 
-class FSUnionCompletenessAdapter {
+class FSUnionCompletenessAdapter : public FSCompletenessFamilyAdapter {
 public:
-	static Error render(const FSCompletenessResolvedCell &, FSCompletenessProgram &);
-	static FSCompletenessObservation analyze(const FSCompletenessProgram &, const String &p_surface);
-	static FSCompletenessObservation inspect_runtime_contract(const FSCompletenessProgram &, const Dictionary &);
-	static Error execute(const String &p_scratch_root, const Vector<FSCompletenessProgram> &,
-			FSCompletenessRuntimeBatch &);
-	static Error witness_coordinates(const String &, Dictionary &);
+	// The one instance of this adapter, and the one the registry hands out.
+	static const FSUnionCompletenessAdapter &shared();
+
+	String id() const override;
+	Error render(const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) const override;
+	FSCompletenessObservation analyze(
+			const FSCompletenessProgram &p_program, const String &p_surface) const override;
+	Error execute(const String &p_scratch_root, const Vector<FSCompletenessProgram> &p_programs,
+			FSCompletenessRuntimeBatch &r_batch) const override;
+	HashSet<String> observable_dimensions() const override;
+	HashMap<String, Vector<String>> renderable_leaves() const override;
+
+	FSCompletenessObservation inspect_runtime_contract(
+			const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) const;
 };
 
 } // namespace FSTests

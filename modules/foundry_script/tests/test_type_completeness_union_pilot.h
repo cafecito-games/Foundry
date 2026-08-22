@@ -31,6 +31,8 @@
 #pragma once
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_cache.h"
+#include "fs_type_completeness_json.h"
 #include "fs_type_completeness_runner.h"
 #include "fs_type_completeness_union_adapter.h"
 
@@ -49,6 +51,49 @@
 namespace FSTests {
 
 static const String type_completeness_union_pilot_root = "modules/foundry_script/tests/type_completeness";
+
+// The report without the members whose values are properties of the run rather than of the evidence:
+// artifact paths live in a scratch root that differs per run, and stage timings are wall-clock. What
+// is left is comparable against a document captured from a different run in a different scratch root.
+static Variant union_pilot_scratch_independent_evidence(const Variant &p_value) {
+	if (p_value.get_type() == Variant::DICTIONARY) {
+		const Dictionary source = p_value;
+		Dictionary evidence;
+		for (const String &key : Completeness::sorted_dictionary_keys(source)) {
+			if (key == "artifact_path" || key == "timings_ms") {
+				continue;
+			}
+			evidence[key] = union_pilot_scratch_independent_evidence(source[key]);
+		}
+		return evidence;
+	}
+	if (p_value.get_type() == Variant::ARRAY) {
+		const Array source = p_value;
+		Array evidence;
+		for (int index = 0; index < source.size(); index++) {
+			evidence.push_back(union_pilot_scratch_independent_evidence(source[index]));
+		}
+		return evidence;
+	}
+	return p_value;
+}
+
+static FSCompletenessManifest load_union_pilot_completeness_manifest() {
+	FSCompletenessManifest manifest;
+	Vector<String> errors;
+	REQUIRE_MESSAGE(
+			FSCompletenessManifest::load(
+					type_completeness_union_pilot_root.path_join("rules/union_destination_membership.json"),
+					manifest, errors) == OK,
+			String(" | ").join(errors));
+	return manifest;
+}
+
+// Coordinates the tracked rule manifest declares for a witness. Tests bind witnesses exactly the way
+// the runner does, so a test can never agree with a coordinate table the run no longer consults.
+static Dictionary union_pilot_witness_coordinates(const String &p_witness_id) {
+	return manifest_witness_coordinates(load_union_pilot_completeness_manifest(), p_witness_id);
+}
 
 static FSCompletenessResolution load_union_pilot_completeness_resolution() {
 	FSCompletenessCatalog catalog;
@@ -87,7 +132,7 @@ static Vector<FSCompletenessProgram> render_union_pilot_programs(const FSComplet
 	Vector<FSCompletenessProgram> programs;
 	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
 		programs.push_back(program);
 	}
 	return programs;
@@ -96,7 +141,6 @@ static Vector<FSCompletenessProgram> render_union_pilot_programs(const FSComplet
 static void check_union_pilot_runtime_batch_cleared(const FSCompletenessRuntimeBatch &p_batch) {
 	CHECK(p_batch.text.is_empty());
 	CHECK(p_batch.bytecode.is_empty());
-	CHECK_EQ(p_batch.parity_failures, 0);
 }
 
 static FSCompletenessRuntimeBatch stale_union_pilot_runtime_batch() {
@@ -107,7 +151,6 @@ static FSCompletenessRuntimeBatch stale_union_pilot_runtime_batch() {
 	result.passed = true;
 	result.status = "stale";
 	batch.text[result.case_id] = result;
-	batch.parity_failures = 9;
 	return batch;
 }
 
@@ -867,7 +910,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 					continue;
 				}
 				FSCompletenessProgram program;
-				REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+				REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
 				CHECK_EQ(FileAccess::get_file_as_string(artifact_path), program.source);
 				durable_artifacts++;
 				break;
@@ -934,7 +977,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		union_pilot_mutated_case_id.clear();
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
 			if (is_union_pilot_adapter_diagnostic_target(program)) {
 				union_pilot_mutated_case_id = cell.case_id;
 				break;
@@ -1039,7 +1082,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		union_pilot_mutated_case_id.clear();
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
 			if (program.coordinates.get("surface", String()) != "text" ||
 					program.coordinates.get("destination", String()) != "plain" ||
 					program.coordinates.get("source_proof", String()) != "static_member" ||
@@ -1060,13 +1103,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		FSCompletenessProgram analysis_program;
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			if (cell.case_id == union_pilot_mutated_case_id) {
-				REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, analysis_program), OK);
+				REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, analysis_program), OK);
 				analysis_program.source = union_pilot_program_mutation_source;
 				break;
 			}
 		}
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::analyze(analysis_program, analysis_program.surface);
+				FSUnionCompletenessAdapter::shared().analyze(analysis_program, analysis_program.surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -1263,7 +1306,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE(text_cell != nullptr);
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(*text_cell, program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(*text_cell, program), OK);
 
 		TemporaryProjectTree tree(
 				vformat("type_completeness_union_artifact_report_%d", OS::get_singleton()->get_process_id()));
@@ -1796,10 +1839,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 
 	TEST_CASE("TypeCompleteness UnionPilot runner reports witness observation regressions") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
-		Dictionary coordinates;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::witness_coordinates(
-						   "text_gradual_argument_binding", coordinates),
-				OK);
+		const Dictionary coordinates = union_pilot_witness_coordinates("text_gradual_argument_binding");
+		REQUIRE_FALSE(coordinates.is_empty());
 		union_pilot_mutated_case_id.clear();
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			if (cell.coordinates == coordinates) {
@@ -2292,14 +2333,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 			FSCompletenessRuntimeBatch batch;
-			const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+			const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
 			REQUIRE_EQ(execution_error, OK);
 			if (execution_error != OK) {
 				return;
 			}
 			CHECK_EQ(batch.text.size(), 20);
 			CHECK_EQ(batch.bytecode.size(), 20);
-			CHECK_EQ(batch.parity_failures, 0);
 
 			HashSet<String> semantic_pairs;
 			for (const FSCompletenessResolvedCell &cell : resolution.cells) {
@@ -2385,10 +2425,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), OK);
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), OK);
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
-		CHECK_EQ(batch.parity_failures, 1);
 		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_case_id);
 		REQUIRE(target != nullptr);
 		if (target == nullptr) {
@@ -2417,7 +2456,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		target_program->source = union_pilot_preload_source(
 				target_program->source, dependency_path, "CompilerFailureDependency");
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::analyze(*target_program, target_program->surface);
+				FSUnionCompletenessAdapter::shared().analyze(*target_program, target_program->surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -2426,14 +2465,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(tree.is_valid());
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
 		REQUIRE_EQ(execution_error, OK);
 		if (execution_error != OK) {
 			return;
 		}
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
-		CHECK_EQ(batch.parity_failures, 1);
 		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_program->case_id);
 		REQUIRE(target != nullptr);
 		if (target == nullptr) {
@@ -2461,7 +2499,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		target_program->source = union_pilot_preload_source(
 				target_program->source, dependency_path, "BytecodeReloadDependency");
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::analyze(*target_program, target_program->surface);
+				FSUnionCompletenessAdapter::shared().analyze(*target_program, target_program->surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -2472,7 +2510,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
 		ErrorDetector reload_error_detector;
 		ERR_PRINT_OFF;
-		const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
 		ERR_PRINT_ON;
 		REQUIRE_EQ(execution_error, OK);
 		if (execution_error != OK) {
@@ -2480,7 +2518,6 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
-		CHECK_EQ(batch.parity_failures, 1);
 		const FSCompletenessRuntimeResult *target = batch.bytecode.getptr(target_program->case_id);
 		REQUIRE(target != nullptr);
 		if (target == nullptr) {
@@ -2507,7 +2544,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		target_program->source = target_program->source.replace("accept(", "accept_probe(");
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::analyze(*target_program, target_program->surface);
+				FSUnionCompletenessAdapter::shared().analyze(*target_program, target_program->surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -2516,14 +2553,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(tree.is_valid());
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		const Error execution_error = FSUnionCompletenessAdapter::execute(tree.root, programs, batch);
+		const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
 		REQUIRE_EQ(execution_error, OK);
 		if (execution_error != OK) {
 			return;
 		}
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
-		CHECK_EQ(batch.parity_failures, 1);
 		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_program->case_id);
 		REQUIRE(target != nullptr);
 		if (target == nullptr) {
@@ -2542,22 +2578,19 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot rejects missing and duplicate surface pairs atomically") {
+	// How many surfaces a semantic pair carries depends on the surfaces the run selected, so the
+	// adapter no longer decides it; two programs for the same pair on the same surface stay a defect
+	// no cardinality could tell apart from a correct matrix.
+	TEST_CASE("TypeCompleteness UnionPilot rejects duplicate surface pairs atomically") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
 		TemporaryProjectTree tree(vformat("type_completeness_union_pair_errors_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 
-		Vector<FSCompletenessProgram> missing = valid;
-		missing.remove_at(missing.size() - 1);
-		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, missing, batch), ERR_INVALID_DATA);
-		check_union_pilot_runtime_batch_cleared(batch);
-
 		Vector<FSCompletenessProgram> duplicate = valid;
 		duplicate.push_back(valid[0]);
-		batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, duplicate, batch), ERR_ALREADY_IN_USE);
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_IN_USE);
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
 
@@ -2570,13 +2603,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> unknown = valid;
 		unknown.write[0].case_id = "unknown_case";
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_NE(FSUnionCompletenessAdapter::execute(tree.root, unknown, batch), OK);
+		CHECK_NE(FSUnionCompletenessAdapter::shared().execute(tree.root, unknown, batch), OK);
 		check_union_pilot_runtime_batch_cleared(batch);
 
 		Vector<FSCompletenessProgram> duplicate = valid;
 		duplicate.write[1].case_id = duplicate[0].case_id;
 		batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, duplicate, batch), ERR_ALREADY_EXISTS);
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_EXISTS);
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
 
@@ -2589,7 +2622,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> mismatch = valid;
 		mismatch.write[0].expected_output = "wrong output\n";
 		FSCompletenessRuntimeBatch batch;
-		const Error mismatch_error = FSUnionCompletenessAdapter::execute(mismatch_tree.root, mismatch, batch);
+		const Error mismatch_error = FSUnionCompletenessAdapter::shared().execute(mismatch_tree.root, mismatch, batch);
 		REQUIRE_EQ(mismatch_error, OK);
 		if (mismatch_error != OK) {
 			return;
@@ -2606,7 +2639,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> bad_carrier = valid;
 		bad_carrier.write[0].source = bad_carrier[0].source.replace("return \"uint \" + str(value)", "return \"bad \" + str(value)");
 		batch = stale_union_pilot_runtime_batch();
-		REQUIRE_EQ(FSUnionCompletenessAdapter::execute(carrier_tree.root, bad_carrier, batch), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().execute(carrier_tree.root, bad_carrier, batch), OK);
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
 		const HashMap<String, FSCompletenessRuntimeResult> &carrier_results =
@@ -2633,7 +2666,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		for (const String &unsafe_root : unsafe_roots) {
 			CAPTURE(unsafe_root);
 			FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-			CHECK_NE(FSUnionCompletenessAdapter::execute(unsafe_root, programs, batch), OK);
+			CHECK_NE(FSUnionCompletenessAdapter::shared().execute(unsafe_root, programs, batch), OK);
 			check_union_pilot_runtime_batch_cleared(batch);
 		}
 
@@ -2641,7 +2674,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(invalid_tree.is_valid());
 		invalid_tree.write_file("occupied", "not a directory");
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_NE(FSUnionCompletenessAdapter::execute(
+		CHECK_NE(FSUnionCompletenessAdapter::shared().execute(
 						 invalid_tree.root.path_join("occupied"), programs, batch),
 				OK);
 		check_union_pilot_runtime_batch_cleared(batch);
@@ -2666,7 +2699,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		ErrorDetector setup_error_detector;
 		ERR_PRINT_OFF;
 		const Error setup_error =
-				FSUnionCompletenessAdapter::execute(tree.root, duplicate_class_programs, batch);
+				FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate_class_programs, batch);
 		ERR_PRINT_ON;
 		CHECK_EQ(setup_error, ERR_CANT_OPEN);
 		CHECK(setup_error_detector.has_error);
@@ -2686,7 +2719,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		UnionCompletenessInternal::set_persisted_write_test_hook(
 				truncate_first_union_pilot_persisted_source);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), ERR_FILE_CORRUPT);
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), ERR_FILE_CORRUPT);
 		CHECK_EQ(union_pilot_persisted_write_mutation_count, 1);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
@@ -2705,14 +2738,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE_EQ(filesystem->create_link(neighbor.root, outside_root_link), OK);
 
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("text/project.foundry")));
 
 		REQUIRE_EQ(filesystem->create_link(neighbor.root, tree.root.path_join("ancestor_link")), OK);
 		REQUIRE_EQ(filesystem->make_dir_recursive(neighbor.root.path_join("existing_root")), OK);
 		batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(
 						 tree.root.path_join("ancestor_link/existing_root"), programs, batch),
 				ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
@@ -2733,10 +2766,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 		FSCompletenessRuntimeBatch batch;
-		CHECK_EQ(FSUnionCompletenessAdapter::execute(tree.root, programs, batch), OK);
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), OK);
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
-		CHECK_EQ(batch.parity_failures, 0);
 		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
 		CHECK_EQ(FileAccess::get_file_as_string(neighbor.root.path_join("sentinel.txt")),
 				"neighbor sentinel\n");
@@ -2757,13 +2789,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE(union_gradual != nullptr);
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(*union_gradual, program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(*union_gradual, program), OK);
 		program.source = program.source.replace("uint | String", "uint | String | RefCounted");
 		Dictionary runtime_context = union_gradual->coordinates.duplicate();
 		runtime_context["produced_output"] = "uint 5\n";
 
 		const FSCompletenessObservation observation =
-				FSUnionCompletenessAdapter::inspect_runtime_contract(program, runtime_context);
+				FSUnionCompletenessAdapter::shared().inspect_runtime_contract(program, runtime_context);
 		CHECK(observation.diagnostics.has("Runtime destination descriptor admits RefCounted.new()."));
 		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
 	}
@@ -2772,14 +2804,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
 		Dictionary runtime_context;
 		runtime_context["produced_output"] = "uint 5\n";
 		runtime_context["destination"] =
 				program.coordinates.get("destination", String()) == "plain" ? "union" : "plain";
 
 		const FSCompletenessObservation observation =
-				FSUnionCompletenessAdapter::inspect_runtime_contract(program, runtime_context);
+				FSUnionCompletenessAdapter::shared().inspect_runtime_contract(program, runtime_context);
 		CHECK(observation.diagnostics.has(
 				"Runtime context coordinate 'destination' disagrees with the program."));
 		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
@@ -2789,7 +2821,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
 		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
 		const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
 		REQUIRE_FALSE(scratch_root.is_empty());
@@ -2831,13 +2863,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			REQUIRE(expected_analysis != nullptr);
 
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::render(cell, program), OK);
+			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
 			const String surface = cell.coordinates.get("surface", String());
 			CHECK_EQ(program.case_id, cell.case_id);
 			CHECK_EQ(program.surface, surface);
 			CHECK_EQ(program.expected_output, "uint 5\n");
 
-			const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(program, surface);
+			const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(program, surface);
 			CHECK_EQ(observation.case_id, cell.case_id);
 			CHECK_EQ(observation.surface, surface);
 			CHECK_EQ(String(observation.dimensions.get("analysis", String())), String(expected_analysis->expected));
@@ -2889,29 +2921,105 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			missing.coordinates = valid.coordinates.duplicate();
 			missing.coordinates.erase(axis);
 			FSCompletenessProgram program = stale_union_pilot_program();
-			CHECK_EQ(FSUnionCompletenessAdapter::render(missing, program), ERR_INVALID_DATA);
+			CHECK_EQ(FSUnionCompletenessAdapter::shared().render(missing, program), ERR_INVALID_DATA);
 			check_union_pilot_program_cleared(program);
 
 			FSCompletenessResolvedCell unknown = valid;
 			unknown.coordinates = valid.coordinates.duplicate();
 			unknown.coordinates[axis] = "unknown";
 			program = stale_union_pilot_program();
-			CHECK_EQ(FSUnionCompletenessAdapter::render(unknown, program), ERR_INVALID_DATA);
+			CHECK_EQ(FSUnionCompletenessAdapter::shared().render(unknown, program), ERR_INVALID_DATA);
 			check_union_pilot_program_cleared(program);
 
 			FSCompletenessResolvedCell wrong_type = valid;
 			wrong_type.coordinates = valid.coordinates.duplicate();
 			wrong_type.coordinates[axis] = 7;
 			program = stale_union_pilot_program();
-			CHECK_EQ(FSUnionCompletenessAdapter::render(wrong_type, program), ERR_INVALID_DATA);
+			CHECK_EQ(FSUnionCompletenessAdapter::shared().render(wrong_type, program), ERR_INVALID_DATA);
 			check_union_pilot_program_cleared(program);
 		}
 
 		FSCompletenessResolvedCell empty_case = valid;
 		empty_case.case_id.clear();
 		FSCompletenessProgram program = stale_union_pilot_program();
-		CHECK_EQ(FSUnionCompletenessAdapter::render(empty_case, program), ERR_INVALID_DATA);
+		CHECK_EQ(FSUnionCompletenessAdapter::shared().render(empty_case, program), ERR_INVALID_DATA);
 		check_union_pilot_program_cleared(program);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot executes one surface when the run selects it") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_text_only_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.surfaces.insert("text");
+
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.outcome, "passed");
+		CHECK_EQ(result.executed_cells, 20);
+		CHECK(result.structural_failures.is_empty());
+		CHECK_EQ(int(double(result.report["cell_count"])), 20);
+		const Dictionary executed_by_surface = result.report["executed_by_surface"];
+		CHECK_EQ(executed_by_surface.size(), 1);
+		CHECK_EQ(int(double(executed_by_surface["text"])), 20);
+		// Parity needs two observations of one semantic case; this run made one of each.
+		CHECK_EQ(int(double(result.report["text_bytecode_parity_failures"])), 0);
+		const Array cases = result.report["cases"];
+		REQUIRE_EQ(cases.size(), 20);
+		for (int index = 0; index < cases.size(); index++) {
+			const Dictionary case_report = cases[index];
+			const Dictionary coordinates = case_report["coordinates"];
+			CHECK_EQ(String(coordinates["surface"]), "text");
+			CHECK_EQ(String(case_report["status"]), "passed");
+		}
+
+		// The exception declares a witness on the surface this run did not execute, so it is not
+		// witnessed by this run whatever the observed witnesses did.
+		const Array exceptions = result.report["exceptions"];
+		REQUIRE_EQ(exceptions.size(), 1);
+		const Dictionary exception_report = exceptions[0];
+		CHECK_EQ(bool(exception_report["witnessed"]), false);
+		CHECK_EQ(Array(exception_report["positive_witnesses"]).size(), 1);
+		CHECK_EQ(Array(exception_report["boundary_witnesses"]).size(), 1);
+
+		FSCompletenessRunOptions refused = options;
+		refused.surfaces.insert("assembly");
+		refused.scratch_root = tree.root.path_join("refused");
+		refused.report_path = refused.scratch_root.path_join("report.json");
+		FSCompletenessRunResult refused_result;
+		CHECK_EQ(FSCompletenessRunner::run(refused, refused_result), ERR_INVALID_PARAMETER);
+		CHECK_FALSE(refused_result.success);
+		CHECK_EQ(refused_result.outcome, "structural_failure");
+		CHECK_FALSE(FileAccess::exists(refused.report_path));
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot report matches the captured evidence document") {
+		const FSCompletenessRunResult *baseline =
+				FSCompletenessBaseline::shared_or_skip("union_destination_membership");
+		if (baseline == nullptr) {
+			return;
+		}
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(
+				type_completeness_union_pilot_root.path_join(
+						"expected_reports/union_destination_membership.json"),
+				&read_error);
+		REQUIRE_EQ(read_error, OK);
+		Variant expected;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(parse_type_completeness_json(source, String(), expected, errors) == OK,
+				String(" | ").join(errors));
+
+		const String produced_document =
+				JSON::stringify(union_pilot_scratch_independent_evidence(baseline->report), "  ");
+		const String expected_document =
+				JSON::stringify(union_pilot_scratch_independent_evidence(expected), "  ");
+		CHECK_EQ(produced_document, expected_document);
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot witnesses resolve closed complete coordinates") {
@@ -2930,8 +3038,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 
 		for (const WitnessExpectation &expectation : expectations) {
 			CAPTURE(expectation.id);
-			Dictionary coordinates;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::witness_coordinates(expectation.id, coordinates), OK);
+			const Dictionary coordinates = union_pilot_witness_coordinates(expectation.id);
 			CHECK_EQ(coordinates.size(), 4);
 			CHECK_EQ(String(coordinates.get("destination", String())), expectation.destination);
 			CHECK_EQ(String(coordinates.get("source_proof", String())), expectation.source_proof);
@@ -2939,10 +3046,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			CHECK_EQ(String(coordinates.get("surface", String())), expectation.surface);
 		}
 
-		Dictionary unknown;
-		unknown["stale"] = true;
-		CHECK_EQ(FSUnionCompletenessAdapter::witness_coordinates("unknown", unknown), ERR_DOES_NOT_EXIST);
-		CHECK(unknown.is_empty());
+		CHECK(union_pilot_witness_coordinates("unknown").is_empty());
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot analysis rejects malformed parser input with diagnostics") {
@@ -2951,7 +3055,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		malformed.surface = "text";
 		malformed.source = "func test(:\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(malformed, "text");
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(malformed, "text");
 		CHECK_EQ(observation.case_id, malformed.case_id);
 		CHECK_EQ(observation.surface, malformed.surface);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
@@ -2964,7 +3068,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		invalid.surface = "bytecode";
 		invalid.source = "func test() -> void:\n\tvar value: int = \"not an integer\"\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(invalid, "bytecode");
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(invalid, "bytecode");
 		CHECK_EQ(observation.case_id, invalid.case_id);
 		CHECK_EQ(observation.surface, invalid.surface);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
@@ -2982,15 +3086,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE(text_cell != nullptr);
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(*text_cell, program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(*text_cell, program), OK);
 
-		const FSCompletenessObservation mismatch = FSUnionCompletenessAdapter::analyze(program, "bytecode");
+		const FSCompletenessObservation mismatch = FSUnionCompletenessAdapter::shared().analyze(program, "bytecode");
 		CHECK_EQ(mismatch.case_id, program.case_id);
 		CHECK_EQ(mismatch.surface, "bytecode");
 		CHECK_EQ(String(mismatch.dimensions.get("analysis", String())), "reject");
 		CHECK_FALSE(mismatch.diagnostics.is_empty());
 
-		const FSCompletenessObservation unknown = FSUnionCompletenessAdapter::analyze(program, "unknown");
+		const FSCompletenessObservation unknown = FSUnionCompletenessAdapter::shared().analyze(program, "unknown");
 		CHECK_EQ(unknown.case_id, program.case_id);
 		CHECK_EQ(unknown.surface, "unknown");
 		CHECK_EQ(String(unknown.dimensions.get("analysis", String())), "reject");
@@ -3002,10 +3106,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
 		program.case_id = "../../escape|x";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(program, program.surface);
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(program, program.surface);
 		CHECK_EQ(observation.case_id, program.case_id);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 		CHECK(observation.diagnostics.is_empty());
@@ -3020,11 +3124,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
 		program.case_id = "repeated_identity";
 
-		const FSCompletenessObservation first = FSUnionCompletenessAdapter::analyze(program, program.surface);
-		const FSCompletenessObservation second = FSUnionCompletenessAdapter::analyze(program, program.surface);
+		const FSCompletenessObservation first = FSUnionCompletenessAdapter::shared().analyze(program, program.surface);
+		const FSCompletenessObservation second = FSUnionCompletenessAdapter::shared().analyze(program, program.surface);
 		CHECK_EQ(first.case_id, program.case_id);
 		CHECK_EQ(second.case_id, program.case_id);
 		CHECK_EQ(String(first.dimensions.get("analysis", String())), "accept");
@@ -3041,7 +3145,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		malformed.source = "func first(:\nfunc second(:\n";
 
 		const FSCompletenessObservation malformed_observation =
-				FSUnionCompletenessAdapter::analyze(malformed, malformed.surface);
+				FSUnionCompletenessAdapter::shared().analyze(malformed, malformed.surface);
 		CHECK_EQ(String(malformed_observation.dimensions.get("analysis", String())), "reject");
 		REQUIRE_EQ(malformed_observation.diagnostics.size(), 6);
 		CHECK_EQ(malformed_observation.diagnostics[0], "1:11: Expected parameter name.");
@@ -3056,7 +3160,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		invalid.surface = "text";
 		invalid.source = "func test() -> void:\n\tvar first: int = \"bad\"\n\tvar second: String = 7\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::analyze(invalid, invalid.surface);
+		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(invalid, invalid.surface);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
 		REQUIRE_EQ(observation.diagnostics.size(), 2);
 		CHECK_EQ(observation.diagnostics[0],
