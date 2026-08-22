@@ -72,6 +72,9 @@ class Outcome(str, enum.Enum):
     # The unpatched baseline already fails a detector's case, so a failure after the patch proves
     # nothing about the mutation.
     BASELINE_FAILED = "baseline_failed"
+    # A summary over zero result files: every recipe invocation died before writing a result. Only a
+    # summary may carry it; a recipe result claiming it is rejected.
+    NO_RESULTS = "no_results"
 
 
 _EXIT_CODES = {
@@ -82,7 +85,11 @@ _EXIT_CODES = {
     Outcome.BUILD_FAILED: 5,
     Outcome.STRUCTURAL_FAILURE: 6,
     Outcome.BASELINE_FAILED: 7,
+    Outcome.NO_RESULTS: 8,
 }
+
+# Outcomes a recipe result file may carry; the rest belong to the summary alone.
+RECIPE_OUTCOMES = tuple(outcome for outcome in Outcome if outcome is not Outcome.NO_RESULTS)
 
 
 def exit_code_for(outcome: Outcome) -> int:
@@ -453,6 +460,8 @@ def load_result(data: Mapping[str, Any], context: str) -> dict[str, Any]:
     require_id(data["recipe_id"], f"{context} recipe_id")
     require_id(data["shard_id"], f"{context} shard_id")
     outcome = parse_outcome(data["outcome"], context)
+    if outcome not in RECIPE_OUTCOMES:
+        raise MutationError(f"{context}: outcome {outcome.value!r} is a summary outcome, not a recipe result")
     if not isinstance(data["develop_commit"], str) or COMMIT_PATTERN.match(data["develop_commit"]) is None:
         raise MutationError(f"{context}: develop_commit must be a 40-hex commit")
     detectors = data["detectors"]
@@ -482,8 +491,11 @@ def summarize(result_roots: Iterable[Path]) -> dict[str, Any]:
     for result in results:
         counts[result["outcome"]] += 1
     results.sort(key=lambda result: (str(result["shard_id"]), str(result["recipe_id"])))
+    # Zero results is not the best outcome, it is the worst kind of silence: no recipe reached a verdict.
     worst = max(
-        (parse_outcome(result["outcome"], "summary") for result in results), key=exit_code_for, default=Outcome.DETECTED
+        (parse_outcome(result["outcome"], "summary") for result in results),
+        key=exit_code_for,
+        default=Outcome.NO_RESULTS,
     )
     return {
         "schema_version": RESULT_SCHEMA_VERSION,

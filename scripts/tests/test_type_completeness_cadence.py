@@ -18,11 +18,21 @@ from typing import Any
 from test_type_completeness_comparator import _load
 
 deadline = _load("deadline")
+mutation = _load("mutation")
 cadence = _load("cadence")
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "type_completeness"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACKED_SHARDS = REPO_ROOT / "modules" / "foundry_script" / "tests" / "type_completeness" / "mutations" / "shards.json"
+# The result the real `mutation.py run` wrote for the tracked recipe, as downloaded from the artifact
+# `type-completeness-mutation-union_core-31935560560`.
+REAL_ARTIFACTS = FIXTURES / "artifacts"
+REAL_RESULT = (
+    REAL_ARTIFACTS
+    / "type-completeness-mutation-union_core-31935560560"
+    / "union_membership_drops_last_alternative"
+    / "mutation_result.json"
+)
 
 # The newest run in the captured `gh run list` JSON; a window anchored shortly after it contains it.
 NEWEST_CAPTURED_RUN = "2026-08-16T08:05:19Z"
@@ -45,17 +55,17 @@ def _run(conclusion: Any, created_at: str, run_id: int = 1, branch: str = "devel
     return {"databaseId": run_id, "conclusion": conclusion, "createdAt": created_at, "headBranch": branch}
 
 
-def _jobs_capture(run: dict[str, Any], shards: dict[str, Any], job_conclusion: Any = "mirror") -> dict[str, Any]:
-    """A `gh run view --json databaseId,conclusion,jobs` capture whose shard jobs mirror the run."""
-    conclusion = run.get("conclusion") if job_conclusion == "mirror" else job_conclusion
-    return {
-        "databaseId": run["databaseId"],
-        "conclusion": run.get("conclusion"),
-        "jobs": [
-            {"name": cadence.SHARD_JOB_NAME_TEMPLATE.format(shard_id=shard["shard_id"]), "conclusion": conclusion}
-            for shard in shards["shards"]
-        ],
-    }
+def _artifact(root: Path, shard_id: str, run_id: int, recipe_id: str, result: Any = None) -> Path:
+    """A downloaded artifact holding the real runner result for (shard, run, recipe)."""
+    path: Path = cadence.recipe_result_path(root / "artifacts", shard_id, run_id, recipe_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if result is None:
+        result = json.loads(REAL_RESULT.read_text(encoding="utf-8"))
+        result["shard_id"] = shard_id
+        result["recipe_id"] = recipe_id
+        result["digest"] = mutation.result_digest(result)
+    path.write_text(json.dumps(result) if not isinstance(result, str) else result, encoding="utf-8")
+    return path
 
 
 def _check(
@@ -64,19 +74,23 @@ def _check(
     shards: Any,
     now: str,
     extra: list[str] | None = None,
-    jobs: list[Any] | None = None,
+    artifacts: bool = True,
 ) -> tuple[int, str]:
     runs_path = _write(root, "runs.json", runs)
     shards_path = _write(root, "shards.json", shards)
     _write(root, "recipe_a.json", {})
-    if jobs is None and isinstance(runs, list) and isinstance(shards, dict):
-        jobs = [_jobs_capture(run, shards) for run in runs if isinstance(run, dict) and "databaseId" in run]
-    jobs_paths = [str(_write(root, f"jobs_{index}.json", capture)) for index, capture in enumerate(jobs or [])]
+    (root / "artifacts").mkdir(exist_ok=True)
+    if artifacts and isinstance(runs, list) and isinstance(shards, dict):
+        for run in runs:
+            if isinstance(run, dict) and "databaseId" in run:
+                for shard in shards["shards"]:
+                    for recipe_id in shard["recipes"]:
+                        _artifact(root, shard["shard_id"], run["databaseId"], recipe_id)
     out = io.StringIO()
     with unittest.mock.patch("sys.stdout", out):
         code = cadence.main(
             ["check", "--window-hours", "24", "--runs-json", str(runs_path), "--shards", str(shards_path), "--now", now]
-            + (["--jobs-json"] + jobs_paths if jobs_paths else [])
+            + ["--artifacts", str(root / "artifacts")]
             + (extra or [])
         )
     return code, out.getvalue()
@@ -107,84 +121,138 @@ class CaptureFixtureTests(unittest.TestCase):
             self.assertTrue(any("union_core" in line for line in lines))
             self.assertTrue(any("second" in line for line in lines))
 
-    def test_the_captured_gh_run_view_is_read_and_cannot_vouch_for_a_shard_it_did_not_run(self) -> None:
-        capture = json.loads((FIXTURES / "gh_run_view_jobs.json").read_text(encoding="utf-8"))
-        jobs = cadence.load_run_jobs(capture)
-        self.assertEqual(jobs.run_id, 31935560560)
-        self.assertIn("ASan+UBSan", jobs.job_conclusions)
+    def test_the_real_artifact_credits_its_recipe_for_the_run_that_produced_it(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
             runs = json.loads((FIXTURES / "gh_run_list.json").read_text(encoding="utf-8"))
-            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-16T20:00:00Z", jobs=[capture])
-            self.assertEqual(code, 1)
-            self.assertIn("unattributed run=31935560560", output)
-            self.assertIn("no job named", output)
-            self.assertIn("missing shard=union_core", output)
+            runs_path = _write(root, "runs.json", runs)
+            shards = {
+                "schema_version": 1,
+                "shards": [
+                    {
+                        "shard_id": "union_core",
+                        "recipes": ["union_membership_drops_last_alternative"],
+                        "budget_seconds": 1800,
+                    }
+                ],
+            }
+            shards_path = _write(root, "shards.json", shards)
+            _write(root, "union_membership_drops_last_alternative.json", {})
+            out = io.StringIO()
+            with unittest.mock.patch("sys.stdout", out):
+                code = cadence.main(
+                    [
+                        "check",
+                        "--window-hours",
+                        "24",
+                        "--runs-json",
+                        str(runs_path),
+                        "--shards",
+                        str(shards_path),
+                        "--artifacts",
+                        str(REAL_ARTIFACTS),
+                        "--now",
+                        "2026-08-16T20:00:00Z",
+                    ]
+                )
+            self.assertEqual(code, 0, out.getvalue())
+            self.assertIn(
+                "ok shard=union_core recipe=union_membership_drops_last_alternative run=31935560560", out.getvalue()
+            )
 
-    def test_a_failed_run_without_a_jobs_capture_is_missing_and_named(self) -> None:
+    def test_a_failed_run_without_a_recipe_result_is_missing_and_named(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runs = [_run("failure", "2026-08-20T10:00:00Z", run_id=77)]
-            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z", jobs=[])
+            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z", artifacts=False)
             self.assertEqual(code, 1)
             self.assertIn("unattributed run=77", output)
-            self.assertIn("no gh run view capture", output)
+            self.assertIn("no result for shard 'union_core' recipe 'recipe_a'", output)
             self.assertIn("missing shard=union_core recipe=recipe_a", output)
 
-    def test_a_failed_run_whose_shard_job_never_concluded_is_missing(self) -> None:
-        for job_conclusion in (None, "cancelled", "skipped"):
-            with self.subTest(job_conclusion=job_conclusion), tempfile.TemporaryDirectory() as directory:
-                runs = [_run("failure", "2026-08-20T10:00:00Z")]
-                jobs = [_jobs_capture(runs[0], _shards("union_core"), job_conclusion)]
-                code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z", jobs=jobs)
-                self.assertEqual(code, 1)
-                self.assertIn("unattributed run=1", output)
-
-    def test_a_failed_run_whose_shard_job_failed_is_terminal(self) -> None:
+    def test_a_successful_run_without_a_recipe_result_is_missing_too(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            runs = [_run("failure", "2026-08-20T10:00:00Z")]
-            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z")
-            self.assertEqual(code, 0, output)
-
-    def test_coverage_is_judged_per_shard(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            runs = [_run("failure", "2026-08-20T10:00:00Z")]
-            capture = _jobs_capture(runs[0], _shards("union_core", "second"))
-            capture["jobs"][1]["conclusion"] = "cancelled"
-            code, output = _check(
-                Path(directory), runs, _shards("union_core", "second"), "2026-08-20T12:00:00Z", jobs=[capture]
-            )
+            runs = [_run("success", "2026-08-20T10:00:00Z", run_id=78)]
+            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z", artifacts=False)
             self.assertEqual(code, 1)
-            self.assertIn("ok shard=union_core", output)
-            self.assertIn("missing shard=second", output)
+            self.assertIn("unattributed run=78", output)
 
-    def test_an_older_run_vouches_when_the_newest_cannot(self) -> None:
+    def test_coverage_is_judged_per_recipe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shards = {
+                "schema_version": 1,
+                "shards": [{"shard_id": "union_core", "recipes": ["recipe_a", "recipe_b"], "budget_seconds": 600}],
+            }
+            _write(root, "recipe_b.json", {})
+            runs = [_run("failure", "2026-08-20T10:00:00Z")]
+            (root / "artifacts").mkdir()
+            _artifact(root, "union_core", 1, "recipe_a")
+            code, output = _check(root, runs, shards, "2026-08-20T12:00:00Z", artifacts=False)
+            self.assertEqual(code, 1)
+            self.assertIn("ok shard=union_core recipe=recipe_a", output)
+            self.assertIn("missing shard=union_core recipe=recipe_b", output)
+
+    def test_an_older_run_vouches_when_the_newest_has_no_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
             runs = [
                 _run("failure", "2026-08-20T11:00:00Z", run_id=2),
                 _run("success", "2026-08-20T09:00:00Z", run_id=1),
             ]
-            jobs = [_jobs_capture(runs[0], _shards("a"), "cancelled"), _jobs_capture(runs[1], _shards("a"))]
-            code, output = _check(Path(directory), runs, _shards("a"), "2026-08-20T12:00:00Z", jobs=jobs)
+            (root / "artifacts").mkdir()
+            _artifact(root, "a", 1, "recipe_a")
+            code, output = _check(root, runs, _shards("a"), "2026-08-20T12:00:00Z", artifacts=False)
             self.assertEqual(code, 0, output)
-            self.assertIn("ok shard=a run=1", output)
+            self.assertIn("ok shard=a recipe=recipe_a run=1", output)
 
-    def test_malformed_jobs_captures_are_exit_2(self) -> None:
-        base = _run("failure", "2026-08-20T10:00:00Z")
-        captures: list[Any] = [
-            [],
-            {"conclusion": "failure", "jobs": []},
-            {"databaseId": 1, "conclusion": "failure"},
-            {"databaseId": 1, "conclusion": "failure", "jobs": [{"name": "x"}]},
-            {"databaseId": 1, "conclusion": "failure", "jobs": [{"name": "x", "conclusion": "mystery"}]},
-            {
-                "databaseId": 1,
-                "conclusion": "failure",
-                "jobs": [{"name": "x", "conclusion": None}, {"name": "x", "conclusion": None}],
-            },
-        ]
-        for capture in captures:
-            with self.subTest(capture=capture), tempfile.TemporaryDirectory() as directory:
-                code, _ = _check(Path(directory), [base], _shards("a"), "2026-08-20T12:00:00Z", jobs=[capture])
+    def test_malformed_or_foreign_results_are_exit_2_never_no_result(self) -> None:
+        good = json.loads(REAL_RESULT.read_text(encoding="utf-8"))
+        foreign = dict(good, shard_id="other")
+        foreign["digest"] = mutation.result_digest(foreign)
+        summary_only = dict(good, outcome=mutation.Outcome.NO_RESULTS.value)
+        summary_only["digest"] = mutation.result_digest(summary_only)
+        tampered = dict(good, outcome=mutation.Outcome.MISSED.value)
+        variants: list[Any] = ["{not json", [], {"schema_version": 1}, foreign, summary_only, tampered]
+        for variant in variants:
+            with self.subTest(variant=str(variant)[:40]), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "artifacts").mkdir()
+                _artifact(root, "union_core", 1, "union_membership_drops_last_alternative", variant)
+                shards = {
+                    "schema_version": 1,
+                    "shards": [
+                        {
+                            "shard_id": "union_core",
+                            "recipes": ["union_membership_drops_last_alternative"],
+                            "budget_seconds": 1800,
+                        }
+                    ],
+                }
+                _write(root, "union_membership_drops_last_alternative.json", {})
+                runs = [_run("failure", "2026-08-20T10:00:00Z")]
+                code, _ = _check(root, runs, shards, "2026-08-20T12:00:00Z", artifacts=False)
                 self.assertEqual(code, cadence.EXIT_INVALID_INPUT)
+
+    def test_a_missing_artifacts_directory_is_exit_2(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs_path = _write(root, "runs.json", [_run("success", "2026-08-20T10:00:00Z")])
+            shards_path = _write(root, "shards.json", _shards("a"))
+            _write(root, "recipe_a.json", {})
+            code = cadence.main(
+                [
+                    "check",
+                    "--runs-json",
+                    str(runs_path),
+                    "--shards",
+                    str(shards_path),
+                    "--artifacts",
+                    str(root / "absent"),
+                    "--now",
+                    "2026-08-20T12:00:00Z",
+                ]
+            )
+            self.assertEqual(code, cadence.EXIT_INVALID_INPUT)
 
     def test_tracked_shards_file_is_readable_by_the_check(self) -> None:
         shards = cadence.load_shards_file(TRACKED_SHARDS)
@@ -258,8 +326,9 @@ class WindowTests(unittest.TestCase):
             run = _run("success", deadline.format_utc_timestamp(recent))
             runs_path = _write(root, "runs.json", [run])
             shards_path = _write(root, "shards.json", _shards("a"))
-            jobs_path = _write(root, "jobs.json", _jobs_capture(run, _shards("a")))
             _write(root, "recipe_a.json", {})
+            (root / "artifacts").mkdir()
+            _artifact(root, "a", 1, "recipe_a")
             code = cadence.main(
                 [
                     "check",
@@ -269,8 +338,8 @@ class WindowTests(unittest.TestCase):
                     str(runs_path),
                     "--shards",
                     str(shards_path),
-                    "--jobs-json",
-                    str(jobs_path),
+                    "--artifacts",
+                    str(root / "artifacts"),
                 ]
             )
             self.assertEqual(code, 0)
@@ -306,33 +375,18 @@ class MalformedInputTests(unittest.TestCase):
             runs_path.write_text("{not json", encoding="utf-8")
             shards_path = _write(root, "shards.json", _shards("a"))
             _write(root, "recipe_a.json", {})
-            code = cadence.main(
-                [
-                    "check",
-                    "--window-hours",
-                    "24",
-                    "--runs-json",
-                    str(runs_path),
-                    "--shards",
-                    str(shards_path),
-                    "--now",
-                    "2026-08-20T12:00:00Z",
-                ]
-            )
+            (root / "artifacts").mkdir()
+            common = [
+                "--shards",
+                str(shards_path),
+                "--artifacts",
+                str(root / "artifacts"),
+                "--now",
+                "2026-08-20T12:00:00Z",
+            ]
+            code = cadence.main(["check", "--window-hours", "24", "--runs-json", str(runs_path)] + common)
             self.assertEqual(code, cadence.EXIT_INVALID_INPUT)
-            code = cadence.main(
-                [
-                    "check",
-                    "--window-hours",
-                    "24",
-                    "--runs-json",
-                    str(root / "absent.json"),
-                    "--shards",
-                    str(shards_path),
-                    "--now",
-                    "2026-08-20T12:00:00Z",
-                ]
-            )
+            code = cadence.main(["check", "--window-hours", "24", "--runs-json", str(root / "absent.json")] + common)
             self.assertEqual(code, cadence.EXIT_INVALID_INPUT)
 
     def test_an_empty_run_list_is_missing_not_an_error(self) -> None:

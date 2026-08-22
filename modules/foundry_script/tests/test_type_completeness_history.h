@@ -231,18 +231,21 @@ static bool history_path_is_tracked(const HistoryValidationContext &p_context, c
 	String output;
 	int exit_code = -1;
 	const Error probe_error = probe(p_context.repository_root, p_path, output, exit_code);
+	// Only a successful probe accepts. Git being unavailable is a validator error, never a pass: a
+	// record that cannot be verified is a record that has not been verified.
 	if (probe_error != OK) {
-		WARN_PRINT(vformat("Git tracked-file verification is unavailable for '%s' (error %d); accepting the existing file.",
-				p_path, probe_error));
-		return true;
+		r_errors.push_back(vformat("%s: %s cannot be verified: the git tracked-file probe is unavailable (error %d)",
+				p_file, p_json_path, probe_error));
+		return false;
 	}
 	if (exit_code == 1) {
 		r_errors.push_back(vformat("%s: %s names '%s', which is not tracked by git", p_file, p_json_path, p_path));
 		return false;
 	}
 	if (exit_code != 0) {
-		WARN_PRINT(vformat("Git tracked-file verification is unavailable for '%s' (exit %d); accepting the existing file.",
-				p_path, exit_code));
+		r_errors.push_back(vformat("%s: %s cannot be verified: git ls-files exited %d%s", p_file, p_json_path, exit_code,
+				output.strip_edges().is_empty() ? String() : ": " + output.strip_edges()));
+		return false;
 	}
 	return true;
 }
@@ -254,18 +257,22 @@ static bool history_commit_is_ancestor(const HistoryValidationContext &p_context
 	String output;
 	int exit_code = -1;
 	const Error probe_error = probe(p_context.repository_root, p_commit, output, exit_code);
+	// Only exit 0 accepts. Exit 1 is "not an ancestor"; any other exit (128 for a revision git does
+	// not know, including a mistyped 40-hex commit or a commit outside a shallow clone) and an
+	// unavailable git are validator errors naming the exit code and git's own words.
 	if (probe_error != OK) {
-		WARN_PRINT(vformat("Git ancestry verification is unavailable for '%s' (error %d); accepting the recorded commit.",
-				p_commit, probe_error));
-		return true;
+		r_errors.push_back(vformat("%s: %s commit '%s' cannot be verified: the git ancestry probe is unavailable (error %d)",
+				p_file, p_json_path, p_commit, probe_error));
+		return false;
 	}
 	if (exit_code == 1) {
 		r_errors.push_back(vformat("%s: %s commit '%s' is not an ancestor of HEAD", p_file, p_json_path, p_commit));
 		return false;
 	}
 	if (exit_code != 0) {
-		WARN_PRINT(vformat("Git ancestry verification is unavailable for '%s' (exit %d%s); accepting the recorded commit.",
+		r_errors.push_back(vformat("%s: %s commit '%s' cannot be verified: git merge-base exited %d%s", p_file, p_json_path,
 				p_commit, exit_code, output.strip_edges().is_empty() ? String() : ": " + output.strip_edges()));
+		return false;
 	}
 	return true;
 }
@@ -536,9 +543,12 @@ static bool history_validate_record(const HistoryValidationContext &p_context, c
 					r_errors.push_back(vformat("%s: $.seed.family '%s' differs from $.mapping.family '%s'", path, seed_family, mapping_family));
 					ok = false;
 				}
-				ok = history_coordinates_resolve(p_state, seed_family, coordinates,
-							 history_string_array(seed, "required_dimensions"), path, "$.seed", r_errors) &&
-						ok;
+				const Vector<String> required = history_string_array(seed, "required_dimensions");
+				if (required.is_empty()) {
+					r_errors.push_back(vformat("%s: $.seed.required_dimensions must name at least one dimension", path));
+					ok = false;
+				}
+				ok = history_coordinates_resolve(p_state, seed_family, coordinates, required, path, "$.seed", r_errors) && ok;
 			} else {
 				ok = false;
 			}
@@ -823,9 +833,33 @@ static Error history_test_tracked_probe_untracked(const String &, const String &
 	return OK;
 }
 
+static Error history_test_tracked_probe_unavailable(const String &, const String &, String &r_output, int &r_exit_code) {
+	r_output = String();
+	r_exit_code = -1;
+	return ERR_UNAVAILABLE;
+}
+
+static Error history_test_tracked_probe_exit_128(const String &, const String &, String &r_output, int &r_exit_code) {
+	r_output = "fatal: not a git repository";
+	r_exit_code = 128;
+	return OK;
+}
+
+static Error history_test_ancestry_probe_unavailable(const String &, const String &, String &r_output, int &r_exit_code) {
+	r_output = String();
+	r_exit_code = -1;
+	return ERR_UNAVAILABLE;
+}
+
 static Error history_test_ancestry_probe_ok(const String &, const String &, String &r_output, int &r_exit_code) {
 	r_output = String();
 	r_exit_code = 0;
+	return OK;
+}
+
+static Error history_test_ancestry_probe_exit_128(const String &, const String &, String &r_output, int &r_exit_code) {
+	r_output = "fatal: Not a valid commit name";
+	r_exit_code = 128;
 	return OK;
 }
 
@@ -833,6 +867,23 @@ static Error history_test_ancestry_probe_not_ancestor(const String &, const Stri
 	r_output = String();
 	r_exit_code = 1;
 	return OK;
+}
+
+// True when the checkout cannot see its own history (a CI clone with fetch-depth 1): the recorded
+// commits are then unknown to git and the ancestry probe exits 128 by design.
+static bool history_repository_is_shallow() {
+	if (OS::get_singleton() == nullptr) {
+		return false;
+	}
+	List<String> arguments;
+	arguments.push_back("rev-parse");
+	arguments.push_back("--is-shallow-repository");
+	String output;
+	int exit_code = -1;
+	if (OS::get_singleton()->execute("git", arguments, &output, &exit_code, true) != OK || exit_code != 0) {
+		return false;
+	}
+	return output.strip_edges() == "true";
 }
 
 static String history_repository_root() {
@@ -899,7 +950,56 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][History]") {
 		context.catalog_root = type_completeness_history_catalog_root;
 		context.repository_root = history_repository_root();
 		Vector<String> errors;
+		if (history_repository_is_shallow()) {
+			// A shallow clone cannot answer the ancestry question, and the validator must say so
+			// instead of passing: every record is expected to be refused with git's exit code named.
+			// The rest of the records' content is then validated with the ancestry probe answered.
+			CHECK_FALSE(validate_history_directory(context, errors));
+			CHECK(history_errors_mention(errors, "cannot be verified: git merge-base exited"));
+			errors.clear();
+			context.ancestry_probe = history_test_ancestry_probe_ok;
+		}
 		CHECK_MESSAGE(validate_history_directory(context, errors), String(" | ").join(errors));
+	}
+
+	TEST_CASE("TypeCompleteness History rejects a fabricated commit through the real git probe") {
+		TemporaryProjectTree tree("type_completeness_history_fabricated_commit");
+		REQUIRE(tree.is_valid());
+		tree.write_file("history/schema.json", history_test_schema_text());
+		String fabricated = history_test_record_text("fabricated", "still_failing", "seeded", history_test_seed_members);
+		fabricated = fabricated.replace("ea7eb0e37b35cc72f1ef5ef510234575052997e3", "0123456789abcdef0123456789abcdef01234567");
+		tree.write_file("history/fabricated.json", fabricated);
+		HistoryValidationContext context = history_test_context(tree);
+		context.ancestry_probe = nullptr;
+		Vector<String> errors;
+		CHECK_FALSE(validate_history_directory(context, errors));
+		CHECK_MESSAGE(history_errors_mention(errors, "0123456789abcdef0123456789abcdef01234567"), String(" | ").join(errors));
+		CHECK_MESSAGE(history_errors_mention(errors, "git merge-base exited"), String(" | ").join(errors));
+	}
+
+	TEST_CASE("TypeCompleteness History an unavailable git probe is a refusal, not a pass") {
+		TemporaryProjectTree tree("type_completeness_history_probe_unavailable");
+		REQUIRE(tree.is_valid());
+		tree.write_file("history/schema.json", history_test_schema_text());
+		tree.write_file("history/seed_fixture.json",
+				history_test_record_text("seed_fixture", "still_failing", "seeded", history_test_seed_members));
+		HistoryValidationContext context = history_test_context(tree);
+		context.ancestry_probe = history_test_ancestry_probe_unavailable;
+		Vector<String> errors;
+		CHECK_FALSE(validate_history_directory(context, errors));
+		CHECK(history_errors_mention(errors, "ancestry probe is unavailable"));
+
+		context = history_test_context(tree);
+		context.tracked_file_probe = history_test_tracked_probe_unavailable;
+		errors.clear();
+		CHECK_FALSE(validate_history_directory(context, errors));
+		CHECK(history_errors_mention(errors, "tracked-file probe is unavailable"));
+
+		context = history_test_context(tree);
+		context.tracked_file_probe = history_test_tracked_probe_exit_128;
+		errors.clear();
+		CHECK_FALSE(validate_history_directory(context, errors));
+		CHECK(history_errors_mention(errors, "git ls-files exited 128"));
 	}
 
 	TEST_CASE("TypeCompleteness History no fixed or premise_false record is seeded") {
@@ -1082,6 +1182,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][History]") {
 		Vector<String> errors;
 		CHECK_FALSE(validate_history_directory(context, errors));
 		CHECK(history_errors_mention(errors, "not an ancestor of HEAD"));
+
+		context.ancestry_probe = history_test_ancestry_probe_exit_128;
+		errors.clear();
+		CHECK_FALSE(validate_history_directory(context, errors));
+		CHECK(history_errors_mention(errors, "git merge-base exited 128: fatal: Not a valid commit name"));
 
 		// A short or upper-case commit never reaches git at all.
 		String short_commit = history_test_record_text("stale_commit", "still_failing", "seeded", history_test_seed_members);

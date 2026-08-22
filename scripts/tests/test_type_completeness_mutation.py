@@ -87,7 +87,18 @@ class OutcomeVocabularyTests(unittest.TestCase):
         self.assertEqual(mutation.exit_code_for(mutation.Outcome.BUILD_FAILED), 5)
         self.assertEqual(mutation.exit_code_for(mutation.Outcome.STRUCTURAL_FAILURE), 6)
         self.assertEqual(mutation.exit_code_for(mutation.Outcome.BASELINE_FAILED), 7)
+        self.assertEqual(mutation.exit_code_for(mutation.Outcome.NO_RESULTS), 8)
         self.assertNotIn(mutation.EXIT_INVALID_INPUT, codes)
+
+    def test_a_summary_over_zero_results_is_no_results_and_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code = mutation.main(["summarize", "--results", str(root), "--output", str(root / "summary.json")])
+            self.assertEqual(code, mutation.exit_code_for(mutation.Outcome.NO_RESULTS))
+            summary = json.loads((root / "summary.json").read_text())
+            self.assertEqual(summary["worst_outcome"], mutation.Outcome.NO_RESULTS.value)
+            self.assertEqual(summary["results"], [])
+            self.assertNotEqual(code, 0)
 
     def test_summarize_handles_every_outcome_member(self) -> None:
         for outcome in mutation.Outcome:
@@ -107,10 +118,14 @@ class OutcomeVocabularyTests(unittest.TestCase):
                 )
                 (root / "mutation_result.json").write_text(mutation.render_result(result), encoding="utf-8")
                 code = mutation.main(["summarize", "--results", str(root), "--output", str(root / "summary.json")])
-                self.assertEqual(code, mutation.exit_code_for(outcome))
-                summary = json.loads((root / "summary.json").read_text())
-                self.assertEqual(summary["counts"][outcome.value], 1)
-                self.assertEqual(sorted(summary["counts"]), sorted(member.value for member in mutation.Outcome))
+                if outcome in mutation.RECIPE_OUTCOMES:
+                    self.assertEqual(code, mutation.exit_code_for(outcome))
+                    summary = json.loads((root / "summary.json").read_text())
+                    self.assertEqual(summary["counts"][outcome.value], 1)
+                    self.assertEqual(sorted(summary["counts"]), sorted(member.value for member in mutation.Outcome))
+                else:
+                    # A recipe result cannot claim a summary-only outcome.
+                    self.assertEqual(code, mutation.EXIT_INVALID_INPUT)
 
     def test_summarize_rejects_an_unknown_outcome_by_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -50,9 +50,11 @@ class TypeCompletenessNightlyTests(unittest.TestCase):
             self.assertEqual(cell["budget_seconds"], shard["budget_seconds"])
             self.assertLessEqual(shard["budget_seconds"], 1800)
 
-    def test_shard_job_name_is_what_the_cadence_check_looks_for(self) -> None:
+    def test_artifact_name_is_what_the_cadence_check_looks_for(self) -> None:
+        upload = self.workflow.step_with(JOB, "Upload mutation results")
         self.assertEqual(
-            self.workflow.job_name(JOB), cadence.SHARD_JOB_NAME_TEMPLATE.format(shard_id="${{ matrix.shard_id }}")
+            upload["name"],
+            cadence.ARTIFACT_NAME_TEMPLATE.format(shard_id="${{ matrix.shard_id }}", run_id="${{ github.run_id }}"),
         )
 
     def test_shard_job_has_the_forty_minute_timeout(self) -> None:

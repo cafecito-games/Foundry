@@ -1,0 +1,96 @@
+{
+  "capability_slice": {
+    "broad_core": true,
+    "family": "union_destination_membership",
+    "paths": [
+      "modules/foundry_script/fs_analyzer.cpp",
+      "modules/foundry_script/fs_compiler.cpp",
+      "modules/foundry_script/fs_function.cpp",
+      "modules/foundry_script/fs_reflection.cpp",
+      "modules/foundry_script/fs_type.cpp",
+      "modules/foundry_script/fs_vm.cpp"
+    ]
+  },
+  "detectors": [
+    {
+      "case_id": "fstc-v1-2c91f5da0a04fd57084c",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-48a03c489eeae9955eef",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-d59b5f5c0c963d3767e4",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-994e7bb55476e3cdf6b4",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-4f93743d2947f1ecabde",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-a4957bc4dd844ec4ea90",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-94a0061bd639188a7ba7",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-5b1c87dfe04f8cd6f923",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-cf33508e2f21bc2ef0c3",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-bfa6fe052fd20da188da",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-c66d83d8dbaa175ac720",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    },
+    {
+      "case_id": "fstc-v1-cd026c64ae3b639ca621",
+      "dimension": "runtime_status",
+      "family": "union_destination_membership",
+      "state": "failed_on_dimension"
+    }
+  ],
+  "develop_commit": "8d62637248c57a01e11c5d3fcfe9e2fc5cbfb354",
+  "digest": "3e7cc4b61e8287ffa3e575fb22c047c2a598e17cdfe3a9464be28829d3870b34",
+  "outcome": "detected",
+  "recipe_id": "union_membership_drops_last_alternative",
+  "report_path": "/private/tmp/claude-501/-Users-christian-CafecitoGames-Foundry/75848607-8a75-47a1-b643-c8bee1cc9f62/scratchpad/mut/scratch/matrix_union_membership_drops_last_alternative/report.union_destination_membership.json",
+  "schema_version": 1,
+  "seed": 0,
+  "shard_id": "union_core"
+}
