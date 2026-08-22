@@ -539,6 +539,9 @@ Dictionary witness_report(const FSCompletenessCoverageWitness &p_witness) {
 	report["kind"] = p_witness.kind;
 	report["reference"] = p_witness.reference;
 	report["family"] = p_witness.family;
+	// The declaration travels with the claim: a reader of the document has to be able to tell a witness
+	// every build compiles from one only some builds do, without the census beside it.
+	report["build_configuration"] = p_witness.build_configuration;
 	Dictionary coordinates;
 	for (const String &axis : sorted_dictionary_keys(p_witness.coordinates)) {
 		coordinates[axis] = p_witness.coordinates[axis];

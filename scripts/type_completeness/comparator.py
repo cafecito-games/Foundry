@@ -12,6 +12,7 @@ from .report import (
     OBSERVATION_FIELDS,
     CapabilitySlice,
     CaseResult,
+    Category,
     Report,
     ReportError,
     capability_slice_for_family,
@@ -29,6 +30,10 @@ class Status(str, enum.Enum):
     MISSING = "missing"
     VANISHED = "vanished"
     PASSING = "passing"
+    # One of the two builds made no judgment about the case at all, so there is nothing to compare. It is
+    # neither a regression nor progress: reading a build's own limits as a verdict about the product is
+    # exactly what the not-covered status exists to prevent.
+    NOT_COVERED = "not_covered"
 
 
 # A develop case that vanishes from the branch report is a regression whether it failed (missing) or passed
@@ -40,6 +45,9 @@ NO_LONGER_FAILING_STATUSES = (Status.RESOLVED, Status.PASSING)
 PROPOSABLE_STATUSES = (Status.NEW, Status.WORSENED, Status.UNCHANGED)
 # A known develop mismatch reproduced unchanged: not a regression, not progress, but proposable.
 KNOWN_BASELINE_STATUSES = (Status.UNCHANGED,)
+# Statuses that report the absence of a comparison rather than its outcome. Nothing may be concluded about
+# the product from one, so they belong to no other partition.
+NOT_COMPARABLE_STATUSES = (Status.NOT_COVERED,)
 
 
 def canonical_json(value: Any) -> str:
@@ -196,12 +204,20 @@ class ComparisonArtifact:
         return artifact
 
 
+def _made_no_judgment(side: Mapping[str, Any]) -> bool:
+    return bool(side.get("present")) and side.get("category") == Category.NOT_COVERED.value
+
+
 def classify(branch: Mapping[str, Any], develop: Mapping[str, Any]) -> Status:
     """The one status classifier, defined over the serialized sides so a deserialized artifact re-derives its
     status from exactly the data it carries."""
+    if not branch.get("present") and not develop.get("present"):
+        raise ReportError("a comparison artifact needs at least one side")
+    # A side that made no judgment carries `passed: false` because it did not pass, not because it failed.
+    # Reading that as a failure would turn one build's missing surface into a regression of the product.
+    if _made_no_judgment(branch) or _made_no_judgment(develop):
+        return Status.NOT_COVERED
     if not branch.get("present"):
-        if not develop.get("present"):
-            raise ReportError("a comparison artifact needs at least one side")
         return Status.VANISHED if develop.get("passed") else Status.MISSING
     if branch.get("passed"):
         return Status.RESOLVED if develop.get("present") and not develop.get("passed") else Status.PASSING

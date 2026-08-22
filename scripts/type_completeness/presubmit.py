@@ -115,6 +115,8 @@ STATUS_DISPOSITION: dict[comparator.Status, Disposition] = {
     comparator.Status.UNCHANGED: Disposition.KNOWN,
     comparator.Status.RESOLVED: Disposition.IGNORED,
     comparator.Status.PASSING: Disposition.IGNORED,
+    # Neither side judged the case, so the gate has nothing to block on and nothing to propose.
+    comparator.Status.NOT_COVERED: Disposition.IGNORED,
 }
 
 

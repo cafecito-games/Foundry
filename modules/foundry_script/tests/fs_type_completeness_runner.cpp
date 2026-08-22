@@ -2065,6 +2065,15 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["published_surface"] = p_options.published_surface;
 	report["census"] = FSCompletenessCensus::summary_report(census_summary);
 	report["configuration"] = FSCompletenessRunner::configuration_report();
+	// How much of the census this build could confirm belongs in the document rather than in the
+	// console of the run that produced it: an artifact is all a consumer of another machine's run ever
+	// reads. It describes the build rather than the product, so it is not evidence and never reaches a
+	// comparison.
+	Array unconfirmed_census_witnesses;
+	for (const String &unconfirmed : r_result.unconfirmed_census_witnesses) {
+		unconfirmed_census_witnesses.push_back(unconfirmed);
+	}
+	report["unconfirmed_census_witnesses"] = unconfirmed_census_witnesses;
 	// The last thing decided before a document is published is whether it carries evidence at all. A
 	// document that claims a matrix and observes nothing for it is a defect in whatever produced it,
 	// and every path that assembles one arrives here, so none of them can publish a clean verdict.
@@ -2444,7 +2453,7 @@ Variant FSCompletenessRunner::evidence_observable_in_configuration(
 }
 
 Vector<String> FSCompletenessRunner::non_evidence_report_members() {
-	return Vector<String>({ "timings_ms", "configuration" });
+	return Vector<String>({ "timings_ms", "configuration", "unconfirmed_census_witnesses" });
 }
 
 Error FSCompletenessRunner::publish_owned_document(const String &p_scratch_root,

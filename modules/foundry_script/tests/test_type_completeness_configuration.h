@@ -248,6 +248,50 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Configuration]") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Configuration publishes what the build could not confirm") {
+		const FSCompletenessRunResult *baseline =
+				FSCompletenessBaseline::shared_or_skip(configuration_warning_observing_family);
+		if (baseline == nullptr) {
+			return;
+		}
+		const Dictionary report = baseline->report;
+		REQUIRE(report.has("unconfirmed_census_witnesses"));
+		const Array published = report["unconfirmed_census_witnesses"];
+		// The document says it, not only the console of the run that wrote it: an artifact is the only
+		// thing a consumer of another machine's run ever reads.
+		REQUIRE_EQ(published.size(), baseline->unconfirmed_census_witnesses.size());
+		for (int index = 0; index < published.size(); index++) {
+			CHECK_EQ(String(published[index]), baseline->unconfirmed_census_witnesses[index]);
+		}
+
+		// Every census claim the report carries says which build compiles the witness it stands on, so an
+		// unconfirmed claim is attributable without the catalog beside the report.
+		const Dictionary census = report.get("census", Dictionary());
+		const Array entries = census.get("entries", Array());
+		REQUIRE_FALSE(entries.is_empty());
+		int editor_only_claims = 0;
+		for (int index = 0; index < entries.size(); index++) {
+			const Dictionary witness = Dictionary(entries[index]).get("witness", Dictionary());
+			REQUIRE(witness.has("build_configuration"));
+			if (String(witness["build_configuration"]) == "editor") {
+				editor_only_claims++;
+			}
+		}
+		CHECK_GT(editor_only_claims, 0);
+		// The member says what the build could not confirm, which two runs that observed the same product
+		// still disagree about, so it may never be compared as evidence.
+		CHECK(FSCompletenessRunner::non_evidence_report_members().has("unconfirmed_census_witnesses"));
+		if (configuration_analyzer_warnings()) {
+			// Every configuration this census declares is compiled into an editor build, and this is one.
+			CHECK(published.is_empty());
+		} else {
+			// Every editor-only coverage claim is unconfirmed here, and the negative witnesses the
+			// exemptions stand on are unconfirmed alongside them.
+			CHECK_GE(published.size(), editor_only_claims);
+			CHECK_FALSE(published.is_empty());
+		}
+	}
+
 	TEST_CASE("TypeCompleteness Configuration reasons are a closed vocabulary") {
 		HashSet<String> declared;
 		for (const char *reason : FSCompletenessNotCoveredReason::ALL) {

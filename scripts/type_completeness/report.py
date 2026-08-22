@@ -37,7 +37,7 @@ FINDING_REQUIRED_FIELDS = ("finding_id", "case_id", "family", "dimension", "expe
 # between two runs that saw exactly the same thing - wall-clock timings, and the surfaces the binary was built
 # with - so they are dropped at load and can never reach a digest, a comparison, or a fixture. The runner owns
 # the same list in FSCompletenessRunner::non_evidence_report_members.
-NON_EVIDENCE_MEMBERS = ("timings_ms", "configuration")
+NON_EVIDENCE_MEMBERS = ("timings_ms", "configuration", "unconfirmed_census_witnesses")
 
 # The verdicts the runner writes at the top level of a report. A run that is not "passed" published
 # evidence that no comparison may be drawn from: the run either found a product mismatch or broke
@@ -64,6 +64,9 @@ class Configuration:
 
     tools_enabled: bool
     adapters: tuple[str, ...]
+    # Whether the analyzer of that build emits warnings at all. ``None`` for a report published before the
+    # member existed, which is an absence of evidence rather than a claim in either direction.
+    analyzer_warnings: Optional[bool] = None
 
 
 class ReportError(ValueError):
@@ -136,6 +139,9 @@ class Report:
     outcome: str
     cases: tuple[CaseResult, ...]
     configuration: Optional[Configuration]
+    # Census claims this run could neither bind nor refute, because the build that produced it does not compile
+    # the witness they name. A run that carries them confirmed less of the census than one that carries none.
+    unconfirmed_census_witnesses: tuple[str, ...]
     raw: dict[str, Any]
 
     @property
@@ -193,7 +199,24 @@ def _load_configuration(data: Mapping[str, Any]) -> Optional[Configuration]:
         raise ReportError("report configuration member 'adapters' must be an array of adapter id strings")
     if list(adapters) != sorted(adapters) or len(set(adapters)) != len(adapters):
         raise ReportError(f"report configuration member 'adapters' must be sorted and unique; got {adapters!r}")
-    return Configuration(tools_enabled=tools_enabled, adapters=tuple(adapters))
+    analyzer_warnings = raw.get("analyzer_warnings")
+    if analyzer_warnings is not None and not isinstance(analyzer_warnings, bool):
+        raise ReportError(
+            f"report configuration member 'analyzer_warnings' must be a JSON boolean; got {analyzer_warnings!r}"
+        )
+    return Configuration(tools_enabled=tools_enabled, adapters=tuple(adapters), analyzer_warnings=analyzer_warnings)
+
+
+def _load_unconfirmed_census_witnesses(data: Mapping[str, Any]) -> tuple[str, ...]:
+    """Census claims the run could not confirm because their witness names a build configuration this one is not.
+
+    Absent from a report published before the member existed, which reads as "nothing was reported" rather than
+    as a claim that every witness bound. A member that is present and malformed is refused.
+    """
+    unconfirmed = data.get("unconfirmed_census_witnesses", [])
+    if not isinstance(unconfirmed, list) or any(not isinstance(claim, str) or not claim for claim in unconfirmed):
+        raise ReportError("report member 'unconfirmed_census_witnesses' must be an array of non-empty strings")
+    return tuple(unconfirmed)
 
 
 def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
@@ -280,6 +303,7 @@ def load_report(data: Mapping[str, Any]) -> Report:
         outcome=outcome,
         cases=tuple(cases),
         configuration=configuration,
+        unconfirmed_census_witnesses=_load_unconfirmed_census_witnesses(data),
         raw=evidence,
     )
 

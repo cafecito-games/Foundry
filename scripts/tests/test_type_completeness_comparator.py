@@ -111,6 +111,9 @@ def _report(
         "coverage_by_dimension": {},
         "uncovered_required_dimensions": 0,
         "text_bytecode_parity_failures": 0,
+        # What the build could not confirm about the census. Dropped from the loaded evidence like the
+        # timings and the configuration, so every synthetic report carries it.
+        "unconfirmed_census_witnesses": [],
         # The build the report was produced by. Dropped from the loaded evidence like the timings, but
         # required: a report that does not say which surfaces its binary had cannot be read at all.
         "configuration": {"tools_enabled": True, "adapters": ["destination_wrapper", "synthetic_pair_identity"]},
@@ -275,6 +278,7 @@ RUNNER_REPORT_TEXT = """{
 \t\t"resolve": 6.25,
 \t\t"total": 839.5
 \t},
+\t"unconfirmed_census_witnesses": [],
 \t"uncovered_required_dimensions": 0.0
 }
 """ % hashlib.sha256(b"case_union_store_variable|destination").hexdigest()[:20]
@@ -322,6 +326,20 @@ class ReportLoadingTests(unittest.TestCase):
         observation = loaded.case("b").observation
         self.assertEqual(observation["diagnostics"], ["Cannot assign"])
         self.assertEqual(observation["actual"], {"outcome": "reject"})
+
+    def test_a_report_says_which_census_claims_it_could_not_confirm(self) -> None:
+        document = _report([_case("a", passed=True)])
+        self.assertEqual((), report.load_report(document).unconfirmed_census_witnesses)
+        document["unconfirmed_census_witnesses"] = [
+            "representation::slot::surface: witness 'X' is only compiled in the editor configuration"
+        ]
+        loaded = report.load_report(document)
+        self.assertEqual(1, len(loaded.unconfirmed_census_witnesses))
+        # It describes the build rather than the product, so it never reaches the compared evidence.
+        self.assertNotIn("unconfirmed_census_witnesses", loaded.raw)
+        document["unconfirmed_census_witnesses"] = [""]
+        with self.assertRaises(report.ReportError):
+            report.load_report(document)
 
     def test_a_not_covered_case_is_neither_passed_nor_failed(self) -> None:
         not_covered = _case(
@@ -1459,6 +1477,13 @@ def _artifact_with_status(status: Any) -> Any:
     failing = _case("a", passed=False)
     worse = _case("a", passed=False, runtime_status="crash", runtime_passed=False)
     passing = _case("a", passed=True)
+    not_covered = _case(
+        "a",
+        passed=False,
+        status="not_covered",
+        category="not_covered",
+        not_covered_reason="diagnostics_unavailable_in_configuration",
+    )
     finding = [_finding("a", "destination")]
     sides: dict[Any, tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]] = {
         comparator.Status.NEW: ([failing], [passing], finding),
@@ -1468,6 +1493,9 @@ def _artifact_with_status(status: Any) -> Any:
         comparator.Status.MISSING: ([], [failing], []),
         comparator.Status.VANISHED: ([], [passing], []),
         comparator.Status.PASSING: ([passing], [passing], []),
+        # A build that made no judgment about the case reports it that way; the other side is irrelevant,
+        # because there is nothing on this one to compare it against.
+        comparator.Status.NOT_COVERED: ([not_covered], [passing], []),
     }
     branch_cases, develop_cases, branch_findings = sides[status]
     branch = report.load_report(_report(branch_cases, findings=branch_findings))
@@ -1487,8 +1515,17 @@ class EveryStatusConsumerTests(unittest.TestCase):
             set(comparator.REGRESSION_STATUSES)
             | set(comparator.NO_LONGER_FAILING_STATUSES)
             | set(comparator.PROPOSABLE_STATUSES)
-            | set(comparator.KNOWN_BASELINE_STATUSES),
+            | set(comparator.KNOWN_BASELINE_STATUSES)
+            | set(comparator.NOT_COMPARABLE_STATUSES),
         )
+        # A status that reports the absence of a comparison is in no partition that concludes something.
+        for partition in (
+            comparator.REGRESSION_STATUSES,
+            comparator.NO_LONGER_FAILING_STATUSES,
+            comparator.PROPOSABLE_STATUSES,
+            comparator.KNOWN_BASELINE_STATUSES,
+        ):
+            self.assertFalse(set(comparator.NOT_COMPARABLE_STATUSES) & set(partition))
         self.assertEqual(
             set(comparator.PROPOSABLE_STATUSES),
             {comparator.Status.NEW, comparator.Status.WORSENED, comparator.Status.UNCHANGED},
