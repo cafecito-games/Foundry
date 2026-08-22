@@ -209,7 +209,15 @@ jobs:
   type-completeness-presubmit:
     runs-on: ubuntu-22.04
     name: Type-completeness presubmit gate
-    needs: build-linux
+    needs: [build-linux, type-completeness-baseline]
+    # On a develop push the gate downloads the baseline the sibling job uploads, so it must wait for
+    # that upload. The baseline job is skipped on pull requests, and a plain `needs` edge would skip
+    # the gate with it, so a skipped baseline is accepted explicitly; only a failed or cancelled one
+    # withholds the gate.
+    if: >-
+      ${{ !cancelled() && needs.build-linux.result == 'success'
+      && (needs.type-completeness-baseline.result == 'success'
+      || needs.type-completeness-baseline.result == 'skipped') }}
     # The matrix portion is bounded separately by the runner's own `--timeout-seconds`; this bounds
     # everything around it.
     timeout-minutes: 10

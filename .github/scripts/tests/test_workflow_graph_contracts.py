@@ -832,7 +832,7 @@ class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
     def test_both_gate_jobs_consume_the_binary_the_build_job_produced(self) -> None:
         for job in ("type-completeness-baseline", "type-completeness-presubmit"):
             with self.subTest(job=job):
-                self.assertEqual(("build-linux",), self.workflow.needs(job))
+                self.assertIn("build-linux", self.workflow.needs(job))
                 self.assertEqual(
                     "linux-editor-binary",
                     self.workflow.step_with(job, "Download editor binary")["name"],
@@ -847,9 +847,22 @@ class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
             "github.ref == 'refs/heads/develop' && inputs.checkout-ref == ''",
             workflow_graph.normalize_expression(self.workflow.job_if("type-completeness-baseline")),
         )
-        # The gate itself is unconditional: a pull request must not be able to skip it.
-        with self.assertRaises(workflow_graph.MissingWorkflowElement):
-            self.workflow.job_key("type-completeness-presubmit", "if")
+
+    def test_the_gate_waits_for_the_baseline_and_still_runs_when_it_is_skipped(self) -> None:
+        # On a develop push both jobs used to run concurrently, so the gate downloaded the baseline
+        # artifact before the sibling job had uploaded it and failed closed on `baseline_missing`.
+        # Ordering the gate after the baseline job fixes the race, but a `needs` edge alone would
+        # also skip the gate wherever the baseline job is skipped (every pull request), so the gate
+        # accepts a skipped baseline job explicitly and only refuses a failed or cancelled one.
+        self.assertEqual(
+            ("build-linux", "type-completeness-baseline"), self.workflow.needs("type-completeness-presubmit")
+        )
+        self.assertEqual(
+            "${{ !cancelled() && needs.build-linux.result == 'success' "
+            "&& (needs.type-completeness-baseline.result == 'success' "
+            "|| needs.type-completeness-baseline.result == 'skipped') }}",
+            self.workflow.job_if("type-completeness-presubmit"),
+        )
 
     def test_the_presubmit_job_never_uploads_a_baseline(self) -> None:
         uploaded = {
