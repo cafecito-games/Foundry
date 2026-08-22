@@ -507,6 +507,19 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 		}
 		return observation;
 	}
+#ifndef TOOLS_ENABLED
+	// The bytecode export this family carries a type through is compiled into editor builds only, so
+	// on any other build there is no transition to observe. Saying so is a structural refusal: a run
+	// that could not carry out its transition has no reading under which its silence means the type
+	// survived.
+	append_diagnostic(observation, "transition_unavailable_in_configuration",
+			"The bytecode export this transition carries a declared type through is not compiled into "
+			"this build.");
+	if (r_structural_error != nullptr) {
+		*r_structural_error = ERR_UNAVAILABLE;
+	}
+	return observation;
+#else
 
 	LifecycleLanguageBoot language;
 	ReleasableSourceScope synthetic_source("lifecycle_" + p_program.case_id, p_program.source);
@@ -672,6 +685,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(
 	observation.dimensions["transition_outcome"] = outcome;
 	observation.produced_output = String();
 	return observation;
+#endif // TOOLS_ENABLED
 }
 
 Error FSLifecycleAdapter::execute(const String &p_scratch_root,

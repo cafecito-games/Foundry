@@ -49,6 +49,23 @@ namespace FSTests {
 
 static const String lifecycle_catalog_root = "modules/foundry_script/tests/type_completeness";
 
+static FSCompletenessProgram lifecycle_program(
+		const String &p_family, const String &p_destination, const String &p_state, const String &p_surface) {
+	FSCompletenessResolvedCell cell;
+	cell.coordinates["destination"] = p_destination;
+	cell.coordinates["lifecycle_state"] = p_state;
+	cell.coordinates["surface"] = p_surface;
+	cell.case_id = FSCompletenessCaseID::make(p_family, cell.coordinates);
+	FSCompletenessProgram program;
+	REQUIRE_EQ(FSLifecycleAdapter::shared().render(cell, program), OK);
+	return program;
+}
+
+// Everything below the guard exercises a transition the editor build is the only one that carries,
+// so it is compiled there only; the other branch asserts that the adapter refuses rather than
+// reporting a type that survived a transition this build cannot perform.
+#ifdef TOOLS_ENABLED
+
 // Families under `rules/` whose manifest names the lifecycle adapter, read from the rule directory
 // rather than from a list in a test: the catalog is the source of truth for which families exist, so
 // a family added without its fixtures fails here instead of going unnoticed.
@@ -128,18 +145,6 @@ static Variant lifecycle_tracked_document(const String &p_relative_path) {
 	REQUIRE_MESSAGE(parse_type_completeness_json(source, String(), document, errors) == OK,
 			String(" | ").join(errors));
 	return document;
-}
-
-static FSCompletenessProgram lifecycle_program(
-		const String &p_family, const String &p_destination, const String &p_state, const String &p_surface) {
-	FSCompletenessResolvedCell cell;
-	cell.coordinates["destination"] = p_destination;
-	cell.coordinates["lifecycle_state"] = p_state;
-	cell.coordinates["surface"] = p_surface;
-	cell.case_id = FSCompletenessCaseID::make(p_family, cell.coordinates);
-	FSCompletenessProgram program;
-	REQUIRE_EQ(FSLifecycleAdapter::shared().render(cell, program), OK);
-	return program;
 }
 
 // Restores the injected fault whichever way the scope ends, so one failing assertion cannot leave
@@ -340,5 +345,26 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		}
 	}
 }
+
+#else // No editor tooling.
+
+TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
+	TEST_CASE("TypeCompleteness Lifecycle refuses a transition this build does not carry") {
+		// The bytecode export the family carries a declared type through is compiled into editor builds
+		// only. Reporting the absence structurally is the only honest reading: a build with no transition
+		// to observe has not observed a type surviving one.
+		const FSCompletenessProgram program =
+				lifecycle_program("lifecycle_bytecode_export_load", "plain", "clean", "text");
+		Error structural_error = OK;
+		const FSCompletenessObservation observation =
+				FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
+		CHECK_EQ(structural_error, ERR_UNAVAILABLE);
+		CHECK_FALSE(observation.diagnostics.is_empty());
+		CHECK_FALSE(observation.dimensions.has("semantic_identity"));
+		CHECK_FALSE(observation.dimensions.has("transition_outcome"));
+	}
+}
+
+#endif // TOOLS_ENABLED
 
 } // namespace FSTests
