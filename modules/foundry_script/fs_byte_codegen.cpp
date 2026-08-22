@@ -725,7 +725,7 @@ FSFunction *FSByteCodeGenerator::write_end() {
 	function->gds_utilities_names = gds_utilities_names;
 #endif
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	DEV_ASSERT(export_fixups.operators.size() == operator_func_map.size());
 	DEV_ASSERT(export_fixups.setters.size() == setters_map.size());
 	DEV_ASSERT(export_fixups.getters.size() == getters_map.size());
@@ -1020,7 +1020,7 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 		append(Address());
 		append(p_target);
 		append(op_func);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		record_export_fixup(export_fixups.operators, get_operation_pos(op_func), FSFunction::ExportFixups::OperatorKey{ p_operator, p_left_operand.type.builtin_type, Variant::NIL });
 #endif
 #ifdef DEBUG_ENABLED
@@ -1030,7 +1030,7 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 	}
 
 	// No specific types, perform variant evaluation.
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	const int unary_operator_offset = opcodes.size();
 #endif
 	append_opcode(FSFunction::OPCODE_OPERATOR);
@@ -1044,7 +1044,7 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 	for (int i = 0; i < _pointer_size; i++) {
 		append(0); // Space for function pointer.
 	}
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	export_fixups.operator_cache_offsets.push_back(unary_operator_offset);
 #endif
 }
@@ -1128,7 +1128,7 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 		append(p_right_operand);
 		append(p_target);
 		append(op_func);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		record_export_fixup(export_fixups.operators, get_operation_pos(op_func), FSFunction::ExportFixups::OperatorKey{ p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type });
 #endif
 #ifdef DEBUG_ENABLED
@@ -1138,7 +1138,7 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 	}
 
 	// No specific types, perform variant evaluation.
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	const int binary_operator_offset = opcodes.size();
 #endif
 	append_opcode(FSFunction::OPCODE_OPERATOR);
@@ -1152,7 +1152,7 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 	for (int i = 0; i < _pointer_size; i++) {
 		append(0); // Space for function pointer.
 	}
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	export_fixups.operator_cache_offsets.push_back(binary_operator_offset);
 #endif
 }
@@ -1354,7 +1354,7 @@ void FSByteCodeGenerator::write_set(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_source);
 			append(setter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 			record_export_fixup(export_fixups.indexed_setters, get_indexed_setter_pos(setter), p_target.type.builtin_type);
 #endif
 			return;
@@ -1365,7 +1365,7 @@ void FSByteCodeGenerator::write_set(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_source);
 			append(setter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 			record_export_fixup(export_fixups.keyed_setters, get_keyed_setter_pos(setter), p_target.type.builtin_type);
 #endif
 			return;
@@ -1388,7 +1388,7 @@ void FSByteCodeGenerator::write_get(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_target);
 			append(getter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 			record_export_fixup(export_fixups.indexed_getters, get_indexed_getter_pos(getter), p_source.type.builtin_type);
 #endif
 			return;
@@ -1399,7 +1399,7 @@ void FSByteCodeGenerator::write_get(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_target);
 			append(getter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 			record_export_fixup(export_fixups.keyed_getters, get_keyed_getter_pos(getter), p_source.type.builtin_type);
 #endif
 			return;
@@ -1419,7 +1419,7 @@ void FSByteCodeGenerator::write_set_named(const Address &p_target, const StringN
 		append(p_target);
 		append(p_source);
 		append(setter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		record_export_fixup(export_fixups.setters, get_setter_pos(setter), FSFunction::ExportFixups::TypedNameKey{ p_target.type.builtin_type, p_name });
 #endif
 #ifdef DEBUG_ENABLED
@@ -1440,7 +1440,7 @@ void FSByteCodeGenerator::write_get_named(const Address &p_target, const StringN
 		append(p_source);
 		append(p_target);
 		append(getter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		record_export_fixup(export_fixups.getters, get_getter_pos(getter), FSFunction::ExportFixups::TypedNameKey{ p_source.type.builtin_type, p_name });
 #endif
 #ifdef DEBUG_ENABLED
@@ -1769,7 +1769,7 @@ void FSByteCodeGenerator::write_store_global(const Address &p_dst, int p_global_
 	append_opcode(FSFunction::OPCODE_STORE_GLOBAL);
 	append(p_dst);
 	append(p_global_index);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	export_fixups.global_stores.push_back(FSFunction::ExportFixups::GlobalStore{ static_cast<int>(opcodes.size()) - 1, p_global_name });
 #endif
 }
@@ -1778,7 +1778,7 @@ void FSByteCodeGenerator::write_store_named_global(const Address &p_dst, const S
 	append_opcode(FSFunction::OPCODE_STORE_NAMED_GLOBAL);
 	append(p_dst);
 	append(p_global);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	if (!named_globals.has(p_global)) {
 		named_globals.push_back(p_global);
 	}
@@ -1852,7 +1852,7 @@ FSByteCodeGenerator::CallTarget FSByteCodeGenerator::get_call_target(const FSCod
 	}
 }
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 void FSByteCodeGenerator::record_reflection_call(
 		const StringName &p_method, const StringName &p_class,
 		bool p_receiver_is_self) {
@@ -1869,7 +1869,7 @@ void FSByteCodeGenerator::record_reflection_call(
 #endif
 
 void FSByteCodeGenerator::write_call(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(
 			p_function_name, StringName(), p_base.mode == Address::SELF);
 #endif
@@ -1886,7 +1886,7 @@ void FSByteCodeGenerator::write_call(const Address &p_target, const Address &p_b
 }
 
 void FSByteCodeGenerator::write_super_call(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(p_function_name, StringName(), true);
 #endif
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_SELF_BASE, 1 + p_arguments.size());
@@ -1901,7 +1901,7 @@ void FSByteCodeGenerator::write_super_call(const Address &p_target, const String
 }
 
 void FSByteCodeGenerator::write_call_async(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(
 			p_function_name, StringName(), p_base.mode == Address::SELF);
 #endif
@@ -1951,7 +1951,7 @@ void FSByteCodeGenerator::write_call_foundry_script_utility(const Address &p_tar
 	append(p_arguments.size());
 	append(gds_function);
 	ct.cleanup();
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_export_fixup(export_fixups.gds_utilities, get_gds_utility_pos(gds_function), StringName(p_function));
 #endif
 #ifdef DEBUG_ENABLED
@@ -1990,7 +1990,7 @@ void FSByteCodeGenerator::write_call_utility(const Address &p_target, const Stri
 		append(p_arguments.size());
 		append(Variant::get_validated_utility_function(p_function));
 		ct.cleanup();
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		record_export_fixup(export_fixups.utilities, get_utility_pos(Variant::get_validated_utility_function(p_function)), StringName(p_function));
 #endif
 #ifdef DEBUG_ENABLED
@@ -2073,7 +2073,7 @@ void FSByteCodeGenerator::write_call_builtin_type(const Address &p_target, const
 	append(p_arguments.size());
 	Variant::ValidatedBuiltInMethod validated_method = Variant::get_validated_builtin_method(p_type, p_method);
 	const int method_index = get_builtin_method_pos(validated_method);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_export_fixup(export_fixups.builtin_methods, method_index, FSFunction::ExportFixups::TypedNameKey{ p_type, p_method });
 #endif
 	append(method_index);
@@ -2096,7 +2096,7 @@ void FSByteCodeGenerator::write_call_builtin_type_static(const Address &p_target
 void FSByteCodeGenerator::write_call_native_static(const Address &p_target, const StringName &p_class, const StringName &p_method, const Vector<Address> &p_arguments) {
 	MethodBind *method = ClassDB::get_method(p_class, p_method);
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(p_method, p_class, false);
 #endif
 
@@ -2108,7 +2108,7 @@ void FSByteCodeGenerator::write_call_native_static(const Address &p_target, cons
 	CallTarget ct = get_call_target(p_target);
 	append(ct.target);
 	append(method);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(method), FSFunction::ExportFixups::MethodBindKey{ p_class, p_method });
 #endif
 	append(p_arguments.size());
@@ -2120,7 +2120,7 @@ void FSByteCodeGenerator::write_call_native_static_validated(const FSCodeGenerat
 	Variant::Type return_type = Variant::NIL;
 	bool has_return = p_method->has_return();
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(
 			p_method->get_name(), p_method->get_instance_class(), false);
 #endif
@@ -2148,14 +2148,14 @@ void FSByteCodeGenerator::write_call_native_static_validated(const FSCodeGenerat
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
 #endif
 	ct.cleanup();
 }
 
 void FSByteCodeGenerator::write_call_method_bind(const Address &p_target, const Address &p_base, MethodBind *p_method, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(
 			p_method->get_name(), p_method->get_instance_class(),
 			p_base.mode == Address::SELF);
@@ -2169,7 +2169,7 @@ void FSByteCodeGenerator::write_call_method_bind(const Address &p_target, const 
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
 #endif
 	ct.cleanup();
@@ -2179,7 +2179,7 @@ void FSByteCodeGenerator::write_call_method_bind_validated(const Address &p_targ
 	Variant::Type return_type = Variant::NIL;
 	bool has_return = p_method->has_return();
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(
 			p_method->get_name(), p_method->get_instance_class(),
 			p_base.mode == Address::SELF);
@@ -2209,14 +2209,14 @@ void FSByteCodeGenerator::write_call_method_bind_validated(const Address &p_targ
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
 #endif
 	ct.cleanup();
 }
 
 void FSByteCodeGenerator::write_call_self(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(p_function_name, StringName(), true);
 #endif
 	append_opcode_and_argcount(p_target.mode == Address::NIL ? FSFunction::OPCODE_CALL : FSFunction::OPCODE_CALL_RETURN, 2 + p_arguments.size());
@@ -2232,7 +2232,7 @@ void FSByteCodeGenerator::write_call_self(const Address &p_target, const StringN
 }
 
 void FSByteCodeGenerator::write_call_self_async(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(p_function_name, StringName(), true);
 #endif
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_ASYNC, 2 + p_arguments.size());
@@ -2248,7 +2248,7 @@ void FSByteCodeGenerator::write_call_self_async(const Address &p_target, const S
 }
 
 void FSByteCodeGenerator::write_call_script_function(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) {
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	record_reflection_call(
 			p_function_name, StringName(), p_base.mode == Address::SELF);
 #endif
@@ -2348,7 +2348,7 @@ void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type
 			append(p_arguments.size());
 			append(Variant::get_validated_constructor(p_type, valid_constructor));
 			ct.cleanup();
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 			record_export_fixup(export_fixups.constructors, get_constructor_pos(Variant::get_validated_constructor(p_type, valid_constructor)), FSFunction::ExportFixups::ConstructorKey{ p_type, valid_constructor });
 #endif
 #ifdef DEBUG_ENABLED

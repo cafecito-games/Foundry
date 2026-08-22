@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "fs_bytecode_format.h"
 #include "fs_utility_functions.h"
 
 #include "core/object/ref_counted.h"
@@ -1176,7 +1177,7 @@ private:
 	} profile;
 #endif
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 
 public:
 	// Symbolic identities for every process-bound pointer the compiled function stores, recorded
@@ -1229,7 +1230,7 @@ public:
 private:
 	uint8_t self_reflection_kinds = REFLECTION_NONE;
 	uint8_t unresolved_reflection_kinds = REFLECTION_NONE;
-#endif // TOOLS_ENABLED
+#endif // FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 
 	// Mirror of `has_self_referencing_signature()`, refreshed by `setup_runtime_pointers()`.
 	bool _references_self_types = false;
@@ -1370,7 +1371,7 @@ public:
 	// so the pointer-table invariants cannot drift between the two producers.
 	void setup_runtime_pointers();
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	_FORCE_INLINE_ const Vector<int> &get_code() const { return code; }
 	_FORCE_INLINE_ int get_operator_funcs_count() const { return _operator_funcs_count; }
 	_FORCE_INLINE_ int get_setters_count() const { return _setters_count; }
@@ -1398,7 +1399,7 @@ public:
 	const FSDataType *get_predecoded_tuple_shape_for_constant(int p_constant_index) const;
 	_FORCE_INLINE_ int get_dependent_tuple_descriptor_count() const { return _dependent_tuple_descriptor_indices.size(); }
 	const FSDataType *get_specialized_tuple_shape_for_constant(const FSTupleSlotSpecialization *p_specialization, int p_constant_index) const;
-#endif // TOOLS_ENABLED
+#endif // FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 
 	// `p_static_self` describes the exact class handle a static call was made through. The pointed-to
 	// descriptor must outlive the call; the frame only borrows it, and copies it into `CallState` if

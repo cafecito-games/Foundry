@@ -1190,8 +1190,9 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		p_function->builtin_method_names.push_back(StringName(builtin_method_name));
 	}
 
-#ifdef TOOLS_ENABLED
-	// Restoring the symbolic keys keeps a deserialized function re-serializable in tools builds.
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
+	// Restoring the symbolic keys keeps a deserialized function re-serializable wherever the writer
+	// exists.
 	FSFunction::ExportFixups &restored_fixups = p_function->export_fixups;
 #endif
 
@@ -1225,7 +1226,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->operator_names.push_back(Variant::get_operator_name((Variant::Operator)variant_operator));
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.operators.push_back({ (Variant::Operator)variant_operator, (Variant::Type)left_type, (Variant::Type)right_type });
 #endif
 	}
@@ -1253,7 +1254,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->setter_names.push_back(member_name);
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.setters.push_back({ (Variant::Type)type, StringName(member_name) });
 #endif
 	}
@@ -1281,7 +1282,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->getter_names.push_back(member_name);
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.getters.push_back({ (Variant::Type)type, StringName(member_name) });
 #endif
 	}
@@ -1300,7 +1301,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		const Variant::ValidatedKeyedSetter keyed_setter = Variant::get_member_validated_keyed_setter((Variant::Type)type);
 		FSB_LINK_CHECK(keyed_setter == nullptr, "keyed setter", Variant::get_type_name((Variant::Type)type));
 		p_function->keyed_setters.push_back(keyed_setter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.keyed_setters.push_back((Variant::Type)type);
 #endif
 	}
@@ -1319,7 +1320,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		const Variant::ValidatedKeyedGetter keyed_getter = Variant::get_member_validated_keyed_getter((Variant::Type)type);
 		FSB_LINK_CHECK(keyed_getter == nullptr, "keyed getter", Variant::get_type_name((Variant::Type)type));
 		p_function->keyed_getters.push_back(keyed_getter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.keyed_getters.push_back((Variant::Type)type);
 #endif
 	}
@@ -1338,7 +1339,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		const Variant::ValidatedIndexedSetter indexed_setter = Variant::get_member_validated_indexed_setter((Variant::Type)type);
 		FSB_LINK_CHECK(indexed_setter == nullptr, "indexed setter", Variant::get_type_name((Variant::Type)type));
 		p_function->indexed_setters.push_back(indexed_setter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.indexed_setters.push_back((Variant::Type)type);
 #endif
 	}
@@ -1357,7 +1358,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		const Variant::ValidatedIndexedGetter indexed_getter = Variant::get_member_validated_indexed_getter((Variant::Type)type);
 		FSB_LINK_CHECK(indexed_getter == nullptr, "indexed getter", Variant::get_type_name((Variant::Type)type));
 		p_function->indexed_getters.push_back(indexed_getter);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.indexed_getters.push_back((Variant::Type)type);
 #endif
 	}
@@ -1388,7 +1389,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->builtin_methods_names.push_back(method_name);
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.builtin_methods.push_back({ (Variant::Type)type, StringName(method_name) });
 #endif
 	}
@@ -1420,7 +1421,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->constructors_names.push_back(Variant::get_type_name((Variant::Type)type));
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.constructors.push_back({ (Variant::Type)type, constructor_index });
 #endif
 	}
@@ -1445,7 +1446,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->utilities_names.push_back(utility_name);
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.utilities.push_back(StringName(utility_name));
 #endif
 	}
@@ -1470,7 +1471,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #ifdef DEBUG_ENABLED
 		p_function->gds_utilities_names.push_back(utility_name);
 #endif
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.gds_utilities.push_back(StringName(utility_name));
 #endif
 	}
@@ -1505,7 +1506,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		}
 		FSB_LINK_CHECK(method_bind == nullptr, "native method", vformat("%s.%s", class_name, method_name));
 		p_function->methods.push_back(method_bind);
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.method_binds.push_back({ StringName(class_name), StringName(method_name) });
 #endif
 	}
@@ -1531,7 +1532,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		FSB_LINK_CHECK(global_index == nullptr, "global", global_name);
 		// The exporter masked this operand out; bake this process's global-array index in its place.
 		p_function->code.write[code_offset] = *global_index;
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 		restored_fixups.global_stores.push_back({ code_offset, StringName(global_name) });
 #endif
 	}
@@ -1572,7 +1573,7 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 	// descriptors, so re-export can mask process-local VM cache words after the loaded function runs,
 	// the named-global validation index, so a loaded `.fsb` cannot bypass export checks, and
 	// receiver-scoped reflection evidence, so name mangling sees the same surface as source codegen.
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	error = FSBytecodeVerifier::verify_function(p_function, p_script->member_indices.size(), script_path,
 			&restored_fixups.operator_cache_offsets, &restored_fixups.named_globals,
 			&p_function->self_reflection_kinds,

@@ -70,6 +70,9 @@ if not env["foundry_script_frontend"]:
     # Using a define in the disabled case, to avoid having an extra define
     # in regular builds where the front-end is enabled.
     env_foundry_script.Append(CPPDEFINES=["FOUNDRY_SCRIPT_NO_FRONTEND"])
+    # The define is header-visible: what a compiled script carries for the bytecode writer depends on
+    # it, so every translation unit that includes a Foundry Script header has to agree on it.
+    env.Append(CPPDEFINES=["FOUNDRY_SCRIPT_NO_FRONTEND"])
 else:
     env_foundry_script.add_source_files(env.modules_sources, "*.cpp")
 
