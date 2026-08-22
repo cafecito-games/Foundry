@@ -326,6 +326,69 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 		CHECK_EQ(refused.outcome, "structural_failure");
 	}
 
+	TEST_CASE("TypeCompleteness Adapters a run cannot publish a surface it did not execute") {
+		TemporaryProjectTree tree(synthetic_tree_name("synthetic_published_surface"));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_synthetic_completeness_catalog(tree, "catalog", false);
+		const String scratch_root = tree.root.path_join("scratch");
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(scratch_root), OK);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = synthetic_completeness_family;
+		options.scratch_root = scratch_root;
+		options.report_path = scratch_root.path_join("report.json");
+		options.surfaces.insert("text");
+		options.published_surface = "bytecode";
+
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_PARAMETER);
+		CHECK_FALSE(result.success);
+		CHECK_EQ(result.outcome, "structural_failure");
+		REQUIRE_FALSE(result.structural_failures.is_empty());
+		CHECK_EQ(result.structural_failures[0].stage,
+				FSCompletenessStructuralStage::PUBLISHED_SURFACE_NOT_EXECUTED);
+		CHECK_EQ(result.structural_failures[0].detail,
+				"The run publishes surface 'bytecode' but executes only 'text'.");
+		CHECK_EQ(result.structural_failures[0].error_code, ERR_INVALID_PARAMETER);
+		// Nothing may reach disk: a document naming a surface the run never observed has no reading
+		// under which it is evidence.
+		CHECK_FALSE(FileAccess::exists(options.report_path));
+		CHECK(result.report.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness Adapters a report with no observed case is never a clean run") {
+		TemporaryProjectTree tree(synthetic_tree_name("synthetic_no_evidence"));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_synthetic_completeness_catalog(tree, "catalog", false);
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(run_synthetic_family(tree, catalog_root, "scratch", HashSet<String>(), result), OK);
+		CHECK(FSCompletenessRunner::report_carries_evidence(result.report));
+
+		// The observation set a published document would carry if every case vanished after the matrix
+		// executed: a positive cell count with nothing observed for it.
+		Dictionary without_evidence = result.report.duplicate(true);
+		without_evidence["cases"] = Array();
+		CHECK_FALSE(FSCompletenessRunner::report_carries_evidence(without_evidence));
+
+		// A run that executed no cell at all is not evidence-free, it is empty; only a document that
+		// claims a matrix and shows nothing for it is refused.
+		Dictionary empty_matrix = without_evidence.duplicate(true);
+		empty_matrix["cell_count"] = 0.0;
+		CHECK(FSCompletenessRunner::report_carries_evidence(empty_matrix));
+
+		Dictionary malformed;
+		malformed["cell_count"] = 4.0;
+		malformed["cases"] = "not an array";
+		CHECK_FALSE(FSCompletenessRunner::report_carries_evidence(malformed));
+
+		// Every document this suite publishes goes through the same settle point, so a run that reaches
+		// publication always carries evidence for the matrix it claims.
+		CHECK_EQ(int(double(result.report["cell_count"])), 4);
+		CHECK_EQ(String(result.report["outcome"]), "passed");
+		CHECK(FSCompletenessRunner::report_carries_evidence(result.report));
+	}
+
 	TEST_CASE("TypeCompleteness Adapters an unregistered manifest adapter fails the run structurally") {
 		TemporaryProjectTree tree(synthetic_tree_name("synthetic_unknown_adapter"));
 		REQUIRE(tree.is_valid());

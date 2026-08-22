@@ -46,6 +46,8 @@ namespace FSCompletenessStructuralStage {
 static constexpr const char *ADAPTER_UNKNOWN = "adapter_unknown";
 static constexpr const char *ADAPTER_DUPLICATE = "adapter_duplicate";
 static constexpr const char *PROGRAM_CARDINALITY = "program_cardinality";
+static constexpr const char *PUBLISHED_SURFACE_NOT_EXECUTED = "published_surface_not_executed";
+static constexpr const char *NO_EVIDENCE = "no_evidence";
 static constexpr const char *WITNESS_DECLARED_TWICE = "witness_declared_twice";
 static constexpr const char *WITNESS_ID_UNKNOWN = "witness_id_unknown";
 static constexpr const char *WITNESS_CELL_MISSING = "witness_cell_missing";
@@ -63,6 +65,8 @@ static constexpr const char *ALL[] = {
 	ADAPTER_UNKNOWN,
 	ADAPTER_DUPLICATE,
 	PROGRAM_CARDINALITY,
+	PUBLISHED_SURFACE_NOT_EXECUTED,
+	NO_EVIDENCE,
 	WITNESS_DECLARED_TWICE,
 	WITNESS_ID_UNKNOWN,
 	WITNESS_CELL_MISSING,
@@ -183,6 +187,11 @@ public:
 
 	// The report record of one structural failure. The one place a failure becomes a document.
 	static Dictionary structural_failure_report(const FSCompletenessStructuralFailure &p_failure);
+
+	// False when a document claims a matrix and reports nothing observed for it. Such a document has no
+	// reading under which the absence of findings means agreement, so it may never be published as a
+	// clean run whatever produced it.
+	static bool report_carries_evidence(const Dictionary &p_report);
 
 	// Publishes a document that belongs to a run without being a family report - the index over a
 	// multi-family invocation - under exactly the contract a report is published with: the path must

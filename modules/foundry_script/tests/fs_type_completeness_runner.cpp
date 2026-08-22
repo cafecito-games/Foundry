@@ -1384,10 +1384,11 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	const FSCompletenessMigrations &migrations = catalog_record->migrations;
 
 	// One structural failure is the whole verdict of a run that never got to observe anything.
-	const auto fail_structurally = [&](const char *p_stage, const String &p_detail) {
+	const auto fail_structurally = [&](const char *p_stage, const String &p_detail,
+										   Error p_error = ERR_INVALID_DATA) {
 		Vector<FSCompletenessStructuralFailure> failures;
 		failures.push_back(
-				make_structural_failure(p_stage, p_detail, String(), String(), String(), ERR_INVALID_DATA));
+				make_structural_failure(p_stage, p_detail, String(), String(), String(), p_error));
 		r_result.outcome = "structural_failure";
 		r_result.structural_failures = failures;
 	};
@@ -1423,6 +1424,21 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	HashSet<String> selected_surface_set;
 	for (const String &surface : selected_surfaces) {
 		selected_surface_set.insert(surface);
+	}
+	// Publishing a surface the run does not execute would produce a document with a matrix and no case
+	// in it. Refusing the combination here keeps that document from existing at all, rather than
+	// leaving a consumer to notice that a clean-looking report is empty.
+	if (!p_options.published_surface.is_empty() &&
+			!selected_surface_set.has(p_options.published_surface)) {
+		Vector<String> quoted_surfaces;
+		for (const String &surface : selected_surfaces) {
+			quoted_surfaces.push_back(vformat("'%s'", surface));
+		}
+		fail_structurally(FSCompletenessStructuralStage::PUBLISHED_SURFACE_NOT_EXECUTED,
+				vformat("The run publishes surface '%s' but executes only %s.", p_options.published_surface,
+						String(", ").join(quoted_surfaces)),
+				ERR_INVALID_PARAMETER);
+		return ERR_INVALID_PARAMETER;
 	}
 	Vector<const FSCompletenessResolvedCell *> selected_cells;
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
@@ -1952,7 +1968,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		cases.push_back(case_report);
 	}
 	Array report_findings;
-	const bool success = findings.is_empty() && structural_failures.is_empty();
+	bool success = findings.is_empty() && structural_failures.is_empty();
 	for (const FSCompletenessFinding &finding : findings) {
 		// A published document must stay self-consistent: a finding may only name a case the document
 		// reports. The run-level verdict below still counts every finding the run produced.
@@ -1965,8 +1981,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	for (const FSCompletenessStructuralFailure &failure : structural_failures) {
 		structural_failures_report.push_back(FSCompletenessRunner::structural_failure_report(failure));
 	}
-	const String outcome = !structural_failures.is_empty() ? "structural_failure"
-														   : (findings.is_empty() ? "passed" : "product_mismatch");
+	String outcome = !structural_failures.is_empty() ? "structural_failure"
+													 : (findings.is_empty() ? "passed" : "product_mismatch");
 
 	Dictionary report;
 	report["schema_version"] = 1.0;
@@ -1985,6 +2001,25 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["exceptions"] = exceptions_report;
 	report["cases"] = cases;
 	report["published_surface"] = p_options.published_surface;
+	// The last thing decided before a document is published is whether it carries evidence at all. A
+	// document that claims a matrix and observes nothing for it is a defect in whatever produced it,
+	// and every path that assembles one arrives here, so none of them can publish a clean verdict.
+	if (!FSCompletenessRunner::report_carries_evidence(report)) {
+		structural_failures.push_back(make_structural_failure(FSCompletenessStructuralStage::NO_EVIDENCE,
+				vformat("The report observes no case for the %d cells the run executed.",
+						selected_cells.size()),
+				String(), String(), String(), ERR_INVALID_DATA));
+		sort_structural_failures(structural_failures);
+		Array settled_failures;
+		for (const FSCompletenessStructuralFailure &failure : structural_failures) {
+			settled_failures.push_back(FSCompletenessRunner::structural_failure_report(failure));
+		}
+		report["structural_failures"] = settled_failures;
+		success = false;
+		outcome = "structural_failure";
+		report["success"] = success;
+		report["outcome"] = outcome;
+	}
 	timings.report += StageTimings::since(stage_started_at);
 	timings.total = StageTimings::since(run_started_at);
 	report["timings_ms"] = timings.to_report();
@@ -2143,6 +2178,18 @@ Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
 HashSet<String> FSCompletenessRunner::builtin_dimensions() {
 	return HashSet<String>({ "output", "diagnostics", "runtime_status",
 			FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION, "diagnostic_severity" });
+}
+
+bool FSCompletenessRunner::report_carries_evidence(const Dictionary &p_report) {
+	const Variant cell_count = p_report.get("cell_count", 0.0);
+	if (cell_count.get_type() != Variant::FLOAT && cell_count.get_type() != Variant::INT) {
+		return false;
+	}
+	if (double(cell_count) <= 0.0) {
+		return true;
+	}
+	const Variant cases = p_report.get("cases", Variant());
+	return cases.get_type() == Variant::ARRAY && !Array(cases).is_empty();
 }
 
 Dictionary FSCompletenessRunner::structural_failure_report(
