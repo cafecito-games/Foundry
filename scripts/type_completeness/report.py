@@ -37,7 +37,7 @@ FINDING_REQUIRED_FIELDS = ("finding_id", "case_id", "family", "dimension", "expe
 # between two runs that saw exactly the same thing - wall-clock timings, and the surfaces the binary was built
 # with - so they are dropped at load and can never reach a digest, a comparison, or a fixture. The runner owns
 # the same list in FSCompletenessRunner::non_evidence_report_members.
-NON_EVIDENCE_MEMBERS = ("timings_ms", "configuration")
+NON_EVIDENCE_MEMBERS = ("timings_ms", "configuration", "unconfirmed_census_witnesses")
 
 # The verdicts the runner writes at the top level of a report. A run that is not "passed" published
 # evidence that no comparison may be drawn from: the run either found a product mismatch or broke
@@ -64,6 +64,9 @@ class Configuration:
 
     tools_enabled: bool
     adapters: tuple[str, ...]
+    # Whether the analyzer of that build emits warnings at all. ``None`` for a report published before the
+    # member existed, which is an absence of evidence rather than a claim in either direction.
+    analyzer_warnings: Optional[bool] = None
 
 
 class ReportError(ValueError):
@@ -93,6 +96,10 @@ class Category(str, enum.Enum):
     FAILED_WITNESS = "failed_witness"
     STALE_LEDGER_ENTRY = "stale_ledger_entry"
     RESOLVED_LEDGER_ENTRY = "resolved_ledger_entry"
+    # The build that produced the report could not observe what the cell expects, so the run has no verdict
+    # about it. Such a case is not passed and is not failed; reading it as either would turn a property of
+    # the build into a claim about the product.
+    NOT_COVERED = "not_covered"
 
 
 def _category_for(case: Mapping[str, Any]) -> Category:
@@ -118,7 +125,11 @@ class CaseResult:
 
     @property
     def failed(self) -> bool:
-        return not self.passed
+        return not self.passed and self.category is not Category.NOT_COVERED
+
+    @property
+    def not_covered(self) -> bool:
+        return self.category is Category.NOT_COVERED
 
 
 @dataclass(frozen=True)
@@ -128,6 +139,9 @@ class Report:
     outcome: str
     cases: tuple[CaseResult, ...]
     configuration: Optional[Configuration]
+    # Census claims this run could neither bind nor refute, because the build that produced it does not compile
+    # the witness they name. A run that carries them confirmed less of the census than one that carries none.
+    unconfirmed_census_witnesses: tuple[str, ...]
     raw: dict[str, Any]
 
     @property
@@ -185,7 +199,68 @@ def _load_configuration(data: Mapping[str, Any]) -> Optional[Configuration]:
         raise ReportError("report configuration member 'adapters' must be an array of adapter id strings")
     if list(adapters) != sorted(adapters) or len(set(adapters)) != len(adapters):
         raise ReportError(f"report configuration member 'adapters' must be sorted and unique; got {adapters!r}")
-    return Configuration(tools_enabled=tools_enabled, adapters=tuple(adapters))
+    analyzer_warnings = raw.get("analyzer_warnings")
+    if analyzer_warnings is not None and not isinstance(analyzer_warnings, bool):
+        raise ReportError(
+            f"report configuration member 'analyzer_warnings' must be a JSON boolean; got {analyzer_warnings!r}"
+        )
+    return Configuration(tools_enabled=tools_enabled, adapters=tuple(adapters), analyzer_warnings=analyzer_warnings)
+
+
+def _load_unconfirmed_census_witnesses(data: Mapping[str, Any]) -> tuple[str, ...]:
+    """Census claims the run could not confirm because their witness names a build configuration this one is not.
+
+    Absent from a report published before the member existed, which reads as "nothing was reported" rather than
+    as a claim that every witness bound. A member that is present and malformed is refused.
+    """
+    unconfirmed = data.get("unconfirmed_census_witnesses", [])
+    if not isinstance(unconfirmed, list) or any(not isinstance(claim, str) or not claim for claim in unconfirmed):
+        raise ReportError("report member 'unconfirmed_census_witnesses' must be an array of non-empty strings")
+    return tuple(unconfirmed)
+
+
+def _check_not_covered_coherence(
+    case: Mapping[str, Any], case_id: str, passed: bool, findings: list[dict[str, Any]]
+) -> None:
+    """Refuse a case that claims the build made no judgment about it while carrying one.
+
+    The category is what makes a case non-failing, so on its own it would be enough to hide a real failure
+    from every consumer. The runner writes the whole claim together - the status, the reason, a verdict that
+    is not a pass, and no finding - so a document where those disagree is malformed rather than a report of a
+    case nothing judged.
+    """
+    status = str(case.get("status", ""))
+    category = str(case.get("category", "")) if case.get("category") is not None else ""
+    not_covered = category == Category.NOT_COVERED.value
+    if not not_covered and status != "not_covered":
+        return
+    if not_covered != (status == "not_covered"):
+        raise ReportError(
+            f"case {case_id!r} is {status!r} but categorized {category!r}; a case the build could not judge "
+            "carries both"
+        )
+    if not str(case.get("not_covered_reason", "")):
+        raise ReportError(f"case {case_id!r} claims to be not covered without naming a reason")
+    if passed:
+        raise ReportError(f"case {case_id!r} claims to be not covered and to have passed")
+    if findings:
+        raise ReportError(
+            f"case {case_id!r} claims the build made no judgment about it, but findings target it: "
+            f"{[finding['dimension'] for finding in findings]}"
+        )
+
+
+def require_object(value: Any, context: str, error: type[Exception] = ReportError) -> dict[str, Any]:
+    """The first thing every loader does with a decoded document, before reading a single member.
+
+    A document that is not an object has no members to look up: `null` makes a membership test a TypeError
+    and a list makes `.get` an AttributeError, so a loader that reads first turns a malformed input into an
+    uncaught crash in whatever process was reading it - a gate that terminates instead of reporting. Each
+    loader passes its own error type so the refusal reads in the vocabulary of the document it refused.
+    """
+    if not isinstance(value, Mapping):
+        raise error(f"{context} must be a JSON object; got {type(value).__name__}")
+    return dict(value)
 
 
 def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
@@ -195,6 +270,7 @@ def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
 
 
 def load_report(data: Mapping[str, Any]) -> Report:
+    data = require_object(data, "report")
     version = _require(data, "schema_version", "report")
     if not schema_version_matches(version, SUPPORTED_SCHEMA_VERSION):
         raise ReportError(f"unsupported report schema_version {version!r}; expected {SUPPORTED_SCHEMA_VERSION}")
@@ -243,6 +319,7 @@ def load_report(data: Mapping[str, Any]) -> Report:
         context = f"case {case_id!r}"
         for field in CASE_REQUIRED_FIELDS:
             _require(raw_case, field, context)
+        _check_not_covered_coherence(raw_case, case_id, passed, findings_by_case.get(case_id, []))
         observation = {field: raw_case[field] for field in OBSERVATION_FIELDS}
         cases.append(
             CaseResult(
@@ -272,6 +349,7 @@ def load_report(data: Mapping[str, Any]) -> Report:
         outcome=outcome,
         cases=tuple(cases),
         configuration=configuration,
+        unconfirmed_census_witnesses=_load_unconfirmed_census_witnesses(data),
         raw=evidence,
     )
 
@@ -281,9 +359,7 @@ def load_report_file(path: Path) -> Report:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise ReportError(f"cannot read report {path}: {error}") from error
-    if not isinstance(data, dict):
-        raise ReportError(f"report {path} must contain a JSON object")
-    return load_report(data)
+    return load_report(require_object(data, f"report {path}"))
 
 
 @dataclass(frozen=True)
@@ -297,6 +373,7 @@ class CapabilitySlice:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> CapabilitySlice:
+        data = require_object(data, "capability_slice")
         paths = data.get("paths")
         if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or not path for path in paths):
             raise ReportError("capability_slice.paths must be a non-empty array of path strings")
@@ -321,12 +398,11 @@ def load_capabilities_file(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise ReportError(f"cannot read capabilities manifest {path}: {error}") from error
-    if not isinstance(data, dict):
-        raise ReportError(f"capabilities manifest {path} must contain a JSON object")
-    return data
+    return require_object(data, f"capabilities manifest {path}")
 
 
 def capability_slice_for_family(manifest: Mapping[str, Any], family: str) -> CapabilitySlice:
+    manifest = require_object(manifest, "capabilities manifest")
     production = _require(manifest, "production", "capabilities manifest")
     broad_core_families = _require(manifest, "broad_core_families", "capabilities manifest")
     if not isinstance(production, list) or not isinstance(broad_core_families, list):

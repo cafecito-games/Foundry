@@ -111,6 +111,9 @@ def _report(
         "coverage_by_dimension": {},
         "uncovered_required_dimensions": 0,
         "text_bytecode_parity_failures": 0,
+        # What the build could not confirm about the census. Dropped from the loaded evidence like the
+        # timings and the configuration, so every synthetic report carries it.
+        "unconfirmed_census_witnesses": [],
         # The build the report was produced by. Dropped from the loaded evidence like the timings, but
         # required: a report that does not say which surfaces its binary had cannot be read at all.
         "configuration": {"tools_enabled": True, "adapters": ["destination_wrapper", "synthetic_pair_identity"]},
@@ -275,6 +278,7 @@ RUNNER_REPORT_TEXT = """{
 \t\t"resolve": 6.25,
 \t\t"total": 839.5
 \t},
+\t"unconfirmed_census_witnesses": [],
 \t"uncovered_required_dimensions": 0.0
 }
 """ % hashlib.sha256(b"case_union_store_variable|destination").hexdigest()[:20]
@@ -322,6 +326,35 @@ class ReportLoadingTests(unittest.TestCase):
         observation = loaded.case("b").observation
         self.assertEqual(observation["diagnostics"], ["Cannot assign"])
         self.assertEqual(observation["actual"], {"outcome": "reject"})
+
+    def test_a_report_says_which_census_claims_it_could_not_confirm(self) -> None:
+        document = _report([_case("a", passed=True)])
+        self.assertEqual((), report.load_report(document).unconfirmed_census_witnesses)
+        document["unconfirmed_census_witnesses"] = [
+            "representation::slot::surface: witness 'X' is only compiled in the editor configuration"
+        ]
+        loaded = report.load_report(document)
+        self.assertEqual(1, len(loaded.unconfirmed_census_witnesses))
+        # It describes the build rather than the product, so it never reaches the compared evidence.
+        self.assertNotIn("unconfirmed_census_witnesses", loaded.raw)
+        document["unconfirmed_census_witnesses"] = [""]
+        with self.assertRaises(report.ReportError):
+            report.load_report(document)
+
+    def test_a_not_covered_case_is_neither_passed_nor_failed(self) -> None:
+        not_covered = _case(
+            "b",
+            passed=False,
+            status="not_covered",
+            category="not_covered",
+            not_covered_reason="diagnostics_unavailable_in_configuration",
+        )
+        loaded = report.load_report(_report([_case("a", passed=True), not_covered]))
+        self.assertEqual([case.case_id for case in loaded.failed_cases()], [])
+        self.assertTrue(loaded.case("b").not_covered)
+        self.assertFalse(loaded.case("b").passed)
+        self.assertEqual(loaded.case("b").category, report.Category.NOT_COVERED)
+        self.assertFalse(loaded.case("a").not_covered)
 
     def test_loads_the_report_the_runner_actually_writes(self) -> None:
         loaded = report.load_report(json.loads(RUNNER_REPORT_TEXT))
@@ -528,8 +561,34 @@ class ReportLoadingTests(unittest.TestCase):
 
     def test_every_category_value_loads(self) -> None:
         for category in report.Category:
-            loaded = report.load_report(_report([_case("a", passed=False, category=category.value)]))
+            extra: dict[str, Any] = {}
+            if category is report.Category.NOT_COVERED:
+                # The claim travels whole; a category on its own is refused, which its own case covers.
+                extra = {"status": "not_covered", "not_covered_reason": "diagnostics_unavailable_in_configuration"}
+            loaded = report.load_report(_report([_case("a", passed=False, category=category.value, **extra)]))
             self.assertEqual(loaded.case("a").category, category)
+
+    def test_a_not_covered_claim_is_refused_unless_the_whole_claim_agrees(self) -> None:
+        whole = {
+            "status": "not_covered",
+            "category": "not_covered",
+            "not_covered_reason": "diagnostics_unavailable_in_configuration",
+        }
+        report.load_report(_report([_case("a", passed=False, **whole)]))
+        # The category alone is what makes a case non-failing, so on its own it would hide a real failure.
+        for broken in (
+            {**whole, "status": "failed"},
+            {**whole, "category": "product_finding"},
+            {**whole, "not_covered_reason": ""},
+        ):
+            with self.subTest(broken=broken):
+                with self.assertRaises(report.ReportError):
+                    report.load_report(_report([_case("a", passed=False, **broken)]))
+        with self.assertRaises(report.ReportError):
+            report.load_report(_report([_case("a", passed=True, **whole)]))
+        # A finding targets a case only when the run judged it, so it contradicts the claim outright.
+        with self.assertRaises(report.ReportError):
+            report.load_report(_report([_case("a", passed=False, **whole)], findings=[_finding("a", "destination")]))
 
     def test_default_category_is_product_finding_until_runner_emits_categories(self) -> None:
         loaded = report.load_report(_report([_case("b", passed=False)]))
@@ -1250,6 +1309,230 @@ class ProvisionalRecordTests(unittest.TestCase):
         self.assertEqual(manual.origin, "manual")
 
 
+class NonObjectDocumentTests(unittest.TestCase):
+    """A document that is not a JSON object is refused by every loader, never crashed on."""
+
+    # `null` makes a membership test a TypeError and a list makes `.get` an AttributeError, so these are the
+    # shapes that turn a malformed input into an uncaught crash in whatever process was reading it.
+    NON_OBJECTS: tuple[Any, ...] = (None, [], "x", 1, True)
+
+    def _loaders(self) -> tuple[tuple[str, type[Exception], Any], ...]:
+        return (
+            ("report", report.ReportError, report.load_report),
+            ("capability slice", report.ReportError, report.CapabilitySlice.from_dict),
+            ("capabilities manifest", report.ReportError, lambda value: report.capability_slice_for_family(value, "f")),
+            ("comparison envelope", report.ReportError, lambda value: comparator.deserialize_many(json.dumps(value))),
+            ("comparison artifact", report.ReportError, comparator.ComparisonArtifact.from_dict),
+            (
+                "provisional record",
+                provisional.ProvisionalError,
+                lambda value: provisional.ProvisionalRecord.from_dict(value, capabilities=CAPABILITIES),
+            ),
+            ("ledger record", ValueError, ledger.validate_record),
+        )
+
+    def test_every_loader_refuses_a_document_that_is_not_an_object(self) -> None:
+        for name, error_type, load in self._loaders():
+            for value in self.NON_OBJECTS:
+                with self.subTest(loader=name, document=value):
+                    with self.assertRaises(error_type) as refusal:
+                        load(value)
+                    self.assertIn("must be a JSON object", str(refusal.exception))
+
+    def test_a_file_or_block_that_decodes_to_a_non_object_is_refused_too(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for value in self.NON_OBJECTS:
+                with self.subTest(document=value):
+                    encoded = json.dumps(value)
+                    (root / "report.json").write_text(encoded)
+                    with self.assertRaises(report.ReportError):
+                        report.load_report_file(root / "report.json")
+                    (root / "capabilities.json").write_text(encoded)
+                    with self.assertRaises(report.ReportError):
+                        report.load_capabilities_file(root / "capabilities.json")
+                    (root / "fstcf-v1-eeeeeeeeeeeeeeeeeeee.json").write_text(encoded)
+                    with self.assertRaises(ValueError):
+                        ledger.read_record(root / "fstcf-v1-eeeeeeeeeeeeeeeeeeee.json")
+                    body = f"{provisional.BLOCK_START}\n```json\n{encoded}\n```\n{provisional.BLOCK_END}"
+                    with self.assertRaises(provisional.ProvisionalError):
+                        provisional.parse_issue_body(body, capabilities=CAPABILITIES)
+
+    def test_an_artifact_list_that_is_not_a_list_is_refused(self) -> None:
+        not_lists: tuple[Any, ...] = (None, {}, "x", 1)
+        for artifacts in not_lists:
+            with self.subTest(artifacts=artifacts):
+                envelope = {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": artifacts}
+                with self.assertRaises(report.ReportError):
+                    comparator.deserialize_many(json.dumps(envelope))
+
+    def test_a_non_object_artifact_entry_is_refused_rather_than_crashed_on(self) -> None:
+        for entry in NonObjectDocumentTests.NON_OBJECTS:
+            with self.subTest(entry=entry):
+                envelope = {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [entry]}
+                with self.assertRaises(report.ReportError) as refusal:
+                    comparator.deserialize_many(json.dumps(envelope))
+                self.assertIn("must be a JSON object", str(refusal.exception))
+
+
+class SidePresenceAndCoverageTests(unittest.TestCase):
+    """Every combination of what each side of a comparison says about a case, including saying nothing."""
+
+    # One report per side state. "absent" reports no such case at all; "not_covered" reports it as a case the
+    # build made no judgment about; "worse" fails it with a different observation than "failed".
+    def _side_report(self, state: str) -> Any:
+        if state == "absent":
+            return report.load_report(_report([]))
+        if state == "passed":
+            return report.load_report(_report([_case("a", passed=True)]))
+        if state == "failed":
+            return report.load_report(_report([_case("a", passed=False)], findings=[_finding("a", "destination")]))
+        if state == "worse":
+            worse = _case("a", passed=False, runtime_status="crash", runtime_passed=False)
+            return report.load_report(_report([worse], findings=[_finding("a", "destination")]))
+        if state == "not_covered":
+            not_covered = _case(
+                "a",
+                passed=False,
+                status="not_covered",
+                category="not_covered",
+                not_covered_reason="diagnostics_unavailable_in_configuration",
+            )
+            return report.load_report(_report([not_covered]))
+        raise AssertionError(state)
+
+    # branch state, develop state, expected status. Read down the develop column: a case the branch no longer
+    # reports is a regression whatever develop said about it, and a case only the branch reports has nothing
+    # to compare against whatever the branch could observe.
+    TABLE = (
+        ("absent", "passed", comparator.Status.VANISHED),
+        ("absent", "failed", comparator.Status.MISSING),
+        ("absent", "not_covered", comparator.Status.VANISHED),
+        ("passed", "absent", comparator.Status.PASSING),
+        ("passed", "passed", comparator.Status.PASSING),
+        ("passed", "failed", comparator.Status.RESOLVED),
+        ("passed", "not_covered", comparator.Status.PASSING),
+        ("failed", "absent", comparator.Status.NEW),
+        ("failed", "passed", comparator.Status.NEW),
+        ("failed", "failed", comparator.Status.UNCHANGED),
+        ("worse", "failed", comparator.Status.WORSENED),
+        ("failed", "not_covered", comparator.Status.NEW),
+        ("not_covered", "absent", comparator.Status.NEW),
+        ("not_covered", "passed", comparator.Status.NOT_COVERED),
+        ("not_covered", "failed", comparator.Status.NOT_COVERED),
+        ("not_covered", "not_covered", comparator.Status.NOT_COVERED),
+    )
+
+    def test_every_pair_of_side_states_classifies_and_round_trips(self) -> None:
+        for branch_state, develop_state, expected in self.TABLE:
+            with self.subTest(branch=branch_state, develop=develop_state):
+                artifact = comparator.compare_case(
+                    self._side_report(branch_state),
+                    self._side_report(develop_state),
+                    "a",
+                    configuration="text",
+                    capabilities=CAPABILITIES,
+                )
+                self.assertEqual(expected, artifact.status)
+                # The status is re-derived from the sides at load, so a table the classifier disagreed with
+                # would be refused rather than silently accepted.
+                restored = comparator.deserialize_many(comparator.serialize_many([artifact]))[0]
+                self.assertEqual(artifact.to_dict(), restored.to_dict())
+
+    def test_the_table_covers_every_pair_of_side_states(self) -> None:
+        states = {"absent", "passed", "failed", "not_covered"}
+        covered = {(branch, develop) for branch, develop, _ in self.TABLE}
+        # "worse" is a second shape of "failed" on the branch, so it is not a state of its own here.
+        expected = {(branch, develop) for branch in states for develop in states} - {("absent", "absent")}
+        self.assertEqual(expected, covered - {("worse", "failed")})
+        with self.assertRaises(KeyError):
+            comparator.compare_case(
+                self._side_report("absent"),
+                self._side_report("absent"),
+                "a",
+                configuration="text",
+                capabilities=CAPABILITIES,
+            )
+
+    def test_losing_a_case_blocks_whatever_develop_could_judge(self) -> None:
+        # A cell that leaves the matrix is lost coverage, and a develop side that reached no verdict must not
+        # turn that into an ignored comparison: the gate would then accept a branch that dropped the cell.
+        for develop_state in ("passed", "failed", "not_covered"):
+            with self.subTest(develop=develop_state):
+                artifact = comparator.compare_case(
+                    self._side_report("absent"),
+                    self._side_report(develop_state),
+                    "a",
+                    configuration="text",
+                    capabilities=CAPABILITIES,
+                )
+                self.assertIn(artifact.status, comparator.REGRESSION_STATUSES)
+                self.assertNotIn(artifact.status, comparator.NOT_COMPARABLE_STATUSES)
+
+    def test_a_branch_failure_is_never_ignored_because_develop_reached_no_verdict(self) -> None:
+        artifact = comparator.compare_case(
+            self._side_report("failed"),
+            self._side_report("not_covered"),
+            "a",
+            configuration="text",
+            capabilities=CAPABILITIES,
+        )
+        self.assertEqual(comparator.Status.NEW, artifact.status)
+        self.assertIn(artifact.status, comparator.REGRESSION_STATUSES)
+
+
+class SchemaVersionContractTests(unittest.TestCase):
+    """A document whose digests were taken over another formula is refused by name, never by mismatch."""
+
+    def _record_dict(self) -> dict[str, Any]:
+        record: dict[str, Any] = ProvisionalRecordTests()._record().to_dict()
+        return record
+
+    def test_the_producers_write_the_versions_their_loaders_check(self) -> None:
+        artifact = _artifact_with_status(comparator.Status.UNCHANGED)
+        self.assertEqual(comparator.COMPARISON_SCHEMA_VERSION, artifact.to_dict()["schema_version"])
+        envelope = json.loads(comparator.serialize_many([artifact]))
+        self.assertEqual(comparator.COMPARISON_SCHEMA_VERSION, envelope["schema_version"])
+        refusal = json.loads(comparator.serialize_structural_failure(["nothing to compare"]))
+        self.assertEqual(comparator.COMPARISON_SCHEMA_VERSION, refusal["schema_version"])
+        self.assertEqual(provisional.PROVISIONAL_SCHEMA_VERSION, self._record_dict()["schema_version"])
+
+    def test_a_previous_comparison_version_is_refused_by_name(self) -> None:
+        artifact = _artifact_with_status(comparator.Status.NEW).to_dict()
+        for envelope in (
+            {"schema_version": 1, "artifacts": [artifact]},
+            {"schema_version": comparator.COMPARISON_SCHEMA_VERSION + 1, "artifacts": [artifact]},
+            {"artifacts": [artifact]},
+        ):
+            with self.subTest(schema_version=envelope.get("schema_version")):
+                with self.assertRaises(report.ReportError) as refusal:
+                    comparator.deserialize_many(json.dumps(envelope))
+                self.assertIn("is not supported", str(refusal.exception))
+                self.assertIn("Regenerate", str(refusal.exception))
+                self.assertNotIn("digest", str(refusal.exception))
+
+    def test_an_artifact_of_a_previous_version_is_refused_wherever_it_travels(self) -> None:
+        # An artifact embedded in a provisional record never passes through the envelope check, so it
+        # carries its own version rather than inheriting whatever document carried it.
+        stale = dict(_artifact_with_status(comparator.Status.UNCHANGED).to_dict(), schema_version=1)
+        with self.assertRaises(report.ReportError) as refusal:
+            comparator.ComparisonArtifact.from_dict(stale)
+        self.assertIn("is not supported", str(refusal.exception))
+        with self.assertRaises(provisional.ProvisionalError) as embedded_refusal:
+            ProvisionalRecordTests()._record(develop_comparison=stale)
+        self.assertIn("is not supported", str(embedded_refusal.exception))
+
+    def test_a_previous_provisional_version_is_refused_by_name(self) -> None:
+        for version in (1, provisional.PROVISIONAL_SCHEMA_VERSION + 1, "2"):
+            with self.subTest(schema_version=version):
+                stale = dict(self._record_dict(), schema_version=version)
+                with self.assertRaises(provisional.ProvisionalError) as refusal:
+                    provisional.ProvisionalRecord.from_dict(stale, capabilities=CAPABILITIES)
+                self.assertIn("is not supported", str(refusal.exception))
+                self.assertIn("Regenerate", str(refusal.exception))
+                self.assertNotIn("digest", str(refusal.exception))
+
+
 class ReconciliationTests(unittest.TestCase):
     def _provisional(self, **overrides: Any) -> Any:
         payload = ledger.proposed_record(
@@ -1444,6 +1727,13 @@ def _artifact_with_status(status: Any) -> Any:
     failing = _case("a", passed=False)
     worse = _case("a", passed=False, runtime_status="crash", runtime_passed=False)
     passing = _case("a", passed=True)
+    not_covered = _case(
+        "a",
+        passed=False,
+        status="not_covered",
+        category="not_covered",
+        not_covered_reason="diagnostics_unavailable_in_configuration",
+    )
     finding = [_finding("a", "destination")]
     sides: dict[Any, tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]] = {
         comparator.Status.NEW: ([failing], [passing], finding),
@@ -1453,6 +1743,9 @@ def _artifact_with_status(status: Any) -> Any:
         comparator.Status.MISSING: ([], [failing], []),
         comparator.Status.VANISHED: ([], [passing], []),
         comparator.Status.PASSING: ([passing], [passing], []),
+        # A build that made no judgment about the case reports it that way; the other side is irrelevant,
+        # because there is nothing on this one to compare it against.
+        comparator.Status.NOT_COVERED: ([not_covered], [passing], []),
     }
     branch_cases, develop_cases, branch_findings = sides[status]
     branch = report.load_report(_report(branch_cases, findings=branch_findings))
@@ -1472,8 +1765,17 @@ class EveryStatusConsumerTests(unittest.TestCase):
             set(comparator.REGRESSION_STATUSES)
             | set(comparator.NO_LONGER_FAILING_STATUSES)
             | set(comparator.PROPOSABLE_STATUSES)
-            | set(comparator.KNOWN_BASELINE_STATUSES),
+            | set(comparator.KNOWN_BASELINE_STATUSES)
+            | set(comparator.NOT_COMPARABLE_STATUSES),
         )
+        # A status that reports the absence of a comparison is in no partition that concludes something.
+        for partition in (
+            comparator.REGRESSION_STATUSES,
+            comparator.NO_LONGER_FAILING_STATUSES,
+            comparator.PROPOSABLE_STATUSES,
+            comparator.KNOWN_BASELINE_STATUSES,
+        ):
+            self.assertFalse(set(comparator.NOT_COMPARABLE_STATUSES) & set(partition))
         self.assertEqual(
             set(comparator.PROPOSABLE_STATUSES),
             {comparator.Status.NEW, comparator.Status.WORSENED, comparator.Status.UNCHANGED},
@@ -1562,15 +1864,21 @@ class EveryStatusConsumerTests(unittest.TestCase):
         artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
         artifact["branch"] = dict(artifact["branch"], present=False)
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [artifact]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [artifact]})
+            )
         vanished = _artifact_with_status(comparator.Status.VANISHED).to_dict()
         vanished["status"] = "new"
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [vanished]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [vanished]})
+            )
         unknown = _artifact_with_status(comparator.Status.NEW).to_dict()
         unknown["status"] = "sideways"
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [unknown]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [unknown]})
+            )
 
     def test_relabelled_status_is_rejected_for_every_pair(self) -> None:
         for status in comparator.Status:
@@ -1581,27 +1889,60 @@ class EveryStatusConsumerTests(unittest.TestCase):
                 with self.subTest(status=status.value, relabelled=other.value):
                     tampered = dict(artifact, status=other.value)
                     with self.assertRaises(report.ReportError):
-                        comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+                        comparator.deserialize_many(
+                            json.dumps(
+                                {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]}
+                            )
+                        )
+
+    def test_a_side_relabelled_as_not_covered_is_rejected(self) -> None:
+        # A blocking artifact re-tagged as a judgment the build never made would be ignored by the gate,
+        # so the side's own verdict is inside the digest its integrity check recomputes.
+        artifact = _artifact_with_status(comparator.Status.NEW).to_dict()
+        self.assertEqual(comparator.Status.NEW.value, artifact["status"])
+        tampered = dict(artifact, branch=dict(artifact["branch"], category=report.Category.NOT_COVERED.value))
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
+        # Relabelling the status alongside it does not help: the digest no longer matches the side either way.
+        tampered = dict(
+            tampered,
+            status=comparator.Status.NOT_COVERED.value,
+            comparison_id=artifact["comparison_id"],
+        )
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
 
     def test_tampered_side_values_are_rejected(self) -> None:
         artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
         # Claim the branch passes while keeping the 'unchanged' label.
         tampered = dict(artifact, branch=dict(artifact["branch"], passed=True))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
         # Claim a different develop digest while keeping the 'unchanged' label.
         tampered = dict(artifact, develop=dict(artifact["develop"], digest="0" * 64))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
         # A digest that does not match the recorded observation is rejected too.
         tampered = dict(artifact, branch=dict(artifact["branch"], digest="0" * 64))
         with self.assertRaises(report.ReportError):
-            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+            comparator.deserialize_many(
+                json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [tampered]})
+            )
 
     def _reject(self, artifact: dict[str, Any], label: str) -> None:
         with self.subTest(edit=label):
             with self.assertRaises(report.ReportError):
-                comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [artifact]}))
+                comparator.deserialize_many(
+                    json.dumps({"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [artifact]})
+                )
 
     def test_every_identity_field_is_bound(self) -> None:
         base = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()

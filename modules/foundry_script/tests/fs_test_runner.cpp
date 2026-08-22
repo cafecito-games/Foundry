@@ -907,7 +907,6 @@ String FSTest::get_text_for_status(FSTest::TestStatus p_status) const {
 	return "";
 }
 
-#ifdef TOOLS_ENABLED
 // Resolves the external references a fixture's serialized bytecode names symbolically. Only the
 // top-level fixture script goes through the byte round-trip; its dependencies (preloads, external
 // bases, cross-file class references) resolve through the normal FSCache text-compilation path.
@@ -963,7 +962,6 @@ static Error load_fixture_from_bytecode(const Vector<uint8_t> &p_buffer, const S
 	r_restored = restored;
 	return OK;
 }
-#endif // TOOLS_ENABLED
 
 FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	disable_stdout();
@@ -1068,7 +1066,6 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		return result;
 	}
 
-#ifdef TOOLS_ENABLED
 	// Fixtures that failed to parse, analyze, or compile returned above and never reach
 	// serialization, so error fixtures take the unchanged text path in this mode too.
 	Vector<uint8_t> bytecode_buffer;
@@ -1087,11 +1084,9 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		}
 		disable_stdout();
 	}
-#endif // TOOLS_ENABLED
 
 	// `*.norun.fs` files are allowed to not contain a `test()` function (no runtime testing).
 	if (source_file.ends_with(".norun.fs")) {
-#ifdef TOOLS_ENABLED
 		if (use_compiled_bytecode) {
 			// Nothing runs here, but the fixture must still survive deserialization and linking.
 			// Output handlers are not installed, matching the text path, which never reload()s
@@ -1105,7 +1100,6 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 				ERR_FAIL_V_MSG(result, "\nCould not load compiled bytecode for: '" + source_file + "'");
 			}
 		}
-#endif // TOOLS_ENABLED
 		enable_stdout();
 		result.status = FS_TEST_OK;
 		result.output = get_text_for_status(result.status) + "\n" + result.output;
@@ -1133,7 +1127,6 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	add_print_handler(&_print_handler);
 	add_error_handler(&_error_handler);
 
-#ifdef TOOLS_ENABLED
 	// Keeps the directly compiled script alive while the restored script runs: destroying it would
 	// clear path-keyed global registrations (e.g. conformance witnesses) that the restored script
 	// has just re-registered under the same fixture path.
@@ -1157,9 +1150,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		}
 		directly_compiled_script = script;
 		script = restored;
-	} else
-#endif // TOOLS_ENABLED
-	{
+	} else {
 		err = script->reload();
 		if (err) {
 			enable_stdout();

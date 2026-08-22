@@ -129,6 +129,17 @@ class StatusDispositionTests(unittest.TestCase):
         }
         self.assertEqual(known, set(comparator.KNOWN_BASELINE_STATUSES))
 
+    def test_the_ignored_statuses_conclude_nothing_against_the_branch(self) -> None:
+        # A status is ignored only because the branch has nothing to answer for: it no longer fails, or
+        # neither side reached a verdict to compare. Pinning the set to those partitions keeps a status
+        # from being made harmless one entry at a time.
+        ignored = {
+            status
+            for status, disposition in presubmit.STATUS_DISPOSITION.items()
+            if disposition is presubmit.Disposition.IGNORED
+        }
+        self.assertEqual(ignored, set(comparator.NO_LONGER_FAILING_STATUSES) | set(comparator.NOT_COMPARABLE_STATUSES))
+
     def test_an_unlisted_status_is_refused_rather_than_ignored(self) -> None:
         with self.assertRaises(presubmit.PresubmitError):
             presubmit.disposition_of("not_a_status")  # type: ignore[arg-type]
@@ -590,6 +601,29 @@ class GateTests(GateTestCase):
         published = json.loads((self.reports / f"{FAMILY}.json").read_text(encoding="utf-8"))
         self.assertFalse(published["cases"][0]["passed"])
         self.assertFalse(published["success"])
+
+
+class MalformedProvisionalInputTests(GateTestCase):
+    """An input the run did not write is a verdict about that input, never a terminated gate."""
+
+    def test_a_provisional_record_that_is_not_an_object_is_a_malformed_verdict(self) -> None:
+        for document in ("null", "[]", '"x"', "1"):
+            with self.subTest(document=document):
+                provisional_dir = Path(self._make_temporary_directory())
+                (provisional_dir / "fstcf-v1-eeeeeeeeeeeeeeeeeeee.json").write_text(document, encoding="utf-8")
+                self.write_report(failed_report())
+                baseline = Path(self._make_temporary_directory())
+                self.write_report(runner_report(), directory=baseline)
+                code, verdict, _ = self.run_gate(
+                    baseline_dir=baseline,
+                    extra_arguments=["--provisional-dir", str(provisional_dir)],
+                    output_dir=Path(self._make_temporary_directory()),
+                )
+                self.assertEqual("malformed_input", verdict["state"])
+                self.assertEqual(2, code)
+                self.assertTrue(
+                    any("must be a JSON object" in reason for reason in verdict["reasons"]), verdict["reasons"]
+                )
 
 
 class IntegrityTests(GateTestCase):

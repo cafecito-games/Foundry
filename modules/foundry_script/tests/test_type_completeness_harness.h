@@ -575,7 +575,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 						"coverage_by_chain_length", "coverage_by_dimension", "exceptions",
 						"executed_by_surface", "family", "findings", "ledger", "outcome", "published_surface",
 						"schema_version", "structural_failures", "success", "text_bytecode_parity_failures",
-						"timings_ms", "uncovered_required_dimensions" }));
+						"timings_ms", "unconfirmed_census_witnesses", "uncovered_required_dimensions" }));
 		for (int index = 0; index < published_failures.size(); index++) {
 			CAPTURE(index);
 			const Dictionary record = published_failures[index];

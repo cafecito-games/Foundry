@@ -32,6 +32,14 @@
 
 #include "core/typedefs.h"
 
+// A `.fsb` is written from artifacts only the Foundry Script front-end produces, so the writer exists
+// exactly where that front-end does. An export template built without the front-end carries the reader
+// alone, while every build that can compile source - the editor, and a test-enabled template, whose
+// test runner requires the front-end - can also serialize what it compiled.
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+#define FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
+#endif
+
 // Constants shared by the `.fsb` compiled-bytecode writer (`FSBytecodeExporter`) and reader
 // (`FSBytecodeLoader`). A `.fsb` ships the serialized compiled `FoundryScript` object graph, so an
 // exported game never tokenizes, parses, analyzes, or compiles source. Original source structure,

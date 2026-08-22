@@ -114,7 +114,7 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 
 	HashMap<Variant, int, HashMapHasherDefault, FSConstantPoolComparator> constant_map;
 	RBMap<StringName, int> name_map;
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	Vector<StringName> named_globals;
 #endif
 	RBMap<Variant::ValidatedOperatorEvaluator, int> operator_func_map;
@@ -132,7 +132,7 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 	RBMap<FSFunction *, int> lambdas_map;
 	Vector<StringName> builtin_method_names;
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 	FSFunction::ExportFixups export_fixups;
 
 	// The pointer maps dedupe by function pointer, so the descriptor is appended only when the

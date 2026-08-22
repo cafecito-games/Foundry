@@ -1147,9 +1147,16 @@ static String diagnostic_severity_profile(const FSCompletenessObservation &p_obs
 	return has_warning ? "warning" : "none";
 }
 
-static bool observed_expected_dimensions(
-		const FSCompletenessResolvedCell &p_cell, const FSCompletenessRuntimeResult &p_actual) {
+// The one dimension whose expected value can be an analyzer warning. A build whose analyzer emits none
+// observes "no warning" for it whatever the product does, so that observation decides nothing.
+static const char *DIAGNOSTIC_SEVERITY_DIMENSION = "diagnostic_severity";
+
+static bool observed_expected_dimensions(const FSCompletenessResolvedCell &p_cell,
+		const FSCompletenessRuntimeResult &p_actual, bool p_skip_diagnostic_severity) {
 	for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : p_cell.dimensions) {
+		if (p_skip_diagnostic_severity && dimension.key == DIAGNOSTIC_SEVERITY_DIMENSION) {
+			continue;
+		}
 		if (p_actual.dimensions.get(dimension.key, Variant()) != dimension.value.expected) {
 			return false;
 		}
@@ -1537,9 +1544,29 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return witness_identity_error;
 	}
 
+	// What this build could observe at all decides which cells it may judge, and it is read from the
+	// configuration the report carries rather than from a macro at each site, so a document and the run
+	// that produced it can never disagree about which cells were in scope.
+	const Dictionary configuration = FSCompletenessRunner::configuration_report();
+	const bool analyzer_warnings = bool(configuration.get("analyzer_warnings", true));
+	HashSet<String> diagnostics_unobservable_case_ids;
+	if (!analyzer_warnings) {
+		for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
+			if (FSCompletenessRunner::expectation_requires_analyzer_warnings(
+						expected_dimensions(*selected_cell))) {
+				diagnostics_unobservable_case_ids.insert(selected_cell->case_id);
+			}
+		}
+	}
+
 	Vector<FSCompletenessFinding> findings;
 	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
 		const FSCompletenessResolvedCell &cell = *selected_cell;
+		// Only the expectation this build cannot observe is exempt. Everything else the cell declares -
+		// its output, its runtime status, its analyzer verdict and every other dimension - is observed
+		// here exactly as it is anywhere, so a regression in a cell that also expects a warning is
+		// reported by the build that cannot see the warning.
+		const bool diagnostics_unobservable = diagnostics_unobservable_case_ids.has(cell.case_id);
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
 		const FSCompletenessProgram *program = program_index.find(cell.case_id);
 		if (actual == nullptr || program == nullptr) {
@@ -1571,6 +1598,9 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			}
 		}
 		for (const String &dimension_name : sorted_dimension_keys(cell.dimensions)) {
+			if (diagnostics_unobservable && dimension_name == DIAGNOSTIC_SEVERITY_DIMENSION) {
+				continue;
+			}
 			const FSCompletenessResolvedDimension &dimension = cell.dimensions[dimension_name];
 			const Variant observed = actual->dimensions.get(dimension_name, Variant());
 			if (observed == dimension.expected) {
@@ -1712,6 +1742,12 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 				!compared_case_ids.has(entry.value.case_id)) {
 			continue;
 		}
+		// An entry classifying the one dimension this build could not observe is beyond its reach: the
+		// run gathered nothing that could reproduce it or contradict it.
+		if (entry.value.dimension == DIAGNOSTIC_SEVERITY_DIMENSION &&
+				diagnostics_unobservable_case_ids.has(entry.value.case_id)) {
+			continue;
+		}
 		reconcilable_ledger.insert(entry.key, entry.value);
 	}
 	ledger = reconcilable_ledger;
@@ -1806,6 +1842,25 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			}
 		}
 	}
+	// A cell that failed on evidence this build did gather is a failure; a cell that survived everything
+	// observable and left an expectation unobserved is the one this build could not judge. Deciding it
+	// here means the case records, the exception records and the run result cannot disagree about it.
+	HashSet<String> not_covered_case_ids;
+	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
+		if (!diagnostics_unobservable_case_ids.has(selected_cell->case_id) ||
+				blocking_finding_ids_by_case.getptr(selected_cell->case_id) != nullptr) {
+			continue;
+		}
+		not_covered_case_ids.insert(selected_cell->case_id);
+		r_result.not_covered_case_ids.push_back(selected_cell->case_id);
+	}
+	r_result.not_covered_case_ids.sort();
+	if (!r_result.not_covered_case_ids.is_empty()) {
+		WARN_PRINT(vformat("Family '%s' left %d of %d selected cells uncovered in this build: %s.",
+				p_options.family, r_result.not_covered_case_ids.size(), selected_cells.size(),
+				FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+	}
+
 	HashMap<String, Dictionary> exception_reports;
 	Vector<String> exception_ids;
 	HashMap<String, int> declared_witness_count;
@@ -1829,17 +1884,29 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			return ERR_INVALID_DATA;
 		}
 		const Array *blocking = blocking_finding_ids_by_case.getptr(binding.cell->case_id);
+		const bool witness_not_covered = not_covered_case_ids.has(binding.cell->case_id);
 		Dictionary witness_report;
 		witness_report["witness_id"] = binding.witness_id;
 		witness_report["case_id"] = binding.cell->case_id;
-		witness_report["witnessed"] = blocking == nullptr;
+		witness_report["witnessed"] = blocking == nullptr && !witness_not_covered;
 		witness_report["blocking_finding_ids"] = blocking == nullptr ? Array() : *blocking;
+		if (witness_not_covered) {
+			witness_report["not_covered_reason"] =
+					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+		}
 		executed_witness_count[binding.exception_id]++;
 		Array witnesses = (*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"];
 		witnesses.push_back(witness_report);
 		(*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"] = witnesses;
 		if (blocking != nullptr) {
 			(*exception_report)["witnessed"] = false;
+		}
+		// An exception whose witness this build could not judge is not witnessed here and is not
+		// unwitnessed either: it says what it stands on rather than claiming a verdict.
+		if (witness_not_covered) {
+			(*exception_report)["witnessed"] = false;
+			(*exception_report)["not_covered_reason"] =
+					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
 		}
 	}
 	// An exception is witnessed only when every witness it declares was observed. A run narrowed to
@@ -1899,14 +1966,22 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
+		const bool not_covered = not_covered_case_ids.has(cell->case_id);
 		bool passed = actual->passed && actual->status == "ok" && actual->diagnostics.is_empty() &&
 				actual->produced_output == program->expected_output &&
-				observed_expected_dimensions(*cell, *actual) && !parity_case_ids.has(cell->case_id);
+				observed_expected_dimensions(
+						*cell, *actual, diagnostics_unobservable_case_ids.has(cell->case_id)) &&
+				!parity_case_ids.has(cell->case_id);
 		for (const FSCompletenessFinding &finding : findings) {
 			if (finding.case_id == cell->case_id) {
 				passed = false;
 				break;
 			}
+		}
+		// A cell this build could not judge is neither passed nor failed: publishing it as a pass would
+		// claim evidence nothing gathered.
+		if (not_covered) {
+			passed = false;
 		}
 		Dictionary case_report;
 		case_report["case_id"] = cell->case_id;
@@ -1915,8 +1990,15 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		case_report["actual"] = observed_dimensions(*cell, *actual);
 		case_report["canonical_provenance"] = canonical_provenance(*cell);
 		case_report["agreeing_provenance"] = all_agreeing_provenance(*cell);
-		case_report["status"] = passed ? "passed" : "failed";
+		case_report["status"] = not_covered ? "not_covered" : (passed ? "passed" : "failed");
 		case_report["passed"] = passed;
+		// The category and the reason are written only where they apply: a build that judged every cell
+		// publishes exactly the document it published before this distinction existed.
+		if (not_covered) {
+			case_report["category"] = "not_covered";
+			case_report["not_covered_reason"] =
+					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+		}
 		case_report["runtime_passed"] = actual->passed;
 		case_report["runtime_status"] = actual->status;
 		Array diagnostics;
@@ -1952,6 +2034,14 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 					FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED,
 					vformat("A census claim has no witness that resolves: %s", unresolved),
 					String(), String(), String(), ERR_INVALID_DATA));
+		}
+		// A witness the running configuration never compiled is neither bound nor broken. Reporting it
+		// as a refusal would make the verdict depend on the build rather than on the catalog, and
+		// dropping it silently would let a configuration publish a coverage claim it never confirmed.
+		r_result.unconfirmed_census_witnesses =
+				FSCompletenessCensus::unconfirmable_witnesses(p_options.catalog_root, census_summary);
+		for (const String &unconfirmed : r_result.unconfirmed_census_witnesses) {
+			WARN_PRINT(vformat("Type-completeness census claim unconfirmed in this build: %s", unconfirmed));
 		}
 	}
 	sort_structural_failures(structural_failures);
@@ -1992,6 +2082,15 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["published_surface"] = p_options.published_surface;
 	report["census"] = FSCompletenessCensus::summary_report(census_summary);
 	report["configuration"] = FSCompletenessRunner::configuration_report();
+	// How much of the census this build could confirm belongs in the document rather than in the
+	// console of the run that produced it: an artifact is all a consumer of another machine's run ever
+	// reads. It describes the build rather than the product, so it is not evidence and never reaches a
+	// comparison.
+	Array unconfirmed_census_witnesses;
+	for (const String &unconfirmed : r_result.unconfirmed_census_witnesses) {
+		unconfirmed_census_witnesses.push_back(unconfirmed);
+	}
+	report["unconfirmed_census_witnesses"] = unconfirmed_census_witnesses;
 	// The last thing decided before a document is published is whether it carries evidence at all. A
 	// document that claims a matrix and observes nothing for it is a defect in whatever produced it,
 	// and every path that assembles one arrives here, so none of them can publish a clean verdict.
@@ -2058,6 +2157,10 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	}
 
 	FSCompletenessRunResult completed;
+	// What the run could not judge was decided long before the verdict was, so it is carried across
+	// rather than dropped by the wholesale assignment below.
+	completed.not_covered_case_ids = r_result.not_covered_case_ids;
+	completed.unconfirmed_census_witnesses = r_result.unconfirmed_census_witnesses;
 	completed.success = success;
 	completed.executed_cells = selected_cells.size();
 	completed.compared_surface_pairs = compared_surface_pairs;
@@ -2212,11 +2315,162 @@ Dictionary FSCompletenessRunner::configuration_report() {
 		adapters.push_back(adapter_id);
 	}
 	configuration["adapters"] = adapters;
+	// Whether this binary's analyzer produces warnings at all. It is a different question from
+	// `tools_enabled`: warnings are a debugging surface of the front-end (see the guards around
+	// `FSParser::push_warning`), so a debug export template emits them and a release one does not,
+	// whatever either build does about the editor. A build that compiles this harness always has the
+	// front-end, so the debugging half of that condition is the whole of it here.
+#ifdef DEBUG_ENABLED
+	configuration["analyzer_warnings"] = true;
+#else
+	configuration["analyzer_warnings"] = false;
+#endif
 	return configuration;
 }
 
+bool FSCompletenessRunner::expectation_requires_analyzer_warnings(const Dictionary &p_expected_dimensions) {
+	return String(p_expected_dimensions.get("diagnostic_severity", String())) == "warning";
+}
+
+namespace {
+
+// Warning evidence is dropped rather than rewritten: a record that is not there and a record that
+// could not be produced are the same observation to a build that produces none.
+Variant without_warning_diagnostics(const Variant &p_value) {
+	if (p_value.get_type() == Variant::DICTIONARY) {
+		const Dictionary source = p_value;
+		Dictionary observable;
+		for (const String &key : Completeness::sorted_dictionary_keys(source)) {
+			if (key == "diagnostic_severity" && String(source[key]) == "warning") {
+				observable[key] = "none";
+				continue;
+			}
+			if (key != "diagnostic_records" || source[key].get_type() != Variant::ARRAY) {
+				observable[key] = without_warning_diagnostics(source[key]);
+				continue;
+			}
+			const Array records = source[key];
+			Array kept;
+			for (int index = 0; index < records.size(); index++) {
+				const Variant &record = records[index];
+				if (record.get_type() == Variant::DICTIONARY &&
+						String(Dictionary(record).get("severity", String())) == "warning") {
+					continue;
+				}
+				kept.push_back(without_warning_diagnostics(record));
+			}
+			observable[key] = kept;
+		}
+		return observable;
+	}
+	if (p_value.get_type() == Variant::ARRAY) {
+		const Array source = p_value;
+		Array observable;
+		for (int index = 0; index < source.size(); index++) {
+			observable.push_back(without_warning_diagnostics(source[index]));
+		}
+		return observable;
+	}
+	return p_value;
+}
+
+// Case ids p_document publishes whose expectations only an analyzer that warns could observe. Read
+// off the document rather than off the run, so the produced report and a document captured on
+// another build drop exactly the same cells.
+HashSet<String> cases_requiring_analyzer_warnings(const Dictionary &p_document) {
+	HashSet<String> case_ids;
+	const Variant &cases = p_document.get("cases", Variant());
+	if (cases.get_type() != Variant::ARRAY) {
+		return case_ids;
+	}
+	const Array case_records = cases;
+	for (int index = 0; index < case_records.size(); index++) {
+		if (case_records[index].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Dictionary case_record = case_records[index];
+		const Variant &expected = case_record.get("expected", Variant());
+		if (expected.get_type() != Variant::DICTIONARY ||
+				!FSCompletenessRunner::expectation_requires_analyzer_warnings(expected)) {
+			continue;
+		}
+		case_ids.insert(case_record.get("case_id", String()));
+	}
+	return case_ids;
+}
+
+bool exception_witnesses_any(const Dictionary &p_exception, const HashSet<String> &p_case_ids) {
+	for (const char *member : { "positive_witnesses", "boundary_witnesses" }) {
+		const Variant &witnesses = p_exception.get(member, Variant());
+		if (witnesses.get_type() != Variant::ARRAY) {
+			continue;
+		}
+		const Array witness_records = witnesses;
+		for (int index = 0; index < witness_records.size(); index++) {
+			if (witness_records[index].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			if (p_case_ids.has(String(Dictionary(witness_records[index]).get("case_id", String())))) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+} // namespace
+
+Variant FSCompletenessRunner::evidence_observable_in_configuration(
+		const Variant &p_document, const Dictionary &p_configuration) {
+	if (bool(p_configuration.get("analyzer_warnings", true))) {
+		return p_document;
+	}
+	if (p_document.get_type() != Variant::DICTIONARY) {
+		return without_warning_diagnostics(p_document);
+	}
+	const Dictionary document = p_document;
+	const HashSet<String> dropped_case_ids = cases_requiring_analyzer_warnings(document);
+	Dictionary comparable;
+	for (const String &key : Completeness::sorted_dictionary_keys(document)) {
+		if (key == "cases" && document[key].get_type() == Variant::ARRAY) {
+			const Array case_records = document[key];
+			Array kept;
+			for (int index = 0; index < case_records.size(); index++) {
+				const Variant &case_record = case_records[index];
+				if (case_record.get_type() == Variant::DICTIONARY &&
+						dropped_case_ids.has(String(Dictionary(case_record).get("case_id", String())))) {
+					continue;
+				}
+				kept.push_back(case_record);
+			}
+			comparable[key] = kept;
+			continue;
+		}
+		// An exception a dropped cell witnesses is decided by evidence this build cannot gather, so it
+		// travels with its witnesses instead of being reported as an exception nothing observed.
+		if (key == "exceptions" && document[key].get_type() == Variant::ARRAY) {
+			const Array exception_records = document[key];
+			Array kept;
+			for (int index = 0; index < exception_records.size(); index++) {
+				const Variant &exception_record = exception_records[index];
+				if (exception_record.get_type() == Variant::DICTIONARY &&
+						exception_witnesses_any(exception_record, dropped_case_ids)) {
+					continue;
+				}
+				kept.push_back(exception_record);
+			}
+			comparable[key] = kept;
+			continue;
+		}
+		comparable[key] = document[key];
+	}
+	// Warning evidence is dropped from whatever survived, wherever it sits: a document narrowed to the
+	// cells both builds carry still records warnings only one of them could have produced.
+	return without_warning_diagnostics(comparable);
+}
+
 Vector<String> FSCompletenessRunner::non_evidence_report_members() {
-	return Vector<String>({ "timings_ms", "configuration" });
+	return Vector<String>({ "timings_ms", "configuration", "unconfirmed_census_witnesses" });
 }
 
 Error FSCompletenessRunner::publish_owned_document(const String &p_scratch_root,

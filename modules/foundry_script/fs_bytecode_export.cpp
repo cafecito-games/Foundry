@@ -40,7 +40,7 @@
 #include "core/templates/hash_set.h"
 #include "core/version.h"
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 
 uint32_t FSBytecodeExporter::StringTable::insert(const String &p_string) {
 	HashMap<String, uint32_t>::ConstIterator existing = indices.find(p_string);
@@ -1249,4 +1249,4 @@ Error FSBytecodeExporter::_write_witness_section(StreamPeerBuffer *r_stream, con
 	return OK;
 }
 
-#endif // TOOLS_ENABLED
+#endif // FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED

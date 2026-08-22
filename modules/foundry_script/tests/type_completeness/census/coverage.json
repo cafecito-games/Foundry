@@ -9,7 +9,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip"
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip",
+				"build_configuration": "editor"
 			}
 		},
 		{
@@ -26,7 +27,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
+				"build_configuration": "editor"
 			}
 		},
 		{
@@ -57,7 +59,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants"
+				"reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants",
+				"build_configuration": "editor"
 			}
 		},
 		{
@@ -158,7 +161,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
+				"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
+				"build_configuration": "editor"
 			}
 		},
 		{
@@ -175,7 +179,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
+				"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
+				"build_configuration": "editor"
 			}
 		},
 		{
@@ -520,7 +525,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
+				"build_configuration": "editor"
 			}
 		},
 		{
@@ -558,7 +564,8 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
+				"build_configuration": "editor"
 			}
 		},
 		{

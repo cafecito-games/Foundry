@@ -115,6 +115,8 @@ STATUS_DISPOSITION: dict[comparator.Status, Disposition] = {
     comparator.Status.UNCHANGED: Disposition.KNOWN,
     comparator.Status.RESOLVED: Disposition.IGNORED,
     comparator.Status.PASSING: Disposition.IGNORED,
+    # Neither side judged the case, so the gate has nothing to block on and nothing to propose.
+    comparator.Status.NOT_COVERED: Disposition.IGNORED,
 }
 
 
@@ -257,7 +259,9 @@ def load_presubmit_budget(budgets_path: Path) -> int:
         data = json.loads(budgets_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise PresubmitError(f"cannot read budgets document {budgets_path}: {error}") from error
-    value = data.get("presubmit_hard_timeout_seconds") if isinstance(data, Mapping) else None
+    value = report.require_object(data, f"budgets document {budgets_path}", PresubmitError).get(
+        "presubmit_hard_timeout_seconds"
+    )
     if not report.is_integral_number(value) or not isinstance(value, (int, float)) or int(value) <= 0:
         raise PresubmitError(f"budgets document {budgets_path} has no positive 'presubmit_hard_timeout_seconds'")
     return int(value)
@@ -566,7 +570,10 @@ def run_gate(arguments: argparse.Namespace) -> int:
             gate.record(Verdict.SELECTOR_VALIDATION_FAILED, error_text)
     elif not selection.families:
         gate.record(Verdict.NOTHING_SELECTED, "no changed path maps to a type-completeness family")
-        write_json(gate.output_dir / "comparison.json", {"schema_version": 1, "artifacts": []})
+        write_json(
+            gate.output_dir / "comparison.json",
+            {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": []},
+        )
         return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
 
     artifacts: list[comparator.ComparisonArtifact] = []
@@ -621,7 +628,12 @@ def run_gate(arguments: argparse.Namespace) -> int:
         )
         try:
             evaluation = gate.evaluate(artifacts, selection.families)
-        except PresubmitError as error:
+        # Evaluation reads the tracked ledger and the provisional records the tracking issues carry, and
+        # every one of those is an input this run did not write. A malformed one is a verdict about the
+        # input, not a reason for the gate to terminate without publishing anything. `ValueError` is the
+        # base of both loaders' refusals - `ProvisionalError`, `ReportError` - and is what the ledger
+        # raises directly.
+        except (PresubmitError, ValueError) as error:
             gate.record(Verdict.MALFORMED_INPUT, str(error))
 
     return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)

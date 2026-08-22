@@ -15,10 +15,14 @@ from .report import (
     ReportError,
     capability_slice_for_family,
     load_capabilities_file,
+    require_object,
     schema_version_matches,
 )
 
-PROVISIONAL_SCHEMA_VERSION = 1
+# A provisional record embeds the develop comparison it stands on, so it inherits that document's digest
+# contract: a record written under an older comparison formula cannot be validated by this tooling. Version 2
+# is the first that embeds a version-2 comparison. Bump it whenever the embedded contract changes.
+PROVISIONAL_SCHEMA_VERSION = 2
 ORIGINS = ("automation", "manual")
 BLOCK_START = "<!-- type-completeness-provisional-record -->"
 BLOCK_END = "<!-- /type-completeness-provisional-record -->"
@@ -153,9 +157,21 @@ class ProvisionalRecord:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any], capabilities: Optional[Mapping[str, Any]] = None) -> ProvisionalRecord:
+        # A record that is not an object has no members at all, so this precedes every lookup below,
+        # including the version's: reading first would make a `null` record a TypeError that terminates
+        # whatever was reading it rather than the refusal a malformed record is owed.
+        data = require_object(data, "provisional record", ProvisionalError)
+        # Checked before anything else is read out of the record, and outside the malformed-record wrapper
+        # below, so a record of another version is refused by name rather than by the digest mismatch its
+        # embedded comparison would raise: a stale record is stale, not tampered with.
+        if "schema_version" not in data:
+            raise ProvisionalError("malformed provisional record: 'schema_version'")
+        if not schema_version_matches(data["schema_version"], PROVISIONAL_SCHEMA_VERSION):
+            raise ProvisionalError(
+                f"provisional schema_version {data['schema_version']!r} is not supported; expected "
+                f"{PROVISIONAL_SCHEMA_VERSION}. Regenerate the record with this version of the tooling."
+            )
         try:
-            if not schema_version_matches(data["schema_version"], PROVISIONAL_SCHEMA_VERSION):
-                raise ProvisionalError("unsupported provisional schema_version")
             record = cls.create(
                 finding_id=str(data["finding_id"]),
                 payload=data["payload"],

@@ -41,7 +41,7 @@
 #include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
 
-#ifdef TOOLS_ENABLED
+#ifdef FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED
 
 class FSDataType;
 class FSFunction;
@@ -141,4 +141,4 @@ private:
 	Error _write_witness_section(StreamPeerBuffer *r_stream, const FoundryScript *p_script);
 };
 
-#endif // TOOLS_ENABLED
+#endif // FOUNDRY_SCRIPT_BYTECODE_EXPORT_ENABLED

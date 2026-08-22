@@ -3055,10 +3055,19 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE_MESSAGE(parse_type_completeness_json(source, String(), expected, errors) == OK,
 				String(" | ").join(errors));
 
-		const String produced_document =
-				JSON::stringify(union_pilot_scratch_independent_evidence(baseline->report), "  ");
-		const String expected_document =
-				JSON::stringify(union_pilot_scratch_independent_evidence(expected), "  ");
+		// The tracked document was captured on a build whose analyzer warns. Both sides are narrowed to
+		// what this build could have observed, which is the identity on a build that warns, so the
+		// comparison stays byte-identity there and compares observations rather than configurations
+		// everywhere else.
+		const Dictionary configuration = Dictionary(baseline->report).get("configuration", Dictionary());
+		const String produced_document = JSON::stringify(
+				union_pilot_scratch_independent_evidence(FSCompletenessRunner::
+								evidence_observable_in_configuration(baseline->report, configuration)),
+				"  ");
+		const String expected_document = JSON::stringify(
+				union_pilot_scratch_independent_evidence(
+						FSCompletenessRunner::evidence_observable_in_configuration(expected, configuration)),
+				"  ");
 		CHECK_EQ(produced_document, expected_document);
 	}
 

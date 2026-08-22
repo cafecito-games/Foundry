@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from .report import schema_version_matches
+from .report import require_object, schema_version_matches
 
 LEDGER_SCHEMA_VERSION = 1
 LEDGER_FIELDS = (
@@ -107,6 +107,7 @@ def validate_record(record: dict[str, Any]) -> None:
     The runner additionally verifies that each permanent test path is a tracked file and that the case ID is
     live or migrated; those checks need a repository checkout and stay with the runner.
     """
+    record = require_object(record, "ledger record", ValueError)
     if set(record) != set(LEDGER_FIELDS):
         raise ValueError(f"ledger record must have exactly {sorted(LEDGER_FIELDS)}; got {sorted(record)}")
     version = record["schema_version"]
@@ -140,9 +141,7 @@ def write_record(directory: Path, record: dict[str, Any]) -> Path:
 
 
 def read_record(path: Path) -> dict[str, Any]:
-    record = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(record, dict):
-        raise ValueError(f"{path} must contain a JSON object")
+    record = require_object(json.loads(path.read_text(encoding="utf-8")), f"ledger record {path}", ValueError)
     validate_record(record)
     if path.stem != record["finding_id"]:
         raise ValueError(f"{path} basename does not match finding_id {record['finding_id']!r}")

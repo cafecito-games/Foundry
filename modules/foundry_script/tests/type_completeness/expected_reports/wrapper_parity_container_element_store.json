@@ -27636,6 +27636,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip"
         }
@@ -27649,6 +27650,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27662,6 +27664,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
         }
@@ -27675,6 +27678,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27688,6 +27692,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27701,6 +27706,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27714,6 +27720,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants"
         }
@@ -27727,6 +27734,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27740,6 +27748,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27753,6 +27762,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27766,6 +27776,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27779,6 +27790,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27792,6 +27804,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27805,6 +27818,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27818,6 +27832,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27831,6 +27846,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27844,6 +27860,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27857,6 +27874,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27870,6 +27888,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27883,6 +27902,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27896,6 +27916,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
         }
@@ -27909,6 +27930,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27922,6 +27944,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
         }
@@ -27935,6 +27958,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs"
         }
@@ -27948,6 +27972,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into container element types"
         }
@@ -27961,6 +27986,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27974,6 +28000,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -27987,6 +28014,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28000,6 +28028,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs"
         }
@@ -28013,6 +28042,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28026,6 +28056,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28039,6 +28070,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/analyzer/features/type_self_enum_payload_field_nested_self_union_alternatives.fs"
         }
@@ -28052,6 +28084,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28065,6 +28098,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28078,6 +28112,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
         }
@@ -28091,6 +28126,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28104,6 +28140,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28117,6 +28154,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28130,6 +28168,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_rest_parameter_concrete.fs"
         }
@@ -28143,6 +28182,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28156,6 +28196,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28169,6 +28210,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28182,6 +28224,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
         }
@@ -28195,6 +28238,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28208,6 +28252,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28221,6 +28266,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28234,6 +28280,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into type arguments"
         }
@@ -28247,6 +28294,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28260,6 +28308,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28273,6 +28322,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28286,6 +28336,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/analyzer/features/generic_class_bounds.fs"
         }
@@ -28299,6 +28350,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28312,6 +28364,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28330,6 +28383,7 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
+          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -28343,6 +28397,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source"
         }
@@ -28356,6 +28411,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info"
         }
@@ -28374,6 +28430,7 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
+          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -28387,6 +28444,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary"
         }
@@ -28400,6 +28458,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28413,6 +28472,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28426,6 +28486,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28439,6 +28500,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28452,6 +28514,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28465,6 +28528,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
         }
@@ -28478,6 +28542,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28491,6 +28556,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28504,6 +28570,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28517,6 +28584,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28530,6 +28598,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
         }
@@ -28543,6 +28612,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28556,6 +28626,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28569,6 +28640,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28582,6 +28654,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28595,6 +28668,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28608,6 +28682,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28626,6 +28701,7 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
+          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -28644,6 +28720,7 @@
             "surface": "bytecode"
           },
           "family": "union_destination_membership",
+          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -28662,6 +28739,7 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
+          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -28675,6 +28753,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28688,6 +28767,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -28701,6 +28781,7 @@
         "witness": {
           "coordinates": {},
           "family": "",
+          "build_configuration": "",
           "kind": "",
           "reference": ""
         }

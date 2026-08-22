@@ -12,13 +12,19 @@ from .report import (
     OBSERVATION_FIELDS,
     CapabilitySlice,
     CaseResult,
+    Category,
     Report,
     ReportError,
     capability_slice_for_family,
+    require_object,
     schema_version_matches,
 )
 
-COMPARISON_SCHEMA_VERSION = 1
+# The digest formula is part of this document's contract: a consumer re-derives every digest and every status
+# from what the document carries, so a comparison written under an older formula is unreadable rather than
+# merely older. Version 2 covers each side's own verdict (`passed`, `category`) alongside its evidence. Bump it
+# with any change to what a digest is taken over, and let a document of an older version be refused by name.
+COMPARISON_SCHEMA_VERSION = 2
 
 
 class Status(str, enum.Enum):
@@ -29,6 +35,10 @@ class Status(str, enum.Enum):
     MISSING = "missing"
     VANISHED = "vanished"
     PASSING = "passing"
+    # One of the two builds made no judgment about the case at all, so there is nothing to compare. It is
+    # neither a regression nor progress: reading a build's own limits as a verdict about the product is
+    # exactly what the not-covered status exists to prevent.
+    NOT_COVERED = "not_covered"
 
 
 # A develop case that vanishes from the branch report is a regression whether it failed (missing) or passed
@@ -40,6 +50,9 @@ NO_LONGER_FAILING_STATUSES = (Status.RESOLVED, Status.PASSING)
 PROPOSABLE_STATUSES = (Status.NEW, Status.WORSENED, Status.UNCHANGED)
 # A known develop mismatch reproduced unchanged: not a regression, not progress, but proposable.
 KNOWN_BASELINE_STATUSES = (Status.UNCHANGED,)
+# Statuses that report the absence of a comparison rather than its outcome. Nothing may be concluded about
+# the product from one, so they belong to no other partition.
+NOT_COMPARABLE_STATUSES = (Status.NOT_COVERED,)
 
 
 def canonical_json(value: Any) -> str:
@@ -80,10 +93,21 @@ def _finding_digest_view(finding: Mapping[str, Any]) -> dict[str, Any]:
     return {field: _semantic_view(finding.get(field)) for field in FINDING_DIGEST_FIELDS}
 
 
+# The evidence a side's digest protects, derived once so the producer and the integrity check cannot drift.
+# The side's own verdict is part of it: classification reads `passed` and `category`, so leaving either
+# outside the digest would let a relabelled side - a blocking failure re-tagged as a judgment the build never
+# made - keep a digest that still validates.
+def _side_digest_view(passed: bool, category: str, observation: Any, findings: Any) -> dict[str, Any]:
+    return {
+        "observation": observation,
+        "findings": [_finding_digest_view(finding) for finding in findings],
+        "passed": passed,
+        "category": category,
+    }
+
+
 def _case_digest(case: CaseResult) -> str:
-    return digest_of(
-        {"observation": case.observation, "findings": [_finding_digest_view(finding) for finding in case.findings]}
-    )
+    return digest_of(_side_digest_view(case.passed, case.category.value, case.observation, case.findings))
 
 
 def _side(case: Optional[CaseResult]) -> dict[str, Any]:
@@ -171,6 +195,10 @@ class ComparisonArtifact:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ComparisonArtifact:
+        data = require_object(data, "comparison artifact")
+        # An artifact travels inside other documents - a provisional record embeds the develop comparison it
+        # stands on - so it checks its own version rather than trusting whatever envelope carried it here.
+        _check_comparison_schema_version(data.get("schema_version"), "comparison artifact")
         try:
             status = Status(str(data["status"]))
         except ValueError as error:
@@ -196,16 +224,43 @@ class ComparisonArtifact:
         return artifact
 
 
+def _made_no_judgment(side: Mapping[str, Any]) -> bool:
+    return bool(side.get("present")) and side.get("category") == Category.NOT_COVERED.value
+
+
+def _judged(side: Mapping[str, Any]) -> bool:
+    """True when the side is present and its build actually reached a verdict about the case."""
+    return bool(side.get("present")) and not _made_no_judgment(side)
+
+
 def classify(branch: Mapping[str, Any], develop: Mapping[str, Any]) -> Status:
     """The one status classifier, defined over the serialized sides so a deserialized artifact re-derives its
-    status from exactly the data it carries."""
+    status from exactly the data it carries.
+
+    Presence is decided before coverage. Whether a case is still in the matrix at all is a fact about the
+    matrix, not about what either build concluded, so a case the branch no longer reports is lost coverage
+    even when develop could not judge it - reading that as "nothing to compare" would let a cell leave the
+    matrix without blocking. Only a case both reports can be uncomparable, and only the branch - the side
+    under test - can make it so: a develop side that reached no verdict has no failure the branch could
+    have resolved and none it could reproduce, so a branch failure against it is new evidence.
+    """
+    if not branch.get("present") and not develop.get("present"):
+        raise ReportError("a comparison artifact needs at least one side")
     if not branch.get("present"):
-        if not develop.get("present"):
-            raise ReportError("a comparison artifact needs at least one side")
-        return Status.VANISHED if develop.get("passed") else Status.MISSING
+        # A develop side that reached no verdict was not failing, so its case did not go missing: it was
+        # covered and now is not.
+        return Status.MISSING if _judged(develop) and not develop.get("passed") else Status.VANISHED
     if branch.get("passed"):
-        return Status.RESOLVED if develop.get("present") and not develop.get("passed") else Status.PASSING
-    if not develop.get("present") or develop.get("passed"):
+        return Status.RESOLVED if _judged(develop) and not develop.get("passed") else Status.PASSING
+    if not develop.get("present"):
+        # A case only the branch reports has no develop verdict to compare against, whatever the branch
+        # build could observe about it.
+        return Status.NEW
+    # A side that made no judgment carries `passed: false` because it did not pass, not because it failed.
+    # Reading that as a failure would turn one build's missing surface into a regression of the product.
+    if _made_no_judgment(branch):
+        return Status.NOT_COVERED
+    if not _judged(develop) or develop.get("passed"):
         return Status.NEW
     if branch.get("digest") == develop.get("digest"):
         return Status.UNCHANGED
@@ -237,7 +292,9 @@ def _check_side(side: Mapping[str, Any], name: str, case_id: str) -> None:
     if not isinstance(side.get("passed"), bool) or not isinstance(side.get("findings"), list):
         raise ReportError(f"artifact for case {case_id!r} has a malformed {name} side")
     expected = digest_of(
-        {"observation": side.get("observation"), "findings": [_finding_digest_view(f) for f in side["findings"]]}
+        _side_digest_view(
+            bool(side["passed"]), str(side.get("category", "")), side.get("observation"), side["findings"]
+        )
     )
     if side.get("digest") != expected:
         raise ReportError(f"artifact for case {case_id!r} has a {name} digest that does not match its evidence")
@@ -316,15 +373,31 @@ def serialize_structural_failure(reasons: list[str]) -> str:
     return json.dumps(payload, sort_keys=True, indent=2) + "\n"
 
 
+def _check_comparison_schema_version(value: Any, context: str) -> None:
+    """Refuse a comparison written under another version of the digest contract, by name.
+
+    Every digest and every status is re-derived at load, so a document of another version would otherwise be
+    refused as a digest mismatch - which reads as tampering rather than as the stale artifact it is.
+    """
+    if schema_version_matches(value, COMPARISON_SCHEMA_VERSION):
+        return
+    raise ReportError(
+        f"{context} schema_version {value!r} is not supported; expected {COMPARISON_SCHEMA_VERSION}. "
+        "Regenerate the comparison with this version of the tooling."
+    )
+
+
 def deserialize_many(text: str) -> list[ComparisonArtifact]:
-    data = json.loads(text)
-    if not schema_version_matches(data.get("schema_version"), COMPARISON_SCHEMA_VERSION):
-        raise ReportError("unsupported comparison schema_version")
+    data = require_object(json.loads(text), "comparison")
+    _check_comparison_schema_version(data.get("schema_version"), "comparison")
     if "structural_failure" in data:
         # A refusal carries no conclusions; reading it as an empty, clean comparison is exactly the
         # mistake the refusal exists to prevent.
         raise ReportError(f"comparison refused to draw a verdict: {data['structural_failure']}")
+    artifacts = data.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ReportError("comparison member 'artifacts' must be an array")
     try:
-        return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]
+        return [ComparisonArtifact.from_dict(entry) for entry in artifacts]
     except (KeyError, TypeError) as error:
         raise ReportError(f"malformed comparison artifact: {error!r}") from error
