@@ -432,6 +432,19 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 					String(" | ").join(errors));
 		}
 
+		SUBCASE("a dimension only an anchor names") {
+			const String document = synthetic_rule_document(false).replace(
+					"\"expect\": {\"synthetic_identity\": \"identical\"}",
+					"\"expect\": {\"synthetic_identity\": \"identical\", \"analysis\": \"accept\"}");
+			const String catalog_root =
+					stage_synthetic_completeness_catalog(tree, "anchor_dimension", false, document);
+			Vector<String> errors;
+			CHECK_EQ(load_synthetic_catalog_errors(catalog_root, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(completeness_error_reported(errors,
+								  "dimension 'analysis' is not observable by adapter 'synthetic_pair_identity'"),
+					String(" | ").join(errors));
+		}
+
 		SUBCASE("a domain with no surface axis") {
 			const String document = synthetic_rule_document(false).replace(
 					",\n    \"surface\": [\"text\", \"bytecode\"]", "");

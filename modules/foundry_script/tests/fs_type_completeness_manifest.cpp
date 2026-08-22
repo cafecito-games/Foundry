@@ -1330,9 +1330,6 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 	for (const FSCompletenessRequiredDimension &required : p_manifest.required_dimensions) {
 		if (!p_catalog.dimensions.has(required.dimension)) {
 			r_errors.push_back(vformat("required dimension references unknown dimension '%s'", required.dimension));
-		} else if (adapter != nullptr && !adapter->observable_dimensions().has(required.dimension)) {
-			r_errors.push_back(vformat("dimension '%s' is not observable by adapter '%s'",
-					required.dimension, adapter->id()));
 		}
 		validate_selector(required.when, vformat("required dimension '%s' when", required.dimension),
 				p_catalog.partitions, &p_manifest.domain, r_errors);
@@ -1368,6 +1365,39 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 		validate_selector(relation.from, record + " from", p_catalog.partitions, &p_manifest.domain, r_errors);
 		validate_coordinate_patch(relation.to, record + " to", p_catalog.partitions, r_errors);
 		validate_dimension_outcomes(relation.derive, record, "derives", true, p_catalog.dimensions, r_errors);
+	}
+
+	// Every dimension the manifest names anywhere - required, expected by an anchor, or derived by a
+	// relation or an exception - is compared against what the adapter reports for a cell. One the
+	// adapter cannot observe would be published as a product mismatch instead of the catalog defect it
+	// is, so the whole named set is checked rather than only the required half.
+	if (adapter != nullptr) {
+		const HashSet<String> observable = adapter->observable_dimensions();
+		Vector<String> named_dimensions;
+		for (const FSCompletenessRequiredDimension &required : p_manifest.required_dimensions) {
+			named_dimensions.push_back(required.dimension);
+		}
+		for (const FSCompletenessAnchor &anchor : p_manifest.anchors) {
+			named_dimensions.append_array(sorted_dictionary_keys(anchor.expect));
+		}
+		for (const FSCompletenessRelation &relation : p_manifest.relations) {
+			named_dimensions.append_array(sorted_dictionary_keys(relation.derive));
+		}
+		for (const FSCompletenessException &exception : p_manifest.exceptions) {
+			named_dimensions.append_array(sorted_dictionary_keys(exception.derive));
+		}
+		named_dimensions.sort();
+		String previous;
+		for (const String &dimension_name : named_dimensions) {
+			if (dimension_name == previous || !p_catalog.dimensions.has(dimension_name)) {
+				continue;
+			}
+			previous = dimension_name;
+			if (!observable.has(dimension_name)) {
+				r_errors.push_back(vformat("dimension '%s' is not observable by adapter '%s'",
+						dimension_name, adapter->id()));
+			}
+		}
 	}
 
 	for (int index = 0; index < p_manifest.exceptions.size(); index++) {

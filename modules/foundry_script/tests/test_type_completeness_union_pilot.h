@@ -2578,21 +2578,18 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
 	}
 
-	TEST_CASE("TypeCompleteness UnionPilot rejects missing and duplicate surface pairs atomically") {
+	// How many surfaces a semantic pair carries depends on the surfaces the run selected, so the
+	// adapter no longer decides it; two programs for the same pair on the same surface stay a defect
+	// no cardinality could tell apart from a correct matrix.
+	TEST_CASE("TypeCompleteness UnionPilot rejects duplicate surface pairs atomically") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const Vector<FSCompletenessProgram> valid = render_union_pilot_programs(resolution);
 		TemporaryProjectTree tree(vformat("type_completeness_union_pair_errors_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 
-		Vector<FSCompletenessProgram> missing = valid;
-		missing.remove_at(missing.size() - 1);
-		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, missing, batch), ERR_INVALID_DATA);
-		check_union_pilot_runtime_batch_cleared(batch);
-
 		Vector<FSCompletenessProgram> duplicate = valid;
 		duplicate.push_back(valid[0]);
-		batch = stale_union_pilot_runtime_batch();
+		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
 		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_IN_USE);
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
@@ -2947,6 +2944,49 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		FSCompletenessProgram program = stale_union_pilot_program();
 		CHECK_EQ(FSUnionCompletenessAdapter::shared().render(empty_case, program), ERR_INVALID_DATA);
 		check_union_pilot_program_cleared(program);
+	}
+
+	TEST_CASE("TypeCompleteness UnionPilot executes one surface when the run selects it") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_union_text_only_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		FSCompletenessRunOptions options;
+		options.catalog_root = type_completeness_union_pilot_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		options.surfaces.insert("text");
+
+		FSCompletenessRunResult result;
+		REQUIRE_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.outcome, "passed");
+		CHECK_EQ(result.executed_cells, 20);
+		CHECK(result.structural_failures.is_empty());
+		CHECK_EQ(int(double(result.report["cell_count"])), 20);
+		const Dictionary executed_by_surface = result.report["executed_by_surface"];
+		CHECK_EQ(executed_by_surface.size(), 1);
+		CHECK_EQ(int(double(executed_by_surface["text"])), 20);
+		// Parity needs two observations of one semantic case; this run made one of each.
+		CHECK_EQ(int(double(result.report["text_bytecode_parity_failures"])), 0);
+		const Array cases = result.report["cases"];
+		REQUIRE_EQ(cases.size(), 20);
+		for (int index = 0; index < cases.size(); index++) {
+			const Dictionary case_report = cases[index];
+			const Dictionary coordinates = case_report["coordinates"];
+			CHECK_EQ(String(coordinates["surface"]), "text");
+			CHECK_EQ(String(case_report["status"]), "passed");
+		}
+
+		FSCompletenessRunOptions refused = options;
+		refused.surfaces.insert("assembly");
+		refused.scratch_root = tree.root.path_join("refused");
+		refused.report_path = refused.scratch_root.path_join("report.json");
+		FSCompletenessRunResult refused_result;
+		CHECK_EQ(FSCompletenessRunner::run(refused, refused_result), ERR_INVALID_PARAMETER);
+		CHECK_FALSE(refused_result.success);
+		CHECK_EQ(refused_result.outcome, "structural_failure");
+		CHECK_FALSE(FileAccess::exists(refused.report_path));
 	}
 
 	TEST_CASE("TypeCompleteness UnionPilot report matches the captured evidence document") {

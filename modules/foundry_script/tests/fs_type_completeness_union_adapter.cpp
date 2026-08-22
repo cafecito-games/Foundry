@@ -1209,18 +1209,11 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 			bytecode_programs[program.case_id] = program;
 		}
 	}
-	// Every semantic pair must carry exactly one program per surface leaf. The absolute size of the
-	// matrix is the manifest domain's business and is checked by the runner against the resolved
-	// cells; here only the shape the pairing depends on is enforced.
+	// The absolute size of the matrix is the manifest domain's business and is checked by the runner
+	// against the resolved cells; here only that every program was filed under a surface is enforced.
 	if (text_programs.size() + bytecode_programs.size() != p_programs.size()) {
 		return ERR_INVALID_DATA;
 	}
-	for (const KeyValue<String, SemanticPair> &entry : pairs) {
-		if (entry.value.text_id.is_empty() || entry.value.bytecode_id.is_empty()) {
-			return ERR_INVALID_DATA;
-		}
-	}
-
 	RuntimeInvocationScope invocation;
 	error = invocation.create(canonical_root);
 	if (error != OK) {
@@ -1341,12 +1334,10 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 		return error;
 	}
 
-	for (const KeyValue<String, SemanticPair> &entry : pairs) {
-		if (completed.text.getptr(entry.value.text_id) == nullptr ||
-				completed.bytecode.getptr(entry.value.bytecode_id) == nullptr) {
-			return ERR_INVALID_DATA;
-		}
-	}
+	// How many surfaces a semantic pair must carry is the run's business, not the adapter's: a run
+	// narrowed to one surface hands over one program per pair, and refusing it here would make the
+	// filter unusable for this family. The adapter only refuses two programs for the same pair on the
+	// same surface, which no cardinality the runner checks could tell apart from a correct matrix.
 	r_batch = completed;
 	return OK;
 }
