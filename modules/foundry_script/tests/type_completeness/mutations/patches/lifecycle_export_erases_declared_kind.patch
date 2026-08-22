@@ -1,0 +1,13 @@
+diff --git a/modules/foundry_script/fs_bytecode_export.cpp b/modules/foundry_script/fs_bytecode_export.cpp
+index 9a752dee7b..50b6f44b06 100644
+--- a/modules/foundry_script/fs_bytecode_export.cpp
++++ b/modules/foundry_script/fs_bytecode_export.cpp
+@@ -340,7 +340,7 @@ Error FSBytecodeExporter::_encode_script_reference(StreamPeerBuffer *r_stream, S
+ Error FSBytecodeExporter::encode_data_type(StreamPeerBuffer *r_stream, const FSDataType &p_data_type, int p_depth) {
+ 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER,
+ 			"Data type is too deeply nested to serialize to compiled bytecode.");
+-	r_stream->put_u8((uint8_t)p_data_type.kind);
++	r_stream->put_u8((uint8_t)FSDataType::VARIANT);
+ 	r_stream->put_u32((uint32_t)p_data_type.builtin_type);
+ 	// The declared integer width belongs to the carrier it constrains, so it travels immediately after
+ 	// it. Element types and type arguments recurse through this same function, so a width nested at any

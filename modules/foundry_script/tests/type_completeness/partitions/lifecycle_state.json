@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "axis": "lifecycle_state",
+  "leaves": [
+    "clean",
+    "incremental",
+    "stale",
+    "missing",
+    "reordered",
+    "failure_recovery"
+  ],
+  "classes": {
+    "degraded": [
+      "stale",
+      "missing",
+      "failure_recovery"
+    ]
+  }
+}

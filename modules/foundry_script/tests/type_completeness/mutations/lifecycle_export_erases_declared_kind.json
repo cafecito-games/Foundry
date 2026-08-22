@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "recipe_id": "lifecycle_export_erases_declared_kind",
+  "description": "FSBytecodeExporter writes every serialized data type as VARIANT, so the kind a declared type was carried by is gone from the exported artifact and nothing reconstructs it on load.",
+  "escape_class": "erase_serialized_type_kind",
+  "expected_detectors": [
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "plain",
+        "lifecycle_state": "clean",
+        "surface": "text"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "plain",
+        "lifecycle_state": "clean",
+        "surface": "bytecode"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "union",
+        "lifecycle_state": "clean",
+        "surface": "text"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "union",
+        "lifecycle_state": "clean",
+        "surface": "bytecode"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "optional",
+        "lifecycle_state": "clean",
+        "surface": "text"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "optional",
+        "lifecycle_state": "clean",
+        "surface": "bytecode"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "container_element",
+        "lifecycle_state": "clean",
+        "surface": "text"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "container_element",
+        "lifecycle_state": "clean",
+        "surface": "bytecode"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "lifecycle_state": "clean",
+        "surface": "text"
+      },
+      "dimension": "semantic_identity"
+    },
+    {
+      "family": "lifecycle_bytecode_export_load",
+      "case_coordinates": {
+        "destination": "tuple_field",
+        "lifecycle_state": "clean",
+        "surface": "bytecode"
+      },
+      "dimension": "semantic_identity"
+    }
+  ]
+}

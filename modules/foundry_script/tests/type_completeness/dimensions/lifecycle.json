@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "adapter": "lifecycle",
+  "dimensions": [
+    {
+      "id": "semantic_identity",
+      "outcomes": [
+        "preserved",
+        "projected",
+        "erased",
+        "rejected"
+      ]
+    },
+    {
+      "id": "transition_outcome",
+      "outcomes": [
+        "completed",
+        "recovered",
+        "refused"
+      ]
+    }
+  ]
+}

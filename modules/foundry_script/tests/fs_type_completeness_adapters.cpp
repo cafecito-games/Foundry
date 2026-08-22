@@ -31,6 +31,7 @@
 #include "fs_type_completeness_adapter.h"
 
 #include "fs_type_completeness_destination_wrapper_adapter.h"
+#include "fs_type_completeness_lifecycle_adapter.h"
 
 namespace FSTests {
 
@@ -140,6 +141,7 @@ private:
 const Vector<const FSCompletenessFamilyAdapter *> &builtin_adapters() {
 	static const Vector<const FSCompletenessFamilyAdapter *> table = {
 		&FSDestinationWrapperAdapter::shared(),
+		&FSLifecycleAdapter::shared(),
 		&FSSyntheticPairIdentityAdapter::shared(),
 	};
 	return table;
