@@ -45,14 +45,38 @@ def _run(conclusion: Any, created_at: str, run_id: int = 1, branch: str = "devel
     return {"databaseId": run_id, "conclusion": conclusion, "createdAt": created_at, "headBranch": branch}
 
 
-def _check(root: Path, runs: Any, shards: Any, now: str, extra: list[str] | None = None) -> tuple[int, str]:
+def _jobs_capture(run: dict[str, Any], shards: dict[str, Any], job_conclusion: Any = "mirror") -> dict[str, Any]:
+    """A `gh run view --json databaseId,conclusion,jobs` capture whose shard jobs mirror the run."""
+    conclusion = run.get("conclusion") if job_conclusion == "mirror" else job_conclusion
+    return {
+        "databaseId": run["databaseId"],
+        "conclusion": run.get("conclusion"),
+        "jobs": [
+            {"name": cadence.SHARD_JOB_NAME_TEMPLATE.format(shard_id=shard["shard_id"]), "conclusion": conclusion}
+            for shard in shards["shards"]
+        ],
+    }
+
+
+def _check(
+    root: Path,
+    runs: Any,
+    shards: Any,
+    now: str,
+    extra: list[str] | None = None,
+    jobs: list[Any] | None = None,
+) -> tuple[int, str]:
     runs_path = _write(root, "runs.json", runs)
     shards_path = _write(root, "shards.json", shards)
     _write(root, "recipe_a.json", {})
+    if jobs is None and isinstance(runs, list) and isinstance(shards, dict):
+        jobs = [_jobs_capture(run, shards) for run in runs if isinstance(run, dict) and "databaseId" in run]
+    jobs_paths = [str(_write(root, f"jobs_{index}.json", capture)) for index, capture in enumerate(jobs or [])]
     out = io.StringIO()
     with unittest.mock.patch("sys.stdout", out):
         code = cadence.main(
             ["check", "--window-hours", "24", "--runs-json", str(runs_path), "--shards", str(shards_path), "--now", now]
+            + (["--jobs-json"] + jobs_paths if jobs_paths else [])
             + (extra or [])
         )
     return code, out.getvalue()
@@ -82,6 +106,85 @@ class CaptureFixtureTests(unittest.TestCase):
             self.assertEqual(len(lines), 2)
             self.assertTrue(any("union_core" in line for line in lines))
             self.assertTrue(any("second" in line for line in lines))
+
+    def test_the_captured_gh_run_view_is_read_and_cannot_vouch_for_a_shard_it_did_not_run(self) -> None:
+        capture = json.loads((FIXTURES / "gh_run_view_jobs.json").read_text(encoding="utf-8"))
+        jobs = cadence.load_run_jobs(capture)
+        self.assertEqual(jobs.run_id, 31935560560)
+        self.assertIn("ASan+UBSan", jobs.job_conclusions)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = json.loads((FIXTURES / "gh_run_list.json").read_text(encoding="utf-8"))
+            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-16T20:00:00Z", jobs=[capture])
+            self.assertEqual(code, 1)
+            self.assertIn("unattributed run=31935560560", output)
+            self.assertIn("no job named", output)
+            self.assertIn("missing shard=union_core", output)
+
+    def test_a_failed_run_without_a_jobs_capture_is_missing_and_named(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs = [_run("failure", "2026-08-20T10:00:00Z", run_id=77)]
+            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z", jobs=[])
+            self.assertEqual(code, 1)
+            self.assertIn("unattributed run=77", output)
+            self.assertIn("no gh run view capture", output)
+            self.assertIn("missing shard=union_core recipe=recipe_a", output)
+
+    def test_a_failed_run_whose_shard_job_never_concluded_is_missing(self) -> None:
+        for job_conclusion in (None, "cancelled", "skipped"):
+            with self.subTest(job_conclusion=job_conclusion), tempfile.TemporaryDirectory() as directory:
+                runs = [_run("failure", "2026-08-20T10:00:00Z")]
+                jobs = [_jobs_capture(runs[0], _shards("union_core"), job_conclusion)]
+                code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z", jobs=jobs)
+                self.assertEqual(code, 1)
+                self.assertIn("unattributed run=1", output)
+
+    def test_a_failed_run_whose_shard_job_failed_is_terminal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs = [_run("failure", "2026-08-20T10:00:00Z")]
+            code, output = _check(Path(directory), runs, _shards("union_core"), "2026-08-20T12:00:00Z")
+            self.assertEqual(code, 0, output)
+
+    def test_coverage_is_judged_per_shard(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs = [_run("failure", "2026-08-20T10:00:00Z")]
+            capture = _jobs_capture(runs[0], _shards("union_core", "second"))
+            capture["jobs"][1]["conclusion"] = "cancelled"
+            code, output = _check(
+                Path(directory), runs, _shards("union_core", "second"), "2026-08-20T12:00:00Z", jobs=[capture]
+            )
+            self.assertEqual(code, 1)
+            self.assertIn("ok shard=union_core", output)
+            self.assertIn("missing shard=second", output)
+
+    def test_an_older_run_vouches_when_the_newest_cannot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runs = [
+                _run("failure", "2026-08-20T11:00:00Z", run_id=2),
+                _run("success", "2026-08-20T09:00:00Z", run_id=1),
+            ]
+            jobs = [_jobs_capture(runs[0], _shards("a"), "cancelled"), _jobs_capture(runs[1], _shards("a"))]
+            code, output = _check(Path(directory), runs, _shards("a"), "2026-08-20T12:00:00Z", jobs=jobs)
+            self.assertEqual(code, 0, output)
+            self.assertIn("ok shard=a run=1", output)
+
+    def test_malformed_jobs_captures_are_exit_2(self) -> None:
+        base = _run("failure", "2026-08-20T10:00:00Z")
+        captures: list[Any] = [
+            [],
+            {"conclusion": "failure", "jobs": []},
+            {"databaseId": 1, "conclusion": "failure"},
+            {"databaseId": 1, "conclusion": "failure", "jobs": [{"name": "x"}]},
+            {"databaseId": 1, "conclusion": "failure", "jobs": [{"name": "x", "conclusion": "mystery"}]},
+            {
+                "databaseId": 1,
+                "conclusion": "failure",
+                "jobs": [{"name": "x", "conclusion": None}, {"name": "x", "conclusion": None}],
+            },
+        ]
+        for capture in captures:
+            with self.subTest(capture=capture), tempfile.TemporaryDirectory() as directory:
+                code, _ = _check(Path(directory), [base], _shards("a"), "2026-08-20T12:00:00Z", jobs=[capture])
+                self.assertEqual(code, cadence.EXIT_INVALID_INPUT)
 
     def test_tracked_shards_file_is_readable_by_the_check(self) -> None:
         shards = cadence.load_shards_file(TRACKED_SHARDS)
@@ -152,11 +255,23 @@ class WindowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             recent = datetime.now(timezone.utc) - timedelta(hours=1)
-            runs_path = _write(root, "runs.json", [_run("success", deadline.format_utc_timestamp(recent))])
+            run = _run("success", deadline.format_utc_timestamp(recent))
+            runs_path = _write(root, "runs.json", [run])
             shards_path = _write(root, "shards.json", _shards("a"))
+            jobs_path = _write(root, "jobs.json", _jobs_capture(run, _shards("a")))
             _write(root, "recipe_a.json", {})
             code = cadence.main(
-                ["check", "--window-hours", "24", "--runs-json", str(runs_path), "--shards", str(shards_path)]
+                [
+                    "check",
+                    "--window-hours",
+                    "24",
+                    "--runs-json",
+                    str(runs_path),
+                    "--shards",
+                    str(shards_path),
+                    "--jobs-json",
+                    str(jobs_path),
+                ]
             )
             self.assertEqual(code, 0)
 

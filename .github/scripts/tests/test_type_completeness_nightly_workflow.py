@@ -16,6 +16,9 @@ sys.path.insert(0, str(REPO_ROOT / ".github/scripts"))
 
 import workflow_graph  # noqa: E402
 
+sys.path.insert(0, str(REPO_ROOT))
+from scripts.type_completeness import cadence  # noqa: E402
+
 WORKFLOW = REPO_ROOT / ".github/workflows/type_completeness_nightly.yml"
 SHARDS = REPO_ROOT / "modules/foundry_script/tests/type_completeness/mutations/shards.json"
 JOB = "mutation-shard"
@@ -46,6 +49,11 @@ class TypeCompletenessNightlyTests(unittest.TestCase):
             self.assertEqual(cell["recipes"].split(","), shard["recipes"])
             self.assertEqual(cell["budget_seconds"], shard["budget_seconds"])
             self.assertLessEqual(shard["budget_seconds"], 1800)
+
+    def test_shard_job_name_is_what_the_cadence_check_looks_for(self) -> None:
+        self.assertEqual(
+            self.workflow.job_name(JOB), cadence.SHARD_JOB_NAME_TEMPLATE.format(shard_id="${{ matrix.shard_id }}")
+        )
 
     def test_shard_job_has_the_forty_minute_timeout(self) -> None:
         self.assertEqual(self.workflow.job_key(JOB, "timeout-minutes"), 40)

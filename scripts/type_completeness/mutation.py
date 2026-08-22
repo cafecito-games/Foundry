@@ -69,6 +69,9 @@ class Outcome(str, enum.Enum):
     BUILD_FAILED = "build_failed"
     STRUCTURAL_FAILURE = "structural_failure"
     TIMEOUT = "timeout"
+    # The unpatched baseline already fails a detector's case, so a failure after the patch proves
+    # nothing about the mutation.
+    BASELINE_FAILED = "baseline_failed"
 
 
 _EXIT_CODES = {
@@ -78,6 +81,7 @@ _EXIT_CODES = {
     Outcome.RECIPE_STALE: 4,
     Outcome.BUILD_FAILED: 5,
     Outcome.STRUCTURAL_FAILURE: 6,
+    Outcome.BASELINE_FAILED: 7,
 }
 
 
@@ -99,6 +103,8 @@ class DetectorState(str, enum.Enum):
     PASSED = "passed"
     ABSENT = "absent"
     FAILED_ON_OTHER_DIMENSION = "failed_on_other_dimension"
+    # The baseline run did not pass this case, so the mutated observation cannot be attributed.
+    BASELINE_FAILED = "baseline_failed"
 
 
 def state_detects(state: DetectorState) -> bool:
@@ -350,13 +356,24 @@ def _cases_at(loaded: Report, coordinates: Mapping[str, Any]) -> list[Any]:
     return [case for case in loaded.cases if case.coordinates == dict(coordinates)]
 
 
-def classify_detection(loaded: Report, recipe: Recipe) -> tuple[Outcome, list[DetectorResult]]:
-    """The single detector verdict: every expected detector must fail on its named dimension."""
-    if loaded.is_structural_failure or loaded.raw.get("structural_failures"):
-        return Outcome.STRUCTURAL_FAILURE, []
+def classify_detection(loaded: Report, recipe: Recipe, baseline: Report) -> tuple[Outcome, list[DetectorResult]]:
+    """The single detector verdict.
+
+    Every expected detector must pass on the unpatched baseline and fail on its named dimension once
+    the patch is applied. A baseline that does not pass a detector's case makes the mutated
+    observation unattributable: that is ``baseline_failed``, never ``detected``.
+    """
+    for document in (baseline, loaded):
+        if document.is_structural_failure or document.raw.get("structural_failures"):
+            return Outcome.STRUCTURAL_FAILURE, []
     results: list[DetectorResult] = []
     for detector in recipe.expected_detectors:
         matches = _cases_at(loaded, detector.case_coordinates) if loaded.family == detector.family else []
+        baseline_matches = _cases_at(baseline, detector.case_coordinates) if baseline.family == detector.family else []
+        if len(baseline_matches) != 1 or not baseline_matches[0].passed:
+            case_id = baseline_matches[0].case_id if len(baseline_matches) == 1 else ""
+            results.append(DetectorResult(detector.family, case_id, detector.dimension, DetectorState.BASELINE_FAILED))
+            continue
         if len(matches) != 1:
             results.append(DetectorResult(detector.family, "", detector.dimension, DetectorState.ABSENT))
             continue
@@ -368,6 +385,8 @@ def classify_detection(loaded: Report, recipe: Recipe) -> tuple[Outcome, list[De
         else:
             state = DetectorState.FAILED_ON_OTHER_DIMENSION
         results.append(DetectorResult(detector.family, case.case_id, detector.dimension, state))
+    if any(result.state is DetectorState.BASELINE_FAILED for result in results):
+        return Outcome.BASELINE_FAILED, results
     outcome = Outcome.DETECTED if results and all(state_detects(r.state) for r in results) else Outcome.MISSED
     return outcome, results
 
@@ -633,6 +652,13 @@ def _family_report_path(report_root: Path, family: str) -> Path:
     return report_root / f"report.{family}.json"
 
 
+def _load_report_or_structural(path: Path) -> tuple[Optional[Report], str]:
+    try:
+        return load_report_file(path), ""
+    except ReportError as error:
+        return None, str(error)
+
+
 def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
     """Apply, build, run, classify; always removes the worktree; always writes the result file."""
     recipe_id = require_id(options.recipe_id, "recipe_id")
@@ -661,6 +687,9 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
     worktree = scratch / f"worktree_{recipe_id}"
     report_root = scratch / f"matrix_{recipe_id}"
     report_path = _family_report_path(report_root, family)
+    baseline_root = scratch / f"baseline_{recipe_id}"
+    baseline_path = _family_report_path(baseline_root, family)
+    catalog_relative = Path("modules") / "foundry_script" / "tests" / "type_completeness"
     clock: Callable[[], float] = toolchain.clock
     deadline = clock() + options.budget_seconds
 
@@ -677,17 +706,39 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
         # invocation must never stand in for this one, so both are removed before anything starts.
         if worktree.exists():
             toolchain.remove_worktree(repository, worktree)
-        if report_path.exists():
-            report_path.unlink()
+        for old_report in (report_path, baseline_path):
+            if old_report.exists():
+                old_report.unlink()
         toolchain.add_worktree(repository, worktree, develop_commit, deadline)
-        capabilities_path = (
-            worktree / "modules" / "foundry_script" / "tests" / "type_completeness" / "capabilities.json"
-        )
+        capabilities_path = worktree / catalog_relative / "capabilities.json"
         capability_slice = capability_slice_for_family(load_capabilities_file(capabilities_path), family).to_dict()
         stale = toolchain.apply_check(worktree, patch, deadline)
         if stale is not None:
             outcome, detail = Outcome.RECIPE_STALE, stale
-        else:
+        baseline: Optional[Report] = None
+        if outcome is None:
+            # The baseline is the unpatched commit: built once in the repository checkout itself (one
+            # build invocation per worktree) and run before the patch touches anything.
+            try:
+                baseline_binary = toolchain.build(repository, options.jobs, deadline)
+            except BuildFailed as error:
+                outcome, detail = Outcome.BUILD_FAILED, f"baseline: {error}"
+            else:
+                if clock() > deadline:
+                    raise subprocess.TimeoutExpired(["build"], options.budget_seconds)
+                baseline_root.mkdir(parents=True, exist_ok=True)
+                toolchain.run_matrix(
+                    baseline_binary, family, repository / catalog_relative, scratch, baseline_path, deadline
+                )
+                if clock() > deadline:
+                    raise subprocess.TimeoutExpired(["run_matrix"], options.budget_seconds)
+                baseline, baseline_detail = _load_report_or_structural(baseline_path)
+                if baseline is None:
+                    outcome, detail = Outcome.STRUCTURAL_FAILURE, f"baseline: {baseline_detail}"
+                elif baseline.is_structural_failure or baseline.raw.get("structural_failures"):
+                    outcome, detail = Outcome.STRUCTURAL_FAILURE, "baseline: the unpatched run is a structural failure"
+                    baseline = None
+        if outcome is None and baseline is not None:
             toolchain.apply(worktree, patch, deadline)
             try:
                 binary = toolchain.build(worktree, options.jobs, deadline)
@@ -696,17 +747,15 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
             else:
                 if clock() > deadline:
                     raise subprocess.TimeoutExpired(["build"], options.budget_seconds)
-                catalog = worktree / "modules" / "foundry_script" / "tests" / "type_completeness"
                 report_root.mkdir(parents=True, exist_ok=True)
-                toolchain.run_matrix(binary, family, catalog, scratch, report_path, deadline)
+                toolchain.run_matrix(binary, family, worktree / catalog_relative, scratch, report_path, deadline)
                 if clock() > deadline:
                     raise subprocess.TimeoutExpired(["run_matrix"], options.budget_seconds)
-                try:
-                    loaded = load_report_file(report_path)
-                except ReportError as error:
-                    outcome, detail = Outcome.STRUCTURAL_FAILURE, str(error)
+                loaded, load_detail = _load_report_or_structural(report_path)
+                if loaded is None:
+                    outcome, detail = Outcome.STRUCTURAL_FAILURE, load_detail
                 else:
-                    outcome, detectors = classify_detection(loaded, recipe)
+                    outcome, detectors = classify_detection(loaded, recipe, baseline)
     except subprocess.TimeoutExpired as error:
         outcome, detail = Outcome.TIMEOUT, f"budget of {options.budget_seconds}s exceeded during {error.cmd}"
     finally:

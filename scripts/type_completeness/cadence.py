@@ -6,10 +6,12 @@ shard (and therefore every recipe it schedules) has a terminal run inside the wi
 never calls ``gh`` itself: the caller captures the JSON, so the check is testable without network.
 
 A run is terminal only when its ``conclusion`` is ``success`` or ``failure``; a cancelled, skipped,
-or still-running (``null``) run published no verdict. A ``failure`` counts as terminal whatever step
-failed: ``gh run list`` does not say whether the shard reached its verdict, so a workflow broken
-before any recipe runs still satisfies the cadence; the per-shard mutation result artifacts are
-where that distinction lives. Every run of the workflow executes every
+or still-running (``null``) run published no verdict. A run's conclusion alone does not say which
+shard reached its verdict - a workflow can fail at checkout before any recipe runs - so a shard
+counts as covered only when the run's shard job (``Mutation shard <shard_id>``, captured with
+``gh run view <id> --json databaseId,conclusion,jobs``) itself concluded ``success`` or ``failure``.
+A terminal run with no jobs capture, or whose shard job is not terminal, leaves the shard missing
+and is named in the output. Every run of the workflow executes every
 shard of the matrix, so a shard's cadence is the workflow's cadence on the watched branch.
 
 Stdlib only, Python 3.8.
@@ -34,6 +36,9 @@ EXIT_MISSING = 1
 
 DEFAULT_BRANCH = "develop"
 DEFAULT_WINDOW_HOURS = 24
+
+# The nightly workflow's shard job name; the workflow test asserts the two agree.
+SHARD_JOB_NAME_TEMPLATE = "Mutation shard {shard_id}"
 
 # Every conclusion GitHub Actions writes for a workflow run, plus null for a run still in progress.
 KNOWN_CONCLUSIONS = (
@@ -112,6 +117,49 @@ def load_runs_file(path: Path) -> list[WorkflowRun]:
     return load_runs(_read_json(path, "gh run list capture"))
 
 
+@dataclass(frozen=True)
+class RunJobs:
+    run_id: int
+    job_conclusions: dict[str, Optional[str]]
+
+
+def load_run_jobs(data: Any) -> RunJobs:
+    """One ``gh run view <id> --json databaseId,conclusion,jobs`` capture."""
+    if not isinstance(data, Mapping):
+        raise CadenceError("gh run view output must be a JSON object")
+    run_id = _require(data, "databaseId", "run view")
+    if isinstance(run_id, bool) or not isinstance(run_id, int):
+        raise CadenceError(f"run view databaseId must be an integer; got {run_id!r}")
+    jobs = _require(data, "jobs", "run view")
+    if not isinstance(jobs, list):
+        raise CadenceError(f"run view {run_id} jobs must be an array")
+    conclusions: dict[str, Optional[str]] = {}
+    for index, job in enumerate(jobs):
+        context = f"run view {run_id} jobs[{index}]"
+        if not isinstance(job, Mapping):
+            raise CadenceError(f"{context} must be an object")
+        name = _require(job, "name", context)
+        if not isinstance(name, str):
+            raise CadenceError(f"{context}.name must be a string")
+        conclusion = _require(job, "conclusion", context)
+        if conclusion is not None and (not isinstance(conclusion, str) or conclusion not in KNOWN_CONCLUSIONS):
+            raise CadenceError(f"{context}.conclusion {conclusion!r} is not a known conclusion")
+        if name in conclusions:
+            raise CadenceError(f"{context} repeats job name {name!r}")
+        conclusions[name] = conclusion
+    return RunJobs(run_id, conclusions)
+
+
+def load_run_jobs_files(paths: Sequence[Path]) -> dict[int, RunJobs]:
+    captures: dict[int, RunJobs] = {}
+    for path in paths:
+        capture = load_run_jobs(_read_json(path, "gh run view capture"))
+        if capture.run_id in captures:
+            raise CadenceError(f"{path}: run {capture.run_id} is captured twice")
+        captures[capture.run_id] = capture
+    return captures
+
+
 def load_shards_file(path: Path) -> list[Shard]:
     data = _read_json(path, "shards")
     if not isinstance(data, dict):
@@ -126,6 +174,8 @@ def load_shards_file(path: Path) -> list[Shard]:
 class CadenceVerdict:
     covered: dict[str, WorkflowRun]
     missing: list[tuple[str, str]]
+    # Terminal runs in the window that could not vouch for a shard, with the reason.
+    unattributed: list[tuple[WorkflowRun, str]]
 
     @property
     def ok(self) -> bool:
@@ -133,7 +183,12 @@ class CadenceVerdict:
 
 
 def check_cadence(
-    runs: Sequence[WorkflowRun], shards: Sequence[Shard], now: datetime, window: timedelta, branch: str
+    runs: Sequence[WorkflowRun],
+    shards: Sequence[Shard],
+    now: datetime,
+    window: timedelta,
+    branch: str,
+    run_jobs: Mapping[int, RunJobs],
 ) -> CadenceVerdict:
     if now.tzinfo is None:
         raise CadenceError("now must be timezone-aware")
@@ -143,16 +198,30 @@ def check_cadence(
     terminal = [
         run for run in runs if run.branch == branch and is_terminal(run.conclusion) and start <= run.created_at <= now
     ]
-    newest = max(terminal, key=lambda run: run.created_at, default=None)
+    terminal.sort(key=lambda run: run.created_at, reverse=True)
     covered: dict[str, WorkflowRun] = {}
     missing: list[tuple[str, str]] = []
+    unattributed: list[tuple[WorkflowRun, str]] = []
     for shard in shards:
-        if newest is None:
+        job_name = SHARD_JOB_NAME_TEMPLATE.format(shard_id=shard.shard_id)
+        for run in terminal:
+            jobs = run_jobs.get(run.run_id)
+            if jobs is None:
+                unattributed.append((run, "no gh run view capture for this run"))
+                continue
+            if job_name not in jobs.job_conclusions:
+                unattributed.append((run, f"no job named {job_name!r}"))
+                continue
+            conclusion = jobs.job_conclusions[job_name]
+            if not is_terminal(conclusion):
+                unattributed.append((run, f"job {job_name!r} concluded {conclusion!r}"))
+                continue
+            covered[shard.shard_id] = run
+            break
+        else:
             for recipe_id in shard.recipes:
                 missing.append((shard.shard_id, recipe_id))
-        else:
-            covered[shard.shard_id] = newest
-    return CadenceVerdict(covered, missing)
+    return CadenceVerdict(covered, missing, unattributed)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -164,6 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--runs-json", required=True, help="Captured `gh run list --json databaseId,conclusion,createdAt,headBranch`."
     )
     check.add_argument("--shards", required=True, help="The tracked mutations/shards.json.")
+    check.add_argument(
+        "--jobs-json",
+        nargs="*",
+        default=[],
+        help="Captured `gh run view <id> --json databaseId,conclusion,jobs`, one file per run in the window.",
+    )
     check.add_argument("--branch", default=DEFAULT_BRANCH, help="Only runs on this branch count.")
     check.add_argument("--now", help="ISO-8601 instant with an explicit offset; defaults to the current UTC time.")
     return parser
@@ -180,12 +255,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             raise CadenceError(f"--now: {error}") from error
         runs = load_runs_file(Path(arguments.runs_json))
         shards = load_shards_file(Path(arguments.shards))
-        verdict = check_cadence(runs, shards, now, timedelta(hours=arguments.window_hours), arguments.branch)
+        run_jobs = load_run_jobs_files([Path(entry) for entry in arguments.jobs_json])
+        verdict = check_cadence(runs, shards, now, timedelta(hours=arguments.window_hours), arguments.branch, run_jobs)
     except CadenceError as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_INVALID_INPUT
     for shard_id, run in sorted(verdict.covered.items()):
         print(f"ok shard={shard_id} run={run.run_id} conclusion={run.conclusion} created_at={run.raw['createdAt']}")
+    for run, reason in verdict.unattributed:
+        print(f"unattributed run={run.run_id} conclusion={run.conclusion} created_at={run.raw['createdAt']}: {reason}")
     for shard_id, recipe_id in verdict.missing:
         print(
             f"missing shard={shard_id} recipe={recipe_id}: no terminal run within {arguments.window_hours}h on {arguments.branch}"

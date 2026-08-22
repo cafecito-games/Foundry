@@ -56,6 +56,26 @@ def _load_recipe(data: dict[str, Any]) -> Any:
     return mutation.load_recipe(data, "fixture_recipe")
 
 
+def _all_passed(text: str) -> str:
+    """The comparator fixture with every case passing: the baseline a detector must pass on."""
+    document = json.loads(text)
+    for case in document["cases"]:
+        case["passed"] = True
+        case["status"] = "passed"
+        case["runtime_passed"] = True
+        case["runtime_status"] = "ok"
+        case["actual"] = dict(case["expected"])
+        case["diagnostics"] = []
+        case["produced_output"] = case["expected_output"]
+    document["findings"] = []
+    document["success"] = True
+    document["outcome"] = "passed"
+    return json.dumps(document, indent="\t") + "\n"
+
+
+PASSED_BASELINE_TEXT = _all_passed(RUNNER_REPORT_TEXT)
+
+
 class OutcomeVocabularyTests(unittest.TestCase):
     def test_every_outcome_has_a_distinct_exit_code(self) -> None:
         codes = [mutation.exit_code_for(outcome) for outcome in mutation.Outcome]
@@ -66,6 +86,7 @@ class OutcomeVocabularyTests(unittest.TestCase):
         self.assertEqual(mutation.exit_code_for(mutation.Outcome.RECIPE_STALE), 4)
         self.assertEqual(mutation.exit_code_for(mutation.Outcome.BUILD_FAILED), 5)
         self.assertEqual(mutation.exit_code_for(mutation.Outcome.STRUCTURAL_FAILURE), 6)
+        self.assertEqual(mutation.exit_code_for(mutation.Outcome.BASELINE_FAILED), 7)
         self.assertNotIn(mutation.EXIT_INVALID_INPUT, codes)
 
     def test_summarize_handles_every_outcome_member(self) -> None:
@@ -145,9 +166,30 @@ class OutcomeVocabularyTests(unittest.TestCase):
 class ClassifyDetectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.report = report.load_report(json.loads(RUNNER_REPORT_TEXT))
+        self.baseline = report.load_report(json.loads(PASSED_BASELINE_TEXT))
+
+    def test_a_detector_that_already_fails_on_the_baseline_is_baseline_failed(self) -> None:
+        outcome, states = mutation.classify_detection(self.report, _load_recipe(_recipe()), self.report)
+        self.assertEqual(outcome, mutation.Outcome.BASELINE_FAILED)
+        self.assertEqual([state.state for state in states], [mutation.DetectorState.BASELINE_FAILED])
+        self.assertEqual(states[0].case_id, "case_union_store_variable")
+
+    def test_a_detector_absent_from_the_baseline_is_baseline_failed(self) -> None:
+        document = json.loads(PASSED_BASELINE_TEXT)
+        document["cases"] = [case for case in document["cases"] if case["case_id"] != "case_union_store_variable"]
+        baseline = report.load_report(document)
+        outcome, states = mutation.classify_detection(self.report, _load_recipe(_recipe()), baseline)
+        self.assertEqual(outcome, mutation.Outcome.BASELINE_FAILED)
+        self.assertEqual(states[0].case_id, "")
+
+    def test_a_structural_baseline_is_structural(self) -> None:
+        timed_out = report.load_report(json.loads(RUNNER_TIMEOUT_REPORT_TEXT))
+        outcome, states = mutation.classify_detection(self.report, _load_recipe(_recipe()), timed_out)
+        self.assertEqual(outcome, mutation.Outcome.STRUCTURAL_FAILURE)
+        self.assertEqual(states, [])
 
     def test_detector_failing_on_the_named_dimension_is_detected(self) -> None:
-        outcome, states = mutation.classify_detection(self.report, _load_recipe(_recipe()))
+        outcome, states = mutation.classify_detection(self.report, _load_recipe(_recipe()), self.baseline)
         self.assertEqual(outcome, mutation.Outcome.DETECTED)
         self.assertEqual([state.state for state in states], [mutation.DetectorState.FAILED_ON_DIMENSION])
         self.assertEqual(states[0].case_id, "case_union_store_variable")
@@ -164,7 +206,7 @@ class ClassifyDetectionTests(unittest.TestCase):
                 ]
             )
         )
-        outcome, states = mutation.classify_detection(self.report, recipe)
+        outcome, states = mutation.classify_detection(self.report, recipe, self.baseline)
         self.assertEqual(outcome, mutation.Outcome.MISSED)
         self.assertEqual(states[0].state, mutation.DetectorState.PASSED)
         self.assertEqual(states[0].case_id, "case_union_store_member")
@@ -175,13 +217,16 @@ class ClassifyDetectionTests(unittest.TestCase):
                 [
                     {
                         "family": "union_destination_membership",
-                        "case_coordinates": {"destination": "nowhere", "surface": "text"},
+                        "case_coordinates": dict(PASSED_CASE_COORDINATES),
                         "dimension": "destination",
                     }
                 ]
             )
         )
-        outcome, states = mutation.classify_detection(self.report, recipe)
+        # The baseline executed the case; the mutated run lost it.
+        document = json.loads(RUNNER_REPORT_TEXT)
+        document["cases"] = [case for case in document["cases"] if case["case_id"] != "case_union_store_member"]
+        outcome, states = mutation.classify_detection(report.load_report(document), recipe, self.baseline)
         self.assertEqual(outcome, mutation.Outcome.MISSED)
         self.assertEqual(states[0].state, mutation.DetectorState.ABSENT)
         self.assertEqual(states[0].case_id, "")
@@ -198,7 +243,7 @@ class ClassifyDetectionTests(unittest.TestCase):
                 ]
             )
         )
-        outcome, states = mutation.classify_detection(self.report, recipe)
+        outcome, states = mutation.classify_detection(self.report, recipe, self.baseline)
         self.assertEqual(outcome, mutation.Outcome.MISSED)
         self.assertEqual(states[0].state, mutation.DetectorState.FAILED_ON_OTHER_DIMENSION)
 
@@ -219,7 +264,7 @@ class ClassifyDetectionTests(unittest.TestCase):
                 ]
             )
         )
-        outcome, states = mutation.classify_detection(self.report, recipe)
+        outcome, states = mutation.classify_detection(self.report, recipe, self.baseline)
         self.assertEqual(outcome, mutation.Outcome.MISSED)
         self.assertEqual(
             [state.state for state in states],
@@ -228,14 +273,14 @@ class ClassifyDetectionTests(unittest.TestCase):
 
     def test_structural_failure_report_is_never_detected(self) -> None:
         timed_out = report.load_report(json.loads(RUNNER_TIMEOUT_REPORT_TEXT))
-        outcome, states = mutation.classify_detection(timed_out, _load_recipe(_recipe()))
+        outcome, states = mutation.classify_detection(timed_out, _load_recipe(_recipe()), self.baseline)
         self.assertEqual(outcome, mutation.Outcome.STRUCTURAL_FAILURE)
         self.assertEqual(states, [])
 
     def test_non_empty_structural_failures_with_a_mismatch_outcome_is_structural(self) -> None:
         document = json.loads(RUNNER_REPORT_TEXT)
         document["structural_failures"] = [{"stage": "witness", "detail": "x"}]
-        outcome, _ = mutation.classify_detection(report.load_report(document), _load_recipe(_recipe()))
+        outcome, _ = mutation.classify_detection(report.load_report(document), _load_recipe(_recipe()), self.baseline)
         self.assertEqual(outcome, mutation.Outcome.STRUCTURAL_FAILURE)
 
     def test_detector_for_another_family_than_the_report_is_absent(self) -> None:
@@ -250,9 +295,10 @@ class ClassifyDetectionTests(unittest.TestCase):
                 ]
             )
         )
-        outcome, states = mutation.classify_detection(self.report, recipe)
-        self.assertEqual(outcome, mutation.Outcome.MISSED)
-        self.assertEqual(states[0].state, mutation.DetectorState.ABSENT)
+        # Neither report carries the family: the baseline never passed the case.
+        outcome, states = mutation.classify_detection(self.report, recipe, self.baseline)
+        self.assertEqual(outcome, mutation.Outcome.BASELINE_FAILED)
+        self.assertEqual(states[0].state, mutation.DetectorState.BASELINE_FAILED)
 
     def test_every_detector_state_is_classified(self) -> None:
         self.assertEqual(
@@ -262,6 +308,7 @@ class ClassifyDetectionTests(unittest.TestCase):
                 mutation.DetectorState.PASSED,
                 mutation.DetectorState.ABSENT,
                 mutation.DetectorState.FAILED_ON_OTHER_DIMENSION,
+                mutation.DetectorState.BASELINE_FAILED,
             },
         )
         for state in mutation.DetectorState:
@@ -276,7 +323,7 @@ class RealReportTests(unittest.TestCase):
         self.assertTrue(loaded.is_clean)
         self.assertEqual(len(loaded.cases), 40)
         recipe = mutation.load_recipe_file(TRACKED_MUTATIONS / f"{TRACKED_RECIPE_ID}.json")
-        outcome, states = mutation.classify_detection(loaded, recipe)
+        outcome, states = mutation.classify_detection(loaded, recipe, loaded)
         self.assertEqual(outcome, mutation.Outcome.MISSED)
         self.assertTrue(states)
         self.assertTrue(all(state.state is mutation.DetectorState.PASSED for state in states))
@@ -285,16 +332,35 @@ class RealReportTests(unittest.TestCase):
         loaded = report.load_report_file(FIXTURES / "runner_report_union_mutated.json")
         self.assertEqual(loaded.outcome, "product_mismatch")
         recipe = mutation.load_recipe_file(TRACKED_MUTATIONS / f"{TRACKED_RECIPE_ID}.json")
-        outcome, states = mutation.classify_detection(loaded, recipe)
+        baseline = report.load_report_file(FIXTURES / "runner_report_union_passed.json")
+        outcome, states = mutation.classify_detection(loaded, recipe, baseline)
         self.assertEqual(outcome, mutation.Outcome.DETECTED)
         self.assertEqual(len(states), len(recipe.expected_detectors))
 
+    def test_the_real_mutated_report_as_its_own_baseline_is_baseline_failed(self) -> None:
+        loaded = report.load_report_file(FIXTURES / "runner_report_union_mutated.json")
+        recipe = mutation.load_recipe_file(TRACKED_MUTATIONS / f"{TRACKED_RECIPE_ID}.json")
+        outcome, states = mutation.classify_detection(loaded, recipe, loaded)
+        self.assertEqual(outcome, mutation.Outcome.BASELINE_FAILED)
+        self.assertTrue(all(state.state is mutation.DetectorState.BASELINE_FAILED for state in states))
+
     def test_the_real_mutated_report_reaches_the_whole_run_flow(self) -> None:
-        fake = FakeToolchain(report_text=(FIXTURES / "runner_report_union_mutated.json").read_text())
+        fake = FakeToolchain(
+            report_text=(FIXTURES / "runner_report_union_mutated.json").read_text(),
+            baseline_text=(FIXTURES / "runner_report_union_passed.json").read_text(),
+        )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = mutation.run_recipe(_run_options(root), fake)
             self.assertEqual(result["outcome"], mutation.Outcome.DETECTED.value)
+
+    def test_a_pre_existing_failure_never_certifies_the_mutation(self) -> None:
+        mutated = (FIXTURES / "runner_report_union_mutated.json").read_text()
+        fake = FakeToolchain(report_text=mutated, baseline_text=mutated)
+        with tempfile.TemporaryDirectory() as directory:
+            result = mutation.run_recipe(_run_options(Path(directory)), fake)
+            self.assertEqual(result["outcome"], mutation.Outcome.BASELINE_FAILED.value)
+            self.assertTrue(result["detectors"])
 
 
 class RecipeValidationTests(unittest.TestCase):
@@ -449,8 +515,12 @@ class FakeToolchain:
         build_fails: bool = False,
         step_seconds: float = 0.0,
         report_missing: bool = False,
+        baseline_text: Optional[str] = None,
+        baseline_build_fails: bool = False,
     ) -> None:
         self.report_text = report_text if report_text is not None else RUNNER_REPORT_TEXT
+        self.baseline_text = baseline_text if baseline_text is not None else PASSED_BASELINE_TEXT
+        self.baseline_build_fails = baseline_build_fails
         self.stale = stale
         self.build_fails = build_fails
         self.step_seconds = step_seconds
@@ -459,6 +529,7 @@ class FakeToolchain:
         self.now = 0.0
         self.removed: list[Path] = []
         self.build_invocations = 0
+        self.built_worktrees: list[Path] = []
 
     def clock(self) -> float:
         return self.now
@@ -492,7 +563,9 @@ class FakeToolchain:
     def build(self, worktree: Path, jobs: int, deadline: float) -> Path:
         self._tick("build")
         self.build_invocations += 1
-        if self.build_fails:
+        self.built_worktrees.append(worktree)
+        baseline = worktree == REPO_ROOT.resolve()
+        if (self.baseline_build_fails and baseline) or (self.build_fails and not baseline):
             raise mutation.BuildFailed("scons returned 2")
         return worktree / "bin" / "foundry.fake"
 
@@ -500,10 +573,11 @@ class FakeToolchain:
         self, binary: Path, family: str, catalog: Path, scratch: Path, report_path: Path, deadline: float
     ) -> None:
         self._tick("run_matrix")
-        if self.report_missing:
+        baseline = report_path.parent.name.startswith("baseline_")
+        if self.report_missing and not baseline:
             return
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(self.report_text, encoding="utf-8")
+        report_path.write_text(self.baseline_text if baseline else self.report_text, encoding="utf-8")
 
 
 def _run_options(root: Path, **overrides: Any) -> Any:
@@ -538,14 +612,37 @@ class RunFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = mutation.run_recipe(_run_options(Path(directory)), fake)
             self.assertEqual(result["outcome"], mutation.Outcome.BUILD_FAILED.value)
-            self.assertNotIn("run_matrix", fake.calls)
+            # Only the baseline matrix ran; the mutated build never produced a binary to run.
+            self.assertEqual(fake.calls.count("run_matrix"), 1)
 
     def test_exactly_one_build_invocation_per_worktree(self) -> None:
         fake = FakeToolchain()
         with tempfile.TemporaryDirectory() as directory:
             mutation.run_recipe(_run_options(Path(directory)), fake)
-            self.assertEqual(fake.build_invocations, 1)
+            # One build of the unpatched repository for the baseline, one of the disposable worktree.
+            self.assertEqual(fake.build_invocations, 2)
+            self.assertEqual(len(set(fake.built_worktrees)), 2)
             self.assertEqual(fake.calls.count("add_worktree"), 1)
+
+    def test_the_baseline_runs_before_the_patch_is_applied(self) -> None:
+        fake = FakeToolchain()
+        with tempfile.TemporaryDirectory() as directory:
+            mutation.run_recipe(_run_options(Path(directory)), fake)
+            self.assertLess(fake.calls.index("run_matrix"), fake.calls.index("apply"))
+
+    def test_a_failed_baseline_build_is_build_failed(self) -> None:
+        fake = FakeToolchain(baseline_build_fails=True)
+        with tempfile.TemporaryDirectory() as directory:
+            result = mutation.run_recipe(_run_options(Path(directory)), fake)
+            self.assertEqual(result["outcome"], mutation.Outcome.BUILD_FAILED.value)
+            self.assertNotIn("apply", fake.calls)
+
+    def test_a_structural_baseline_report_is_structural(self) -> None:
+        fake = FakeToolchain(baseline_text=RUNNER_TIMEOUT_REPORT_TEXT)
+        with tempfile.TemporaryDirectory() as directory:
+            result = mutation.run_recipe(_run_options(Path(directory)), fake)
+            self.assertEqual(result["outcome"], mutation.Outcome.STRUCTURAL_FAILURE.value)
+            self.assertNotIn("apply", fake.calls)
 
     def test_a_missing_report_is_structural_not_absent(self) -> None:
         fake = FakeToolchain(report_missing=True)
@@ -612,7 +709,7 @@ class RunFlowTests(unittest.TestCase):
         fake = FakeToolchain(step_seconds=100.0)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            result = mutation.run_recipe(_run_options(root, budget_seconds=250), fake)
+            result = mutation.run_recipe(_run_options(root, budget_seconds=350), fake)
             self.assertEqual(result["outcome"], mutation.Outcome.TIMEOUT.value)
             self.assertNotIn("run_matrix", fake.calls)
             self.assertTrue(result["report_path"].startswith(str((root / "scratch").resolve())))
@@ -621,9 +718,9 @@ class RunFlowTests(unittest.TestCase):
         fake = FakeToolchain(step_seconds=100.0)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            result = mutation.run_recipe(_run_options(root, budget_seconds=550), fake)
+            result = mutation.run_recipe(_run_options(root, budget_seconds=750), fake)
             self.assertEqual(result["outcome"], mutation.Outcome.TIMEOUT.value)
-            self.assertIn("run_matrix", fake.calls)
+            self.assertEqual(fake.calls.count("run_matrix"), 2)
             self.assertTrue(Path(result["report_path"]).is_file())
 
     def test_budget_above_the_hard_cap_is_refused(self) -> None:
