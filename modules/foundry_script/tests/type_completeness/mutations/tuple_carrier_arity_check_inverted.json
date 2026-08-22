@@ -27,132 +27,132 @@
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_return",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "return",
+        "source_proof": "numeric_constant",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "text"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_return",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "return",
+        "source_proof": "numeric_constant",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "bytecode"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_assignment",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "assignment",
+        "source_proof": "gradual",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "text"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_assignment",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "assignment",
+        "source_proof": "gradual",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "bytecode"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_member_store",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "member_store",
+        "source_proof": "erased",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "text"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_member_store",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "member_store",
+        "source_proof": "erased",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "bytecode"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_container_element_store",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "container_element_store",
+        "source_proof": "variant",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "text"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_container_element_store",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "container_element_store",
+        "source_proof": "variant",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "bytecode"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_reflective_write",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "reflective_write",
+        "source_proof": "inferred",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "text"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_reflective_write",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "reflective_write",
+        "source_proof": "inferred",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "bytecode"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_proxy_write",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "proxy_write",
+        "source_proof": "nested_child",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "text"
       },
       "dimension": "runtime_status"
     },
     {
-      "family": "wrapper_parity_proxy_write",
+      "family": "wrapper_parity_argument_binding",
       "case_coordinates": {
         "destination": "tuple_field",
-        "source_proof": "static_member",
-        "boundary": "proxy_write",
+        "source_proof": "nested_child",
+        "boundary": "argument_binding",
         "census_child": "none",
         "surface": "bytecode"
       },
