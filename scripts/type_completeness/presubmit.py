@@ -56,6 +56,7 @@ class Verdict(str, enum.Enum):
     PASSED = "passed"
     NOTHING_SELECTED = "nothing_selected"
     BLOCKED = "blocked"
+    BASELINE_MISSING = "baseline_missing"
     STRUCTURAL_FAILURE = "structural_failure"
     BASELINE_MALFORMED = "baseline_malformed"
     MALFORMED_INPUT = "malformed_input"
@@ -67,6 +68,7 @@ EXIT_CODES: dict[Verdict, int] = {
     Verdict.PASSED: 0,
     Verdict.NOTHING_SELECTED: 0,
     Verdict.BLOCKED: 1,
+    Verdict.BASELINE_MISSING: 1,
     Verdict.STRUCTURAL_FAILURE: 2,
     Verdict.BASELINE_MALFORMED: 2,
     Verdict.MALFORMED_INPUT: 2,
@@ -85,6 +87,7 @@ VERDICT_PRECEDENCE: tuple[Verdict, ...] = (
     Verdict.BASELINE_MALFORMED,
     Verdict.MALFORMED_INPUT,
     Verdict.BLOCKED,
+    Verdict.BASELINE_MISSING,
     Verdict.NOTHING_SELECTED,
     Verdict.PASSED,
 )
@@ -227,9 +230,16 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 
-def _default_scratch_root(output_dir: Path) -> Path:
+def _resolve_scratch_root(requested: str) -> Path:
+    if requested:
+        return Path(requested).resolve()
     configured = os.environ.get("FOUNDRY_TEST_SCRATCH", "")
-    return Path(configured) / "type-completeness-presubmit" if configured else output_dir / "scratch"
+    if not configured:
+        raise PresubmitError(
+            "--scratch is required unless FOUNDRY_TEST_SCRATCH names the test scratch root; the runner "
+            "refuses a report path outside it"
+        )
+    return Path(configured).resolve() / "type-completeness-presubmit"
 
 
 def _run(command: Sequence[str], timeout: Optional[float] = None) -> subprocess.CompletedProcess[str]:
@@ -279,8 +289,9 @@ class Gate:
         self.repository_root = Path(arguments.repository_root).resolve()
         self.catalog = Path(arguments.catalog)
         # The runner only writes below the configured test scratch space and refuses a report path
-        # outside it, so the default follows that root rather than the output directory.
-        self.scratch = Path(arguments.scratch) if arguments.scratch else _default_scratch_root(self.output_dir)
+        # outside it, so there is no defaulting to invent here: an unnamed scratch root is refused
+        # rather than turned into a path every family run would fail on.
+        self.scratch = _resolve_scratch_root(arguments.scratch)
         self.configuration = arguments.configuration
         self.baseline_dir = Path(arguments.baseline_dir) if arguments.baseline_dir else None
         self.ledger_dir = Path(arguments.ledger_dir) if arguments.ledger_dir else None
@@ -585,8 +596,11 @@ def run_gate(arguments: argparse.Namespace) -> int:
             gate.record(Verdict.BASELINE_MALFORMED, baseline_reason)
             refusals.append(baseline_reason)
             continue
-        if baseline_reason:
-            gate.reasons.append(baseline_reason)
+        if baseline_state is BaselineState.MISSING:
+            # Without a develop side the comparison can only see the branch: a case that existed on
+            # develop and vanished from the branch produces no artifact at all, so a run with no
+            # baseline cannot demonstrate the absence of a regression and must not report one.
+            gate.record(Verdict.BASELINE_MISSING, baseline_reason)
         comparison_path, verdict, reason = gate.compare(family, branch_report, develop_report)
         if verdict is not None:
             gate.record(verdict, reason)
@@ -670,7 +684,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True, help="destination of selection/comparison/verdict documents")
     parser.add_argument("--repository-root", default=".", help="repository the change set is measured in")
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG))
-    parser.add_argument("--scratch", default="", help="owned scratch root; defaults to <output-dir>/scratch")
+    parser.add_argument(
+        "--scratch",
+        default="",
+        help="owned scratch root below the test scratch space; defaults to $FOUNDRY_TEST_SCRATCH/type-completeness-presubmit",
+    )
     parser.add_argument("--configuration", default="text", help="capability configuration label the reports carry")
     parser.add_argument("--changed-paths", default="", help="pre-computed changed-paths file; otherwise git is used")
     parser.add_argument("--merge-base-ref", default="origin/develop")

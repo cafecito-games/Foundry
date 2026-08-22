@@ -82,6 +82,7 @@ class VerdictTableTests(unittest.TestCase):
                 "passed": 0,
                 "nothing_selected": 0,
                 "blocked": 1,
+                "baseline_missing": 1,
                 "structural_failure": 2,
                 "baseline_malformed": 2,
                 "malformed_input": 2,
@@ -294,6 +295,7 @@ class GateTestCase(unittest.TestCase):
     ) -> tuple[int, dict[str, Any], Path]:
         destination = output_dir or self.output
         env = dict(self.environment)
+        env["FOUNDRY_TEST_SCRATCH"] = str(self.work / "scratch-root")
         env["FOUNDRY_FAKE_SELECTION"] = str(
             selection_fixture if Path(selection_fixture).is_absolute() else FIXTURES / selection_fixture
         )
@@ -363,6 +365,24 @@ class GateTests(GateTestCase):
         self.assertEqual(verdict["baseline_state"], "missing")
         self.assertEqual(verdict["state"], "blocked")
         self.assertEqual(code, 1)
+        self.assertTrue(verdict["blocking_comparison_ids"])
+
+    def test_a_missing_baseline_never_reports_a_clean_run(self) -> None:
+        # A vanished case produces no artifact at all when the develop side is absent, so a run with
+        # no baseline cannot demonstrate the absence of a regression and must not read as passed.
+        self.write_report(runner_report())
+        code, verdict, _ = self.run_gate(baseline_dir=self.work / "absent")
+        self.assertEqual(verdict["baseline_state"], "missing")
+        self.assertEqual(verdict["state"], "baseline_missing")
+        self.assertEqual(code, 1)
+
+    def test_an_unnamed_scratch_root_is_refused(self) -> None:
+        # The runner refuses a report path outside the test scratch space, so a wrapper that invented
+        # one would turn every family run into a structural failure.
+        self.write_report(runner_report())
+        code, verdict, _ = self.run_gate(environment={"FOUNDRY_TEST_SCRATCH": ""})
+        self.assertEqual(code, 2)
+        self.assertEqual(verdict, {})
 
     def test_a_malformed_baseline_is_not_a_missing_one(self) -> None:
         self.write_report(runner_report())

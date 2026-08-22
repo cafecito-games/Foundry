@@ -119,11 +119,15 @@ present (`product_finding`, `structural_failure`, `failed_witness`, `stale_ledge
 steps already decide:
 
 ```sh
-python3 scripts/type_completeness/presubmit.py \
+FOUNDRY_TEST_SCRATCH=$PWD/.test_scratch python3 scripts/type_completeness/presubmit.py \
   --binary bin/foundry.linuxbsd.editor.dev.x86_64 \
   --output-dir type-completeness \
   --baseline-dir baseline
 ```
+
+The runner refuses a report path outside the test scratch space, so `--scratch` is required unless
+`FOUNDRY_TEST_SCRATCH` names that root; the wrapper refuses the invocation rather than inventing a path
+every family run would then fail on.
 
 It writes `selection.json`, one `report-<family>.json` per family it ran, `comparison.json`, and
 `verdict.json` into `--output-dir`, and the same documents come out of a CI run and a local run on the same
@@ -146,6 +150,7 @@ Every state maps to exactly one exit code:
 | `passed` | 0 | Nothing in the selected slice regressed. |
 | `nothing_selected` | 0 | No changed path maps to a family; no slice ran. |
 | `blocked` | 1 | An in-slice regression, or an unchanged in-slice failure with no ledger authority. |
+| `baseline_missing` | 1 | A slice ran with no `develop` side, so no absence of regression can be shown. |
 | `structural_failure` | 2 | A run broke, published a structural failure, or exited outside the runner's vocabulary. |
 | `baseline_malformed` | 2 | A baseline artifact exists but cannot be loaded. This is not "missing". |
 | `malformed_input` | 2 | The selection or comparison document cannot be interpreted. |
@@ -153,4 +158,8 @@ Every state maps to exactly one exit code:
 | `selector_validation_failed` | 4 | The selector reported a validation error; the slice it reached still ran and published. |
 
 A baseline artifact that does not exist is not an error and is never downgraded: every in-slice failure is
-then compared against an absent `develop` side, which `classify` reads as `new`, so the gate blocks.
+then compared against an absent `develop` side, which `classify` reads as `new`, so the gate blocks. A run
+that found no failure at all still does not pass in that situation. Comparison can only see cases that exist
+on one of its two sides, so a case that existed on `develop` and vanished from the branch produces no
+artifact when the `develop` side is absent - exactly the coverage regression `vanished` exists to catch.
+Rather than report a clean run it cannot substantiate, the gate reports `baseline_missing`.
