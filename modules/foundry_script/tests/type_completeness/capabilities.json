@@ -13,7 +13,9 @@
         "modules/foundry_script/fs_parser_data_type.cpp",
         "modules/foundry_script/foundry_script.cpp",
         "modules/foundry_script/fs_bytecode_export.cpp",
-        "modules/foundry_script/fs_bytecode_loader.cpp"
+        "modules/foundry_script/fs_bytecode_loader.cpp",
+        "modules/foundry_script/fs_byte_codegen.cpp",
+        "modules/foundry_script/fs_function.h"
       ],
       "families": [
         "union_destination_membership",
