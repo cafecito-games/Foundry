@@ -124,8 +124,6 @@ static const DestinationShape destination_shapes[] = {
 			"wrapped", "transported.value", "", "trait_witness" },
 };
 
-
-
 // Where a boundary's own destination slot is recorded, and so where its descriptor is read back from.
 // Every site is the slot the boundary actually writes through: an unrelated declaration of the same
 // type would pass a program whose boundary lost its check.
@@ -184,7 +182,6 @@ static const BoundaryShape boundary_shapes[] = {
 			SITE_CLASS_MEMBER, "Proxy", "value" },
 };
 
-
 // One source of the transported value and how provable it is at the destination.
 struct SourceProofShape {
 	const char *leaf;
@@ -211,7 +208,6 @@ static const SourceProofShape source_proof_shapes[] = {
 	{ "variant", "variant_source", "variant_source", true, false },
 	{ "nested_child", "nested_source[0]", "nested_source[0]", true, false },
 };
-
 
 // One census child slot and the declaration that forces a program to realize it. The leaf ids are
 // `<representation>.<child_slot>` pairs from `census/representations.json`; several representations
