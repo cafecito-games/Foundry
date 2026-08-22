@@ -72,7 +72,7 @@ static bool completeness_errors_contain_text(const Vector<String> &p_errors, con
 static String write_representative_completeness_manifest(TemporaryProjectTree &p_tree) {
 	return write_completeness_manifest(p_tree, R"JSON({
   "schema_version": 2,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "family": "assignment_compatibility",
   "domain": {
     "destination": ["plain", "union"],
@@ -539,7 +539,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/shape.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("partitions/.DS_Store", "filesystem metadata");
 		tree.write_file("dimensions/.metadata.json", "not catalog data");
 
@@ -557,7 +557,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/shape.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["plain"],"classes":{}})JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("partitions/notes.txt", "unexpected");
 		tree.write_file("dimensions/nested/metadata.json", "unexpected");
 
@@ -780,7 +780,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 		tree.write_file("partitions/b.json",
 				R"JSON({"schema_version":1,"axis":"shape","leaves":["union"],"classes":{}})JSON");
 		tree.write_file("dimensions/a.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 		tree.write_file("dimensions/b.json",
 				R"JSON({"schema_version":1,"adapter":"synthetic_pair_identity","dimensions":[{"id":"analysis","outcomes":["reject"]}]})JSON");
 
@@ -810,7 +810,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
   }
 })JSON");
 		tree.write_file("dimensions/core.json",
-				R"JSON({"schema_version":1,"adapter":"union_destination_membership","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
+				R"JSON({"schema_version":1,"adapter":"destination_wrapper","dimensions":[{"id":"analysis","outcomes":["accept"]}]})JSON");
 
 		FSCompletenessCatalog catalog;
 		Vector<String> errors;
@@ -852,7 +852,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 				R"JSON({"schema_version":1,"axis":"a_shape","leaves":["plain"],"classes":{},"a_typo":true})JSON");
 		tree.write_file("dimensions/core.json", R"JSON({
   "schema_version": 1,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "dimensions": [{"id": "analysis", "outcomes": ["accept"], "outcome": "accept"}],
   "dimensionz": []
 })JSON");
@@ -882,7 +882,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 })JSON");
 		tree.write_file("dimensions/duplicate.json", R"JSON({
   "schema_version": 1,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "dimensions": [{
     "id": "analysis",
     "outcomes": ["accept"],
@@ -917,7 +917,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 
 		const FSCompletenessSelection compiler =
 				capability_map.select(Vector<String>({ "modules/foundry_script/fs_compiler.cpp" }));
-		CHECK(selection_has_only_family(compiler, "union_destination_membership"));
+		CHECK(compiler.families.has("union_destination_membership"));
+		CHECK(compiler.families.has("wrapper_parity_argument_binding"));
 		CHECK_FALSE(compiler.used_broad_core_fallback);
 		CHECK(compiler.validation_errors.is_empty());
 

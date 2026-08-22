@@ -230,7 +230,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 			CHECK_EQ(adapter->id(), adapter_id);
 			CHECK_EQ(FSCompletenessAdapterRegistry::find(adapter_id), adapter);
 		}
-		CHECK(ids.has("union_destination_membership"));
+		CHECK(ids.has("destination_wrapper"));
 		CHECK(ids.has(synthetic_completeness_adapter_id));
 		CHECK(FSCompletenessAdapterRegistry::find("no_such_adapter") == nullptr);
 		CHECK(FSCompletenessAdapterRegistry::find(String()) == nullptr);
@@ -242,7 +242,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 				FSCompletenessAdapterRegistry::find(synthetic_completeness_adapter_id);
 		REQUIRE(adapter != nullptr);
 		const FSCompletenessFamilyAdapter *other =
-				FSCompletenessAdapterRegistry::find("union_destination_membership");
+				FSCompletenessAdapterRegistry::find("destination_wrapper");
 		REQUIRE(other != nullptr);
 
 		CHECK(FSCompletenessAdapterRegistry::validate(Vector<const FSCompletenessFamilyAdapter *>({ adapter, other }))
@@ -728,13 +728,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 		// The dimension the synthetic family requires, misfiled under another adapter's declaration.
 		tree.write_file("catalog/dimensions/synthetic.json",
 				synthetic_dimension_document().replace(
-						synthetic_completeness_adapter_id, "union_destination_membership"));
+						synthetic_completeness_adapter_id, "destination_wrapper"));
 
 		Vector<String> errors;
 		CHECK_EQ(load_synthetic_catalog_errors(catalog_root, errors), ERR_INVALID_DATA);
 		CHECK_MESSAGE(completeness_error_reported(errors,
 							  "dimension 'synthetic_identity' is declared in dimensions/synthetic.json for "
-							  "adapter 'union_destination_membership', not for adapter "
+							  "adapter 'destination_wrapper', not for adapter "
 							  "'synthetic_pair_identity'"),
 				String(" | ").join(errors));
 	}
