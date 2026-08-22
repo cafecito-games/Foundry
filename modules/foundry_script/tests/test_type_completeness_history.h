@@ -416,6 +416,7 @@ static bool history_load_schema(const String &p_directory, HistorySchema &r_sche
 
 static bool history_validate_record(const HistoryValidationContext &p_context, const HistorySchema &p_schema,
 		HistoryCatalogState &p_state, const String &p_file_name, Vector<String> &r_errors) {
+	const int errors_before = r_errors.size();
 	const String stem = p_file_name.get_basename();
 	const String path = p_context.history_directory.path_join(p_file_name);
 	if (!history_is_safe_id(stem)) {
@@ -592,7 +593,7 @@ static bool history_validate_record(const HistoryValidationContext &p_context, c
 		r_errors.push_back(vformat("%s: $.disposition '%s' is listed by schema.json but has no validation rule", path, disposition));
 		ok = false;
 	}
-	return ok;
+	return ok && r_errors.size() == errors_before;
 }
 
 static bool history_list_json_files(const String &p_directory, Vector<String> &r_files, Vector<String> &r_errors) {
@@ -648,6 +649,7 @@ static bool validate_history_directory(const HistoryValidationContext &p_context
 // dimension the family or the runner judges. The patch must sit at patches/<recipe_id>.patch.
 static bool validate_mutation_recipe(HistoryCatalogState &p_state, const String &p_directory,
 		const String &p_file_name, Vector<String> &r_errors) {
+	const int errors_before = r_errors.size();
 	const String stem = p_file_name.get_basename();
 	const String path = p_directory.path_join(p_file_name);
 	if (!history_is_safe_id(stem)) {
@@ -728,10 +730,11 @@ static bool validate_mutation_recipe(HistoryCatalogState &p_state, const String 
 		}
 		ok = history_coordinates_resolve(p_state, family, coordinates, required, path, json_path, r_errors) && ok;
 	}
-	return ok;
+	return ok && r_errors.size() == errors_before;
 }
 
 static bool validate_mutation_directory(const String &p_catalog_root, const String &p_directory, Vector<String> &r_errors) {
+	const int errors_before = r_errors.size();
 	Vector<String> files;
 	if (!history_list_json_files(p_directory, files, r_errors)) {
 		return false;
@@ -802,7 +805,7 @@ static bool validate_mutation_directory(const String &p_catalog_root, const Stri
 			ok = false;
 		}
 	}
-	return ok;
+	return ok && r_errors.size() == errors_before;
 }
 
 // ---------------------------------------------------------------------------------------------

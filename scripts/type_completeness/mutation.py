@@ -608,15 +608,25 @@ class Toolchain:
         )
 
 
+# How long a step is given to stop after SIGTERM before its group is killed outright. The build
+# wrapper runs the compiler in a session of its own and forwards SIGTERM to that session before
+# killing it, so a SIGTERM to the wrapper's group is what reaches the compiler; SIGKILL would only
+# reap the wrapper and orphan the compiler inside a worktree about to be removed.
+STEP_TERMINATE_GRACE_SECONDS = 60.0
+
+
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
-    try:
-        process.communicate(timeout=30)
-    except subprocess.TimeoutExpired:
-        process.kill()
+    for signal_number, grace in ((signal.SIGTERM, STEP_TERMINATE_GRACE_SECONDS), (signal.SIGKILL, 10.0)):
+        try:
+            os.killpg(process.pid, signal_number)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            process.communicate(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+    process.kill()
 
 
 def _family_report_path(report_root: Path, family: str) -> Path:
