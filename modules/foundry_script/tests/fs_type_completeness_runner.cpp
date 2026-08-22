@@ -1953,6 +1953,14 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 					vformat("A census claim has no witness that resolves: %s", unresolved),
 					String(), String(), String(), ERR_INVALID_DATA));
 		}
+		// A witness the running configuration never compiled is neither bound nor broken. Reporting it
+		// as a refusal would make the verdict depend on the build rather than on the catalog, and
+		// dropping it silently would let a configuration publish a coverage claim it never confirmed.
+		r_result.unconfirmed_census_witnesses =
+				FSCompletenessCensus::unconfirmable_witnesses(p_options.catalog_root, census_summary);
+		for (const String &unconfirmed : r_result.unconfirmed_census_witnesses) {
+			WARN_PRINT(vformat("Type-completeness census claim unconfirmed in this build: %s", unconfirmed));
+		}
 	}
 	sort_structural_failures(structural_failures);
 

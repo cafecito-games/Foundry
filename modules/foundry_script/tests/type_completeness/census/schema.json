@@ -62,6 +62,12 @@
 		"present",
 		"deferred"
 	],
+	"witness_build_configurations": [
+		"editor"
+	],
+	"witness_build_configuration_meanings": {
+		"editor": "The doctest case is compiled only into an editor build, so a template build cannot bind it. A build that is not the declared configuration reports the claim as unconfirmed rather than as unresolved or as evidence."
+	},
 	"coverage_statuses": [
 		"covered",
 		"uncovered",

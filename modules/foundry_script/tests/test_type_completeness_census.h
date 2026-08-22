@@ -290,14 +290,23 @@ static void write_staged_coverage(TemporaryProjectTree &p_tree, const Dictionary
 	p_tree.write_file("catalog/census/coverage.json", JSON::stringify(p_document, "\t") + "\n");
 }
 
-// Index of the first coverage entry whose witness is of p_kind, or -1.
+// The first entry of p_kind whose witness this build can bind. A witness declared for another build
+// configuration resolves to nothing here whatever is done to it, so a negative case that broke one
+// would be asserting on the configuration instead of on the breakage.
 static int first_coverage_entry_with_witness_kind(const Array &p_entries, const String &p_kind) {
 	for (int index = 0; index < p_entries.size(); index++) {
 		const Dictionary entry = p_entries[index];
 		const Variant &witness = entry.get("witness", Variant());
-		if (witness.get_type() == Variant::DICTIONARY && census_string(witness, "kind") == p_kind) {
-			return index;
+		if (witness.get_type() != Variant::DICTIONARY || census_string(witness, "kind") != p_kind) {
+			continue;
 		}
+		FSCompletenessCoverageWitness declared_witness;
+		declared_witness.kind = p_kind;
+		declared_witness.build_configuration = census_string(witness, "build_configuration");
+		if (FSCompletenessCensus::witness_needs_other_configuration(declared_witness)) {
+			continue;
+		}
+		return index;
 	}
 	return -1;
 }
@@ -675,6 +684,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 				}
 				if (status == "present") {
 					present_witnesses += 1;
+					FSCompletenessCoverageWitness declared_witness;
+					declared_witness.kind = kind;
+					declared_witness.reference = reference;
+					declared_witness.build_configuration = census_string(witness, "build_configuration");
+					if (FSCompletenessCensus::witness_needs_other_configuration(declared_witness)) {
+						// The witness names a build this one is not, so no case was compiled to bind and
+						// this build can neither confirm the claim nor refute it.
+						continue;
+					}
 					// A present witness is bound to what actually observes it: a tracked fixture or a
 					// registered doctest case. A reference that only looks well-formed observes nothing.
 					String detail;
@@ -901,6 +919,137 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		CHECK(witness_kinds.has("doctest_case"));
 		CHECK(witness_kinds.has("fixture"));
 		CHECK(witness_kinds.has("family_case"));
+	}
+
+	TEST_CASE("TypeCompleteness Census reports a witness of another build configuration as unconfirmed") {
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
+
+		const Vector<String> unresolved =
+				FSCompletenessCensus::unresolved_witnesses(type_census_root(), summary);
+		const Vector<String> unconfirmable =
+				FSCompletenessCensus::unconfirmable_witnesses(type_census_root(), summary);
+		CHECK_MESSAGE(unresolved.is_empty(), String(" | ").join(unresolved));
+
+		// Every claim the census makes lands in exactly one bucket, so a configuration can never both
+		// count a witness as evidence and report it as unconfirmed.
+		int declared_for_other_configuration = 0;
+		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
+			if (entry.status == "covered" &&
+					FSCompletenessCensus::witness_needs_other_configuration(entry.witness)) {
+				declared_for_other_configuration++;
+			}
+		}
+		for (const FSCompletenessUnsupportedWitness &witness : summary.unsupported_witnesses) {
+			if (FSCompletenessCensus::witness_needs_other_configuration(witness.witness)) {
+				declared_for_other_configuration++;
+			}
+		}
+		CHECK_EQ(unconfirmable.size(), declared_for_other_configuration);
+		for (const String &message : unconfirmable) {
+			CHECK_MESSAGE(message.contains("is only compiled in the editor configuration"), message);
+		}
+#ifdef TOOLS_ENABLED
+		// This is the editor configuration, so every witness the census declares is compiled here and
+		// had to bind for the run above to report nothing unresolved.
+		CHECK(unconfirmable.is_empty());
+#else
+		// The census declares editor-only witnesses, so a template build has to report them rather than
+		// counting a case it never compiled as evidence.
+		CHECK_FALSE(unconfirmable.is_empty());
+#endif
+	}
+
+	TEST_CASE("TypeCompleteness Census refuses a witness build configuration it does not implement") {
+		TemporaryProjectTree tree(vformat("type_completeness_census_configuration_%d",
+				OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		SUBCASE("a configuration outside the vocabulary is a refusal") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const int index = first_coverage_entry_with_witness_kind(entries, "doctest_case");
+			REQUIRE(index >= 0);
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			witness["build_configuration"] = "headless";
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "is outside the build-configuration vocabulary"),
+					String(" | ").join(errors));
+		}
+
+		SUBCASE("only a compiled case can be configuration-dependent") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const int index = first_coverage_entry_with_witness_kind(entries, "fixture");
+			REQUIRE(index >= 0);
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			witness["build_configuration"] = "editor";
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(
+					census_errors_mention(errors, "only a doctest_case witness is configuration-dependent"),
+					String(" | ").join(errors));
+		}
+
+		SUBCASE("a broken witness of another configuration is unconfirmed, never resolved") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			int index = -1;
+			for (int entry_index = 0; entry_index < entries.size(); entry_index++) {
+				const Dictionary candidate = entries[entry_index];
+				const Variant &candidate_witness = candidate.get("witness", Variant());
+				if (candidate_witness.get_type() == Variant::DICTIONARY &&
+						census_string(candidate_witness, "build_configuration") == "editor") {
+					index = entry_index;
+					break;
+				}
+			}
+			REQUIRE_MESSAGE(index >= 0, "the census declares no editor-only witness");
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			witness["reference"] = "[Modules][FoundryScript][TypeUnion] No case is named this";
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
+			const Vector<String> unresolved =
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+			const Vector<String> unconfirmable =
+					FSCompletenessCensus::unconfirmable_witnesses(staged_root, summary);
+#ifdef TOOLS_ENABLED
+			// The editor configuration compiles the case the witness names, so a reference nothing
+			// registers is the defect it always was.
+			REQUIRE_EQ(unresolved.size(), 1);
+			CHECK_MESSAGE(unresolved[0].contains("no registered doctest case"), unresolved[0]);
+			CHECK(unconfirmable.is_empty());
+#else
+			// A build that compiled no case cannot tell a renamed witness from an absent one, so it
+			// reports the claim as unconfirmed instead of inventing a verdict.
+			CHECK_MESSAGE(unresolved.is_empty(), String(" | ").join(unresolved));
+			REQUIRE_FALSE(unconfirmable.is_empty());
+#endif
+		}
 	}
 
 	TEST_CASE("TypeCompleteness Census refuses an exemption whose negative witness observes nothing") {

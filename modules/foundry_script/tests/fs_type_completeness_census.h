@@ -71,6 +71,11 @@ struct FSCompletenessCoverageWitness {
 	// family_case only: the rules stem and the full concrete coordinates of the observing cell.
 	String family;
 	Dictionary coordinates;
+	// The build configuration this witness can be confirmed in, or empty when every configuration
+	// compiles it. A witness that only exists in an editor build cannot be bound by a template build,
+	// so declaring that here keeps an absent case attributable to the configuration instead of being
+	// read as a coverage claim nothing backs.
+	String build_configuration;
 
 	bool is_declared() const { return !kind.is_empty(); }
 };
@@ -144,6 +149,17 @@ public:
 	// what lets a run publish the census as evidence.
 	static Vector<String> unresolved_witnesses(
 			const String &p_root, const FSCompletenessCensusSummary &p_summary);
+
+	// One message per witness this configuration cannot bind because the configuration it declares is
+	// not the one running. Such a witness is never counted as unresolved - a build that does not
+	// compile a case learns nothing about whether the case exists - and never counted as confirmed
+	// either, so a consumer reports the claim as unconfirmed rather than as evidence.
+	static Vector<String> unconfirmable_witnesses(
+			const String &p_root, const FSCompletenessCensusSummary &p_summary);
+
+	// True when p_witness declares a configuration this build is not. The declaration is the census
+	// document's, so the same catalog reads the same way in every build; only the verdict differs.
+	static bool witness_needs_other_configuration(const FSCompletenessCoverageWitness &p_witness);
 };
 
 } // namespace FSTests

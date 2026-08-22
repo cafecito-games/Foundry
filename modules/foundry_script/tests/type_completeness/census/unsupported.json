@@ -50,6 +50,7 @@
 				{
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec] Loader rejects a data-type kind above the highest FSDataType kind",
+					"build_configuration": "editor",
 					"status": "present"
 				}
 			]
@@ -76,11 +77,13 @@
 				{
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec][NumericType] Loader rejects out-of-range descriptors",
+					"build_configuration": "editor",
 					"status": "present"
 				},
 				{
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec][NumericType] Loader rejects carrier-inconsistent descriptors",
+					"build_configuration": "editor",
 					"status": "present"
 				}
 			]

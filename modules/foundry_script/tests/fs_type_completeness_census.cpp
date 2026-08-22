@@ -201,9 +201,10 @@ const char *WITNESS_MEMBERS[] = {
 	"reference",
 	"family",
 	"coordinates",
+	"build_configuration",
 };
 
-constexpr int WITNESS_MEMBER_COUNT = 4;
+constexpr int WITNESS_MEMBER_COUNT = 5;
 
 // Ascending by policy-pair key, which is the order every census report is published in.
 struct CoverageEntryKeyLess {
@@ -239,6 +240,13 @@ enum class WitnessKind {
 enum class WitnessStatus {
 	PRESENT,
 	DEFERRED,
+	MAX,
+};
+
+// The build configurations a witness can restrict itself to. Only a configuration that compiles more
+// than a template does needs naming: a witness with no declaration must bind in every build.
+enum class WitnessConfiguration {
+	EDITOR,
 	MAX,
 };
 
@@ -286,6 +294,16 @@ String witness_kind_id(WitnessKind p_kind) {
 		case WitnessKind::FAMILY_CASE:
 			return "family_case";
 		case WitnessKind::MAX:
+			break;
+	}
+	return String();
+}
+
+String witness_configuration_id(WitnessConfiguration p_configuration) {
+	switch (p_configuration) {
+		case WitnessConfiguration::EDITOR:
+			return "editor";
+		case WitnessConfiguration::MAX:
 			break;
 	}
 	return String();
@@ -467,6 +485,23 @@ void parse_witness(const Dictionary &p_entry, const String &p_json_path,
 		return;
 	}
 	r_witness.kind = kind;
+	const String build_configuration = census_string(witness, "build_configuration");
+	if (!build_configuration.is_empty()) {
+		WitnessConfiguration declared_configuration = WitnessConfiguration::MAX;
+		if (!parse_vocabulary_term(build_configuration, witness_configuration_id, declared_configuration)) {
+			r_errors.push_back(vformat(
+					"%s.build_configuration: '%s' is outside the build-configuration vocabulary",
+					witness_path, build_configuration));
+		} else if (witness_kind != WitnessKind::DOCTEST_CASE) {
+			// A tracked fixture path and a resolved matrix cell are catalog data every build reads the
+			// same way. Only a compiled test case can be absent from a build that is otherwise correct.
+			r_errors.push_back(
+					vformat("%s.build_configuration: only a doctest_case witness is configuration-dependent",
+							witness_path));
+		} else {
+			r_witness.build_configuration = build_configuration;
+		}
+	}
 	if (witness_kind == WitnessKind::FAMILY_CASE) {
 		r_witness.family = census_string(witness, "family");
 		if (r_witness.family.is_empty()) {
@@ -594,6 +629,8 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	check_vocabulary_closure(schema, "witness_kinds", declarable_witness_kinds, schema_path, r_errors);
 	check_vocabulary_closure(schema, "witness_statuses",
 			implemented_vocabulary<WitnessStatus>(witness_status_id), schema_path, r_errors);
+	check_vocabulary_closure(schema, "witness_build_configurations",
+			implemented_vocabulary<WitnessConfiguration>(witness_configuration_id), schema_path, r_errors);
 	check_vocabulary_closure(schema, "policies",
 			implemented_vocabulary<PolicyKind>(policy_kind_id), schema_path, r_errors);
 	check_vocabulary_closure(schema, "transition_kinds",
@@ -799,6 +836,23 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 				r_errors.push_back(vformat("%s.reference: a witness carries no reference", witness_path));
 				continue;
 			}
+			const String build_configuration = census_string(witness, "build_configuration");
+			if (!build_configuration.is_empty()) {
+				WitnessConfiguration declared_configuration = WitnessConfiguration::MAX;
+				if (!parse_vocabulary_term(
+							build_configuration, witness_configuration_id, declared_configuration)) {
+					r_errors.push_back(vformat(
+							"%s.build_configuration: '%s' is outside the build-configuration vocabulary",
+							witness_path, build_configuration));
+					continue;
+				}
+				if (witness_kind != WitnessKind::DOCTEST_CASE) {
+					r_errors.push_back(vformat(
+							"%s.build_configuration: only a doctest_case witness is configuration-dependent",
+							witness_path));
+					continue;
+				}
+			}
 			switch (witness_status) {
 				case WitnessStatus::PRESENT: {
 					witnessed_unsupported_representations.insert(representation);
@@ -807,6 +861,7 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 					present_witness.representation = representation;
 					present_witness.witness.kind = kind;
 					present_witness.witness.reference = census_string(witness, "reference");
+					present_witness.witness.build_configuration = build_configuration;
 					unsupported_witnesses.push_back(present_witness);
 				} break;
 				case WitnessStatus::DEFERRED:
@@ -1040,17 +1095,44 @@ bool FSCompletenessCensus::resolve_witness(const String &p_root, const FSComplet
 	return false;
 }
 
-Vector<String> FSCompletenessCensus::unresolved_witnesses(
-		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
-	Vector<String> unresolved;
+bool FSCompletenessCensus::witness_needs_other_configuration(
+		const FSCompletenessCoverageWitness &p_witness) {
+	if (p_witness.build_configuration.is_empty()) {
+		return false;
+	}
+#ifdef TOOLS_ENABLED
+	return p_witness.build_configuration != witness_configuration_id(WitnessConfiguration::EDITOR);
+#else
+	return p_witness.build_configuration == witness_configuration_id(WitnessConfiguration::EDITOR);
+#endif
+}
+
+// Both verdicts read the same claims in the same order, so a witness is either resolved, unresolved,
+// or unconfirmable here, and never two of the three.
+static Vector<String> claimed_witnesses(const String &p_root, const FSCompletenessCensusSummary &p_summary,
+		bool p_collect_unconfirmable) {
+	Vector<String> messages;
+	auto record = [&](const String &p_label, const FSCompletenessCoverageEntry &p_entry) {
+		const bool needs_other_configuration =
+				FSCompletenessCensus::witness_needs_other_configuration(p_entry.witness);
+		if (needs_other_configuration != p_collect_unconfirmable) {
+			return;
+		}
+		if (needs_other_configuration) {
+			messages.push_back(vformat("%s: witness '%s' is only compiled in the %s configuration", p_label,
+					p_entry.witness.reference, p_entry.witness.build_configuration));
+			return;
+		}
+		String detail;
+		if (!FSCompletenessCensus::resolve_witness(p_root, p_entry, detail)) {
+			messages.push_back(vformat("%s: %s", p_label, detail));
+		}
+	};
 	for (const FSCompletenessCoverageEntry &entry : p_summary.entries) {
 		if (entry.status != coverage_status_id(CoverageStatus::COVERED)) {
 			continue;
 		}
-		String detail;
-		if (!resolve_witness(p_root, entry, detail)) {
-			unresolved.push_back(vformat("%s: %s", entry.key(), detail));
-		}
+		record(entry.key(), entry);
 	}
 	// An exemption is only an exemption while the negative witness it stands on still observes the
 	// rejection. A reference nothing binds authorizes nothing, whatever its declared status says.
@@ -1059,12 +1141,19 @@ Vector<String> FSCompletenessCensus::unresolved_witnesses(
 		entry.representation = unsupported.representation;
 		entry.status = coverage_status_id(CoverageStatus::UNSUPPORTED);
 		entry.witness = unsupported.witness;
-		String detail;
-		if (!resolve_witness(p_root, entry, detail)) {
-			unresolved.push_back(vformat("unsupported '%s': %s", unsupported.entry_id, detail));
-		}
+		record(vformat("unsupported '%s'", unsupported.entry_id), entry);
 	}
-	return unresolved;
+	return messages;
+}
+
+Vector<String> FSCompletenessCensus::unresolved_witnesses(
+		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
+	return claimed_witnesses(p_root, p_summary, false);
+}
+
+Vector<String> FSCompletenessCensus::unconfirmable_witnesses(
+		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
+	return claimed_witnesses(p_root, p_summary, true);
 }
 
 } // namespace FSTests

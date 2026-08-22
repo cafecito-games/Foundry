@@ -160,6 +160,10 @@ struct FSCompletenessRunResult {
 	int compared_surface_pairs = 0;
 	Vector<FSCompletenessFinding> findings;
 	Vector<FSCompletenessStructuralFailure> structural_failures;
+	// Census claims whose witness names a build configuration this one is not, in census order. They
+	// are not failures - this build compiled no case to bind, so it observed nothing either way - but a
+	// run that carries them confirmed less of the census than a run that carries none.
+	Vector<String> unconfirmed_census_witnesses;
 	String outcome = "not_run";
 	Dictionary report;
 };
