@@ -59,13 +59,19 @@ namespace FSTests {
 using namespace Completeness;
 
 bool resolve_doctest_case_reference(const String &p_reference, String &r_detail) {
-	for (const doctest::detail::TestCase &test_case : doctest::detail::getRegisteredTests()) {
-		const String suite = String::utf8(test_case.m_test_suite != nullptr ? test_case.m_test_suite : "");
-		const String name = String::utf8(test_case.m_name != nullptr ? test_case.m_name : "");
-		const String qualified = suite.is_empty() ? name : suite + " " + name;
-		if (qualified == p_reference) {
-			return true;
+	// Registration happens before any test runs and nothing removes a case afterwards, so the index is
+	// built once; a census with many witnesses would otherwise walk the whole registry per witness.
+	static HashSet<String> registered_case_names = []() {
+		HashSet<String> names;
+		for (const doctest::detail::TestCase &test_case : doctest::detail::getRegisteredTests()) {
+			const String suite = String::utf8(test_case.m_test_suite != nullptr ? test_case.m_test_suite : "");
+			const String name = String::utf8(test_case.m_name != nullptr ? test_case.m_name : "");
+			names.insert(suite.is_empty() ? name : suite + " " + name);
 		}
+		return names;
+	}();
+	if (registered_case_names.has(p_reference)) {
+		return true;
 	}
 	r_detail = vformat("no registered doctest case is named '%s'", p_reference);
 	return false;

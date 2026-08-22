@@ -12402,8 +12402,8 @@
 	],
 	"published_surface": "",
 	"census": {
-		"covered": 23.0,
-		"uncovered": 56.0,
+		"covered": 22.0,
+		"uncovered": 57.0,
 		"unsupported": 0.0,
 		"quality_deferred": 2.0,
 		"entries": [
@@ -12788,10 +12788,10 @@
 				"representation": "parser_data_type",
 				"child_slot": "enum_case_payload_field_names",
 				"surface": "editor_tools",
-				"status": "quality_deferred",
+				"status": "uncovered",
 				"witness": {
-					"kind": "fixture",
-					"reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs",
+					"kind": "",
+					"reference": "",
 					"family": "",
 					"coordinates": {}
 				},
@@ -13118,14 +13118,14 @@
 				"representation": "parser_data_type",
 				"child_slot": "union_members",
 				"surface": "editor_tools",
-				"status": "covered",
+				"status": "quality_deferred",
 				"witness": {
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source",
 					"family": "",
 					"coordinates": {}
 				},
-				"issue_url": ""
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
 			},
 			{
 				"representation": "parser_data_type",

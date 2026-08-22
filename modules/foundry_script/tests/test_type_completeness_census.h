@@ -889,6 +889,55 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			CHECK_MESSAGE(unresolved[0].contains(broken.expected_fragment), unresolved[0]);
 		}
 
+		// Coordinates that name no cell of the family observe nothing, even though the family loads.
+		{
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const int index = first_coverage_entry_with_witness_kind(entries, "family_case");
+			REQUIRE(index >= 0);
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			Dictionary coordinates = witness["coordinates"];
+			coordinates["destination"] = "not_a_declared_leaf";
+			witness["coordinates"] = coordinates;
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
+			const Vector<String> unresolved =
+					FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+			REQUIRE_EQ(unresolved.size(), 1);
+			CHECK_MESSAGE(unresolved[0].contains("resolve to 0 cells"), unresolved[0]);
+		}
+
+		// A fixture reference that is not a repository-relative path is refused before the repository is
+		// consulted, so a witness can never be resolved against a path outside the tree.
+		{
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const int index = first_coverage_entry_with_witness_kind(entries, "fixture");
+			REQUIRE(index >= 0);
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			witness["reference"] = "modules/foundry_script/tests/../../../etc/hosts";
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
+			const Vector<String> unresolved =
+					FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+			REQUIRE_EQ(unresolved.size(), 1);
+			CHECK_MESSAGE(unresolved[0].contains("is not a repository-relative path"), unresolved[0]);
+		}
+
 		// A cell that claims coverage and declares nothing at all is uncovered, not covered.
 		Dictionary document = tracked_coverage_document();
 		Array entries = document["entries"];
@@ -1084,6 +1133,63 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
 			CHECK(previous_key < entry.key());
 			previous_key = entry.key();
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Census a run refuses to publish a census it cannot confirm") {
+		TemporaryProjectTree tree(vformat("type_completeness_census_run_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+		const String scratch_root = tree.root.path_join("scratch");
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(scratch_root), OK);
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = staged_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = scratch_root;
+		options.report_path = scratch_root.path_join("report.json");
+
+		SUBCASE("a covered cell whose witness does not resolve is a structural failure") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const int index = first_coverage_entry_with_witness_kind(entries, "doctest_case");
+			REQUIRE(index >= 0);
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			witness["reference"] = "[Modules][FoundryScript][TypeUnion] No case is named this";
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			FSCompletenessRunResult result;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_FALSE(result.success);
+			CHECK_EQ(result.outcome, "structural_failure");
+			REQUIRE_EQ(result.structural_failures.size(), 1);
+			CHECK_EQ(result.structural_failures[0].stage, FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED);
+			CHECK_MESSAGE(result.structural_failures[0].detail.contains("no registered doctest case"),
+					result.structural_failures[0].detail);
+
+			// The evidence stays in the document: the run publishes what the census says and refuses the
+			// verdict, rather than publishing a report with no census in it.
+			const Dictionary census = result.report["census"];
+			CHECK_EQ(int(double(census["covered"])) + int(double(census["uncovered"])) +
+							int(double(census["unsupported"])) + int(double(census["quality_deferred"])),
+					Array(census["entries"]).size());
+		}
+
+		SUBCASE("a malformed census is a structural failure rather than no census") {
+			tree.write_file("catalog/census/coverage.json", "not a census at all\n");
+
+			FSCompletenessRunResult result;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_FALSE(result.success);
+			CHECK_EQ(result.outcome, "structural_failure");
+			REQUIRE_EQ(result.structural_failures.size(), 1);
+			CHECK_EQ(result.structural_failures[0].stage, FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED);
+			CHECK_MESSAGE(result.structural_failures[0].detail.contains("could not be read"),
+					result.structural_failures[0].detail);
 		}
 	}
 }

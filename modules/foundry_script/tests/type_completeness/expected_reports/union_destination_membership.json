@@ -12305,7 +12305,7 @@
   ],
   "cell_count": 40.0,
   "census": {
-    "covered": 23.0,
+    "covered": 22.0,
     "entries": [
       {
         "child_slot": "serialized_container_element_types",
@@ -12688,13 +12688,13 @@
         "child_slot": "enum_case_payload_field_names",
         "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
         "representation": "parser_data_type",
-        "status": "quality_deferred",
+        "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
           "coordinates": {},
           "family": "",
-          "kind": "fixture",
-          "reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs"
+          "kind": "",
+          "reference": ""
         }
       },
       {
@@ -13016,9 +13016,9 @@
       },
       {
         "child_slot": "union_members",
-        "issue_url": "",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
         "representation": "parser_data_type",
-        "status": "covered",
+        "status": "quality_deferred",
         "surface": "editor_tools",
         "witness": {
           "coordinates": {},
@@ -13392,7 +13392,7 @@
       }
     ],
     "quality_deferred": 2.0,
-    "uncovered": 56.0,
+    "uncovered": 57.0,
     "unsupported": 0.0
   },
   "coverage_by_chain_length": {
