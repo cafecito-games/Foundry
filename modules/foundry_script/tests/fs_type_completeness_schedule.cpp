@@ -138,6 +138,12 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 			return WAIT_TIMED_OUT;
 		}
 		barrier->waiting++;
+		// The controller's own state has to stay reachable while this participant is parked, so the
+		// lock is handed back for the duration of the park and taken again on the way out. The scope's
+		// lock still owns the mutex either way, so it is released exactly once however this loop ends.
+		// A gate may carry a post more than the waiter it was meant for - a release and an abandon can
+		// both post the same barrier - which only ever wakes a participant that re-tests the loop
+		// condition and parks again.
 		mutex.unlock();
 		barrier->gate.wait();
 		mutex.lock();
