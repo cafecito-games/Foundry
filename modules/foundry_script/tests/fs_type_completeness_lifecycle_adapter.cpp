@@ -43,6 +43,7 @@
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/object/object_id.h"
 #include "core/object/ref_counted.h"
 #include "core/os/mutex.h"
 
@@ -511,6 +512,18 @@ static Error carry_by_recompiling(const LifecycleCarryRequest &p_request, bool p
 		if (p_before_each_pass != nullptr) {
 			p_before_each_pass();
 		}
+		// Which entry the cache holds for the identity before the replacement. Reading the type back
+		// through the cache is only evidence of a replacement if the entry that comes back is not the
+		// one that went in: an eviction that regressed would leave the old object installed, and
+		// compiling into it would make a stale entry read exactly like a replaced one.
+		ObjectID retired_entry;
+		if (p_through_cache) {
+			Error probe_error = OK;
+			const Ref<FoundryScript> retired = FSCache::get_shallow_script(p_request.path, probe_error);
+			if (probe_error == OK && retired.is_valid()) {
+				retired_entry = retired->get_instance_id();
+			}
+		}
 		FSCache::remove_parser(p_request.path);
 		FSCache::remove_script(p_request.path);
 		String source = "class Holder:\n\tvar value: NoSuchTypeExists = 0\n\tvar marker: int = 0\n";
@@ -532,6 +545,12 @@ static Error carry_by_recompiling(const LifecycleCarryRequest &p_request, bool p
 			const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
 			if (cache_error != OK || cached.is_null()) {
 				return cache_error == OK ? ERR_INVALID_DATA : cache_error;
+			}
+			if (retired_entry.is_valid() && cached->get_instance_id() == retired_entry) {
+				// The cache handed back the entry the replacement was supposed to retire, so nothing was
+				// replaced and there is no reading to take from it.
+				r_after = String();
+				return OK;
 			}
 			reloaded = cached;
 		}

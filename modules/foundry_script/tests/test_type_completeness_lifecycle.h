@@ -300,6 +300,22 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Lifecycle a cache replacement has to replace the entry") {
+		// Reading the type back through the cache is only evidence of a replacement if the entry that
+		// comes back is not the one that went in. Handing back the entry the replacement was supposed to
+		// retire is the regression this family exists to catch, so it reports nothing carried rather
+		// than the type it would have read out of the stale object.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "clean", "text"),
+				"preserved");
+		{
+			TransitionInvalidationSkipped reused;
+			CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "text"),
+					"preserved");
+		}
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "text"),
+				"projected");
+	}
+
 	TEST_CASE("TypeCompleteness Lifecycle an incremental stage runs the whole transition again") {
 		// Applying the transition to its own output has to mean the whole transition, including whatever
 		// the family does before re-deriving. A second pass that skipped the language cycle would report
