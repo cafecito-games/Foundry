@@ -110,35 +110,61 @@ static const DestinationShape destination_shapes[] = {
 			"trait_witness" },
 };
 
-// One write boundary: the declarations it needs and the statements that carry `wrapped` across it
-// into `transported`. DESTINATION and DEFAULT are replaced with the destination's spelling and its
-// initializer.
+// Where a boundary's own destination slot is recorded, and so where its descriptor is read back from.
+// Every site is the slot the boundary actually writes through: an unrelated declaration of the same
+// type would pass a program whose boundary lost its check.
+enum DestinationSite {
+	SITE_FUNCTION_ARGUMENT,
+	SITE_FUNCTION_RETURN,
+	SITE_CLASS_MEMBER,
+	// The element type of a typed container held by a class member.
+	SITE_CLASS_MEMBER_ELEMENT,
+	// A typed local. The compiled script does not expose locals, so this one site is read from the
+	// analyzer's own record of the same program.
+	SITE_FUNCTION_LOCAL,
+};
+
+// One write boundary: the declarations it needs, the statements that carry `wrapped` across it into
+// `transported`, and where the destination it wrote through is recorded. DESTINATION and DEFAULT are
+// replaced with the destination's spelling and its initializer.
 struct BoundaryShape {
 	const char *leaf;
 	const char *declarations;
 	const char *statements;
+	DestinationSite site;
+	// Class that owns a member site, or function that owns an argument, return, or local site.
+	const char *site_owner;
+	// Member or local name; empty for an argument or return site.
+	const char *site_name;
 };
 
 static const BoundaryShape boundary_shapes[] = {
 	{ "argument_binding", "func accept_destination(value: DESTINATION) -> DESTINATION:\n\treturn value",
-			"var transported: DESTINATION = accept_destination(wrapped)" },
+			"var transported: DESTINATION = accept_destination(wrapped)", SITE_FUNCTION_ARGUMENT,
+			"accept_destination", "" },
 	{ "return", "func produce(value: Variant) -> DESTINATION:\n\treturn value",
-			"var transported: DESTINATION = produce(wrapped)" },
-	{ "assignment", "", "var transported: DESTINATION = DEFAULT\ntransported = wrapped" },
+			"var transported: DESTINATION = produce(wrapped)", SITE_FUNCTION_RETURN, "produce", "" },
+	{ "assignment", "", "var transported: DESTINATION = DEFAULT\ntransported = wrapped",
+			SITE_FUNCTION_LOCAL, "test", "transported" },
 	{ "member_store", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
-			"var holder := Holder.new()\nholder.value = wrapped\nvar transported: DESTINATION = holder.value" },
-	{ "container_element_store", "",
-			"var slots: Array[DESTINATION] = [DEFAULT]\nslots[0] = wrapped\n"
-			"var transported: DESTINATION = slots[0]" },
+			"var holder := Holder.new()\nholder.value = wrapped\nvar transported: DESTINATION = holder.value",
+			SITE_CLASS_MEMBER, "Holder", "value" },
+	{ "container_element_store", "class Slots extends RefCounted:\n\tvar values: Array[DESTINATION] = [DEFAULT]",
+			"var slots := Slots.new()\nslots.values[0] = wrapped\n"
+			"var transported: DESTINATION = slots.values[0]",
+			SITE_CLASS_MEMBER_ELEMENT, "Slots", "values" },
 	{ "reflective_write", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
 			"var holder := Holder.new()\nholder.set(&\"value\", wrapped)\n"
-			"var transported: DESTINATION = holder.value" },
+			"var transported: DESTINATION = holder.value",
+			SITE_CLASS_MEMBER, "Holder", "value" },
 	{ "proxy_write",
 			"class Proxy extends RefCounted:\n\tvar backing: DESTINATION = DEFAULT\n"
 			"\tvar value: DESTINATION = DEFAULT:\n\t\tset(incoming):\n\t\t\tbacking = incoming\n"
 			"\t\t\tvalue = incoming",
-			"var proxy := Proxy.new()\nproxy.value = wrapped\nvar transported: DESTINATION = proxy.backing" },
+			"var proxy := Proxy.new()\nproxy.value = wrapped\nvar transported: DESTINATION = proxy.backing",
+			SITE_CLASS_MEMBER, "Proxy", "value" },
 };
+
 
 // One source of the transported value and how provable it is at the destination.
 struct SourceProofShape {
@@ -335,10 +361,9 @@ func carrier_of(value: Variant) -> String:
 	return "other"
 )FS";
 
-// The program one wrapper-parity cell observes. Every program declares the destination type on a
-// class member of its own besides declaring it wherever the boundary needs it, so the runtime
-// descriptor of the destination is inspectable even for a boundary whose slot is a local the compiled
-// script never exposes.
+// The program one wrapper-parity cell observes. The value is carried through the boundary's own slot
+// and read back out of it, and the descriptor the observation inspects is that same slot, so a
+// boundary that lost its conversion or its check cannot be hidden by an intact declaration elsewhere.
 static String render_wrapper_parity_source(const DestinationShape &p_destination,
 		const BoundaryShape &p_boundary, const SourceProofShape &p_source_proof,
 		const CensusWitnessShape &p_census_witness) {
@@ -349,8 +374,6 @@ static String render_wrapper_parity_source(const DestinationShape &p_destination
 	};
 
 	String source = wrapper_parity_preamble;
-	source += vformat("\nclass DestinationEvidence extends RefCounted:\n\tvar value: %s = %s\n",
-			destination_type, default_expression);
 	const String declarations = substitute(p_boundary.declarations);
 	if (!declarations.is_empty()) {
 		source += "\n" + declarations + "\n";
@@ -1183,10 +1206,196 @@ static bool descriptor_is_expected_destination(const FSDataType &p_descriptor, c
 
 struct RuntimeDescriptorEvidence {
 	FSDataType descriptor;
+	// False when the site is a local, whose descriptor exists only in the analyzer's record.
+	bool has_runtime_descriptor = false;
+	// `stored_carrier` outcome the observed destination realizes, empty when it realizes none.
+	String carrier;
+	bool site_is_union = false;
 	ObjectID inspected_instance_id;
 	ObjectID inspected_owner_instance_id;
 	bool inspected_compiled_binary = false;
 };
+
+static FSParser::FunctionNode *parser_member_function(FSParser::ClassNode *p_tree, const StringName &p_member);
+
+// Which `stored_carrier` outcome a runtime destination descriptor realizes. Structural rather than
+// nominal: a destination that erased its wrapper reads as a different carrier here even when the
+// program still spells the same type.
+static String runtime_destination_carrier(const FSDataType &p_descriptor) {
+	if (p_descriptor.kind == FSDataType::UNION) {
+		bool has_uint = false;
+		bool has_string = false;
+		for (const FSDataType &alternative : p_descriptor.union_alternatives) {
+			has_uint = has_uint || is_builtin_of(alternative, Variant::UINT);
+			has_string = has_string || is_builtin_of(alternative, Variant::STRING);
+		}
+		return has_uint && has_string ? "admitting_alternative" : String();
+	}
+	if (is_builtin_of(p_descriptor, Variant::UINT)) {
+		return p_descriptor.is_nullable ? "optional_payload" : "plain_destination";
+	}
+	if (p_descriptor.kind == FSDataType::TUPLE) {
+		return p_descriptor.container_element_types.size() == 2 &&
+						is_builtin_of(p_descriptor.container_element_types[0], Variant::UINT) &&
+						is_builtin_of(p_descriptor.container_element_types[1], Variant::STRING)
+				? "tuple_slot"
+				: String();
+	}
+	if (is_builtin_of(p_descriptor, Variant::ARRAY)) {
+		if (p_descriptor.container_element_types.size() == 1 &&
+				is_builtin_of(p_descriptor.container_element_types[0], Variant::UINT)) {
+			return "element_slot";
+		}
+		// A tuple slot lowers to the read-only Array its values are carried in, with no element type.
+		return p_descriptor.container_element_types.is_empty() ? "tuple_slot" : String();
+	}
+	if (is_builtin_of(p_descriptor, Variant::CALLABLE)) {
+		return "callable_slot";
+	}
+	if (p_descriptor.get_source_type_name() == "HasValue") {
+		return "trait_witness";
+	}
+	if (is_script_kind(p_descriptor)) {
+		if (p_descriptor.type_arguments.is_empty()) {
+			return "nominal_instance";
+		}
+		return p_descriptor.type_arguments.size() == 1 &&
+						is_builtin_of(p_descriptor.type_arguments[0], Variant::UINT)
+				? "reified_argument"
+				: String();
+	}
+	return String();
+}
+
+// The same question asked of the analyzer's record, which is the only representation that keeps a
+// typed local. Spelling rather than structure, because `FSParser::DataType::to_string()` is the
+// analyzer's own rendering of the slot and changes with any part of it the destination depends on.
+static String parser_destination_carrier(const FSParser::DataType &p_datatype) {
+	const String spelling = p_datatype.to_string();
+	if (spelling == "uint") {
+		return "plain_destination";
+	}
+	if (spelling == "String | uint") {
+		return "admitting_alternative";
+	}
+	if (spelling == "uint?") {
+		return "optional_payload";
+	}
+	if (spelling == "Array[uint]") {
+		return "element_slot";
+	}
+	if (spelling == "Box[uint]") {
+		return "reified_argument";
+	}
+	if (spelling == "(uint, String)") {
+		return "tuple_slot";
+	}
+	if (spelling.begins_with("Callable[")) {
+		return "callable_slot";
+	}
+	if (spelling == "Carrier") {
+		return "nominal_instance";
+	}
+	if (spelling == "HasValue") {
+		return "trait_witness";
+	}
+	return String();
+}
+
+// The destination descriptor of the boundary the coordinates name, read from the slot that boundary
+// writes through. A local site is read from a fresh analysis of the same program, because a compiled
+// script keeps no record of a local.
+static RuntimeInspectionStepResult inspect_boundary_destination(const FSCompletenessProgram &p_program,
+		const Ref<FoundryScript> &p_inspected, const BoundaryShape &p_boundary,
+		RuntimeDescriptorEvidence &r_evidence, PackedStringArray &r_diagnostics) {
+	if (p_boundary.site == SITE_FUNCTION_LOCAL) {
+		DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
+				"boundary_local_" + p_program.case_id, p_program.source);
+		if (!synthetic_source.is_available()) {
+			r_diagnostics.push_back("Analyzer identity for the local destination site is unavailable.");
+			return runtime_inspection_failure(ERR_CANT_CREATE, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
+		}
+		FSParser parser;
+		if (parser.parse(p_program.source, synthetic_source.get_path(), false) != OK) {
+			r_diagnostics.push_back("The local destination site could not be parsed.");
+			return runtime_inspection_failure(ERR_PARSE_ERROR, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		FSAnalyzer analyzer(&parser);
+		if (analyzer.analyze() != OK) {
+			r_diagnostics.push_back("The local destination site could not be analyzed.");
+			return runtime_inspection_failure(ERR_PARSE_ERROR, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		FSParser::ClassNode *tree = parser.get_tree();
+		FSParser::FunctionNode *function =
+				tree == nullptr ? nullptr : parser_member_function(tree, StringName(p_boundary.site_owner));
+		if (function == nullptr || function->body == nullptr ||
+				!function->body->has_local(StringName(p_boundary.site_name))) {
+			r_diagnostics.push_back(vformat("Local destination '%s.%s' is unavailable.",
+					p_boundary.site_owner, p_boundary.site_name));
+			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		r_evidence.carrier = parser_destination_carrier(
+				function->body->get_local(StringName(p_boundary.site_name)).get_datatype());
+		r_evidence.site_is_union = r_evidence.carrier == "admitting_alternative";
+		r_evidence.has_runtime_descriptor = false;
+		return RuntimeInspectionStepResult();
+	}
+
+	if (p_inspected.is_null()) {
+		r_diagnostics.push_back("Compiled runtime script is unavailable for descriptor inspection.");
+		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_STRUCTURAL_FAILURE);
+	}
+	if (p_boundary.site == SITE_FUNCTION_ARGUMENT || p_boundary.site == SITE_FUNCTION_RETURN) {
+		FSFunction *const *function =
+				p_inspected->get_member_functions().getptr(StringName(p_boundary.site_owner));
+		if (function == nullptr || *function == nullptr) {
+			r_diagnostics.push_back(vformat("Compiled function '%s' is unavailable.", p_boundary.site_owner));
+			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		if (p_boundary.site == SITE_FUNCTION_RETURN) {
+			r_evidence.descriptor = (*function)->get_return_type();
+		} else {
+			if ((*function)->get_argument_count() != 1) {
+				r_diagnostics.push_back(vformat(
+						"Compiled function '%s' does not expose one destination argument.", p_boundary.site_owner));
+				return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+			}
+			r_evidence.descriptor = (*function)->get_argument_type(0);
+		}
+		r_evidence.has_runtime_descriptor = true;
+		r_evidence.carrier = runtime_destination_carrier(r_evidence.descriptor);
+		r_evidence.site_is_union = r_evidence.descriptor.kind == FSDataType::UNION;
+		return RuntimeInspectionStepResult();
+	}
+
+	const Ref<FoundryScript> *owner =
+			p_inspected->get_subclasses().getptr(StringName(p_boundary.site_owner));
+	if (owner == nullptr || owner->is_null()) {
+		r_diagnostics.push_back(vformat("Compiled class '%s' is unavailable.", p_boundary.site_owner));
+		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+	}
+	r_evidence.inspected_owner_instance_id = (*owner)->get_instance_id();
+	const FSDataType *member = (*owner)->find_member_data_type(StringName(p_boundary.site_name));
+	if (member == nullptr) {
+		r_diagnostics.push_back(vformat("Compiled descriptor '%s.%s' is unavailable.", p_boundary.site_owner,
+				p_boundary.site_name));
+		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+	}
+	if (p_boundary.site == SITE_CLASS_MEMBER_ELEMENT) {
+		if (member->container_element_types.size() != 1) {
+			r_diagnostics.push_back(vformat("Compiled container '%s.%s' declares no single element type.",
+					p_boundary.site_owner, p_boundary.site_name));
+			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		r_evidence.descriptor = member->container_element_types[0];
+	} else {
+		r_evidence.descriptor = *member;
+	}
+	r_evidence.has_runtime_descriptor = true;
+	r_evidence.carrier = runtime_destination_carrier(r_evidence.descriptor);
+	r_evidence.site_is_union = r_evidence.descriptor.kind == FSDataType::UNION;
+	return RuntimeInspectionStepResult();
+}
 
 static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const Ref<FoundryScript> &p_inspected,
 		const ProgramCoordinates &p_coordinates, RuntimeDescriptorEvidence &r_evidence,
@@ -1198,24 +1407,6 @@ static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const 
 	}
 	r_evidence.inspected_instance_id = p_inspected->get_instance_id();
 	r_evidence.inspected_compiled_binary = p_inspected->is_compiled_binary();
-	// A wrapper-parity program declares the destination on a class member of its own, so a boundary
-	// whose slot is a local the compiled script never exposes still has an inspectable descriptor.
-	if (p_coordinates.names_census_child) {
-		const Ref<FoundryScript> *evidence =
-				p_inspected->get_subclasses().getptr(SNAME("DestinationEvidence"));
-		if (evidence == nullptr || evidence->is_null()) {
-			r_diagnostics.push_back("Compiled DestinationEvidence class is unavailable.");
-			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
-		}
-		r_evidence.inspected_owner_instance_id = (*evidence)->get_instance_id();
-		const FSDataType *descriptor = (*evidence)->find_member_data_type(SNAME("value"));
-		if (descriptor == nullptr) {
-			r_diagnostics.push_back("Compiled DestinationEvidence.value descriptor is unavailable.");
-			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
-		}
-		r_evidence.descriptor = *descriptor;
-		return RuntimeInspectionStepResult();
-	}
 	if (p_coordinates.boundary == "argument_binding") {
 		FSFunction *const *accept = p_inspected->get_member_functions().getptr(SNAME("accept"));
 		if (accept == nullptr || *accept == nullptr || (*accept)->get_argument_count() != 1) {
@@ -1223,6 +1414,7 @@ static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const 
 			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 		}
 		r_evidence.descriptor = (*accept)->get_argument_type(0);
+		r_evidence.has_runtime_descriptor = true;
 		return RuntimeInspectionStepResult();
 	}
 
@@ -1238,6 +1430,7 @@ static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const 
 		return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
 	}
 	r_evidence.descriptor = *descriptor;
+	r_evidence.has_runtime_descriptor = true;
 	return RuntimeInspectionStepResult();
 }
 
@@ -1798,8 +1991,19 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 		original.unref();
 	}
 	RuntimeDescriptorEvidence descriptor_evidence;
-	const RuntimeInspectionStepResult descriptor_result = inspect_runtime_destination_descriptor(
-			inspected, coordinates, descriptor_evidence, observation.diagnostics);
+	const BoundaryShape *boundary_shape = find_boundary_shape(boundary);
+	if (coordinates.names_census_child && boundary_shape == nullptr) {
+		observation.diagnostics.push_back("Runtime contract coordinates name no rendered boundary.");
+		r_structural_error = ERR_INVALID_DATA;
+		return observation;
+	}
+	// A wrapper-parity cell reads the descriptor of the slot its own boundary wrote through; the
+	// destination-membership pilot keeps the sites its programs declare.
+	const RuntimeInspectionStepResult descriptor_result = coordinates.names_census_child
+			? inspect_boundary_destination(
+					  p_program, inspected, *boundary_shape, descriptor_evidence, observation.diagnostics)
+			: inspect_runtime_destination_descriptor(
+					  inspected, coordinates, descriptor_evidence, observation.diagnostics);
 	observation.dimensions["original_instance_id"] = int64_t(original_instance_id);
 	if (descriptor_evidence.inspected_instance_id.is_valid()) {
 		observation.dimensions["inspected_instance_id"] = int64_t(descriptor_evidence.inspected_instance_id);
@@ -1817,16 +2021,23 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 		return observation;
 	}
 
-	if (!descriptor_is_expected_destination(descriptor_evidence.descriptor, destination)) {
+	if (!coordinates.names_census_child &&
+			!descriptor_is_expected_destination(descriptor_evidence.descriptor, destination)) {
 		observation.diagnostics.push_back(vformat(
 				"Runtime destination descriptor '%s' does not match declared '%s' coordinates.",
 				descriptor_evidence.descriptor.get_source_type_name(), destination));
 	}
-	Ref<RefCounted> unrelated;
-	unrelated.instantiate();
-	const Variant unrelated_value = unrelated;
-	if (descriptor_evidence.descriptor.is_type(unrelated_value)) {
-		observation.diagnostics.push_back("Runtime destination descriptor admits RefCounted.new().");
+	if (coordinates.names_census_child && descriptor_evidence.carrier.is_empty()) {
+		observation.diagnostics.push_back(vformat(
+				"The '%s' boundary's destination realizes no carrier this family can name.", boundary));
+	}
+	if (descriptor_evidence.has_runtime_descriptor) {
+		Ref<RefCounted> unrelated;
+		unrelated.instantiate();
+		const Variant unrelated_value = unrelated;
+		if (descriptor_evidence.descriptor.is_type(unrelated_value)) {
+			observation.diagnostics.push_back("Runtime destination descriptor admits RefCounted.new().");
+		}
 	}
 	if (!observation.diagnostics.is_empty()) {
 		return observation;
@@ -1848,12 +2059,25 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 		r_structural_error = ERR_INVALID_DATA;
 		return observation;
 	}
-	if (source_proof_shape->unproven) {
-		observation.dimensions["runtime_obligation"] =
-				destination == "union" ? "union_membership_check" : "typed_destination_check";
-	}
-	if (source_proof_shape->carrier_provable) {
-		observation.dimensions["stored_carrier"] = destination_shape->stored_carrier;
+	if (coordinates.names_census_child) {
+		// Both dimensions are read back from the boundary's own destination rather than derived from
+		// the coordinates: a boundary that lost its wrapper reports a different carrier here, and a
+		// destination that stopped being a set reports a different obligation.
+		observation.dimensions["stored_carrier"] = descriptor_evidence.carrier;
+		if (source_proof_shape->unproven) {
+			observation.dimensions["runtime_obligation"] = descriptor_evidence.site_is_union ||
+							descriptor_evidence.carrier == "admitting_alternative"
+					? "union_membership_check"
+					: "typed_destination_check";
+		}
+	} else {
+		if (source_proof_shape->unproven) {
+			observation.dimensions["runtime_obligation"] =
+					destination == "union" ? "union_membership_check" : "typed_destination_check";
+		}
+		if (source_proof_shape->carrier_provable) {
+			observation.dimensions["stored_carrier"] = destination_shape->stored_carrier;
+		}
 	}
 
 	if (coordinates.names_census_child) {

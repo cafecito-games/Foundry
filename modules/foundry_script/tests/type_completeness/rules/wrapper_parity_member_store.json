@@ -60,11 +60,7 @@
     },
     {
       "dimension": "stored_carrier",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      }
+      "when": {}
     }
   ],
   "anchors": [
@@ -79,7 +75,8 @@
       "expect": {
         "analysis": "accept",
         "diagnostic_severity": "none",
-        "census_child_evidence": "absent"
+        "census_child_evidence": "absent",
+        "stored_carrier": "plain_destination"
       },
       "surfaces": [
         "text",
@@ -117,7 +114,8 @@
         "analysis": "accept",
         "runtime_obligation": "typed_destination_check",
         "diagnostic_severity": "none",
-        "census_child_evidence": "absent"
+        "census_child_evidence": "absent",
+        "stored_carrier": "plain_destination"
       },
       "surfaces": [
         "text",
@@ -249,7 +247,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "admitting_alternative",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -265,7 +263,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "optional_payload",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -281,7 +279,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "element_slot",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -297,7 +295,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "reified_argument",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -313,7 +311,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "tuple_slot",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -329,7 +327,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "callable_slot",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -345,7 +343,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "nominal_instance",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
@@ -361,421 +359,13 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "trait_witness",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       }
     }
   ],
   "exceptions": [
-    {
-      "id": "carrier_changes_at_union",
-      "parent": "wrapper_parity_to_union",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "admitting_alternative",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A union destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_union_numeric_constant",
-          "coordinates": {
-            "destination": "union",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_union_numeric_constant",
-          "coordinates": {
-            "destination": "union",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_union_static_member",
-          "coordinates": {
-            "destination": "union",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_optional",
-      "parent": "wrapper_parity_to_optional",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "optional_payload",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A optional destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_optional_numeric_constant",
-          "coordinates": {
-            "destination": "optional",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_optional_numeric_constant",
-          "coordinates": {
-            "destination": "optional",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_optional_static_member",
-          "coordinates": {
-            "destination": "optional",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_container_element",
-      "parent": "wrapper_parity_to_container_element",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "element_slot",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A container element destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_container_element_numeric_constant",
-          "coordinates": {
-            "destination": "container_element",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_container_element_numeric_constant",
-          "coordinates": {
-            "destination": "container_element",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_container_element_static_member",
-          "coordinates": {
-            "destination": "container_element",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_generic_argument",
-      "parent": "wrapper_parity_to_generic_argument",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "reified_argument",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A generic argument destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_generic_argument_numeric_constant",
-          "coordinates": {
-            "destination": "generic_argument",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_generic_argument_numeric_constant",
-          "coordinates": {
-            "destination": "generic_argument",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_generic_argument_static_member",
-          "coordinates": {
-            "destination": "generic_argument",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_tuple_field",
-      "parent": "wrapper_parity_to_tuple_field",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "tuple_slot",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A tuple field destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_tuple_field_numeric_constant",
-          "coordinates": {
-            "destination": "tuple_field",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_tuple_field_numeric_constant",
-          "coordinates": {
-            "destination": "tuple_field",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_tuple_field_static_member",
-          "coordinates": {
-            "destination": "tuple_field",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_callable_slot",
-      "parent": "wrapper_parity_to_callable_slot",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "callable_slot",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A callable slot destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_callable_slot_numeric_constant",
-          "coordinates": {
-            "destination": "callable_slot",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_callable_slot_numeric_constant",
-          "coordinates": {
-            "destination": "callable_slot",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_callable_slot_static_member",
-          "coordinates": {
-            "destination": "callable_slot",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_nominal_class",
-      "parent": "wrapper_parity_to_nominal_class",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "nominal_instance",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A nominal class destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_nominal_class_numeric_constant",
-          "coordinates": {
-            "destination": "nominal_class",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_nominal_class_numeric_constant",
-          "coordinates": {
-            "destination": "nominal_class",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_nominal_class_static_member",
-          "coordinates": {
-            "destination": "nominal_class",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
-    {
-      "id": "carrier_changes_at_trait",
-      "parent": "wrapper_parity_to_trait",
-      "when": {
-        "source_proof": {
-          "class": "provable_carrier"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "same",
-        "stored_carrier": "trait_witness",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A trait destination stores a provable source in its own carrier, so the wrapper relation preserves acceptance and severity but not the carrier the value lands in.",
-      "positive_witnesses": [
-        {
-          "id": "text_trait_numeric_constant",
-          "coordinates": {
-            "destination": "trait",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_trait_numeric_constant",
-          "coordinates": {
-            "destination": "trait",
-            "source_proof": "numeric_constant",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "text_trait_static_member",
-          "coordinates": {
-            "destination": "trait",
-            "source_proof": "static_member",
-            "boundary": "member_store",
-            "census_child": "none",
-            "surface": "text"
-          }
-        }
-      ]
-    },
     {
       "id": "unproven_source_warns_at_callable_slot",
       "parent": "wrapper_parity_to_callable_slot",
@@ -787,7 +377,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "same",
-        "stored_carrier": "same",
+        "stored_carrier": "callable_slot",
         "diagnostic_severity": "warning",
         "census_child_evidence": "same"
       },
@@ -838,7 +428,7 @@
       "derive": {
         "analysis": "same",
         "runtime_obligation": "union_membership_check",
-        "stored_carrier": "same",
+        "stored_carrier": "admitting_alternative",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
       },

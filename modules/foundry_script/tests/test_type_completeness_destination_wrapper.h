@@ -31,6 +31,7 @@
 #pragma once
 
 #include "fs_temporary_project_tree.h"
+#include "fs_test_language_lifecycle.h"
 #include "fs_type_completeness_case_id.h"
 #include "fs_type_completeness_common.h"
 #include "fs_type_completeness_destination_wrapper_adapter.h"
@@ -319,6 +320,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 	}
 
 	TEST_CASE("TypeCompleteness DestinationWrapper observes every census child a family may select") {
+		const bool initialized_here = ensure_fs_language_initialized();
 		for (const String &leaf : destination_wrapper_census_children()) {
 			CAPTURE(leaf);
 			FSCompletenessResolvedCell cell;
@@ -341,6 +343,66 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 			const bool reports_absent = evidence == "absent";
 			const bool is_the_absent_leaf = leaf == "none";
 			CHECK_EQ(reports_absent, is_the_absent_leaf);
+		}
+		if (initialized_here) {
+			FSLanguage::get_singleton()->finish();
+		}
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper reads the carrier from each boundary's own slot") {
+		// One expected carrier per destination. The observation reads it back from the slot the
+		// boundary wrote through, so this also proves each boundary inspects its own site rather than
+		// a declaration that merely happens to have the same type.
+		struct DestinationCarrier {
+			const char *destination;
+			const char *carrier;
+		};
+		const DestinationCarrier carriers[] = {
+			{ "plain", "plain_destination" },
+			{ "union", "admitting_alternative" },
+			{ "optional", "optional_payload" },
+			{ "container_element", "element_slot" },
+			{ "generic_argument", "reified_argument" },
+			{ "tuple_field", "tuple_slot" },
+			{ "callable_slot", "callable_slot" },
+			{ "nominal_class", "nominal_instance" },
+			{ "trait", "trait_witness" },
+		};
+
+		// Compiling a program needs a live language; a direct observation does not go through the
+		// runner, which is what brings one up for a family run.
+		const bool initialized_here = ensure_fs_language_initialized();
+		for (const String &boundary : destination_wrapper_boundaries()) {
+			for (const DestinationCarrier &expected : carriers) {
+				const String family = "wrapper_parity_" + boundary;
+				FSCompletenessResolvedCell cell;
+				cell.coordinates["destination"] = expected.destination;
+				cell.coordinates["source_proof"] = "static_member";
+				cell.coordinates["boundary"] = boundary;
+				cell.coordinates["census_child"] = "none";
+				cell.coordinates["surface"] = "text";
+				cell.case_id = FSCompletenessCaseID::make(family, cell.coordinates);
+
+				FSCompletenessProgram program;
+				const Error render_error = FSDestinationWrapperAdapter::shared().render(cell, program);
+				if (render_error != OK) {
+					// The one combination the language has no spelling for.
+					CHECK_EQ(String(expected.destination), "union");
+					CHECK_EQ(boundary, "container_element_store");
+					continue;
+				}
+				CAPTURE(boundary);
+				CAPTURE(expected.destination);
+				Dictionary runtime_context;
+				runtime_context["produced_output"] = program.expected_output;
+				const FSCompletenessObservation observation =
+						FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
+				CHECK_MESSAGE(observation.diagnostics.is_empty(), String(" | ").join(observation.diagnostics));
+				CHECK_EQ(String(observation.dimensions.get("stored_carrier", String())), expected.carrier);
+			}
+		}
+		if (initialized_here) {
+			FSLanguage::get_singleton()->finish();
 		}
 	}
 
