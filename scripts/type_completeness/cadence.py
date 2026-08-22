@@ -4,8 +4,13 @@
 databaseId,conclusion,createdAt,headBranch``, the tracked shard list, and a directory of
 downloaded run artifacts; it fails unless every recipe of every shard published a terminal
 mutation result inside the window. The script never calls ``gh`` itself: the caller captures the
-JSON and downloads the artifacts (``gh run download <id> -D <dir>``), so the check is testable
-without network.
+JSON and downloads each run's shard artifacts into the one canonical layout::
+
+    gh run download <run_id> -n <artifact> -D <artifacts>/<artifact>
+
+where ``<artifact>`` is ``ARTIFACT_NAME_TEMPLATE`` filled with the shard and run id, so
+``<artifacts>/<artifact>/<recipe_id>/mutation_result.json`` is the file the workflow's run step
+wrote (the upload packs ``results/`` at the artifact root). The check is testable without network.
 
 A run is terminal only when its ``conclusion`` is ``success`` or ``failure``; a cancelled, skipped,
 or still-running (``null``) run published no verdict. Neither a run's nor a job's conclusion says
@@ -38,8 +43,16 @@ EXIT_MISSING = 1
 DEFAULT_BRANCH = "develop"
 DEFAULT_WINDOW_HOURS = 24
 
-# The nightly workflow's artifact name per shard and run; the workflow test asserts the two agree.
+# The nightly workflow's artifact name per shard and run; the workflow test asserts the two agree,
+# and `recipe_result_path` is the only place the download layout is spelled.
 ARTIFACT_NAME_TEMPLATE = "type-completeness-mutation-{shard_id}-{run_id}"
+
+
+def download_command(run_id: int, shard_id: str, artifacts: Path) -> list[str]:
+    """The exact `gh run download` invocation that produces the layout `recipe_result_path` reads."""
+    artifact = ARTIFACT_NAME_TEMPLATE.format(shard_id=shard_id, run_id=run_id)
+    return ["gh", "run", "download", str(run_id), "-n", artifact, "-D", str(artifacts / artifact)]
+
 
 # Every conclusion GitHub Actions writes for a workflow run, plus null for a run still in progress.
 KNOWN_CONCLUSIONS = (
@@ -129,7 +142,10 @@ def load_shards_file(path: Path) -> list[Shard]:
 
 
 def recipe_result_path(artifacts: Path, shard_id: str, run_id: int, recipe_id: str) -> Path:
-    return artifacts / ARTIFACT_NAME_TEMPLATE.format(shard_id=shard_id, run_id=run_id) / recipe_id / RESULT_FILE_NAME
+    # `download_command` extracts the artifact into <artifacts>/<artifact>; the artifact root is the
+    # workflow's results/ directory, whose layout is results/<recipe_id>/mutation_result.json.
+    artifact_root = Path(download_command(run_id, shard_id, artifacts)[-1])
+    return artifact_root / recipe_id / RESULT_FILE_NAME
 
 
 def load_recipe_result(path: Path, shard_id: str, recipe_id: str) -> dict[str, Any]:
@@ -212,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--artifacts",
         required=True,
-        help="Directory holding `gh run download <id> -D <dir>` output for every run in the window.",
+        help="Directory each run's shard artifacts were downloaded into with `gh run download <run_id> -n <artifact> -D <dir>/<artifact>`.",
     )
     check.add_argument("--branch", default=DEFAULT_BRANCH, help="Only runs on this branch count.")
     check.add_argument("--now", help="ISO-8601 instant with an explicit offset; defaults to the current UTC time.")

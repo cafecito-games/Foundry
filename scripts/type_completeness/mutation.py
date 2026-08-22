@@ -484,7 +484,8 @@ def load_result(data: Mapping[str, Any], context: str) -> dict[str, Any]:
 def summarize(result_roots: Iterable[Path]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     for root in result_roots:
-        paths = [root] if root.is_file() else sorted(root.rglob(RESULT_FILE_NAME))
+        # The run step writes results/<recipe_id>/mutation_result.json; that is the one layout read.
+        paths = [root] if root.is_file() else sorted(root.glob(f"*/{RESULT_FILE_NAME}"))
         for path in paths:
             results.append(load_result(_read_json_object(path, "mutation result"), str(path)))
     counts = {outcome.value: 0 for outcome in Outcome}
@@ -599,14 +600,10 @@ class Toolchain:
             worktree,
             deadline,
         )
+        output = completed.stdout.decode("utf-8", "replace")
         if completed.returncode != 0:
-            raise BuildFailed(completed.stdout.decode("utf-8", "replace")[-4000:])
-        binaries = sorted(
-            path for path in (worktree / "bin").glob("foundry.*") if path.is_file() and path.suffix != ".console"
-        )
-        if not binaries:
-            raise BuildFailed(f"the build produced no foundry binary under {worktree / 'bin'}")
-        return binaries[0]
+            raise BuildFailed(output[-4000:])
+        return binary_from_build_output(output, worktree)
 
     def run_matrix(
         self, binary: Path, family: str, catalog: Path, scratch: Path, report_path: Path, deadline: float
@@ -644,6 +641,39 @@ class Toolchain:
 # killing it, so a SIGTERM to the wrapper's group is what reaches the compiler; SIGKILL would only
 # reap the wrapper and orphan the compiler inside a worktree about to be removed.
 STEP_TERMINATE_GRACE_SECONDS = 60.0
+
+
+# The build wrapper's terminal verdict, always its last line (scripts/agent_build.README.md).
+_BUILD_RESULT_LINE = re.compile(
+    r"^\[agent-build\] RESULT: (?P<status>\S+) step=(?P<step>\S+) exit_code=(?P<exit_code>-?\d+) "
+    r"binary=(?P<binary>.+?) binary_present=(?P<present>yes|no) child=\S+ invocation=\S+ log=\S+$"
+)
+
+
+def binary_from_build_output(output: str, worktree: Path) -> Path:
+    """The binary the wrapper reports having produced; nothing is ever selected by globbing bin/.
+
+    A checkout may hold several configurations (an editor next to a template_release), so the
+    only binary that is known to belong to this build is the one the wrapper's RESULT line names.
+    """
+    lines = [line for line in output.splitlines() if line.strip()]
+    match = _BUILD_RESULT_LINE.match(lines[-1].strip()) if lines else None
+    if match is None:
+        raise BuildFailed("the build wrapper ended without a RESULT line; its output is not a verdict")
+    if match.group("status") != "success" or match.group("present") != "yes":
+        raise BuildFailed(
+            f"the build wrapper reported {match.group('status')} with binary_present={match.group('present')}"
+        )
+    binary = Path(match.group("binary"))
+    if not binary.is_absolute():
+        binary = worktree / binary
+    try:
+        binary.resolve().relative_to(worktree.resolve())
+    except ValueError as error:
+        raise BuildFailed(f"the build wrapper reported a binary outside the worktree: {binary}") from error
+    if not binary.is_file():
+        raise BuildFailed(f"the build wrapper reported a binary that does not exist: {binary}")
+    return binary
 
 
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
@@ -697,6 +727,7 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
     scratch = options.scratch.resolve()
     scratch.mkdir(parents=True, exist_ok=True)
     worktree = scratch / f"worktree_{recipe_id}"
+    baseline_worktree = scratch / f"baseline_worktree_{recipe_id}"
     report_root = scratch / f"matrix_{recipe_id}"
     report_path = _family_report_path(report_root, family)
     baseline_root = scratch / f"baseline_{recipe_id}"
@@ -716,8 +747,9 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
     try:
         # A scratch root may be reused across runs: a stale worktree or report from an earlier
         # invocation must never stand in for this one, so both are removed before anything starts.
-        if worktree.exists():
-            toolchain.remove_worktree(repository, worktree)
+        for stale_worktree in (worktree, baseline_worktree):
+            if stale_worktree.exists():
+                toolchain.remove_worktree(repository, stale_worktree)
         for old_report in (report_path, baseline_path):
             if old_report.exists():
                 old_report.unlink()
@@ -729,10 +761,12 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
             outcome, detail = Outcome.RECIPE_STALE, stale
         baseline: Optional[Report] = None
         if outcome is None:
-            # The baseline is the unpatched commit: built once in the repository checkout itself (one
-            # build invocation per worktree) and run before the patch touches anything.
+            # The baseline is the unpatched commit in a detached worktree of its own, never the caller's
+            # working checkout: the recorded SHA is then exactly what ran on both sides, whatever the
+            # checkout holds uncommitted. One build invocation per worktree.
+            toolchain.add_worktree(repository, baseline_worktree, develop_commit, deadline)
             try:
-                baseline_binary = toolchain.build(repository, options.jobs, deadline)
+                baseline_binary = toolchain.build(baseline_worktree, options.jobs, deadline)
             except BuildFailed as error:
                 outcome, detail = Outcome.BUILD_FAILED, f"baseline: {error}"
             else:
@@ -740,7 +774,7 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
                     raise subprocess.TimeoutExpired(["build"], options.budget_seconds)
                 baseline_root.mkdir(parents=True, exist_ok=True)
                 toolchain.run_matrix(
-                    baseline_binary, family, repository / catalog_relative, scratch, baseline_path, deadline
+                    baseline_binary, family, baseline_worktree / catalog_relative, scratch, baseline_path, deadline
                 )
                 if clock() > deadline:
                     raise subprocess.TimeoutExpired(["run_matrix"], options.budget_seconds)
@@ -772,6 +806,7 @@ def run_recipe(options: RunOptions, toolchain: Any) -> dict[str, Any]:
         outcome, detail = Outcome.TIMEOUT, f"budget of {options.budget_seconds}s exceeded during {error.cmd}"
     finally:
         toolchain.remove_worktree(repository, worktree)
+        toolchain.remove_worktree(repository, baseline_worktree)
 
     assert outcome is not None
     result = build_result(

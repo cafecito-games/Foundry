@@ -24,8 +24,11 @@ cadence = _load("cadence")
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "type_completeness"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACKED_SHARDS = REPO_ROOT / "modules" / "foundry_script" / "tests" / "type_completeness" / "mutations" / "shards.json"
-# The result the real `mutation.py run` wrote for the tracked recipe, as downloaded from the artifact
-# `type-completeness-mutation-union_core-31935560560`.
+# The result the real `mutation.py run` wrote for the tracked recipe, laid out exactly as
+#   gh run download 31935560560 -n type-completeness-mutation-union_core-31935560560 \
+#       -D <artifacts>/type-completeness-mutation-union_core-31935560560
+# extracts the workflow's `results/` upload (the artifact root holds <recipe>/mutation_result.json);
+# `cadence.download_command` is the single spelling of that command and layout.
 REAL_ARTIFACTS = FIXTURES / "artifacts"
 REAL_RESULT = (
     REAL_ARTIFACTS
@@ -159,6 +162,25 @@ class CaptureFixtureTests(unittest.TestCase):
             self.assertIn(
                 "ok shard=union_core recipe=union_membership_drops_last_alternative run=31935560560", out.getvalue()
             )
+
+    def test_the_download_command_and_the_result_path_share_one_layout(self) -> None:
+        artifacts = Path("/captures")
+        command = cadence.download_command(31935560560, "union_core", artifacts)
+        self.assertEqual(command[:3], ["gh", "run", "download"])
+        self.assertEqual(command[3], "31935560560")
+        self.assertEqual(command[command.index("-n") + 1], "type-completeness-mutation-union_core-31935560560")
+        destination = Path(command[command.index("-D") + 1])
+        self.assertEqual(destination, artifacts / "type-completeness-mutation-union_core-31935560560")
+        self.assertEqual(
+            cadence.recipe_result_path(artifacts, "union_core", 31935560560, "r"),
+            destination / "r" / "mutation_result.json",
+        )
+        self.assertEqual(
+            cadence.recipe_result_path(
+                REAL_ARTIFACTS, "union_core", 31935560560, "union_membership_drops_last_alternative"
+            ),
+            REAL_RESULT,
+        )
 
     def test_a_failed_run_without_a_recipe_result_is_missing_and_named(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

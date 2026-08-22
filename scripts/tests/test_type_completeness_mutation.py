@@ -12,6 +12,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, Optional
@@ -116,7 +117,10 @@ class OutcomeVocabularyTests(unittest.TestCase):
                         mutation.DetectorResult("f", "case", "dimension", mutation.DetectorState.FAILED_ON_DIMENSION)
                     ],
                 )
-                (root / "mutation_result.json").write_text(mutation.render_result(result), encoding="utf-8")
+                (root / "fixture_recipe").mkdir()
+                (root / "fixture_recipe" / "mutation_result.json").write_text(
+                    mutation.render_result(result), encoding="utf-8"
+                )
                 code = mutation.main(["summarize", "--results", str(root), "--output", str(root / "summary.json")])
                 if outcome in mutation.RECIPE_OUTCOMES:
                     self.assertEqual(code, mutation.exit_code_for(outcome))
@@ -145,7 +149,8 @@ class OutcomeVocabularyTests(unittest.TestCase):
                 )
             )
             result["outcome"] = "surprise"
-            (root / "mutation_result.json").write_text(json.dumps(result), encoding="utf-8")
+            (root / "fixture_recipe").mkdir()
+            (root / "fixture_recipe" / "mutation_result.json").write_text(json.dumps(result), encoding="utf-8")
             with self.assertRaises(mutation.MutationError) as raised:
                 mutation.summarize([root])
             self.assertIn("surprise", str(raised.exception))
@@ -172,7 +177,8 @@ class OutcomeVocabularyTests(unittest.TestCase):
                 )
             )
             result["outcome"] = mutation.Outcome.MISSED.value
-            (root / "mutation_result.json").write_text(json.dumps(result), encoding="utf-8")
+            (root / "fixture_recipe").mkdir()
+            (root / "fixture_recipe" / "mutation_result.json").write_text(json.dumps(result), encoding="utf-8")
             with self.assertRaises(mutation.MutationError) as raised:
                 mutation.summarize([root])
             self.assertIn("digest", str(raised.exception))
@@ -520,6 +526,60 @@ class RecipeValidationTests(unittest.TestCase):
                 mutation.load_recipe_file(path)
 
 
+class BuildBinarySelectionTests(unittest.TestCase):
+    RESULT_LINE = (
+        "[agent-build] RESULT: success step=build exit_code=0 binary={binary} binary_present=yes "
+        "child=exited invocation=00000000-0000-0000-0000-000000000000 log=/tmp/x.log"
+    )
+
+    def _two_binaries(self, root: Path) -> tuple[Path, Path]:
+        (root / "bin").mkdir()
+        editor = root / "bin" / "foundry.macos.editor.dev.arm64"
+        release = root / "bin" / "foundry.macos.template_release.arm64"
+        editor.write_text("editor")
+        release.write_text("release")
+        return editor, release
+
+    def test_the_wrapper_reported_binary_is_used_not_the_first_match(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            editor, release = self._two_binaries(root)
+            for chosen in (release, editor):
+                with self.subTest(chosen=chosen.name):
+                    output = "scons: done\n" + self.RESULT_LINE.format(binary=chosen) + "\n"
+                    self.assertEqual(mutation.binary_from_build_output(output, root), chosen)
+
+    def test_missing_or_failed_result_lines_are_build_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            editor, _ = self._two_binaries(root)
+            bad = [
+                "scons: done\n",
+                self.RESULT_LINE.format(binary=editor).replace("binary_present=yes", "binary_present=no"),
+                self.RESULT_LINE.format(binary=editor).replace("RESULT: success", "RESULT: build-failure"),
+                self.RESULT_LINE.format(binary=root / "bin" / "foundry.absent"),
+                self.RESULT_LINE.format(binary="/elsewhere/foundry.x"),
+            ]
+            for output in bad:
+                with self.subTest(output=output[:60]):
+                    with self.assertRaises(mutation.BuildFailed):
+                        mutation.binary_from_build_output(output, root)
+
+    def test_the_real_toolchain_reads_the_wrapper_verdict_through_a_subprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            editor, release = self._two_binaries(root)
+            (root / "scripts").mkdir()
+            (root / "scripts" / "agent_build.py").write_text(
+                "import sys\n"
+                "print('[agent-build] invocation: x')\n"
+                f"print({self.RESULT_LINE.format(binary=release)!r})\n",
+                encoding="utf-8",
+            )
+            chosen = mutation.Toolchain().build(root, 1, time.monotonic() + 60)
+            self.assertEqual(chosen, release)
+
+
 class FakeToolchain:
     """Stands in for git, the build wrapper, and the engine binary, with scripted failures."""
 
@@ -579,7 +639,7 @@ class FakeToolchain:
         self._tick("build")
         self.build_invocations += 1
         self.built_worktrees.append(worktree)
-        baseline = worktree == REPO_ROOT.resolve()
+        baseline = worktree.name.startswith("baseline_worktree_")
         if (self.baseline_build_fails and baseline) or (self.build_fails and not baseline):
             raise mutation.BuildFailed("scons returned 2")
         return worktree / "bin" / "foundry.fake"
@@ -634,10 +694,26 @@ class RunFlowTests(unittest.TestCase):
         fake = FakeToolchain()
         with tempfile.TemporaryDirectory() as directory:
             mutation.run_recipe(_run_options(Path(directory)), fake)
-            # One build of the unpatched repository for the baseline, one of the disposable worktree.
+            # One build of the detached baseline worktree, one of the patched worktree; never the
+            # caller's checkout, whatever it holds uncommitted.
             self.assertEqual(fake.build_invocations, 2)
             self.assertEqual(len(set(fake.built_worktrees)), 2)
-            self.assertEqual(fake.calls.count("add_worktree"), 1)
+            self.assertEqual(fake.calls.count("add_worktree"), 2)
+            self.assertNotIn(REPO_ROOT.resolve(), [path.resolve() for path in fake.built_worktrees])
+            self.assertTrue(any(path.name.startswith("baseline_worktree_") for path in fake.built_worktrees))
+            self.assertEqual(fake.calls.count("remove_worktree"), 2)
+
+    def test_a_dirty_checkout_never_reaches_the_baseline(self) -> None:
+        fake = FakeToolchain()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dirty_repository = root / "repository"
+            dirty_repository.mkdir()
+            (dirty_repository / "tracked.cpp").write_text("uncommitted edit\n", encoding="utf-8")
+            mutation.run_recipe(_run_options(root, repository=dirty_repository), fake)
+            self.assertNotIn(dirty_repository.resolve(), [path.resolve() for path in fake.built_worktrees])
+            for call_worktree in fake.built_worktrees:
+                self.assertTrue(str(call_worktree.resolve()).startswith(str((root / "scratch").resolve())))
 
     def test_the_baseline_runs_before_the_patch_is_applied(self) -> None:
         fake = FakeToolchain()
@@ -733,7 +809,7 @@ class RunFlowTests(unittest.TestCase):
         fake = FakeToolchain(step_seconds=100.0)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            result = mutation.run_recipe(_run_options(root, budget_seconds=750), fake)
+            result = mutation.run_recipe(_run_options(root, budget_seconds=850), fake)
             self.assertEqual(result["outcome"], mutation.Outcome.TIMEOUT.value)
             self.assertEqual(fake.calls.count("run_matrix"), 2)
             self.assertTrue(Path(result["report_path"]).is_file())
