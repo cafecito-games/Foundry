@@ -1233,6 +1233,140 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Census closes every vocabulary against what the loader implements") {
+		// A vocabulary is closed by the code that implements it. A term declared in schema.json that no
+		// branch handles would be accepted and then validated by nothing - a status with no rules, a
+		// witness kind with no resolution - so the schema and the loader are checked against each other
+		// in both directions before any document is read against them.
+		TemporaryProjectTree tree(vformat("type_completeness_census_vocabulary_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		const auto staged_schema = [&]() {
+			Vector<String> read_errors;
+			Variant data;
+			REQUIRE_MESSAGE(census_read_json("schema.json", data, read_errors), String(" | ").join(read_errors));
+			return Dictionary(data).duplicate(true);
+		};
+		const auto write_schema = [&](const Dictionary &p_document) {
+			tree.write_file("catalog/census/schema.json", JSON::stringify(p_document, "\t") + "\n");
+		};
+		const auto refuses = [&](const String &p_fragment) {
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, p_fragment), String(" | ").join(errors));
+			CHECK(summary.entries.is_empty());
+		};
+
+		SUBCASE("a status the loader does not implement may not be declared") {
+			Dictionary schema = staged_schema();
+			Array statuses = schema["coverage_statuses"];
+			statuses.push_back("provisionally_covered");
+			schema["coverage_statuses"] = statuses;
+			write_schema(schema);
+			refuses("declares term 'provisionally_covered', which the census loader does not implement");
+		}
+
+		SUBCASE("an entry may not use a status the loader does not implement") {
+			// Declaring the term is what a drifting schema would do first; the entry must be refused on
+			// its own terms too, so the implemented set gates the document rather than the schema list.
+			Dictionary schema = staged_schema();
+			Array statuses = schema["coverage_statuses"];
+			statuses.push_back("provisionally_covered");
+			schema["coverage_statuses"] = statuses;
+			write_schema(schema);
+
+			Dictionary coverage = tracked_coverage_document();
+			Array entries = coverage["entries"];
+			Dictionary entry = entries[0];
+			entry["status"] = "provisionally_covered";
+			entries[0] = entry;
+			coverage["entries"] = entries;
+			write_staged_coverage(tree, coverage);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors,
+								  "$.entries[0].status: 'provisionally_covered' is outside the coverage-status vocabulary"),
+					String(" | ").join(errors));
+			CHECK(summary.entries.is_empty());
+		}
+
+		SUBCASE("a status the loader implements may not be dropped from the schema") {
+			Dictionary schema = staged_schema();
+			Array statuses = schema["coverage_statuses"];
+			int quality_deferred_index = -1;
+			for (int index = 0; index < statuses.size(); index++) {
+				if (String(statuses[index]) == "quality_deferred") {
+					quality_deferred_index = index;
+					break;
+				}
+			}
+			REQUIRE(quality_deferred_index >= 0);
+			statuses.remove_at(quality_deferred_index);
+			schema["coverage_statuses"] = statuses;
+			write_schema(schema);
+			refuses("does not declare implemented term 'quality_deferred'");
+		}
+
+		SUBCASE("a witness kind the loader cannot resolve may not be declared") {
+			Dictionary schema = staged_schema();
+			Array kinds = schema["witness_kinds"];
+			kinds.push_back("screenshot");
+			schema["witness_kinds"] = kinds;
+			write_schema(schema);
+			refuses("declares term 'screenshot', which the census loader does not implement");
+		}
+
+		SUBCASE("the coverage-only witness kind may not be declared as a negative-witness kind") {
+			// `family_case` observes a matrix cell, which is never executable negative evidence, so the
+			// shared vocabulary may not admit it even though the loader implements the kind.
+			Dictionary schema = staged_schema();
+			Array kinds = schema["witness_kinds"];
+			kinds.push_back("family_case");
+			schema["witness_kinds"] = kinds;
+			write_schema(schema);
+			refuses("declares term 'family_case', which the census loader does not implement");
+		}
+
+		SUBCASE("a policy the loader implements may not be dropped from the schema") {
+			Dictionary schema = staged_schema();
+			Array policies = schema["policies"];
+			int erase_index = -1;
+			for (int index = 0; index < policies.size(); index++) {
+				if (String(policies[index]) == "erase") {
+					erase_index = index;
+					break;
+				}
+			}
+			REQUIRE(erase_index >= 0);
+			policies.remove_at(erase_index);
+			schema["policies"] = policies;
+			write_schema(schema);
+			refuses("does not declare implemented term 'erase'");
+		}
+
+		SUBCASE("a transition kind the loader does not implement may not be declared") {
+			Dictionary schema = staged_schema();
+			Array kinds = schema["transition_kinds"];
+			kinds.push_back("teleport");
+			schema["transition_kinds"] = kinds;
+			write_schema(schema);
+			refuses("declares term 'teleport', which the census loader does not implement");
+		}
+
+		SUBCASE("a witness status the loader does not implement may not be declared") {
+			Dictionary schema = staged_schema();
+			Array statuses = schema["witness_statuses"];
+			statuses.push_back("planned");
+			schema["witness_statuses"] = statuses;
+			write_schema(schema);
+			refuses("declares term 'planned', which the census loader does not implement");
+		}
+	}
+
 	TEST_CASE("TypeCompleteness Census refuses a duplicate identity in every census table") {
 		// Every census document is an identity-keyed table, and every one of them is loaded into a map.
 		// A repeated key replaces the entry that came before it, so a document can lose a whole

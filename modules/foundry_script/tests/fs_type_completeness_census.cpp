@@ -212,6 +212,186 @@ struct CoverageEntryKeyLess {
 	}
 };
 
+// Every vocabulary the census uses is closed by the code that implements it, not by the document that
+// declares it. Each enumeration below is the single source of truth: `..._id` has no default arm, so a
+// new enumerator fails to compile until it is named, and `check_vocabulary_closure` refuses a schema
+// that declares a term nothing implements or omits a term the code does implement. Accepting whatever
+// the schema listed would let a term added there reach code that has no branch for it - a status with
+// no rules, a witness kind with no resolution - and be counted as if it had been validated.
+enum class CoverageStatus {
+	COVERED,
+	UNCOVERED,
+	UNSUPPORTED,
+	QUALITY_DEFERRED,
+	MAX,
+};
+
+enum class WitnessKind {
+	DOCTEST_CASE,
+	FIXTURE,
+	// A family case observes a resolved matrix cell. It is a coverage-document kind only: unsupported
+	// configurations are witnessed by executable negative evidence, never by a matrix cell, so the
+	// shared `witness_kinds` vocabulary must not declare it.
+	FAMILY_CASE,
+	MAX,
+};
+
+enum class WitnessStatus {
+	PRESENT,
+	DEFERRED,
+	MAX,
+};
+
+enum class PolicyKind {
+	TRAVERSE,
+	PRESERVE,
+	SUBSTITUTE,
+	PROJECT,
+	ERASE,
+	NOT_APPLICABLE,
+	MAX,
+};
+
+enum class TransitionKind {
+	PROJECT,
+	ERASE,
+	SUBSTITUTE,
+	PRESERVE,
+	REIFY,
+	MAX,
+};
+
+String coverage_status_id(CoverageStatus p_status) {
+	switch (p_status) {
+		case CoverageStatus::COVERED:
+			return "covered";
+		case CoverageStatus::UNCOVERED:
+			return "uncovered";
+		case CoverageStatus::UNSUPPORTED:
+			return "unsupported";
+		case CoverageStatus::QUALITY_DEFERRED:
+			return "quality_deferred";
+		case CoverageStatus::MAX:
+			break;
+	}
+	return String();
+}
+
+String witness_kind_id(WitnessKind p_kind) {
+	switch (p_kind) {
+		case WitnessKind::DOCTEST_CASE:
+			return "doctest_case";
+		case WitnessKind::FIXTURE:
+			return "fixture";
+		case WitnessKind::FAMILY_CASE:
+			return "family_case";
+		case WitnessKind::MAX:
+			break;
+	}
+	return String();
+}
+
+String witness_status_id(WitnessStatus p_status) {
+	switch (p_status) {
+		case WitnessStatus::PRESENT:
+			return "present";
+		case WitnessStatus::DEFERRED:
+			return "deferred";
+		case WitnessStatus::MAX:
+			break;
+	}
+	return String();
+}
+
+String policy_kind_id(PolicyKind p_policy) {
+	switch (p_policy) {
+		case PolicyKind::TRAVERSE:
+			return "traverse";
+		case PolicyKind::PRESERVE:
+			return "preserve";
+		case PolicyKind::SUBSTITUTE:
+			return "substitute";
+		case PolicyKind::PROJECT:
+			return "project";
+		case PolicyKind::ERASE:
+			return "erase";
+		case PolicyKind::NOT_APPLICABLE:
+			return "not_applicable";
+		case PolicyKind::MAX:
+			break;
+	}
+	return String();
+}
+
+String transition_kind_id(TransitionKind p_kind) {
+	switch (p_kind) {
+		case TransitionKind::PROJECT:
+			return "project";
+		case TransitionKind::ERASE:
+			return "erase";
+		case TransitionKind::SUBSTITUTE:
+			return "substitute";
+		case TransitionKind::PRESERVE:
+			return "preserve";
+		case TransitionKind::REIFY:
+			return "reify";
+		case TransitionKind::MAX:
+			break;
+	}
+	return String();
+}
+
+// The implemented terms of one enumeration, in enum order.
+template <typename Enumeration>
+Vector<String> implemented_vocabulary(String (*p_id_of)(Enumeration)) {
+	Vector<String> terms;
+	for (int value = 0; value < int(Enumeration::MAX); value++) {
+		const String id = p_id_of(Enumeration(value));
+		if (!id.is_empty()) {
+			terms.push_back(id);
+		}
+	}
+	return terms;
+}
+
+template <typename Enumeration>
+bool parse_vocabulary_term(const String &p_term, String (*p_id_of)(Enumeration), Enumeration &r_value) {
+	for (int value = 0; value < int(Enumeration::MAX); value++) {
+		if (p_id_of(Enumeration(value)) == p_term) {
+			r_value = Enumeration(value);
+			return true;
+		}
+	}
+	return false;
+}
+
+// Both directions, so the schema and the code cannot drift apart: a declared term nothing implements
+// would be accepted by no branch, and an implemented term the schema omits could never appear in a
+// document that validates against it.
+void check_vocabulary_closure(const Dictionary &p_schema, const String &p_member,
+		const Vector<String> &p_implemented, const String &p_schema_path, Vector<String> &r_errors) {
+	const HashSet<String> declared = census_string_set(census_string_array(p_schema, p_member));
+	HashSet<String> implemented;
+	for (const String &term : p_implemented) {
+		implemented.insert(term);
+		if (!declared.has(term)) {
+			r_errors.push_back(vformat("%s:$.%s: does not declare implemented term '%s'",
+					p_schema_path, p_member, term));
+		}
+	}
+	Vector<String> undeclared;
+	for (const String &term : declared) {
+		if (!implemented.has(term)) {
+			undeclared.push_back(term);
+		}
+	}
+	undeclared.sort();
+	for (const String &term : undeclared) {
+		r_errors.push_back(vformat("%s:$.%s: declares term '%s', which the census loader does not implement",
+				p_schema_path, p_member, term));
+	}
+}
+
 bool read_census_document(const String &p_root, const String &p_file_name, Dictionary &r_document,
 		Vector<String> &r_errors) {
 	Variant data;
@@ -221,11 +401,6 @@ bool read_census_document(const String &p_root, const String &p_file_name, Dicti
 	}
 	r_document = data;
 	return true;
-}
-
-// The vocabulary a schema member declares, as a set.
-HashSet<String> schema_vocabulary(const Dictionary &p_schema, const String &p_key) {
-	return census_string_set(census_string_array(p_schema, p_key));
 }
 
 // Binds r_entries to p_document's p_key member when it is an array of objects. A member of another
@@ -272,8 +447,7 @@ void check_unknown_members(const Dictionary &p_object, const char *const *p_know
 }
 
 void parse_witness(const Dictionary &p_entry, const String &p_json_path,
-		const HashSet<String> &p_witness_kinds, FSCompletenessCoverageWitness &r_witness,
-		Vector<String> &r_errors) {
+		FSCompletenessCoverageWitness &r_witness, Vector<String> &r_errors) {
 	const Variant &raw_witness = p_entry.get("witness", Variant());
 	if (raw_witness.get_type() == Variant::NIL) {
 		return;
@@ -287,12 +461,13 @@ void parse_witness(const Dictionary &p_entry, const String &p_json_path,
 	check_unknown_members(witness, WITNESS_MEMBERS, WITNESS_MEMBER_COUNT, witness_path, r_errors);
 
 	const String kind = census_string(witness, "kind");
-	if (!p_witness_kinds.has(kind)) {
+	WitnessKind witness_kind = WitnessKind::MAX;
+	if (!parse_vocabulary_term(kind, witness_kind_id, witness_kind)) {
 		r_errors.push_back(vformat("%s.kind: '%s' is outside the witness-kind vocabulary", witness_path, kind));
 		return;
 	}
 	r_witness.kind = kind;
-	if (kind == FAMILY_CASE_WITNESS_KIND) {
+	if (witness_kind == WitnessKind::FAMILY_CASE) {
 		r_witness.family = census_string(witness, "family");
 		if (r_witness.family.is_empty()) {
 			r_errors.push_back(vformat("%s.family: a family_case witness names no rule family", witness_path));
@@ -404,22 +579,29 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 		r_errors.push_back(vformat("%s:$.schema_version: expected %d", coverage_path, CENSUS_SCHEMA_VERSION));
 	}
 
-	const HashSet<String> statuses = schema_vocabulary(schema, "coverage_statuses");
-	if (statuses.is_empty()) {
-		r_errors.push_back("census/schema.json:$.coverage_statuses: no coverage-status vocabulary is declared");
+	// Every closed vocabulary is checked against what this loader implements before a single document
+	// is read against it. A schema that declares a term the code has no branch for, or omits one the
+	// code does implement, is a defect of the pair rather than of either file alone.
+	const String schema_path = census_directory(p_root).path_join("schema.json");
+	check_vocabulary_closure(schema, "coverage_statuses",
+			implemented_vocabulary<CoverageStatus>(coverage_status_id), schema_path, r_errors);
+	Vector<String> declarable_witness_kinds;
+	for (const String &kind : implemented_vocabulary<WitnessKind>(witness_kind_id)) {
+		if (kind != FAMILY_CASE_WITNESS_KIND) {
+			declarable_witness_kinds.push_back(kind);
+		}
 	}
-	HashSet<String> witness_kinds = schema_vocabulary(schema, "witness_kinds");
-	if (witness_kinds.is_empty()) {
-		r_errors.push_back("census/schema.json:$.witness_kinds: no witness-kind vocabulary is declared");
-	}
-	// A family case is a witness kind of the coverage document alone: unsupported.json declares only
-	// executable negative witnesses, so the shared vocabulary must not admit it there.
-	witness_kinds.insert(FAMILY_CASE_WITNESS_KIND);
+	check_vocabulary_closure(schema, "witness_kinds", declarable_witness_kinds, schema_path, r_errors);
+	check_vocabulary_closure(schema, "witness_statuses",
+			implemented_vocabulary<WitnessStatus>(witness_status_id), schema_path, r_errors);
+	check_vocabulary_closure(schema, "policies",
+			implemented_vocabulary<PolicyKind>(policy_kind_id), schema_path, r_errors);
+	check_vocabulary_closure(schema, "transition_kinds",
+			implemented_vocabulary<TransitionKind>(transition_kind_id), schema_path, r_errors);
 
-	const HashSet<String> policy_vocabulary = schema_vocabulary(schema, "policies");
 	const Vector<String> surfaces = census_string_array(schema, "surfaces");
-	if (policy_vocabulary.is_empty() || surfaces.is_empty()) {
-		r_errors.push_back("census/schema.json: no policy or surface vocabulary is declared");
+	if (surfaces.is_empty()) {
+		r_errors.push_back(vformat("%s:$.surfaces: no surface vocabulary is declared", schema_path));
 		return ERR_INVALID_DATA;
 	}
 
@@ -505,7 +687,8 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			r_errors.push_back(vformat("%s.surface: '%s' is outside the surface vocabulary", entry_path, surface));
 			continue;
 		}
-		if (!policy_vocabulary.has(policy)) {
+		PolicyKind policy_kind = PolicyKind::MAX;
+		if (!parse_vocabulary_term(policy, policy_kind_id, policy_kind)) {
 			r_errors.push_back(vformat("%s.policy: '%s' is outside the policy vocabulary", entry_path, policy));
 			continue;
 		}
@@ -519,8 +702,18 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			continue;
 		}
 		policy_counts[key] += 1;
-		if (policy != "not_applicable") {
-			required_pairs.insert(key);
+		switch (policy_kind) {
+			case PolicyKind::TRAVERSE:
+			case PolicyKind::PRESERVE:
+			case PolicyKind::SUBSTITUTE:
+			case PolicyKind::PROJECT:
+			case PolicyKind::ERASE:
+				// Every operative policy describes a crossing a witness has to observe.
+				required_pairs.insert(key);
+				break;
+			case PolicyKind::NOT_APPLICABLE:
+			case PolicyKind::MAX:
+				break;
 		}
 	}
 
@@ -549,7 +742,6 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	}
 
 	const String unsupported_path = census_directory(p_root).path_join("unsupported.json");
-	const HashSet<String> witness_statuses = schema_vocabulary(schema, "witness_statuses");
 	HashSet<String> witnessed_unsupported_representations;
 	Vector<FSCompletenessUnsupportedWitness> unsupported_witnesses;
 	Array unsupported_entries;
@@ -588,14 +780,17 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			const Dictionary witness = witnesses[witness_index];
 			const String witness_path = vformat("%s.witnesses[%d]", entry_path, witness_index);
 			const String kind = census_string(witness, "kind");
-			if (!witness_kinds.has(kind) || kind == FAMILY_CASE_WITNESS_KIND) {
+			WitnessKind witness_kind = WitnessKind::MAX;
+			if (!parse_vocabulary_term(kind, witness_kind_id, witness_kind) ||
+					witness_kind == WitnessKind::FAMILY_CASE) {
 				// A family case observes a matrix cell, which is not an executable negative witness.
 				r_errors.push_back(vformat("%s.kind: '%s' is not an executable negative-witness kind",
 						witness_path, kind));
 				continue;
 			}
 			const String status = census_string(witness, "status");
-			if (!witness_statuses.has(status)) {
+			WitnessStatus witness_status = WitnessStatus::MAX;
+			if (!parse_vocabulary_term(status, witness_status_id, witness_status)) {
 				r_errors.push_back(vformat("%s.status: '%s' is outside the witness-status vocabulary",
 						witness_path, status));
 				continue;
@@ -604,14 +799,22 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 				r_errors.push_back(vformat("%s.reference: a witness carries no reference", witness_path));
 				continue;
 			}
-			if (status == "present") {
-				witnessed_unsupported_representations.insert(representation);
-				FSCompletenessUnsupportedWitness present_witness;
-				present_witness.entry_id = census_string(entry, "id");
-				present_witness.representation = representation;
-				present_witness.witness.kind = kind;
-				present_witness.witness.reference = census_string(witness, "reference");
-				unsupported_witnesses.push_back(present_witness);
+			switch (witness_status) {
+				case WitnessStatus::PRESENT: {
+					witnessed_unsupported_representations.insert(representation);
+					FSCompletenessUnsupportedWitness present_witness;
+					present_witness.entry_id = entry_id;
+					present_witness.representation = representation;
+					present_witness.witness.kind = kind;
+					present_witness.witness.reference = census_string(witness, "reference");
+					unsupported_witnesses.push_back(present_witness);
+				} break;
+				case WitnessStatus::DEFERRED:
+					// A deferred witness observes nothing, so it authorizes no exemption. The census
+					// test refuses one outright; the loader simply never counts it as evidence.
+					break;
+				case WitnessStatus::MAX:
+					break;
 			}
 		}
 	}
@@ -638,6 +841,13 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			continue;
 		}
 		transition_ids.insert(transition_id);
+		const String transition_kind = census_string(transition, "kind");
+		TransitionKind parsed_kind = TransitionKind::MAX;
+		if (!parse_vocabulary_term(transition_kind, transition_kind_id, parsed_kind)) {
+			r_errors.push_back(vformat("%s.kind: '%s' is outside the transition-kind vocabulary",
+					transition_path, transition_kind));
+			continue;
+		}
 	}
 
 	const Variant &raw_entries = coverage.get("entries", Variant());
@@ -683,18 +893,36 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 					json_path, key));
 			continue;
 		}
-		if (!statuses.has(entry.status)) {
+		CoverageStatus status = CoverageStatus::MAX;
+		if (!parse_vocabulary_term(entry.status, coverage_status_id, status)) {
 			r_errors.push_back(vformat("%s.status: '%s' is outside the coverage-status vocabulary",
 					json_path, entry.status));
 			continue;
 		}
-		parse_witness(raw_entry, json_path, witness_kinds, entry.witness, r_errors);
-		if (entry.status == "unsupported" && !witnessed_unsupported_representations.has(entry.representation)) {
-			r_errors.push_back(vformat("%s: no unsupported.json entry for representation '%s' carries a present witness",
-					json_path, entry.representation));
-		}
-		if ((entry.status == "uncovered" || entry.status == "quality_deferred") && entry.issue_url.is_empty()) {
-			r_errors.push_back(vformat("%s.issue_url: a %s entry names no owning issue", json_path, entry.status));
+		parse_witness(raw_entry, json_path, entry.witness, r_errors);
+		// What each status obliges the entry to carry, decided in one place with no default arm, so a
+		// new status cannot be added without deciding what it must prove.
+		switch (status) {
+			case CoverageStatus::COVERED:
+				// The witness itself is resolved by unresolved_witnesses(); an entry that declares none
+				// is reported there rather than here, so the message names what failed to bind.
+				break;
+			case CoverageStatus::UNSUPPORTED:
+				if (!witnessed_unsupported_representations.has(entry.representation)) {
+					r_errors.push_back(
+							vformat("%s: no unsupported.json entry for representation '%s' carries a present witness",
+									json_path, entry.representation));
+				}
+				break;
+			case CoverageStatus::UNCOVERED:
+			case CoverageStatus::QUALITY_DEFERRED:
+				if (entry.issue_url.is_empty()) {
+					r_errors.push_back(
+							vformat("%s.issue_url: a %s entry names no owning issue", json_path, entry.status));
+				}
+				break;
+			case CoverageStatus::MAX:
+				break;
 		}
 		parsed_entries.push_back(entry);
 	}
@@ -718,14 +946,25 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 
 	parsed_entries.sort_custom<CoverageEntryKeyLess>();
 	for (const FSCompletenessCoverageEntry &entry : parsed_entries) {
-		if (entry.status == "covered") {
-			r_summary.covered++;
-		} else if (entry.status == "uncovered") {
-			r_summary.uncovered++;
-		} else if (entry.status == "unsupported") {
-			r_summary.unsupported++;
-		} else {
-			r_summary.quality_deferred++;
+		CoverageStatus status = CoverageStatus::MAX;
+		// Every entry parsed above, so this cannot fail; counting is still a switch with no default arm
+		// so a new status is counted deliberately rather than folded into whichever branch came last.
+		ERR_CONTINUE(!parse_vocabulary_term(entry.status, coverage_status_id, status));
+		switch (status) {
+			case CoverageStatus::COVERED:
+				r_summary.covered++;
+				break;
+			case CoverageStatus::UNCOVERED:
+				r_summary.uncovered++;
+				break;
+			case CoverageStatus::UNSUPPORTED:
+				r_summary.unsupported++;
+				break;
+			case CoverageStatus::QUALITY_DEFERRED:
+				r_summary.quality_deferred++;
+				break;
+			case CoverageStatus::MAX:
+				break;
 		}
 	}
 	r_summary.entries = parsed_entries;
@@ -761,14 +1000,20 @@ bool FSCompletenessCensus::resolve_witness(const String &p_root, const FSComplet
 		r_detail = "declares no witness";
 		return false;
 	}
-	if (p_entry.witness.kind == "doctest_case") {
-		return resolve_doctest_case_reference(p_entry.witness.reference, r_detail);
+	WitnessKind kind = WitnessKind::MAX;
+	if (!parse_vocabulary_term(p_entry.witness.kind, witness_kind_id, kind)) {
+		r_detail = vformat("witness kind '%s' has no resolution", p_entry.witness.kind);
+		return false;
 	}
-	if (p_entry.witness.kind == "fixture") {
-		return resolve_tracked_fixture_reference(p_root, p_entry.witness.reference, r_detail);
-	}
-	if (p_entry.witness.kind == FAMILY_CASE_WITNESS_KIND) {
-		return resolve_family_case_witness(p_root, p_entry.witness, r_detail);
+	switch (kind) {
+		case WitnessKind::DOCTEST_CASE:
+			return resolve_doctest_case_reference(p_entry.witness.reference, r_detail);
+		case WitnessKind::FIXTURE:
+			return resolve_tracked_fixture_reference(p_root, p_entry.witness.reference, r_detail);
+		case WitnessKind::FAMILY_CASE:
+			return resolve_family_case_witness(p_root, p_entry.witness, r_detail);
+		case WitnessKind::MAX:
+			break;
 	}
 	r_detail = vformat("witness kind '%s' has no resolution", p_entry.witness.kind);
 	return false;
@@ -778,7 +1023,7 @@ Vector<String> FSCompletenessCensus::unresolved_witnesses(
 		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
 	Vector<String> unresolved;
 	for (const FSCompletenessCoverageEntry &entry : p_summary.entries) {
-		if (entry.status != "covered") {
+		if (entry.status != coverage_status_id(CoverageStatus::COVERED)) {
 			continue;
 		}
 		String detail;
@@ -791,7 +1036,7 @@ Vector<String> FSCompletenessCensus::unresolved_witnesses(
 	for (const FSCompletenessUnsupportedWitness &unsupported : p_summary.unsupported_witnesses) {
 		FSCompletenessCoverageEntry entry;
 		entry.representation = unsupported.representation;
-		entry.status = "unsupported";
+		entry.status = coverage_status_id(CoverageStatus::UNSUPPORTED);
 		entry.witness = unsupported.witness;
 		String detail;
 		if (!resolve_witness(p_root, entry, detail)) {
