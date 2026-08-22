@@ -16,6 +16,7 @@ from .report import (
     Report,
     ReportError,
     capability_slice_for_family,
+    require_object,
     schema_version_matches,
 )
 
@@ -194,6 +195,7 @@ class ComparisonArtifact:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ComparisonArtifact:
+        data = require_object(data, "comparison artifact")
         # An artifact travels inside other documents - a provisional record embeds the develop comparison it
         # stands on - so it checks its own version rather than trusting whatever envelope carried it here.
         _check_comparison_schema_version(data.get("schema_version"), "comparison artifact")
@@ -386,13 +388,16 @@ def _check_comparison_schema_version(value: Any, context: str) -> None:
 
 
 def deserialize_many(text: str) -> list[ComparisonArtifact]:
-    data = json.loads(text)
+    data = require_object(json.loads(text), "comparison")
     _check_comparison_schema_version(data.get("schema_version"), "comparison")
     if "structural_failure" in data:
         # A refusal carries no conclusions; reading it as an empty, clean comparison is exactly the
         # mistake the refusal exists to prevent.
         raise ReportError(f"comparison refused to draw a verdict: {data['structural_failure']}")
+    artifacts = data.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ReportError("comparison member 'artifacts' must be an array")
     try:
-        return [ComparisonArtifact.from_dict(entry) for entry in data["artifacts"]]
+        return [ComparisonArtifact.from_dict(entry) for entry in artifacts]
     except (KeyError, TypeError) as error:
         raise ReportError(f"malformed comparison artifact: {error!r}") from error

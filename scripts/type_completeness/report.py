@@ -250,6 +250,19 @@ def _check_not_covered_coherence(
         )
 
 
+def require_object(value: Any, context: str, error: type[Exception] = ReportError) -> dict[str, Any]:
+    """The first thing every loader does with a decoded document, before reading a single member.
+
+    A document that is not an object has no members to look up: `null` makes a membership test a TypeError
+    and a list makes `.get` an AttributeError, so a loader that reads first turns a malformed input into an
+    uncaught crash in whatever process was reading it - a gate that terminates instead of reporting. Each
+    loader passes its own error type so the refusal reads in the vocabulary of the document it refused.
+    """
+    if not isinstance(value, Mapping):
+        raise error(f"{context} must be a JSON object; got {type(value).__name__}")
+    return dict(value)
+
+
 def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
     if key not in mapping:
         raise ReportError(f"{context} is missing required member {key!r}")
@@ -257,6 +270,7 @@ def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
 
 
 def load_report(data: Mapping[str, Any]) -> Report:
+    data = require_object(data, "report")
     version = _require(data, "schema_version", "report")
     if not schema_version_matches(version, SUPPORTED_SCHEMA_VERSION):
         raise ReportError(f"unsupported report schema_version {version!r}; expected {SUPPORTED_SCHEMA_VERSION}")
@@ -345,9 +359,7 @@ def load_report_file(path: Path) -> Report:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise ReportError(f"cannot read report {path}: {error}") from error
-    if not isinstance(data, dict):
-        raise ReportError(f"report {path} must contain a JSON object")
-    return load_report(data)
+    return load_report(require_object(data, f"report {path}"))
 
 
 @dataclass(frozen=True)
@@ -361,6 +373,7 @@ class CapabilitySlice:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> CapabilitySlice:
+        data = require_object(data, "capability_slice")
         paths = data.get("paths")
         if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or not path for path in paths):
             raise ReportError("capability_slice.paths must be a non-empty array of path strings")
@@ -385,12 +398,11 @@ def load_capabilities_file(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise ReportError(f"cannot read capabilities manifest {path}: {error}") from error
-    if not isinstance(data, dict):
-        raise ReportError(f"capabilities manifest {path} must contain a JSON object")
-    return data
+    return require_object(data, f"capabilities manifest {path}")
 
 
 def capability_slice_for_family(manifest: Mapping[str, Any], family: str) -> CapabilitySlice:
+    manifest = require_object(manifest, "capabilities manifest")
     production = _require(manifest, "production", "capabilities manifest")
     broad_core_families = _require(manifest, "broad_core_families", "capabilities manifest")
     if not isinstance(production, list) or not isinstance(broad_core_families, list):

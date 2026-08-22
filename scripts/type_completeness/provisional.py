@@ -15,6 +15,7 @@ from .report import (
     ReportError,
     capability_slice_for_family,
     load_capabilities_file,
+    require_object,
     schema_version_matches,
 )
 
@@ -156,9 +157,13 @@ class ProvisionalRecord:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any], capabilities: Optional[Mapping[str, Any]] = None) -> ProvisionalRecord:
-        # Checked before anything is read out of the record, and outside the malformed-record wrapper below,
-        # so a record of another version is refused by name rather than by the digest mismatch its embedded
-        # comparison would raise: a stale record is stale, not tampered with.
+        # A record that is not an object has no members at all, so this precedes every lookup below,
+        # including the version's: reading first would make a `null` record a TypeError that terminates
+        # whatever was reading it rather than the refusal a malformed record is owed.
+        data = require_object(data, "provisional record", ProvisionalError)
+        # Checked before anything else is read out of the record, and outside the malformed-record wrapper
+        # below, so a record of another version is refused by name rather than by the digest mismatch its
+        # embedded comparison would raise: a stale record is stale, not tampered with.
         if "schema_version" not in data:
             raise ProvisionalError("malformed provisional record: 'schema_version'")
         if not schema_version_matches(data["schema_version"], PROVISIONAL_SCHEMA_VERSION):

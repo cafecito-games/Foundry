@@ -1309,6 +1309,72 @@ class ProvisionalRecordTests(unittest.TestCase):
         self.assertEqual(manual.origin, "manual")
 
 
+class NonObjectDocumentTests(unittest.TestCase):
+    """A document that is not a JSON object is refused by every loader, never crashed on."""
+
+    # `null` makes a membership test a TypeError and a list makes `.get` an AttributeError, so these are the
+    # shapes that turn a malformed input into an uncaught crash in whatever process was reading it.
+    NON_OBJECTS: tuple[Any, ...] = (None, [], "x", 1, True)
+
+    def _loaders(self) -> tuple[tuple[str, type[Exception], Any], ...]:
+        return (
+            ("report", report.ReportError, report.load_report),
+            ("capability slice", report.ReportError, report.CapabilitySlice.from_dict),
+            ("capabilities manifest", report.ReportError, lambda value: report.capability_slice_for_family(value, "f")),
+            ("comparison envelope", report.ReportError, lambda value: comparator.deserialize_many(json.dumps(value))),
+            ("comparison artifact", report.ReportError, comparator.ComparisonArtifact.from_dict),
+            (
+                "provisional record",
+                provisional.ProvisionalError,
+                lambda value: provisional.ProvisionalRecord.from_dict(value, capabilities=CAPABILITIES),
+            ),
+            ("ledger record", ValueError, ledger.validate_record),
+        )
+
+    def test_every_loader_refuses_a_document_that_is_not_an_object(self) -> None:
+        for name, error_type, load in self._loaders():
+            for value in self.NON_OBJECTS:
+                with self.subTest(loader=name, document=value):
+                    with self.assertRaises(error_type) as refusal:
+                        load(value)
+                    self.assertIn("must be a JSON object", str(refusal.exception))
+
+    def test_a_file_or_block_that_decodes_to_a_non_object_is_refused_too(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for value in self.NON_OBJECTS:
+                with self.subTest(document=value):
+                    encoded = json.dumps(value)
+                    (root / "report.json").write_text(encoded)
+                    with self.assertRaises(report.ReportError):
+                        report.load_report_file(root / "report.json")
+                    (root / "capabilities.json").write_text(encoded)
+                    with self.assertRaises(report.ReportError):
+                        report.load_capabilities_file(root / "capabilities.json")
+                    (root / "fstcf-v1-eeeeeeeeeeeeeeeeeeee.json").write_text(encoded)
+                    with self.assertRaises(ValueError):
+                        ledger.read_record(root / "fstcf-v1-eeeeeeeeeeeeeeeeeeee.json")
+                    body = f"{provisional.BLOCK_START}\n```json\n{encoded}\n```\n{provisional.BLOCK_END}"
+                    with self.assertRaises(provisional.ProvisionalError):
+                        provisional.parse_issue_body(body, capabilities=CAPABILITIES)
+
+    def test_an_artifact_list_that_is_not_a_list_is_refused(self) -> None:
+        not_lists: tuple[Any, ...] = (None, {}, "x", 1)
+        for artifacts in not_lists:
+            with self.subTest(artifacts=artifacts):
+                envelope = {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": artifacts}
+                with self.assertRaises(report.ReportError):
+                    comparator.deserialize_many(json.dumps(envelope))
+
+    def test_a_non_object_artifact_entry_is_refused_rather_than_crashed_on(self) -> None:
+        for entry in NonObjectDocumentTests.NON_OBJECTS:
+            with self.subTest(entry=entry):
+                envelope = {"schema_version": comparator.COMPARISON_SCHEMA_VERSION, "artifacts": [entry]}
+                with self.assertRaises(report.ReportError) as refusal:
+                    comparator.deserialize_many(json.dumps(envelope))
+                self.assertIn("must be a JSON object", str(refusal.exception))
+
+
 class SidePresenceAndCoverageTests(unittest.TestCase):
     """Every combination of what each side of a comparison says about a case, including saying nothing."""
 

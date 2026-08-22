@@ -603,6 +603,29 @@ class GateTests(GateTestCase):
         self.assertFalse(published["success"])
 
 
+class MalformedProvisionalInputTests(GateTestCase):
+    """An input the run did not write is a verdict about that input, never a terminated gate."""
+
+    def test_a_provisional_record_that_is_not_an_object_is_a_malformed_verdict(self) -> None:
+        for document in ("null", "[]", '"x"', "1"):
+            with self.subTest(document=document):
+                provisional_dir = Path(self._make_temporary_directory())
+                (provisional_dir / "fstcf-v1-eeeeeeeeeeeeeeeeeeee.json").write_text(document, encoding="utf-8")
+                self.write_report(failed_report())
+                baseline = Path(self._make_temporary_directory())
+                self.write_report(runner_report(), directory=baseline)
+                code, verdict, _ = self.run_gate(
+                    baseline_dir=baseline,
+                    extra_arguments=["--provisional-dir", str(provisional_dir)],
+                    output_dir=Path(self._make_temporary_directory()),
+                )
+                self.assertEqual("malformed_input", verdict["state"])
+                self.assertEqual(2, code)
+                self.assertTrue(
+                    any("must be a JSON object" in reason for reason in verdict["reasons"]), verdict["reasons"]
+                )
+
+
 class IntegrityTests(GateTestCase):
     def test_two_runs_on_the_same_inputs_agree_apart_from_timings(self) -> None:
         self.write_report(runner_report())
