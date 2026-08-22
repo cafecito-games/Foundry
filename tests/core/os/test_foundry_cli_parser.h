@@ -142,10 +142,10 @@ TEST_CASE("[FoundryCLIParser] Test completeness select parses its inputs") {
 // set, or published an encoding nobody asked for would be unusable as the gate's single source.
 TEST_CASE("[FoundryCLIParser] Test completeness select requires every input") {
 	const Vector<PackedStringArray> incomplete = {
-			make_args({ "foundry", "test", "completeness", "select", "--catalog", "catalog", "--json" }),
-			make_args({ "foundry", "test", "completeness", "select", "--changed-paths", "changed.txt", "--json" }),
-			make_args({ "foundry", "test", "completeness", "select", "--changed-paths", "changed.txt",
-					"--catalog", "catalog" }),
+		make_args({ "foundry", "test", "completeness", "select", "--catalog", "catalog", "--json" }),
+		make_args({ "foundry", "test", "completeness", "select", "--changed-paths", "changed.txt", "--json" }),
+		make_args({ "foundry", "test", "completeness", "select", "--changed-paths", "changed.txt",
+				"--catalog", "catalog" }),
 	};
 	for (const PackedStringArray &arguments : incomplete) {
 		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(arguments);
