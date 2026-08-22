@@ -26,7 +26,7 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec] FSDataType script references serialize as path and fully qualified name"
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
 			}
 		},
 		{
@@ -158,7 +158,7 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeFunction] Tuple-typed functions round-trip and execute identically"
+				"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
 			}
 		},
 		{
@@ -172,8 +172,11 @@
 			"representation": "member_binding_descriptor",
 			"child_slot": "tuple_slot_shape",
 			"surface": "runtime_bytecode",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
+			}
 		},
 		{
 			"representation": "member_binding_descriptor",
@@ -182,7 +185,7 @@
 			"status": "covered",
 			"witness": {
 				"kind": "fixture",
-				"reference": "modules/foundry_script/tests/scripts/runtime/features/generic_class_parameter_tuple_slot.fs"
+				"reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs"
 			}
 		},
 		{
@@ -270,8 +273,8 @@
 			"surface": "analyzer",
 			"status": "covered",
 			"witness": {
-				"kind": "fixture",
-				"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_callable_bind_default_arity.fs"
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
 			}
 		},
 		{
@@ -323,22 +326,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_rest_parameter_type",
 			"surface": "runtime_text",
-			"status": "covered",
-			"witness": {
-				"kind": "doctest_case",
-				"reference": "[FoundryScript][Bytecode][TypedRestParameter] A typed rest array survives loading without a front end"
-			}
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
 		},
 		{
 			"representation": "parser_data_type",
 			"child_slot": "method_return_type",
 			"surface": "analyzer",
-			"status": "quality_deferred",
+			"status": "covered",
 			"witness": {
-				"kind": "fixture",
-				"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_callable_bind_default_arity.fs"
-			},
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -449,14 +448,8 @@
 			"surface": "reflection",
 			"status": "covered",
 			"witness": {
-				"kind": "family_case",
-				"family": "union_destination_membership",
-				"coordinates": {
-					"boundary": "reflective_write",
-					"destination": "union",
-					"source_proof": "variant",
-					"surface": "text"
-				}
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info"
 			}
 		},
 		{
@@ -482,7 +475,7 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info"
+				"reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary"
 			}
 		},
 		{
@@ -565,7 +558,7 @@
 			"status": "covered",
 			"witness": {
 				"kind": "doctest_case",
-				"reference": "[FoundryScript][BytecodeCodec] Specialized class handles round-trip"
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
 			}
 		},
 		{

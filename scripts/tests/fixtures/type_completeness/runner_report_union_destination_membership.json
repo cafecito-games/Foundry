@@ -12402,10 +12402,10 @@
 	],
 	"published_surface": "",
 	"census": {
-		"covered": 22.0,
+		"covered": 23.0,
 		"uncovered": 57.0,
 		"unsupported": 0.0,
-		"quality_deferred": 2.0,
+		"quality_deferred": 1.0,
 		"entries": [
 			{
 				"representation": "bytecode_serialized_type",
@@ -12440,7 +12440,7 @@
 				"status": "covered",
 				"witness": {
 					"kind": "doctest_case",
-					"reference": "[FoundryScript][BytecodeCodec] FSDataType script references serialize as path and fully qualified name",
+					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
 					"family": "",
 					"coordinates": {}
 				},
@@ -12674,7 +12674,7 @@
 				"status": "covered",
 				"witness": {
 					"kind": "doctest_case",
-					"reference": "[FoundryScript][BytecodeFunction] Tuple-typed functions round-trip and execute identically",
+					"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
 					"family": "",
 					"coordinates": {}
 				},
@@ -12697,14 +12697,14 @@
 				"representation": "member_binding_descriptor",
 				"child_slot": "tuple_slot_shape",
 				"surface": "runtime_bytecode",
-				"status": "uncovered",
+				"status": "covered",
 				"witness": {
-					"kind": "",
-					"reference": "",
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
 					"family": "",
 					"coordinates": {}
 				},
-				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+				"issue_url": ""
 			},
 			{
 				"representation": "member_binding_descriptor",
@@ -12713,7 +12713,7 @@
 				"status": "covered",
 				"witness": {
 					"kind": "fixture",
-					"reference": "modules/foundry_script/tests/scripts/runtime/features/generic_class_parameter_tuple_slot.fs",
+					"reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs",
 					"family": "",
 					"coordinates": {}
 				},
@@ -12855,8 +12855,8 @@
 				"surface": "analyzer",
 				"status": "covered",
 				"witness": {
-					"kind": "fixture",
-					"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_callable_bind_default_arity.fs",
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures",
 					"family": "",
 					"coordinates": {}
 				},
@@ -12944,27 +12944,27 @@
 				"representation": "parser_data_type",
 				"child_slot": "method_rest_parameter_type",
 				"surface": "runtime_text",
-				"status": "covered",
+				"status": "uncovered",
 				"witness": {
-					"kind": "doctest_case",
-					"reference": "[FoundryScript][Bytecode][TypedRestParameter] A typed rest array survives loading without a front end",
+					"kind": "",
+					"reference": "",
 					"family": "",
 					"coordinates": {}
 				},
-				"issue_url": ""
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
 			},
 			{
 				"representation": "parser_data_type",
 				"child_slot": "method_return_type",
 				"surface": "analyzer",
-				"status": "quality_deferred",
+				"status": "covered",
 				"witness": {
-					"kind": "fixture",
-					"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_callable_bind_default_arity.fs",
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures",
 					"family": "",
 					"coordinates": {}
 				},
-				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+				"issue_url": ""
 			},
 			{
 				"representation": "parser_data_type",
@@ -13133,15 +13133,10 @@
 				"surface": "reflection",
 				"status": "covered",
 				"witness": {
-					"kind": "family_case",
-					"reference": "",
-					"family": "union_destination_membership",
-					"coordinates": {
-						"boundary": "reflective_write",
-						"destination": "union",
-						"source_proof": "variant",
-						"surface": "text"
-					}
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info",
+					"family": "",
+					"coordinates": {}
 				},
 				"issue_url": ""
 			},
@@ -13170,7 +13165,7 @@
 				"status": "covered",
 				"witness": {
 					"kind": "doctest_case",
-					"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info",
+					"reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary",
 					"family": "",
 					"coordinates": {}
 				},
@@ -13313,7 +13308,7 @@
 				"status": "covered",
 				"witness": {
 					"kind": "doctest_case",
-					"reference": "[FoundryScript][BytecodeCodec] Specialized class handles round-trip",
+					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
 					"family": "",
 					"coordinates": {}
 				},

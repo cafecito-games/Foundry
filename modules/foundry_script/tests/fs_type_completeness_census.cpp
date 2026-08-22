@@ -386,11 +386,13 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	Dictionary representations;
 	Dictionary policies;
 	Dictionary unsupported;
+	Dictionary transitions;
 	Dictionary coverage;
 	if (!read_census_document(p_root, "schema.json", schema, r_errors) ||
 			!read_census_document(p_root, "representations.json", representations, r_errors) ||
 			!read_census_document(p_root, "policies.json", policies, r_errors) ||
 			!read_census_document(p_root, "unsupported.json", unsupported, r_errors) ||
+			!read_census_document(p_root, "transitions.json", transitions, r_errors) ||
 			!read_census_document(p_root, "coverage.json", coverage, r_errors)) {
 		return ERR_INVALID_DATA;
 	}
@@ -431,18 +433,24 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 				representation_entries, r_errors)) {
 		return ERR_INVALID_DATA;
 	}
+	const String representations_path = census_directory(p_root).path_join("representations.json");
 	for (int index = 0; index < representation_entries.size(); index++) {
 		const Dictionary representation = representation_entries[index];
 		const String id = census_string(representation, "id");
 		if (id.is_empty()) {
-			r_errors.push_back(vformat("%s:$.representations[%d]: names no id",
-					census_directory(p_root).path_join("representations.json"), index));
+			r_errors.push_back(vformat("%s:$.representations[%d]: names no id", representations_path, index));
+			continue;
+		}
+		// An identity table keyed by a repeated id silently loses whichever entry came first, and with
+		// it every cell that entry's child slots required.
+		if (slots_by_representation.has(id)) {
+			r_errors.push_back(vformat("%s:$.representations[%d]: duplicate representation id '%s'",
+					representations_path, index, id));
 			continue;
 		}
 		Array child_slots;
 		if (!require_object_array(representation, "child_slots",
-					vformat("%s:$.representations[%d].child_slots",
-							census_directory(p_root).path_join("representations.json"), index),
+					vformat("%s:$.representations[%d].child_slots", representations_path, index),
 					child_slots, r_errors)) {
 			continue;
 		}
@@ -452,7 +460,12 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			const String slot_id = census_string(slot, "id");
 			if (slot_id.is_empty()) {
 				r_errors.push_back(vformat("%s:$.representations[%d].child_slots[%d]: names no id",
-						census_directory(p_root).path_join("representations.json"), index, slot_index));
+						representations_path, index, slot_index));
+				continue;
+			}
+			if (slots.has(slot_id)) {
+				r_errors.push_back(vformat("%s:$.representations[%d].child_slots[%d]: duplicate child slot '%s'",
+						representations_path, index, slot_index, slot_id));
 				continue;
 			}
 			slots.insert(slot_id);
@@ -501,6 +514,10 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			continue;
 		}
 		const String key = policy_pair_key(representation, child_slot, surface);
+		if (policy_counts.getptr(key) != nullptr) {
+			r_errors.push_back(vformat("%s: duplicate policy for %s", entry_path, key));
+			continue;
+		}
 		policy_counts[key] += 1;
 		if (policy != "not_applicable") {
 			required_pairs.insert(key);
@@ -540,9 +557,20 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 				unsupported, "entries", unsupported_path + ":$.entries", unsupported_entries, r_errors)) {
 		return ERR_INVALID_DATA;
 	}
+	HashSet<String> unsupported_ids;
 	for (int index = 0; index < unsupported_entries.size(); index++) {
 		const Dictionary entry = unsupported_entries[index];
 		const String entry_path = vformat("%s:$.entries[%d]", unsupported_path, index);
+		const String entry_id = census_string(entry, "id");
+		if (entry_id.is_empty()) {
+			r_errors.push_back(vformat("%s: names no id", entry_path));
+			continue;
+		}
+		if (unsupported_ids.has(entry_id)) {
+			r_errors.push_back(vformat("%s: duplicate unsupported entry id '%s'", entry_path, entry_id));
+			continue;
+		}
+		unsupported_ids.insert(entry_id);
 		const String representation = census_string(entry, "representation");
 		if (representation.is_empty()) {
 			r_errors.push_back(vformat("%s: names no representation", entry_path));
@@ -586,6 +614,30 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 				unsupported_witnesses.push_back(present_witness);
 			}
 		}
+	}
+
+	// The transition table is identity-keyed like every other census document, and a repeated id is the
+	// same defect there: one crossing silently replaces another.
+	const String transitions_path = census_directory(p_root).path_join("transitions.json");
+	Array transition_entries;
+	if (!require_object_array(
+				transitions, "transitions", transitions_path + ":$.transitions", transition_entries, r_errors)) {
+		return ERR_INVALID_DATA;
+	}
+	HashSet<String> transition_ids;
+	for (int index = 0; index < transition_entries.size(); index++) {
+		const Dictionary transition = transition_entries[index];
+		const String transition_id = census_string(transition, "id");
+		const String transition_path = vformat("%s:$.transitions[%d]", transitions_path, index);
+		if (transition_id.is_empty()) {
+			r_errors.push_back(vformat("%s: names no id", transition_path));
+			continue;
+		}
+		if (transition_ids.has(transition_id)) {
+			r_errors.push_back(vformat("%s: duplicate transition id '%s'", transition_path, transition_id));
+			continue;
+		}
+		transition_ids.insert(transition_id);
 	}
 
 	const Variant &raw_entries = coverage.get("entries", Variant());

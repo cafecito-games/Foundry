@@ -479,7 +479,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			CHECK(summary.entries.is_empty());
 		}
 
-		SUBCASE("a duplicated policy is ambiguous rather than accepted") {
+		SUBCASE("a duplicated policy is refused rather than counted twice") {
 			Dictionary policies = Dictionary(policies_data).duplicate(true);
 			Array policy_entries = policies["entries"];
 			policy_entries.push_back(Dictionary(policy_entries[0]).duplicate(true));
@@ -489,7 +489,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			Vector<String> errors;
 			FSCompletenessCensusSummary summary;
 			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
-			CHECK_MESSAGE(census_errors_mention(errors, "policies for"), String(" | ").join(errors));
+			CHECK_MESSAGE(census_errors_mention(errors, "duplicate policy for"), String(" | ").join(errors));
 		}
 
 		SUBCASE("a malformed child-slot inventory is refused rather than read as fewer slots") {
@@ -1230,6 +1230,93 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			CHECK_FALSE(errors.is_empty());
 			CHECK(summary.entries.is_empty());
 			CHECK_EQ(summary.total(), 0);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Census refuses a duplicate identity in every census table") {
+		// Every census document is an identity-keyed table, and every one of them is loaded into a map.
+		// A repeated key replaces the entry that came before it, so a document can lose a whole
+		// representation, slot, policy, exemption, crossing, or coverage cell and still load. Each table
+		// is proven separately because each one is keyed and inserted separately.
+		TemporaryProjectTree tree(vformat("type_completeness_census_duplicate_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		const auto staged_document = [&](const String &p_file_name) {
+			Vector<String> read_errors;
+			Variant data;
+			REQUIRE_MESSAGE(census_read_json(p_file_name, data, read_errors), String(" | ").join(read_errors));
+			return Dictionary(data).duplicate(true);
+		};
+		const auto write_staged = [&](const String &p_file_name, const Dictionary &p_document) {
+			tree.write_file(String("catalog/census/").path_join(p_file_name), JSON::stringify(p_document, "\t") + "\n");
+		};
+		const auto refuses = [&](const String &p_fragment) {
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, p_fragment), String(" | ").join(errors));
+			CHECK(summary.entries.is_empty());
+		};
+
+		SUBCASE("a duplicate representation id may not replace an inventoried representation") {
+			Dictionary document = staged_document("representations.json");
+			Array inventory = document["representations"];
+			Dictionary duplicate = Dictionary(inventory[1]).duplicate(true);
+			duplicate["id"] = String(Dictionary(inventory[0])["id"]);
+			inventory.push_back(duplicate);
+			document["representations"] = inventory;
+			write_staged("representations.json", document);
+			refuses("duplicate representation id");
+		}
+
+		SUBCASE("a duplicate child slot may not replace a slot of the same representation") {
+			Dictionary document = staged_document("representations.json");
+			Array inventory = document["representations"];
+			Dictionary representation = inventory[0];
+			Array slots = representation["child_slots"];
+			slots.push_back(Dictionary(slots[0]).duplicate(true));
+			representation["child_slots"] = slots;
+			inventory[0] = representation;
+			document["representations"] = inventory;
+			write_staged("representations.json", document);
+			refuses("duplicate child slot");
+		}
+
+		SUBCASE("a duplicate policy pair is refused where it is declared") {
+			Dictionary document = staged_document("policies.json");
+			Array entries = document["entries"];
+			entries.push_back(Dictionary(entries[0]).duplicate(true));
+			document["entries"] = entries;
+			write_staged("policies.json", document);
+			refuses("duplicate policy for");
+		}
+
+		SUBCASE("a duplicate unsupported entry id is refused") {
+			Dictionary document = staged_document("unsupported.json");
+			Array entries = document["entries"];
+			entries.push_back(Dictionary(entries[0]).duplicate(true));
+			document["entries"] = entries;
+			write_staged("unsupported.json", document);
+			refuses("duplicate unsupported entry id");
+		}
+
+		SUBCASE("a duplicate transition id is refused") {
+			Dictionary document = staged_document("transitions.json");
+			Array transitions = document["transitions"];
+			transitions.push_back(Dictionary(transitions[0]).duplicate(true));
+			document["transitions"] = transitions;
+			write_staged("transitions.json", document);
+			refuses("duplicate transition id");
+		}
+
+		SUBCASE("a duplicate coverage pair is refused before any witness is resolved") {
+			Dictionary document = staged_document("coverage.json");
+			Array entries = document["entries"];
+			entries.push_back(Dictionary(entries[0]).duplicate(true));
+			document["entries"] = entries;
+			write_staged("coverage.json", document);
+			refuses("duplicate coverage entry for");
 		}
 	}
 
