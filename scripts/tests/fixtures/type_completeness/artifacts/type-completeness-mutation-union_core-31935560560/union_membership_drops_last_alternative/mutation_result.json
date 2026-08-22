@@ -85,8 +85,8 @@
       "state": "failed_on_dimension"
     }
   ],
-  "develop_commit": "8d62637248c57a01e11c5d3fcfe9e2fc5cbfb354",
-  "digest": "3e7cc4b61e8287ffa3e575fb22c047c2a598e17cdfe3a9464be28829d3870b34",
+  "develop_commit": "9723dd2eccbc8c63b5c4b10f64168161630fca7a",
+  "digest": "6a10843789f5894894b095213cbd9ab509ac97ed8ea87bc1dfd1a6240dd67996",
   "outcome": "detected",
   "recipe_id": "union_membership_drops_last_alternative",
   "report_path": "/private/tmp/claude-501/-Users-christian-CafecitoGames-Foundry/75848607-8a75-47a1-b643-c8bee1cc9f62/scratchpad/mut/scratch/matrix_union_membership_drops_last_alternative/report.union_destination_membership.json",
