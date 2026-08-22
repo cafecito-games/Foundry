@@ -156,7 +156,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-04c32b3a0d7447bf154a.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -287,7 +287,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-077956177dad9e25c456.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -418,7 +418,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-08b82bfc980a3c85a51a.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -549,7 +549,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-0baf744d02ad0837b41f.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -680,7 +680,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-0c2cc8d7000095db63b1.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -719,7 +719,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-0cf5e41a56b3473604cc.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -850,7 +850,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-0d5390562f267ba87532.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -981,7 +981,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-0ff80eddb88bd1901b14.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1112,7 +1112,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-1026cc16d6fdb0404f67.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1243,7 +1243,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-12b2bda8c5a1db77d0e0.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1374,7 +1374,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-14c8e2881ad7ee1446f9.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1505,7 +1505,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-175a69c8b5d6127e8dfc.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1544,7 +1544,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-1fa0a6b363dff46b0c14.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1583,7 +1583,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-245db83aefd226ef94a4.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1714,7 +1714,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-27113e37af8092cab3fa.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1845,7 +1845,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-30835cdd58c96569d173.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -1976,7 +1976,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-3cee13768821937ea2b6.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2107,7 +2107,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-415a94dedf190bad7821.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2238,7 +2238,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-55d04749d4f463ae0b29.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2369,7 +2369,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-567d6d13504168ed9967.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2500,7 +2500,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-6e3940c2184316a9b515.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2631,7 +2631,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-7863c0fdf9a2b0ac9857.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2762,7 +2762,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-7bf6f98dac221f2f9d5b.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -2893,7 +2893,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-84df0aab771e905dde95.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3024,7 +3024,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-86d8e9feaca3919fe46b.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3155,7 +3155,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-8fdee3c48307de2ed230.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3286,7 +3286,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-90bc7f6bb01e82a9e502.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3325,7 +3325,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-939d2159f979c935be8d.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3456,7 +3456,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-95f1f1ef0a422bfa1e73.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3495,7 +3495,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-9b1c0cc6d901187011f0.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3626,7 +3626,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-9b7de7e5705e6df3e093.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3757,7 +3757,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-a1054d19ba0226925892.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -3888,7 +3888,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-a3235ea3376703a66460.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4019,7 +4019,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-a372e23059bebd2b57ea.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4150,7 +4150,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-a93599427345d17a9dba.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4281,7 +4281,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-ab5aa31dae0e7f4534b1.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4412,7 +4412,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-adc51ab7141045a8c47d.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4543,7 +4543,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-ae15dab423f9c231247f.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4674,7 +4674,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-aea3272648ea1e21237f.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4805,7 +4805,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-b00a136ee9052d85219f.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -4936,7 +4936,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-b1948c1f760b3a29149b.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5067,7 +5067,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-b6710ccd5b7f39c0f756.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5106,7 +5106,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-b83c16df9b27b5b936c7.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5237,7 +5237,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-bc4a622352c4a604c4c7.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5368,7 +5368,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-bcd8d370aff180eccea3.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5407,7 +5407,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-c9d081048670182137bf.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5538,7 +5538,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-d34487fcb4a667aa6911.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5577,7 +5577,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-d4fb055ffa319e9889d4.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5708,7 +5708,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-d7b0746c5f28a1977914.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5839,7 +5839,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-d7cee1fc377c7ee553db.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -5970,7 +5970,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-d7de2d4cd903d93df92c.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6101,7 +6101,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-dc5ebcabebfad9e83b2e.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6232,7 +6232,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-e328647e7288b17ff223.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6271,7 +6271,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-ea595b9fb5aeb1e45868.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6402,7 +6402,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-ebd7edbb9fcf1a2befe8.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6533,7 +6533,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-f11c39fc1c60442eea3d.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6664,7 +6664,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-f2aaa414c641f084dd84.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6795,7 +6795,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-f4d7d2eb9c0384fe79eb.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6834,7 +6834,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/bytecode/fstc-v1-fa29ea6cea69396f889f.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		},
 		{
@@ -6965,7 +6965,7 @@
 			"diagnostic_severity": "none",
 			"produced_output": "",
 			"expected_output": "",
-			"artifact_path": "/Users/christian/CafecitoGames/Foundry/.worktrees/issue-2482/.test_scratch/run_lifecycle_reload/report-artifacts/text/fstc-v1-fb7b45ff27d2d7198ac1.fs",
+			"artifact_path": "",
 			"parity_evidence": {}
 		}
 	],
