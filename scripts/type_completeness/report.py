@@ -93,6 +93,10 @@ class Category(str, enum.Enum):
     FAILED_WITNESS = "failed_witness"
     STALE_LEDGER_ENTRY = "stale_ledger_entry"
     RESOLVED_LEDGER_ENTRY = "resolved_ledger_entry"
+    # The build that produced the report could not observe what the cell expects, so the run has no verdict
+    # about it. Such a case is not passed and is not failed; reading it as either would turn a property of
+    # the build into a claim about the product.
+    NOT_COVERED = "not_covered"
 
 
 def _category_for(case: Mapping[str, Any]) -> Category:
@@ -118,7 +122,11 @@ class CaseResult:
 
     @property
     def failed(self) -> bool:
-        return not self.passed
+        return not self.passed and self.category is not Category.NOT_COVERED
+
+    @property
+    def not_covered(self) -> bool:
+        return self.category is Category.NOT_COVERED
 
 
 @dataclass(frozen=True)

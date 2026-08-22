@@ -86,6 +86,23 @@ static constexpr const char *ALL[] = {
 
 } // namespace FSCompletenessStructuralStage
 
+// Why a cell the run selected observed nothing this build could judge. A cell is never dropped
+// silently: it is published with one of these reasons, and the vocabulary is closed the way the
+// structural stages are, so a producer, a report, and a test share one spelling.
+namespace FSCompletenessNotCoveredReason {
+
+// The cell's expected evidence is an analyzer warning, and this build's analyzer emits none. Nothing
+// it could observe would decide the cell either way, so an observation of "no warning" here is not
+// evidence that the warning is missing.
+static constexpr const char *DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION =
+		"diagnostics_unavailable_in_configuration";
+
+static constexpr const char *ALL[] = {
+	DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION,
+};
+
+} // namespace FSCompletenessNotCoveredReason
+
 struct FSCompletenessFinding {
 	String finding_id;
 	String case_id;
@@ -160,6 +177,10 @@ struct FSCompletenessRunResult {
 	int compared_surface_pairs = 0;
 	Vector<FSCompletenessFinding> findings;
 	Vector<FSCompletenessStructuralFailure> structural_failures;
+	// Cells this build could not judge, ascending by case id, each published with the reason it could
+	// not. They are not failures and not passes: a build that observes nothing about a cell has no
+	// verdict to report, and hiding them would let a narrower configuration look like a clean run.
+	Vector<String> not_covered_case_ids;
 	// Census claims whose witness names a build configuration this one is not, in census order. They
 	// are not failures - this build compiled no case to bind, so it observed nothing either way - but a
 	// run that carries them confirmed less of the census than a run that carries none.
@@ -205,6 +226,19 @@ public:
 	// build is a property of the build rather than of the product, so every report carries the
 	// configuration it was produced under and no consumer has to infer it from missing cases.
 	static Dictionary configuration_report();
+
+	// True when the expectations a cell carries can only be observed by an analyzer that emits
+	// warnings. Read off the same dimension dictionary a report publishes, so the runner deciding a
+	// cell and a consumer reading a published document apply one rule.
+	static bool expectation_requires_analyzer_warnings(const Dictionary &p_expected_dimensions);
+
+	// The part of an evidence document that a build described by p_configuration could have observed:
+	// with an analyzer that emits no warnings, the cells whose expectations are warnings, the
+	// exceptions those cells witness, and warning-severity diagnostics are dropped. Applied to both
+	// sides of a comparison it makes two builds comparable on what both could see; on a build that
+	// does emit warnings it is the identity, so nothing that compares documents there gets weaker.
+	static Variant evidence_observable_in_configuration(
+			const Variant &p_document, const Dictionary &p_configuration);
 
 	// Report members that describe the run or the build rather than the product it observed. They
 	// differ between two runs that saw exactly the same thing, so they may never reach a digest, a

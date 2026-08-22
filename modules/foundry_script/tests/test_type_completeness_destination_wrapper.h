@@ -571,8 +571,26 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 				CHECK_NE(String(finding.actual), String(finding.expected));
 			}
 		}
-		// One cell per destination, source proof, and surface of the hint-string leaf.
-		CHECK_EQ(census_findings, 126);
+		int judged_hint_cells = 0;
+		int not_covered_hint_cells = 0;
+		const Array cases = Dictionary(result.report).get("cases", Array());
+		for (int index = 0; index < cases.size(); index++) {
+			const Dictionary case_record = cases[index];
+			const Dictionary expected = case_record.get("expected", Dictionary());
+			if (String(expected.get("census_child_evidence", String())) != "reflection_hint_23_39") {
+				continue;
+			}
+			if (String(case_record.get("status", String())) == "not_covered") {
+				not_covered_hint_cells++;
+				continue;
+			}
+			judged_hint_cells++;
+		}
+		// One cell per destination, source proof, and surface of the hint-string leaf. How many of them
+		// a build can judge is a property of the build, so the matrix is asserted whole and the blanked
+		// hint has to fail every cell this build did judge.
+		CHECK_EQ(judged_hint_cells + not_covered_hint_cells, 126);
+		CHECK_EQ(census_findings, judged_hint_cells);
 	}
 
 	TEST_CASE("TypeCompleteness DestinationWrapper refuses a destination a boundary cannot spell") {
@@ -666,13 +684,29 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 			for (int index = 0; index < exceptions.size(); index++) {
 				const Dictionary exception_report = exceptions[index];
 				CAPTURE(String(exception_report["exception_id"]));
+				// An exception this build could not judge says so, and says it about every run on this
+				// configuration. Anything else is a carve-out no cell exercised.
+				const String not_covered_reason = exception_report.get("not_covered_reason", String());
+				if (!not_covered_reason.is_empty()) {
+					CHECK_EQ(not_covered_reason,
+							String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+					CHECK_FALSE(bool(exception_report["witnessed"]));
+					continue;
+				}
 				CHECK(bool(exception_report["witnessed"]));
 			}
 
 			const Variant expected = destination_wrapper_tracked_document(
 					vformat("expected_reports/%s.json", family));
-			const Variant produced_evidence = destination_wrapper_tracked_evidence(result.report);
-			const Variant expected_evidence = destination_wrapper_tracked_evidence(expected);
+			// The tracked document was captured on a build whose analyzer warns. Narrowing both sides to
+			// what this build could have observed is the identity on such a build, so this stays the same
+			// byte-identity comparison there, and compares observations rather than configurations on a
+			// build that cannot produce the warnings the tracked cells carry.
+			const Dictionary configuration = Dictionary(result.report).get("configuration", Dictionary());
+			const Variant produced_evidence = destination_wrapper_tracked_evidence(
+					FSCompletenessRunner::evidence_observable_in_configuration(result.report, configuration));
+			const Variant expected_evidence = destination_wrapper_tracked_evidence(
+					FSCompletenessRunner::evidence_observable_in_configuration(expected, configuration));
 			CHECK_MESSAGE(JSON::stringify(produced_evidence, "  ") == JSON::stringify(expected_evidence, "  "),
 					destination_wrapper_first_difference(produced_evidence, expected_evidence, "$"));
 		}

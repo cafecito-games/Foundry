@@ -323,6 +323,21 @@ class ReportLoadingTests(unittest.TestCase):
         self.assertEqual(observation["diagnostics"], ["Cannot assign"])
         self.assertEqual(observation["actual"], {"outcome": "reject"})
 
+    def test_a_not_covered_case_is_neither_passed_nor_failed(self) -> None:
+        not_covered = _case(
+            "b",
+            passed=False,
+            status="not_covered",
+            category="not_covered",
+            not_covered_reason="diagnostics_unavailable_in_configuration",
+        )
+        loaded = report.load_report(_report([_case("a", passed=True), not_covered]))
+        self.assertEqual([case.case_id for case in loaded.failed_cases()], [])
+        self.assertTrue(loaded.case("b").not_covered)
+        self.assertFalse(loaded.case("b").passed)
+        self.assertEqual(loaded.case("b").category, report.Category.NOT_COVERED)
+        self.assertFalse(loaded.case("a").not_covered)
+
     def test_loads_the_report_the_runner_actually_writes(self) -> None:
         loaded = report.load_report(json.loads(RUNNER_REPORT_TEXT))
         self.assertEqual([case.case_id for case in loaded.failed_cases()], ["case_union_store_variable"])

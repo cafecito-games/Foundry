@@ -341,6 +341,10 @@ jobs:
           ./bin/foundry.linuxbsd.template_release.x86_64 --version
           ./bin/foundry.linuxbsd.template_release.x86_64 test run --force-colors --case "*Release-build VM runtime error*"
           ./bin/foundry.linuxbsd.template_release.x86_64 test run --force-colors --case "*FoundryCLIHelp*"
+          # The type-completeness harness runs on this configuration too. Cells whose evidence a
+          # release build cannot observe are published as not covered rather than skipped, so what the
+          # suite proves here is that the harness measures this build instead of aborting on it.
+          ./bin/foundry.linuxbsd.template_release.x86_64 test run --force-colors --case "*TypeCompleteness*"
 
   template-release-stripped-default:
     runs-on: ubuntu-22.04

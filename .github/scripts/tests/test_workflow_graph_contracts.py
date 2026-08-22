@@ -909,6 +909,45 @@ class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
         )
 
 
+class TemplateReleaseCoverageWorkflowTests(WorkflowContractTestCase):
+    """What the release-configuration job actually exercises on the binary it builds."""
+
+    workflow: workflow_graph.Workflow
+    job = "release-vm-error-tests"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.workflow = load_workflow("linux_builds.yml")
+
+    def _filters(self) -> list[str]:
+        command = self.workflow.step_run(self.job, "Release-build VM runtime error tests")
+        filters = []
+        for line in command.split("\n"):
+            marker = '--case "'
+            if marker not in line:
+                continue
+            filters.append(line.split(marker, 1)[1].split('"', 1)[0])
+        return filters
+
+    def test_the_job_builds_a_test_enabled_template_with_the_front_end(self) -> None:
+        # The harness and the fixture runner are only compiled into a template that has both.
+        flags = self.workflow.step_with(self.job, "Compilation")["scons-flags"]
+        self.assertIn("tests=yes", flags)
+        self.assertIn("foundry_script_frontend=yes", flags)
+        self.assertEqual("template_release", self.workflow.step_with(self.job, "Compilation")["target"])
+
+    def test_the_release_configuration_runs_the_type_completeness_suite(self) -> None:
+        self.assertIn("*TypeCompleteness*", self._filters())
+
+    def test_every_filter_runs_against_the_binary_this_job_built(self) -> None:
+        command = self.workflow.step_run(self.job, "Release-build VM runtime error tests")
+        invocations = [line.strip() for line in command.split("\n") if line.strip().startswith("./bin/")]
+        self.assertTrue(invocations)
+        for invocation in invocations:
+            with self.subTest(invocation=invocation):
+                self.assertTrue(invocation.startswith("./bin/foundry.linuxbsd.template_release.x86_64"), invocation)
+
+
 class StaticChecksWorkflowTests(WorkflowContractTestCase):
     """The style gate has to reach files no pull request touches."""
 
