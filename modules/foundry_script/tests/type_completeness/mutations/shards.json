@@ -11,6 +11,8 @@
     {
       "shard_id": "wrapper_parity_core",
       "recipes": [
+        "argument_destination_type_erased",
+        "return_destination_type_erased",
         "tuple_carrier_arity_check_inverted"
       ],
       "budget_seconds": 1800

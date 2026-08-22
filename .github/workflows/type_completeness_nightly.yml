@@ -40,7 +40,7 @@ jobs:
             recipes: union_membership_drops_last_alternative
             budget_seconds: 1800
           - shard_id: wrapper_parity_core
-            recipes: tuple_carrier_arity_check_inverted
+            recipes: argument_destination_type_erased,return_destination_type_erased,tuple_carrier_arity_check_inverted
             budget_seconds: 1800
 
     steps:
