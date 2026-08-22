@@ -571,11 +571,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 		// carries, and each structural-failure record carries exactly these members: the Python
 		// comparator's timeout fixture is written to this shape, so a change here has to change it too.
 		CHECK_EQ(Completeness::sorted_dictionary_keys(published),
-				Vector<String>({ "cases", "cell_count", "census", "coverage_by_chain_length",
-						"coverage_by_dimension", "exceptions", "executed_by_surface", "family", "findings",
-						"ledger", "outcome", "published_surface", "schema_version", "structural_failures",
-						"success", "text_bytecode_parity_failures", "timings_ms",
-						"uncovered_required_dimensions" }));
+				Vector<String>({ "cases", "cell_count", "census", "configuration",
+						"coverage_by_chain_length", "coverage_by_dimension", "exceptions",
+						"executed_by_surface", "family", "findings", "ledger", "outcome", "published_surface",
+						"schema_version", "structural_failures", "success", "text_bytecode_parity_failures",
+						"timings_ms", "uncovered_required_dimensions" }));
 		for (int index = 0; index < published_failures.size(); index++) {
 			CAPTURE(index);
 			const Dictionary record = published_failures[index];

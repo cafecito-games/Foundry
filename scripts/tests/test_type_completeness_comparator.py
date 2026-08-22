@@ -111,6 +111,9 @@ def _report(
         "coverage_by_dimension": {},
         "uncovered_required_dimensions": 0,
         "text_bytecode_parity_failures": 0,
+        # The build the report was produced by. Dropped from the loaded evidence like the timings, but
+        # required: a report that does not say which surfaces its binary had cannot be read at all.
+        "configuration": {"tools_enabled": True, "adapters": ["destination_wrapper", "synthetic_pair_identity"]},
         "published_surface": "",
         "outcome": "passed" if all(case["passed"] for case in cases) else "product_mismatch",
         "structural_failures": [],
@@ -216,6 +219,13 @@ RUNNER_REPORT_TEXT = """{
 \t\t}
 \t],
 \t"cell_count": 2.0,
+\t"configuration": {
+\t\t"adapters": [
+\t\t\t"destination_wrapper",
+\t\t\t"synthetic_pair_identity"
+\t\t],
+\t\t"tools_enabled": true
+\t},
 \t"coverage_by_chain_length": {
 \t\t"1": 2.0
 \t},
@@ -624,6 +634,69 @@ class ReportCensusMemberTests(unittest.TestCase):
         loaded = report.load_report(document)
         self.assertIn("a_member_this_consumer_does_not_know", loaded.raw)
         self.assertIn("census", loaded.raw)
+
+
+class ReportConfigurationMemberTests(unittest.TestCase):
+    """Every report names the build that produced it.
+
+    A surface that is not compiled into a binary is a property of the build, not of the product, so a
+    consumer that has to tell "this run saw nothing" from "this build could not have seen it" reads the
+    configuration rather than guessing from a case list. The fixture is the document a real
+    `foundry test completeness run` published on an editor build.
+    """
+
+    def _fixture_report(self) -> dict[str, Any]:
+        document = json.loads(
+            (FIXTURES / "runner_report_union_destination_membership.json").read_text(encoding="utf-8")
+        )
+        assert isinstance(document, dict)
+        return document
+
+    def test_the_captured_report_carries_the_configuration_it_was_produced_under(self) -> None:
+        loaded = report.load_report(self._fixture_report())
+        self.assertTrue(loaded.configuration.tools_enabled)
+        self.assertIn("destination_wrapper", loaded.configuration.adapters)
+        self.assertEqual(loaded.configuration.adapters, tuple(sorted(loaded.configuration.adapters)))
+
+    def test_a_report_from_a_producer_that_predates_the_member_still_loads(self) -> None:
+        # The presubmit gate's develop baseline is a report published by the binary at the merge base.
+        # Refusing it would turn every comparison against an older baseline into a gate refusal, so an
+        # absent configuration reads as "the producer did not record one" rather than as a malformation.
+        document = self._fixture_report()
+        del document["configuration"]
+        loaded = report.load_report(document)
+        self.assertIsNone(loaded.configuration)
+        self.assertEqual(loaded.raw, report.load_report(self._fixture_report()).raw)
+
+    def test_a_malformed_configuration_is_refused(self) -> None:
+        # Present and wrong is a claim about the build, so unlike an omission it can never be read past.
+        malformed = [
+            "tools_enabled",
+            {"adapters": []},
+            {"tools_enabled": True},
+            {"tools_enabled": "yes", "adapters": []},
+            {"tools_enabled": True, "adapters": "destination_wrapper"},
+            {"tools_enabled": True, "adapters": [""]},
+            {"tools_enabled": True, "adapters": ["b", "a"]},
+            {"tools_enabled": True, "adapters": ["a", "a"]},
+        ]
+        for configuration in malformed:
+            with self.subTest(configuration=configuration):
+                document = self._fixture_report()
+                document["configuration"] = configuration
+                with self.assertRaises(report.ReportError):
+                    report.load_report(document)
+
+    def test_the_configuration_is_dropped_from_the_loaded_evidence(self) -> None:
+        # Two runs of the same inputs on differently configured builds observed the same product, so a
+        # digest or a fixture comparison must not see the difference between their binaries.
+        document = self._fixture_report()
+        self.assertIn("configuration", document)
+        loaded = report.load_report(document)
+        self.assertNotIn("configuration", loaded.raw)
+        template_build = self._fixture_report()
+        template_build["configuration"] = {"tools_enabled": False, "adapters": []}
+        self.assertEqual(report.load_report(template_build).raw, loaded.raw)
 
 
 class ComparatorTests(unittest.TestCase):

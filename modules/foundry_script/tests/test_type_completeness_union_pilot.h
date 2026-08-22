@@ -53,15 +53,23 @@ namespace FSTests {
 
 static const String type_completeness_union_pilot_root = "modules/foundry_script/tests/type_completeness";
 
-// The report without the members whose values are properties of the run rather than of the evidence:
-// artifact paths live in a scratch root that differs per run, and stage timings are wall-clock. What
-// is left is comparable against a document captured from a different run in a different scratch root.
+// True for a report member whose value is a property of the run or of the build rather than of the
+// evidence: artifact paths live in a scratch root that differs per run, stage timings are wall-clock,
+// and the configuration names which surfaces this binary could have observed at all. The runner owns
+// the list, so a member added there is dropped here without a second list to keep in step.
+static bool union_pilot_is_non_evidence_member(const String &p_key) {
+	static const Vector<String> non_evidence = FSCompletenessRunner::non_evidence_report_members();
+	return p_key == "artifact_path" || non_evidence.has(p_key);
+}
+
+// The report without those members. What is left is comparable against a document captured from a
+// different run, in a different scratch root, on a differently configured build.
 static Variant union_pilot_scratch_independent_evidence(const Variant &p_value) {
 	if (p_value.get_type() == Variant::DICTIONARY) {
 		const Dictionary source = p_value;
 		Dictionary evidence;
 		for (const String &key : Completeness::sorted_dictionary_keys(source)) {
-			if (key == "artifact_path" || key == "timings_ms") {
+			if (union_pilot_is_non_evidence_member(key)) {
 				continue;
 			}
 			evidence[key] = union_pilot_scratch_independent_evidence(source[key]);

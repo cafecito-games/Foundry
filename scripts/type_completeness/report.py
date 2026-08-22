@@ -33,9 +33,11 @@ OBSERVATION_FIELDS = (
 # lacks one is malformed rather than a report with defaults.
 CASE_REQUIRED_FIELDS = OBSERVATION_FIELDS + ("coordinates", "artifact_path")
 FINDING_REQUIRED_FIELDS = ("finding_id", "case_id", "family", "dimension", "expected", "actual", "classification")
-# Members the runner writes for observability only. They vary run to run on identical evidence, so they are
-# dropped at load and can never reach a digest, a comparison, or a fixture.
-NON_EVIDENCE_MEMBERS = ("timings_ms",)
+# Members the runner writes to describe the run or the build rather than the product it observed. They vary
+# between two runs that saw exactly the same thing - wall-clock timings, and the surfaces the binary was built
+# with - so they are dropped at load and can never reach a digest, a comparison, or a fixture. The runner owns
+# the same list in FSCompletenessRunner::non_evidence_report_members.
+NON_EVIDENCE_MEMBERS = ("timings_ms", "configuration")
 
 # The verdicts the runner writes at the top level of a report. A run that is not "passed" published
 # evidence that no comparison may be drawn from: the run either found a product mismatch or broke
@@ -50,6 +52,18 @@ KNOWN_CLASSIFICATIONS = (
     "intentional_unsupported",
     "duplicate",
 )
+
+
+@dataclass(frozen=True)
+class Configuration:
+    """What the binary that produced a report could have observed at all.
+
+    A surface that is not compiled into the build is a property of the build, not of the product, so a
+    consumer reads it from here rather than inferring it from cases the report does not carry.
+    """
+
+    tools_enabled: bool
+    adapters: tuple[str, ...]
 
 
 class ReportError(ValueError):
@@ -113,6 +127,7 @@ class Report:
     success: bool
     outcome: str
     cases: tuple[CaseResult, ...]
+    configuration: Optional[Configuration]
     raw: dict[str, Any]
 
     @property
@@ -148,6 +163,31 @@ class Report:
         return [case for case in self.cases if case.failed]
 
 
+def _load_configuration(data: Mapping[str, Any]) -> Optional[Configuration]:
+    """The configuration a report was produced under, or ``None`` when the producer did not record one.
+
+    Absence is evidence about the producer rather than a malformation: this loader also reads artifacts
+    written by the binary at another commit - the presubmit gate's ``develop`` baseline is exactly that -
+    and a report from a binary that predates the member is still a perfectly readable report. What makes
+    the member mandatory is the producer's own contract, asserted where the runner publishes. A member
+    that is present and wrong is refused, because a wrong configuration is a claim, not an omission.
+    """
+    if "configuration" not in data:
+        return None
+    raw = data["configuration"]
+    if not isinstance(raw, Mapping):
+        raise ReportError(f"report member 'configuration' must be an object; got {raw!r}")
+    tools_enabled = _require(raw, "tools_enabled", "report configuration")
+    if not isinstance(tools_enabled, bool):
+        raise ReportError(f"report configuration member 'tools_enabled' must be a JSON boolean; got {tools_enabled!r}")
+    adapters = _require(raw, "adapters", "report configuration")
+    if not isinstance(adapters, list) or any(not isinstance(adapter, str) or not adapter for adapter in adapters):
+        raise ReportError("report configuration member 'adapters' must be an array of adapter id strings")
+    if list(adapters) != sorted(adapters) or len(set(adapters)) != len(adapters):
+        raise ReportError(f"report configuration member 'adapters' must be sorted and unique; got {adapters!r}")
+    return Configuration(tools_enabled=tools_enabled, adapters=tuple(adapters))
+
+
 def _require(mapping: Mapping[str, Any], key: str, context: str) -> Any:
     if key not in mapping:
         raise ReportError(f"{context} is missing required member {key!r}")
@@ -159,6 +199,7 @@ def load_report(data: Mapping[str, Any]) -> Report:
     if not schema_version_matches(version, SUPPORTED_SCHEMA_VERSION):
         raise ReportError(f"unsupported report schema_version {version!r}; expected {SUPPORTED_SCHEMA_VERSION}")
     family = str(_require(data, "family", "report"))
+    configuration = _load_configuration(data)
     raw_cases = _require(data, "cases", "report")
     if not isinstance(raw_cases, list):
         raise ReportError("report member 'cases' must be an array")
@@ -225,7 +266,14 @@ def load_report(data: Mapping[str, Any]) -> Report:
     if contradictory:
         raise ReportError(f"report marks cases passed although findings target them: {contradictory}")
     evidence = {member: value for member, value in data.items() if member not in NON_EVIDENCE_MEMBERS}
-    return Report(family=family, success=success, outcome=outcome, cases=tuple(cases), raw=evidence)
+    return Report(
+        family=family,
+        success=success,
+        outcome=outcome,
+        cases=tuple(cases),
+        configuration=configuration,
+        raw=evidence,
+    )
 
 
 def load_report_file(path: Path) -> Report:

@@ -13487,6 +13487,13 @@
 			}
 		]
 	},
+	"configuration": {
+		"tools_enabled": true,
+		"adapters": [
+			"destination_wrapper",
+			"synthetic_pair_identity"
+		]
+	},
 	"timings_ms": {
 		"load": 137.844,
 		"resolve": 0.087,

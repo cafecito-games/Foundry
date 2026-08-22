@@ -159,12 +159,20 @@ static Variant destination_wrapper_agreement_counts(const Variant &p_provenance)
 // staged its files, with provenance narrowed to identities. Applying it to an already narrowed
 // document changes nothing, so a produced report and a tracked one are compared through exactly one
 // reduction rather than through a reduction on one side and a format on the other.
+// True for a report member that describes where a run staged its files or which build produced it
+// rather than what it observed. The runner owns the list, so a member added there is dropped here
+// without a second list to keep in step.
+static bool destination_wrapper_is_non_evidence_member(const String &p_key) {
+	static const Vector<String> non_evidence = FSCompletenessRunner::non_evidence_report_members();
+	return p_key == "artifact_path" || non_evidence.has(p_key);
+}
+
 static Variant destination_wrapper_tracked_evidence(const Variant &p_value) {
 	if (p_value.get_type() == Variant::DICTIONARY) {
 		const Dictionary source = p_value;
 		Dictionary evidence;
 		for (const String &key : Completeness::sorted_dictionary_keys(source)) {
-			if (key == "artifact_path" || key == "timings_ms") {
+			if (destination_wrapper_is_non_evidence_member(key)) {
 				continue;
 			}
 			if (key == "canonical_provenance") {

@@ -31,6 +31,7 @@
 #pragma once
 
 #include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_adapter.h"
 #include "fs_type_completeness_cache.h"
 #include "fs_type_completeness_cli.h"
 #include "fs_type_completeness_common.h"
@@ -129,6 +130,19 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][CLI]") {
 		CHECK_EQ(String(report.get("outcome", String())), "passed");
 		CHECK(report.has("timings_ms"));
 		CHECK_EQ(String(report.get("published_surface", "missing")), "");
+		// Every published report names the build it was produced by, so a consumer never has to infer
+		// from a missing case whether a surface was absent from the run or absent from the binary.
+		const Dictionary configuration = report.get("configuration", Dictionary());
+		CHECK_EQ(JSON::stringify(configuration, "", true, true),
+				JSON::stringify(FSCompletenessRunner::configuration_report(), "", true, true));
+		CHECK_EQ(configuration.get("tools_enabled", Variant()).get_type(), Variant::BOOL);
+		const Vector<String> registered_adapters = FSCompletenessAdapterRegistry::ids();
+		CHECK_FALSE(registered_adapters.is_empty());
+		const Array reported_adapters = configuration.get("adapters", Array());
+		REQUIRE_EQ(reported_adapters.size(), registered_adapters.size());
+		for (int index = 0; index < registered_adapters.size(); index++) {
+			CHECK_EQ(String(reported_adapters[index]), registered_adapters[index]);
+		}
 	}
 
 	// The command runs outside any doctest context, so every helper it reaches must work without the
