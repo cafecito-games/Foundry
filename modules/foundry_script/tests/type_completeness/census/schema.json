@@ -61,5 +61,17 @@
 	"witness_statuses": [
 		"present",
 		"deferred"
-	]
+	],
+	"coverage_statuses": [
+		"covered",
+		"uncovered",
+		"unsupported",
+		"quality_deferred"
+	],
+	"coverage_status_meanings": {
+		"covered": "A witness observes this representation child on this surface, and the witness resolves: a registered doctest case, a tracked fixture, or exactly one cell of a registered rule family.",
+		"uncovered": "Nothing observes this child on this surface yet. The entry names the workstream issue that owns closing it; a missing or unresolvable witness is never a pass.",
+		"unsupported": "The configuration is genuinely unsupported. Allowed only when unsupported.json carries an entry for the same representation whose witness status is present.",
+		"quality_deferred": "A witness exists but does not distinguish this child from its parent, so the observation is not yet evidence of coverage. The entry names the owning issue."
+	}
 }

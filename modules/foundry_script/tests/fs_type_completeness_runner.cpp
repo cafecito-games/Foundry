@@ -33,6 +33,7 @@
 #include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_cache.h"
 #include "fs_type_completeness_case_id.h"
+#include "fs_type_completeness_census.h"
 #include "fs_type_completeness_common.h"
 #include "fs_type_completeness_graph.h"
 #include "fs_type_completeness_json.h"
@@ -397,52 +398,6 @@ static bool ledger_dimension_is_known(
 			FSCompletenessRunner::builtin_dimensions().has(p_dimension);
 }
 
-static String find_repository_root_ancestor(const String &p_start_path) {
-	const String canonical_start_path = TemporaryProjectTree::canonicalize_existing_path(p_start_path);
-	if (canonical_start_path.is_empty() || !DirAccess::dir_exists_absolute(canonical_start_path)) {
-		return String();
-	}
-
-	for (String current = canonical_start_path; !current.is_empty();) {
-		const String git_marker = current.path_join(".git");
-		if (FileAccess::exists(git_marker) || DirAccess::dir_exists_absolute(git_marker)) {
-			return current;
-		}
-		const String parent = current.get_base_dir();
-		if (parent == current) {
-			break;
-		}
-		current = parent;
-	}
-	return String();
-}
-
-static String find_repository_root(const String &p_catalog_root) {
-	const String catalog_repository_root = find_repository_root_ancestor(p_catalog_root);
-	if (!catalog_repository_root.is_empty()) {
-		return catalog_repository_root;
-	}
-
-	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (filesystem.is_null()) {
-		return String();
-	}
-	const String current_repository_root = find_repository_root_ancestor(filesystem->get_current_dir());
-	if (!current_repository_root.is_empty()) {
-		return current_repository_root;
-	}
-
-	const String canonical_catalog_root = TemporaryProjectTree::canonicalize_existing_path(p_catalog_root);
-	const String canonical_current_directory =
-			TemporaryProjectTree::canonicalize_existing_path(filesystem->get_current_dir());
-	if (canonical_current_directory == canonical_catalog_root ||
-			TemporaryProjectTree::is_strict_descendant(
-					canonical_current_directory, canonical_catalog_root)) {
-		return canonical_current_directory;
-	}
-	return String();
-}
-
 static bool is_permanent_test_path_form(const String &p_path) {
 	const String filename = p_path.get_file();
 	const String extension = filename.get_extension();
@@ -473,21 +428,6 @@ static bool is_permanent_test_path_form(const String &p_path) {
 		}
 	}
 	return false;
-}
-
-static Error default_tracked_file_probe(const String &p_repository_root, const String &p_path,
-		String &r_output, int &r_exit_code) {
-	List<String> arguments;
-	arguments.push_back("-C");
-	arguments.push_back(p_repository_root);
-	arguments.push_back("ls-files");
-	arguments.push_back("--error-unmatch");
-	arguments.push_back("--");
-	arguments.push_back(p_path);
-	if (OS::get_singleton() == nullptr) {
-		return ERR_UNAVAILABLE;
-	}
-	return OS::get_singleton()->execute("git", arguments, &r_output, &r_exit_code, true);
 }
 
 static Error validate_permanent_test_path(const String &p_path, const String &p_repository_root,
@@ -525,7 +465,7 @@ static Error validate_permanent_test_path(const String &p_path, const String &p_
 	String git_output;
 	int exit_code = -1;
 	const FSCompletenessTrackedFileProbe tracked_file_probe =
-			p_tracked_file_probe == nullptr ? default_tracked_file_probe : p_tracked_file_probe;
+			p_tracked_file_probe == nullptr ? Completeness::default_tracked_file_probe : p_tracked_file_probe;
 	const Error probe_error = tracked_file_probe(p_repository_root, p_path, git_output, exit_code);
 	if (probe_error != OK) {
 		WARN_PRINT(vformat("Git tracked-file verification is unavailable for '%s' (error %d); "
@@ -1464,7 +1404,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 		current_ids.insert(cell.case_id);
 	}
-	const String repository_root = find_repository_root(p_options.catalog_root);
+	const String repository_root = Completeness::find_repository_root(p_options.catalog_root);
 	if (repository_root.is_empty()) {
 		return ERR_UNAUTHORIZED;
 	}
@@ -1993,6 +1933,28 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 				case_parity_evidence == nullptr ? Dictionary() : *case_parity_evidence;
 		cases.push_back(case_report);
 	}
+	// The representation census is evidence this report carries. A cell that claims to be covered by a
+	// witness nothing binds is an uncovered cell reported as a covered one, so the run refuses to
+	// publish a clean verdict rather than summarizing a coverage claim it could not confirm. A census
+	// that cannot be read is the same refusal: a malformed document is never "no census".
+	FSCompletenessCensusSummary census_summary;
+	Vector<String> census_errors;
+	if (FSCompletenessCensus::load(p_options.catalog_root, census_summary, census_errors) != OK) {
+		structural_failures.push_back(make_structural_failure(
+				FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED,
+				vformat("The representation census could not be read: %s", String(" | ").join(census_errors)),
+				String(), String(), String(), ERR_INVALID_DATA));
+	} else {
+		for (const String &unresolved :
+				FSCompletenessCensus::unresolved_covered_witnesses(p_options.catalog_root, census_summary)) {
+			structural_failures.push_back(make_structural_failure(
+					FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED,
+					vformat("A census cell declared covered has no witness that resolves: %s", unresolved),
+					String(), String(), String(), ERR_INVALID_DATA));
+		}
+	}
+	sort_structural_failures(structural_failures);
+
 	Array report_findings;
 	bool success = findings.is_empty() && structural_failures.is_empty();
 	for (const FSCompletenessFinding &finding : findings) {
@@ -2027,6 +1989,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["exceptions"] = exceptions_report;
 	report["cases"] = cases;
 	report["published_surface"] = p_options.published_surface;
+	report["census"] = FSCompletenessCensus::summary_report(census_summary);
 	// The last thing decided before a document is published is whether it carries evidence at all. A
 	// document that claims a matrix and observes nothing for it is a defect in whatever produced it,
 	// and every path that assembles one arrives here, so none of them can publish a clean verdict.

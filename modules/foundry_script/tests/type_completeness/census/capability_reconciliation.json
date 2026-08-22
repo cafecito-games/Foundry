@@ -1,44 +1,38 @@
 {
 	"schema_version": 1,
-	"description": "Reconciliation between the census's production paths and the completeness capability map (capabilities.json). Every census production path is either mapped (the capability map owns it and selects a rule family for it) or explicitly declared unmapped with a rationale and an owning issue. The census validator fails when a mapped declaration stops matching the map or an unmapped declaration silently becomes mapped, so mapping rot is noisy in both directions.",
+	"description": "Reconciliation between the census's production paths and the completeness capability map (capabilities.json). Every census production path is either mapped (the capability map owns it and selects a rule family for it) or explicitly declared unmapped with a rationale and an owning issue. Catalog data paths the map selects a family for are recorded separately: they are inputs of the matrix rather than product code, so they are never census production paths. The census validator fails when a mapped declaration stops matching the map or an unmapped declaration silently becomes mapped, so mapping rot is noisy in both directions.",
 	"mapped_production_paths": [
+		"modules/foundry_script/foundry_script.cpp",
 		"modules/foundry_script/fs_analyzer.cpp",
+		"modules/foundry_script/fs_bytecode_export.cpp",
+		"modules/foundry_script/fs_bytecode_loader.cpp",
 		"modules/foundry_script/fs_compiler.cpp",
 		"modules/foundry_script/fs_function.cpp",
+		"modules/foundry_script/fs_parser.cpp",
+		"modules/foundry_script/fs_parser_data_type.cpp",
 		"modules/foundry_script/fs_reflection.cpp",
 		"modules/foundry_script/fs_type.cpp",
 		"modules/foundry_script/fs_vm.cpp"
 	],
 	"unmapped_production_paths": [
 		{
-			"path": "modules/foundry_script/fs_parser.cpp",
-			"rationale": "Parser source is a production path the current capability map does not list; the selector's production-path map is owned by the presubmit-selector workstream.",
-			"owning_issue": 2477
-		},
-		{
-			"path": "modules/foundry_script/fs_parser_data_type.cpp",
-			"rationale": "Parser type-record source is a production path the current capability map does not list; the selector's production-path map is owned by the presubmit-selector workstream.",
-			"owning_issue": 2477
-		},
-		{
-			"path": "modules/foundry_script/foundry_script.cpp",
-			"rationale": "Script-class and member-binding source is a production path the current capability map does not list; the selector's production-path map is owned by the presubmit-selector workstream.",
-			"owning_issue": 2477
-		},
-		{
-			"path": "modules/foundry_script/fs_bytecode_export.cpp",
-			"rationale": "Compiled-bytecode export is a production path the current capability map does not list; serialization ownership is scoped by the serialization workstream.",
-			"owning_issue": 2478
-		},
-		{
-			"path": "modules/foundry_script/fs_bytecode_loader.cpp",
-			"rationale": "Compiled-bytecode load/reload is a production path the current capability map does not list; serialization ownership is scoped by the serialization workstream.",
-			"owning_issue": 2478
-		},
-		{
 			"path": "core/variant/container_type_validate.cpp",
-			"rationale": "The engine-level container descriptor lives outside the foundry_script module root the current capability map covers; extending the map beyond the module is a selector-workstream specification change.",
-			"owning_issue": 2477
+			"rationale": "2026-08-21: the engine-level container descriptor lives outside modules/foundry_script/, and the capability map refuses a production path outside that root by construction (is_foundry_script_production_rule, fs_type_completeness_manifest.cpp). Selecting a family for an engine-wide path is a specification change to the selector rather than a mapping this census can make, so the path stays declared and visible instead of silently unowned.",
+			"owning_issue": 2476
+		}
+	],
+	"mapped_catalog_paths": [
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/union_destination_membership.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/dimensions/",
+			"rationale": "Dimension declarations are shared by every family, so a change to one selects the broad core."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/partitions/",
+			"rationale": "Axis partitions are shared by every family, so a change to one selects the broad core."
 		}
 	]
 }

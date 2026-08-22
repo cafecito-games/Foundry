@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "fs_type_completeness_common.h"
 #include "fs_type_completeness_union_adapter.h"
 
 #include "core/error/error_list.h"
@@ -57,6 +58,7 @@ static constexpr const char *WITNESS_BOUNDARY_PROVENANCE_MISSING = "witness_boun
 static constexpr const char *WITNESS_RUNTIME_RESULT_MISSING = "witness_runtime_result_missing";
 static constexpr const char *WITNESS_RUNTIME_IDENTITY_MISMATCH = "witness_runtime_identity_mismatch";
 static constexpr const char *LEDGER_ENTRY_STALE = "ledger_entry_stale";
+static constexpr const char *CENSUS_WITNESS_UNRESOLVED = "census_witness_unresolved";
 static constexpr const char *RUN_TIMEOUT = "run_timeout";
 static constexpr const char *RUN_TIMEOUT_REPORT_UNWRITABLE = "run_timeout_report_unwritable";
 static constexpr const char *RUN_ABORTED = "run_aborted";
@@ -76,6 +78,7 @@ static constexpr const char *ALL[] = {
 	WITNESS_RUNTIME_RESULT_MISSING,
 	WITNESS_RUNTIME_IDENTITY_MISMATCH,
 	LEDGER_ENTRY_STALE,
+	CENSUS_WITNESS_UNRESOLVED,
 	RUN_TIMEOUT,
 	RUN_TIMEOUT_REPORT_UNWRITABLE,
 	RUN_ABORTED,
@@ -100,8 +103,9 @@ struct FSCompletenessFinding {
 	PackedStringArray resolved_case_ids;
 };
 
-using FSCompletenessTrackedFileProbe = Error (*)(const String &p_repository_root, const String &p_path,
-		String &r_output, int &r_exit_code);
+// Asking git whether a path is tracked is one question with one answer, so the runner and the census
+// share the probe type and its default implementation instead of each carrying their own.
+using FSCompletenessTrackedFileProbe = Completeness::TrackedFileProbe;
 using FSCompletenessPersistedWriteHook = void (*)(const String &p_path);
 
 // Monotonic microsecond clock the deadline is measured on. Injectable so a timeout can be proven

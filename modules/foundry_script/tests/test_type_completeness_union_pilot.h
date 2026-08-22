@@ -822,6 +822,35 @@ static PackedStringArray union_pilot_timing_stages() {
 	return PackedStringArray({ "load", "resolve", "render", "analyze", "execute", "report", "total" });
 }
 
+// The census summary a published report carries. Every coverage entry is accounted for by exactly one
+// status, and every entry that is not backed by a witness names the workstream issue that owns it, so
+// an uncovered representation child is visible in the report rather than absent from it.
+static void check_union_pilot_census(const Dictionary &p_report) {
+	REQUIRE(p_report.has("census"));
+	const Dictionary census = p_report["census"];
+	for (const String &member : { "covered", "uncovered", "unsupported", "quality_deferred" }) {
+		CAPTURE(member);
+		REQUIRE(census.has(member));
+		CHECK_EQ(Variant(census[member]).get_type(), Variant::FLOAT);
+	}
+	const Array entries = census["entries"];
+	CHECK(entries.size() > 0);
+	CHECK_EQ(int(double(census["covered"])) + int(double(census["uncovered"])) +
+					int(double(census["unsupported"])) + int(double(census["quality_deferred"])),
+			entries.size());
+	for (int index = 0; index < entries.size(); index++) {
+		CAPTURE(index);
+		const Dictionary entry = entries[index];
+		const String status = entry.get("status", String());
+		CHECK_FALSE(String(entry.get("representation", String())).is_empty());
+		CHECK_FALSE(String(entry.get("child_slot", String())).is_empty());
+		CHECK_FALSE(String(entry.get("surface", String())).is_empty());
+		if (status == "uncovered" || status == "quality_deferred") {
+			CHECK_FALSE(String(entry.get("issue_url", String())).is_empty());
+		}
+	}
+}
+
 static void check_union_pilot_timings(const Dictionary &p_report) {
 	REQUIRE(p_report.has("timings_ms"));
 	const Dictionary timings = p_report["timings_ms"];
@@ -937,6 +966,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 
 		check_union_pilot_timings(report);
 		check_union_pilot_timings(result.report);
+		check_union_pilot_census(report);
+		check_union_pilot_census(result.report);
 
 		FSCompletenessRunResult repeated_result;
 		REQUIRE_EQ(FSCompletenessRunner::run(options, repeated_result), OK);

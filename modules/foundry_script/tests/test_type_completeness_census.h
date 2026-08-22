@@ -30,12 +30,17 @@
 
 #pragma once
 
-#include "fs_type_completeness_json.h"
+#include "fs_temporary_project_tree.h"
+#include "fs_type_completeness_cache.h"
+#include "fs_type_completeness_census.h"
 
 #include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
 
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
+#include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/variant/container_type_validate.h"
@@ -44,8 +49,11 @@
 
 namespace FSTests {
 
-static const String type_census_root = "modules/foundry_script/tests/type_completeness";
-static const String type_census_directory = type_census_root.path_join("census");
+// The census documents belong to the tracked catalog, so its root is read from the one place that
+// names it rather than spelled again here.
+static String type_census_root() {
+	return tracked_catalog_root();
+}
 
 // The kind-id switches below cover every enumerator of their enum and carry no default arm, so a
 // renumbered or appended enumerator fails to compile this file (dev_mode builds treat the switch
@@ -235,62 +243,8 @@ static Vector<CensusLiveEnum> census_live_enums() {
 }
 
 static bool census_read_json(const String &p_file_name, Variant &r_data, Vector<String> &r_errors) {
-	const String path = type_census_directory.path_join(p_file_name);
-	Error read_error = OK;
-	const String source = FileAccess::get_file_as_string(path, &read_error);
-	if (read_error != OK) {
-		r_errors.push_back(vformat("%s: could not read file (error %d)", path, read_error));
-		return false;
-	}
-	const Error parse_error = parse_type_completeness_json(source, String(), r_data, r_errors);
-	if (parse_error != OK || r_data.get_type() != Variant::DICTIONARY) {
-		r_errors.push_back(vformat("%s: expected a JSON object", path));
-		return false;
-	}
-	return true;
-}
-
-static Vector<Dictionary> census_dictionary_array(const Dictionary &p_root, const String &p_key) {
-	Vector<Dictionary> result;
-	const Variant &value = p_root.get(p_key, Variant());
-	if (value.get_type() != Variant::ARRAY) {
-		return result;
-	}
-	for (int index = 0; index < Array(value).size(); index++) {
-		const Variant &element = Array(value)[index];
-		if (element.get_type() == Variant::DICTIONARY) {
-			result.push_back(element);
-		}
-	}
-	return result;
-}
-
-static Vector<String> census_string_array(const Dictionary &p_dictionary, const String &p_key) {
-	Vector<String> result;
-	const Variant &value = p_dictionary.get(p_key, Variant());
-	if (value.get_type() != Variant::ARRAY) {
-		return result;
-	}
-	for (int index = 0; index < Array(value).size(); index++) {
-		const Variant &element = Array(value)[index];
-		if (element.get_type() == Variant::STRING) {
-			result.push_back(element);
-		}
-	}
-	return result;
-}
-
-static String census_string(const Dictionary &p_dictionary, const String &p_key) {
-	const Variant &value = p_dictionary.get(p_key, Variant());
-	return value.get_type() == Variant::STRING ? String(value) : String();
-}
-
-static HashSet<String> census_string_set(const Vector<String> &p_values) {
-	HashSet<String> set;
-	for (const String &value : p_values) {
-		set.insert(value);
-	}
-	return set;
+	return read_completeness_json(
+			FSCompletenessCensus::census_directory(type_census_root()).path_join(p_file_name), r_data, r_errors);
 }
 
 static void census_collect_representation_slots(const Vector<Dictionary> &p_representations,
@@ -312,6 +266,56 @@ static void census_collect_representation_slots(const Vector<Dictionary> &p_repr
 		}
 		r_slots_by_representation.insert(representation_id, slots);
 	}
+}
+
+// A writable copy of the tracked catalog, so a negative case can mutate one census document without
+// touching the repository. The whole catalog is copied because a coverage witness resolves through the
+// rule manifests and the catalog next to it.
+static String stage_census_catalog(TemporaryProjectTree &p_tree) {
+	const String staged_root = p_tree.root.path_join("catalog");
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(filesystem.is_valid());
+	REQUIRE_EQ(filesystem->copy_dir(type_census_root(), staged_root), OK);
+	return staged_root;
+}
+
+static Dictionary tracked_coverage_document() {
+	Vector<String> errors;
+	Variant data;
+	REQUIRE_MESSAGE(census_read_json("coverage.json", data, errors), String(" | ").join(errors));
+	return Dictionary(data).duplicate(true);
+}
+
+static void write_staged_coverage(TemporaryProjectTree &p_tree, const Dictionary &p_document) {
+	p_tree.write_file("catalog/census/coverage.json", JSON::stringify(p_document, "\t") + "\n");
+}
+
+// Index of the first coverage entry whose witness is of p_kind, or -1.
+static int first_coverage_entry_with_witness_kind(const Array &p_entries, const String &p_kind) {
+	for (int index = 0; index < p_entries.size(); index++) {
+		const Dictionary entry = p_entries[index];
+		const Variant &witness = entry.get("witness", Variant());
+		if (witness.get_type() == Variant::DICTIONARY && census_string(witness, "kind") == p_kind) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+// Loads p_staged_root's census and reports the refusal messages, so a negative case asserts on the
+// message a maintainer would read rather than only on an error code.
+static Error load_staged_census(const String &p_staged_root, FSCompletenessCensusSummary &r_summary,
+		Vector<String> &r_errors) {
+	return FSCompletenessCensus::load(p_staged_root, r_summary, r_errors);
+}
+
+static bool census_errors_mention(const Vector<String> &p_errors, const String &p_fragment) {
+	for (const String &error : p_errors) {
+		if (error.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
@@ -556,7 +560,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		}
 
 		for (const String &family : referenced_families) {
-			if (!FileAccess::exists(type_census_root.path_join("rules").path_join(family + ".json"))) {
+			if (!FileAccess::exists(type_census_root().path_join("rules").path_join(family + ".json"))) {
 				errors.push_back(vformat("census references rule family '%s' with no rules/ file", family));
 			}
 		}
@@ -618,11 +622,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 				}
 				if (status == "present") {
 					present_witnesses += 1;
-					if (kind == "fixture" && !FileAccess::exists(reference)) {
-						errors.push_back(vformat("unsupported: %s references fixture '%s' that does not exist", id, reference));
+					// A present witness is bound to what actually observes it: a tracked fixture or a
+					// registered doctest case. A reference that only looks well-formed observes nothing.
+					String detail;
+					if (kind == "fixture" &&
+							!resolve_tracked_fixture_reference(type_census_root(), reference, detail)) {
+						errors.push_back(vformat("unsupported: %s: %s", id, detail));
 					}
-					if (kind == "doctest_case" && (!reference.begins_with("[") || !reference.contains("] "))) {
-						errors.push_back(vformat("unsupported: %s references doctest case '%s' with no suite-qualified name", id, reference));
+					if (kind == "doctest_case" && !resolve_doctest_case_reference(reference, detail)) {
+						errors.push_back(vformat("unsupported: %s: %s", id, detail));
 					}
 				} else {
 					deferred_witnesses += 1;
@@ -633,7 +641,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			}
 		}
 		CHECK_MESSAGE(present_witnesses > 0, "no unsupported entry has a present witness");
-		CHECK_MESSAGE(deferred_witnesses > 0, "deferred witnesses are expected until the #2477 adapters land");
+		// A deferred witness observes nothing, so an unsupported configuration backed by one is an
+		// uncovered census cell wearing an exemption. Every declared configuration carries an
+		// executable negative witness, and a new one may not be filed without one.
+		CHECK_MESSAGE(deferred_witnesses == 0,
+				"an unsupported configuration must carry an executable negative witness, not a deferred one");
 		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 	}
 
@@ -644,7 +656,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		Variant capabilities_data;
 		REQUIRE_MESSAGE(census_read_json("representations.json", representations_data, errors), String(" | ").join(errors));
 		REQUIRE_MESSAGE(census_read_json("capability_reconciliation.json", reconciliation_data, errors), String(" | ").join(errors));
-		REQUIRE(census_read_json("../capabilities.json", capabilities_data, errors));
+		REQUIRE(read_completeness_json(type_census_root().path_join("capabilities.json"), capabilities_data, errors));
 		REQUIRE_MESSAGE(errors.is_empty(), String(" | ").join(errors));
 
 		HashSet<String> capability_paths;
@@ -682,6 +694,22 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			}
 			if (!record.has("owning_issue")) {
 				errors.push_back(vformat("reconciliation: unmapped path '%s' has no owning issue", path));
+			}
+		}
+
+		// Catalog data paths the capability map selects a family for are inputs of the matrix, not
+		// product code, so they are recorded as catalog paths and are never census production paths.
+		for (const Dictionary &record : census_dictionary_array(reconciliation_data, "mapped_catalog_paths")) {
+			const String path = census_string(record, "path");
+			declared_paths.insert(path);
+			if (!capability_paths.has(path)) {
+				errors.push_back(vformat("reconciliation: catalog path '%s' is declared mapped but the capability map does not list it", path));
+			}
+			if (census_paths.has(path)) {
+				errors.push_back(vformat("reconciliation: '%s' is a census production path and may not be recorded as a catalog path", path));
+			}
+			if (census_string(record, "rationale").is_empty()) {
+				errors.push_back(vformat("reconciliation: catalog path '%s' has no rationale", path));
 			}
 		}
 
@@ -756,6 +784,307 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		}
 		CHECK_MESSAGE(any_bytecode_only, "no representation is bytecode-reload-specific; the serialization surface is not distinguished");
 		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+	}
+
+	TEST_CASE("TypeCompleteness Census coverage is exactly one entry per operative policy pair") {
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+
+		Variant policies_data;
+		REQUIRE_MESSAGE(census_read_json("policies.json", policies_data, errors), String(" | ").join(errors));
+		HashSet<String> operative_pairs;
+		for (const Dictionary &entry : census_dictionary_array(policies_data, "entries")) {
+			if (census_string(entry, "policy") == "not_applicable") {
+				continue;
+			}
+			operative_pairs.insert(census_string(entry, "representation") + "::" +
+					census_string(entry, "child_slot") + "::" + census_string(entry, "surface"));
+		}
+		REQUIRE(operative_pairs.size() > 0);
+
+		// Both directions: no operative pair without an entry, and no entry without an operative pair.
+		HashSet<String> covered_pairs;
+		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
+			CHECK_MESSAGE(operative_pairs.has(entry.key()), vformat("%s is not an operative policy pair", entry.key()));
+			covered_pairs.insert(entry.key());
+		}
+		for (const String &pair : operative_pairs) {
+			CHECK_MESSAGE(covered_pairs.has(pair), vformat("%s has no coverage entry", pair));
+		}
+		CHECK_EQ(summary.entries.size(), operative_pairs.size());
+		CHECK_EQ(summary.total(), summary.entries.size());
+
+		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
+			CAPTURE(entry.key());
+			if (entry.status == "uncovered" || entry.status == "quality_deferred") {
+				CHECK_FALSE(entry.issue_url.is_empty());
+			}
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Census every covered witness resolves") {
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
+		CHECK(summary.covered > 0);
+
+		const Vector<String> unresolved =
+				FSCompletenessCensus::unresolved_covered_witnesses(type_census_root(), summary);
+		CHECK_MESSAGE(unresolved.is_empty(), String(" | ").join(unresolved));
+
+		// Every witness kind the census can express is exercised, so a resolution path cannot rot
+		// unobserved behind a census that only ever names one kind.
+		HashSet<String> witness_kinds;
+		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
+			if (entry.status == "covered") {
+				witness_kinds.insert(entry.witness.kind);
+			}
+		}
+		CHECK(witness_kinds.has("doctest_case"));
+		CHECK(witness_kinds.has("fixture"));
+		CHECK(witness_kinds.has("family_case"));
+	}
+
+	TEST_CASE("TypeCompleteness Census names a broken witness of every kind") {
+		TemporaryProjectTree tree(vformat("type_completeness_census_witness_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		struct BrokenWitness {
+			const char *witness_kind;
+			const char *member;
+			const char *value;
+			const char *expected_fragment;
+		};
+		const BrokenWitness broken_witnesses[] = {
+			{ "doctest_case", "reference", "[Modules][FoundryScript][TypeUnion] No case is named this",
+					"no registered doctest case" },
+			{ "fixture", "reference", "modules/foundry_script/tests/scripts/analyzer/features/not_a_fixture.fs",
+					"does not exist" },
+			{ "family_case", "family", "not_a_registered_family", "does not load" },
+		};
+		for (const BrokenWitness &broken : broken_witnesses) {
+			CAPTURE(broken.witness_kind);
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const int index = first_coverage_entry_with_witness_kind(entries, broken.witness_kind);
+			REQUIRE_MESSAGE(index >= 0, vformat("the census declares no %s witness", broken.witness_kind));
+			Dictionary entry = entries[index];
+			Dictionary witness = entry["witness"];
+			witness[broken.member] = String(broken.value);
+			entry["witness"] = witness;
+			entries[index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
+			const Vector<String> unresolved =
+					FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+			REQUIRE_EQ(unresolved.size(), 1);
+			CHECK(unresolved[0].begins_with(String(entry["representation"]) + "::"));
+			CHECK_MESSAGE(unresolved[0].contains(broken.expected_fragment), unresolved[0]);
+		}
+
+		// A cell that claims coverage and declares nothing at all is uncovered, not covered.
+		Dictionary document = tracked_coverage_document();
+		Array entries = document["entries"];
+		const int index = first_coverage_entry_with_witness_kind(entries, "doctest_case");
+		REQUIRE(index >= 0);
+		Dictionary entry = entries[index];
+		entry.erase("witness");
+		entries[index] = entry;
+		document["entries"] = entries;
+		write_staged_coverage(tree, document);
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
+		const Vector<String> unresolved =
+				FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+		REQUIRE_EQ(unresolved.size(), 1);
+		CHECK_MESSAGE(unresolved[0].contains("declares no witness"), unresolved[0]);
+	}
+
+	TEST_CASE("TypeCompleteness Census refuses a malformed coverage document") {
+		TemporaryProjectTree tree(vformat("type_completeness_census_refusal_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		SUBCASE("an entry for a not_applicable pair is an orphan") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			Dictionary orphan;
+			orphan["representation"] = "parser_data_type";
+			orphan["child_slot"] = "union_members";
+			orphan["surface"] = "runtime_bytecode";
+			orphan["status"] = "uncovered";
+			orphan["issue_url"] = "https://example.invalid/issues/1";
+			entries.push_back(orphan);
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK(summary.entries.is_empty());
+			CHECK_MESSAGE(census_errors_mention(errors,
+								  "parser_data_type::union_members::runtime_bytecode is declared not_applicable"),
+					String(" | ").join(errors));
+		}
+
+		SUBCASE("a duplicate entry is refused before any witness is resolved") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			entries.push_back(Dictionary(entries[0]).duplicate(true));
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "duplicate coverage entry"), String(" | ").join(errors));
+		}
+
+		SUBCASE("a missing operative pair is named") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			const Dictionary removed = entries[0];
+			entries.remove_at(0);
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, String(removed["representation"]) + "::" + String(removed["child_slot"]) + "::" + String(removed["surface"])),
+					String(" | ").join(errors));
+		}
+
+		SUBCASE("a status outside the vocabulary is named with its JSONPath") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			Dictionary entry = entries[0];
+			entry["status"] = "probably_fine";
+			entries[0] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "$.entries[0].status"), String(" | ").join(errors));
+		}
+
+		SUBCASE("an unknown member is a defect rather than an ignored declaration") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			Dictionary entry = entries[0];
+			entry["rationale"] = "not a member of the coverage schema";
+			entries[0] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "unknown member 'rationale'"), String(" | ").join(errors));
+		}
+
+		SUBCASE("an unsupported cell with no present negative witness is refused") {
+			// runtime_data_type declares no unsupported configuration, so an exemption filed against it
+			// has no executable negative witness to stand on.
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			int unwitnessed_index = -1;
+			for (int index = 0; index < entries.size(); index++) {
+				if (String(Dictionary(entries[index]).get("representation", String())) == "runtime_data_type") {
+					unwitnessed_index = index;
+					break;
+				}
+			}
+			REQUIRE(unwitnessed_index >= 0);
+			Dictionary entry = entries[unwitnessed_index];
+			entry["status"] = "unsupported";
+			entry.erase("issue_url");
+			entries[unwitnessed_index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "carries a present witness"), String(" | ").join(errors));
+		}
+
+		SUBCASE("an uncovered cell without an owning issue is refused") {
+			Dictionary document = tracked_coverage_document();
+			Array entries = document["entries"];
+			int uncovered_index = -1;
+			for (int index = 0; index < entries.size(); index++) {
+				if (String(Dictionary(entries[index]).get("status", String())) == "uncovered") {
+					uncovered_index = index;
+					break;
+				}
+			}
+			REQUIRE(uncovered_index >= 0);
+			Dictionary entry = entries[uncovered_index];
+			entry.erase("issue_url");
+			entries[uncovered_index] = entry;
+			document["entries"] = entries;
+			write_staged_coverage(tree, document);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "names no owning issue"), String(" | ").join(errors));
+		}
+
+		SUBCASE("a malformed document is refused rather than read as an absent census") {
+			tree.write_file("catalog/census/coverage.json", "{ \"schema_version\": 1, \"entries\": [ }\n");
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_FALSE(errors.is_empty());
+			CHECK(summary.entries.is_empty());
+			CHECK_EQ(summary.total(), 0);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Census summary report carries every entry as report numbers") {
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
+
+		const Dictionary report = FSCompletenessCensus::summary_report(summary);
+		for (const String &member : { "covered", "uncovered", "unsupported", "quality_deferred" }) {
+			CAPTURE(member);
+			REQUIRE(report.has(member));
+			CHECK_EQ(Variant(report[member]).get_type(), Variant::FLOAT);
+		}
+		CHECK_EQ(int(double(report["covered"])), summary.covered);
+		CHECK_EQ(int(double(report["uncovered"])), summary.uncovered);
+		CHECK_EQ(int(double(report["unsupported"])), summary.unsupported);
+		CHECK_EQ(int(double(report["quality_deferred"])), summary.quality_deferred);
+		const Array entries = report["entries"];
+		REQUIRE_EQ(entries.size(), summary.entries.size());
+		CHECK_EQ(int(double(report["covered"])) + int(double(report["uncovered"])) +
+						int(double(report["unsupported"])) + int(double(report["quality_deferred"])),
+				entries.size());
+
+		// The report is published evidence, so a second read of the same census must produce the same
+		// document; entries are ordered by their policy pair rather than by file order.
+		FSCompletenessCensusSummary repeated_summary;
+		Vector<String> repeated_errors;
+		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), repeated_summary, repeated_errors), OK);
+		CHECK_EQ(FSCompletenessCensus::summary_report(repeated_summary), report);
+		String previous_key;
+		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
+			CHECK(previous_key < entry.key());
+			previous_key = entry.key();
+		}
 	}
 }
 

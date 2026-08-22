@@ -770,6 +770,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restore
 // Offsets of the width descriptor inside an encoded record, used by the negative tests below to
 // corrupt exactly that byte. A data-type record starts with its kind byte and carrier word; a
 // container-type record inside a tagged Array starts with the tag byte and the read-only flag.
+static constexpr int BYTECODE_DATA_TYPE_KIND_OFFSET = 0;
 static constexpr int BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET = 1 + 4;
 static constexpr int BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET = 1 + 1 + 4;
 
@@ -899,6 +900,30 @@ TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Declared widths survive t
 	const Dictionary decoded_dictionary = bytecode_round_trip_variant(typed_dictionary);
 	CHECK(decoded_dictionary.get_key_type().numeric_type == NumericType::INT32);
 	CHECK(decoded_dictionary.get_value_type().numeric_type == NumericType::UINT64);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects a data-type kind above the highest FSDataType kind") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	// UNION is the highest FSDataType::Kind, and the loader validates a decoded kind against exactly
+	// that bound. A record whose kind byte names a value above it is corrupt input: appending a runtime
+	// kind without raising the bound would make the same bytes mean two different types.
+	const Vector<uint8_t> payload =
+			bytecode_encode_data_type(exporter, bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	REQUIRE(payload.size() > BYTECODE_DATA_TYPE_KIND_OFFSET);
+	REQUIRE(payload[BYTECODE_DATA_TYPE_KIND_OFFSET] == uint8_t(FSDataType::BUILTIN));
+
+	const uint8_t above_union_values[] = { uint8_t(uint8_t(FSDataType::UNION) + 1), 0xFF };
+	for (const uint8_t above_union : above_union_values) {
+		CAPTURE(above_union);
+		Vector<uint8_t> corrupted = payload;
+		corrupted.write[BYTECODE_DATA_TYPE_KIND_OFFSET] = above_union;
+		FSDataType decoded;
+		ERR_PRINT_OFF;
+		CHECK(bytecode_decode_data_type(exporter, corrupted, &resolver, decoded) == ERR_INVALID_DATA);
+		ERR_PRINT_ON;
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects out-of-range descriptors") {

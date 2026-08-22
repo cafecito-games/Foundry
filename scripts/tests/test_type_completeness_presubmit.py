@@ -456,6 +456,36 @@ class GateTests(GateTestCase):
         self.assertEqual(verdict["baseline_state"], "not_consulted")
         self.assertTrue((output / "comparison.json").exists())
 
+    def test_a_rule_only_change_set_runs_the_family_comparison(self) -> None:
+        # A rule manifest defines a family's matrix, so editing it can remove or rekey cases. The gate
+        # must run and compare that family; a change set the selector scoped to nothing would let a
+        # vanished case through silently.
+        self.changed_paths.write_text(
+            "modules/foundry_script/tests/type_completeness/rules/union_destination_membership.json\n",
+            encoding="utf-8",
+        )
+        self.write_report(runner_report())
+        baseline = self.work / "baseline"
+        self.write_report(runner_report(), directory=baseline)
+        code, verdict, output = self.run_gate(selection_fixture="selection_rules_only.json", baseline_dir=baseline)
+        self.assertEqual(verdict["state"], "passed")
+        self.assertEqual(code, 0)
+        self.assertEqual(verdict["families_run"], [FAMILY])
+        self.assertTrue((output / f"report-{FAMILY}.json").exists())
+        self.assertTrue((output / "comparison.json").exists())
+
+    def test_a_shared_catalog_change_set_runs_the_broad_core(self) -> None:
+        self.changed_paths.write_text(
+            "modules/foundry_script/tests/type_completeness/partitions/boundary.json\n", encoding="utf-8"
+        )
+        self.write_report(runner_report())
+        baseline = self.work / "baseline"
+        self.write_report(runner_report(), directory=baseline)
+        code, verdict, _ = self.run_gate(selection_fixture="selection_catalog_shared.json", baseline_dir=baseline)
+        self.assertEqual(verdict["state"], "passed")
+        self.assertEqual(code, 0)
+        self.assertEqual(verdict["families_run"], [FAMILY])
+
     def test_an_unchanged_failure_with_no_finding_to_reconcile_blocks(self) -> None:
         # A failed case the runner filed no finding against has nothing a ledger entry could name, so
         # no authority for it can exist and it must not be waved through as a known mismatch.

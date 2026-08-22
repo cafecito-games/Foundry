@@ -1,0 +1,686 @@
+{
+	"schema_version": 1,
+	"description": "Coverage of the representation census: exactly one entry per (representation, child slot, surface) whose handling policy is not not_applicable. A `covered` entry names a witness that must resolve - a registered doctest case, a tracked fixture, or exactly one cell of a registered rule family - and an `uncovered` or `quality_deferred` entry names the workstream issue that owns closing it. FSCompletenessCensus is the only reader; the census validator and the runner report both go through it.",
+	"entries": [
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "bytecode_serialization",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip"
+			}
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_container_element_types",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "bytecode_serialization",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType script references serialize as path and fully qualified name"
+			}
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_type_arguments",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "bytecode_serialization",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "bytecode_serialized_type",
+			"child_slot": "serialized_union_alternatives",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "bytecode_serialization",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants"
+			}
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "element_types",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "bytecode_serialization",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "container_descriptor",
+			"child_slot": "type_arguments",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "bytecode_serialization",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "fixed",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "bytecode_serialization",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeFunction] Tuple-typed functions round-trip and execute identically"
+			}
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "member_binding_descriptor",
+			"child_slot": "tuple_slot_shape",
+			"surface": "runtime_text",
+			"status": "covered",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/runtime/features/generic_class_parameter_tuple_slot.fs"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into container element types"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "editor_tools",
+			"status": "quality_deferred",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs"
+			},
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_names",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/analyzer/features/type_self_enum_payload_field_nested_self_union_alternatives.fs"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "enum_case_payload_field_types",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_callable_bind_default_arity.fs"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_parameter_types",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_rest_parameter_concrete.fs"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_rest_parameter_type",
+			"surface": "runtime_text",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][Bytecode][TypedRestParameter] A typed rest array survives loading without a front end"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "analyzer",
+			"status": "quality_deferred",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_callable_bind_default_arity.fs"
+			},
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "method_return_type",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into type arguments"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "fixture",
+				"reference": "modules/foundry_script/tests/scripts/analyzer/features/generic_class_bounds.fs"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "type_parameter_bound",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "union_destination_membership",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"destination": "union",
+					"source_proof": "gradual",
+					"surface": "text"
+				}
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "editor_tools",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source"
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "reflection",
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "union_destination_membership",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"destination": "union",
+					"source_proof": "variant",
+					"surface": "text"
+				}
+			}
+		},
+		{
+			"representation": "parser_data_type",
+			"child_slot": "union_members",
+			"surface": "runtime_text",
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "union_destination_membership",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"destination": "union",
+					"source_proof": "variant",
+					"surface": "text"
+				}
+			}
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "analyzer",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info"
+			}
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "bytecode_serialization",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "reflection_property_info",
+			"child_slot": "hint_string",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "bytecode_serialization",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+			}
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "container_element_types",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "bytecode_serialization",
+			"status": "covered",
+			"witness": {
+				"kind": "doctest_case",
+				"reference": "[FoundryScript][BytecodeCodec] Specialized class handles round-trip"
+			}
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "type_arguments",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "bytecode_serialization",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "editor_tools",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "reflection",
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "union_destination_membership",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"destination": "union",
+					"source_proof": "erased",
+					"surface": "text"
+				}
+			}
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "runtime_bytecode",
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "union_destination_membership",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"destination": "union",
+					"source_proof": "erased",
+					"surface": "bytecode"
+				}
+			}
+		},
+		{
+			"representation": "runtime_data_type",
+			"child_slot": "union_alternatives",
+			"surface": "runtime_text",
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "union_destination_membership",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"destination": "union",
+					"source_proof": "erased",
+					"surface": "text"
+				}
+			}
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "reflection",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "runtime_bytecode",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		},
+		{
+			"representation": "specialization_evidence",
+			"child_slot": "evidence_type_arguments",
+			"surface": "runtime_text",
+			"status": "uncovered",
+			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+		}
+	]
+}

@@ -8,7 +8,29 @@
         "modules/foundry_script/fs_vm.cpp",
         "modules/foundry_script/fs_type.cpp",
         "modules/foundry_script/fs_function.cpp",
-        "modules/foundry_script/fs_reflection.cpp"
+        "modules/foundry_script/fs_reflection.cpp",
+        "modules/foundry_script/fs_parser.cpp",
+        "modules/foundry_script/fs_parser_data_type.cpp",
+        "modules/foundry_script/foundry_script.cpp",
+        "modules/foundry_script/fs_bytecode_export.cpp",
+        "modules/foundry_script/fs_bytecode_loader.cpp"
+      ],
+      "families": [
+        "union_destination_membership"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/union_destination_membership.json"
+      ],
+      "families": [
+        "union_destination_membership"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/dimensions/",
+        "modules/foundry_script/tests/type_completeness/partitions/"
       ],
       "families": [
         "union_destination_membership"
