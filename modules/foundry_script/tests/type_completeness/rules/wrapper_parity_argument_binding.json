@@ -113,7 +113,7 @@
       "expect": {
         "analysis": "accept",
         "runtime_obligation": "typed_destination_check",
-        "diagnostic_severity": "none",
+        "diagnostic_severity": "warning",
         "census_child_evidence": "absent",
         "stored_carrier": "plain_destination"
       },
@@ -366,6 +366,261 @@
     }
   ],
   "exceptions": [
+    {
+      "id": "staged_wrapper_proves_source_at_container_element",
+      "parent": "wrapper_parity_to_container_element",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "element_slot",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A container element value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_container_element_gradual_staged",
+          "coordinates": {
+            "destination": "container_element",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_container_element_gradual_staged",
+          "coordinates": {
+            "destination": "container_element",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_container_element_static_member_staged",
+          "coordinates": {
+            "destination": "container_element",
+            "source_proof": "static_member",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_generic_argument",
+      "parent": "wrapper_parity_to_generic_argument",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "reified_argument",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A generic argument value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_generic_argument_gradual_staged",
+          "coordinates": {
+            "destination": "generic_argument",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_generic_argument_gradual_staged",
+          "coordinates": {
+            "destination": "generic_argument",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_generic_argument_static_member_staged",
+          "coordinates": {
+            "destination": "generic_argument",
+            "source_proof": "static_member",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_tuple_field",
+      "parent": "wrapper_parity_to_tuple_field",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "tuple_slot",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A tuple field value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_tuple_field_gradual_staged",
+          "coordinates": {
+            "destination": "tuple_field",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_tuple_field_gradual_staged",
+          "coordinates": {
+            "destination": "tuple_field",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_tuple_field_static_member_staged",
+          "coordinates": {
+            "destination": "tuple_field",
+            "source_proof": "static_member",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_nominal_class",
+      "parent": "wrapper_parity_to_nominal_class",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "nominal_instance",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A nominal class value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_nominal_class_gradual_staged",
+          "coordinates": {
+            "destination": "nominal_class",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_nominal_class_gradual_staged",
+          "coordinates": {
+            "destination": "nominal_class",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_nominal_class_static_member_staged",
+          "coordinates": {
+            "destination": "nominal_class",
+            "source_proof": "static_member",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "staged_wrapper_proves_source_at_trait",
+      "parent": "wrapper_parity_to_trait",
+      "when": {
+        "source_proof": {
+          "class": "unproven"
+        }
+      },
+      "derive": {
+        "analysis": "same",
+        "runtime_obligation": "same",
+        "stored_carrier": "trait_witness",
+        "diagnostic_severity": "none",
+        "census_child_evidence": "same"
+      },
+      "rationale": "A trait value has to be built before it can cross a boundary, and building it proves the source, so the call the boundary makes no longer carries an unproven argument and the warning a plain destination raises there is absent.",
+      "positive_witnesses": [
+        {
+          "id": "text_trait_gradual_staged",
+          "coordinates": {
+            "destination": "trait",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        },
+        {
+          "id": "bytecode_trait_gradual_staged",
+          "coordinates": {
+            "destination": "trait",
+            "source_proof": "gradual",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_trait_static_member_staged",
+          "coordinates": {
+            "destination": "trait",
+            "source_proof": "static_member",
+            "boundary": "argument_binding",
+            "census_child": "none",
+            "surface": "text"
+          }
+        }
+      ]
+    },
     {
       "id": "unproven_source_warns_at_callable_slot",
       "parent": "wrapper_parity_to_callable_slot",

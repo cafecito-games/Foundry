@@ -76,8 +76,13 @@ struct DestinationShape {
 	const char *leaf;
 	const char *type_spelling;
 	const char *default_expression;
-	// Statements binding `wrapped` of the destination type from `SOURCE`, one per line.
+	// Statements that stage the value the boundary writes, one per line, empty when the source
+	// expression is already shaped like the destination. Nothing staged here may be typed as the
+	// destination: a typed staging slot would perform the destination's own check before the boundary
+	// under test ever saw the value, and the boundary would then only ever receive a proven one.
 	const char *wrap_statements;
+	// What the boundary writes: the source expression itself, or the untyped carrier staged above.
+	const char *boundary_value;
 	// Expression over `transported` yielding the value that crossed the destination; may name SOURCE
 	// when the destination is a slot the value only reaches at use, as a callable parameter is.
 	const char *unwrap_expression;
@@ -88,27 +93,38 @@ struct DestinationShape {
 };
 
 static const DestinationShape destination_shapes[] = {
-	{ "plain", "uint", "0U", "var wrapped: uint = SOURCE", "transported", "", "plain_destination" },
-	{ "union", "uint | String", "0U", "var wrapped: uint | String = SOURCE", "transported", "",
-			"admitting_alternative" },
-	{ "optional", "uint?", "null", "var wrapped: uint? = SOURCE", "transported", "", "optional_payload" },
+	// A destination whose shape is the source's own shape takes the source expression straight across
+	// the boundary: nothing between the source proof and the boundary re-types the value, so the
+	// boundary under test is what performs the destination's check.
+	{ "plain", "uint", "0U", "", "SOURCE", "transported", "", "plain_destination" },
+	{ "union", "uint | String", "0U", "", "SOURCE", "transported", "", "admitting_alternative" },
+	{ "optional", "uint?", "null", "", "SOURCE", "transported", "", "optional_payload" },
+	// A wrapper destination has to be built before it can cross a boundary, and the language admits no
+	// untyped carrier into a typed one: an `Array` is refused by an `Array[uint]` slot, and a raw
+	// `Box.new()` keeps no argument to check against. The destination's own check therefore happens
+	// where the wrapper is built - which is itself a store into that destination - and the boundary
+	// transports a value already of the destination type. `stored_carrier` and the descriptor are still
+	// read from the boundary's own slot, so a boundary that lost its record is still caught.
 	{ "container_element", "Array[uint]", "[] as Array[uint]", "var wrapped: Array[uint] = [SOURCE]",
-			"transported[0]", "", "element_slot" },
+			"wrapped", "transported[0]", "", "element_slot" },
 	{ "generic_argument", "Box[uint]", "Box[uint].new()",
-			"var wrapped: Box[uint] = Box[uint].new()\nwrapped.value = SOURCE", "transported.value", "",
-			"reified_argument" },
+			"var wrapped: Box[uint] = Box[uint].new()\nwrapped.value = SOURCE", "wrapped",
+			"transported.value", "", "reified_argument" },
 	{ "tuple_field", "(uint, String)", "(0U, \"\")", "var wrapped: (uint, String) = (SOURCE, \"tag\")",
-			"transported[0]", "", "tuple_slot" },
+			"wrapped", "transported[0]", "", "tuple_slot" },
+	// The uint reaches a callable destination at the call, which happens after the boundary has
+	// transported the callable, so the source crosses this destination unwrapped.
 	{ "callable_slot", "Callable[[uint], Variant]", "Callable()",
-			"var wrapped: Callable[[uint], Variant] = identity_uint", "transported.call(SOURCE)",
+			"var wrapped: Callable[[uint], Variant] = identity_uint", "wrapped", "transported.call(SOURCE)",
 			"@warning_ignore(\"unsafe_call_argument\")", "callable_slot" },
 	{ "nominal_class", "Carrier", "Carrier.new()",
-			"var wrapped: Carrier = Carrier.new()\nwrapped.value = SOURCE", "transported.value", "",
-			"nominal_instance" },
-	{ "trait", "HasValue", "Carrier.new()",
-			"var wrapped: HasValue = Carrier.new()\nwrapped.value = SOURCE", "transported.value", "",
-			"trait_witness" },
+			"var wrapped: Carrier = Carrier.new()\nwrapped.value = SOURCE", "wrapped", "transported.value",
+			"", "nominal_instance" },
+	{ "trait", "HasValue", "Carrier.new()", "var wrapped: HasValue = Carrier.new()\nwrapped.value = SOURCE",
+			"wrapped", "transported.value", "", "trait_witness" },
 };
+
+
 
 // Where a boundary's own destination slot is recorded, and so where its descriptor is read back from.
 // Every site is the slot the boundary actually writes through: an unrelated declaration of the same
@@ -140,28 +156,31 @@ struct BoundaryShape {
 
 static const BoundaryShape boundary_shapes[] = {
 	{ "argument_binding", "func accept_destination(value: DESTINATION) -> DESTINATION:\n\treturn value",
-			"var transported: DESTINATION = accept_destination(wrapped)", SITE_FUNCTION_ARGUMENT,
+			"@warning_ignore(\"unsafe_call_argument\")\n"
+			"var transported: DESTINATION = accept_destination(BOUNDARY_VALUE)",
+			SITE_FUNCTION_ARGUMENT,
 			"accept_destination", "" },
 	{ "return", "func produce(value: Variant) -> DESTINATION:\n\treturn value",
-			"var transported: DESTINATION = produce(wrapped)", SITE_FUNCTION_RETURN, "produce", "" },
-	{ "assignment", "", "var transported: DESTINATION = DEFAULT\ntransported = wrapped",
+			"var transported: DESTINATION = produce(BOUNDARY_VALUE)", SITE_FUNCTION_RETURN, "produce", "" },
+	{ "assignment", "", "var transported: DESTINATION = DEFAULT\ntransported = BOUNDARY_VALUE",
 			SITE_FUNCTION_LOCAL, "test", "transported" },
 	{ "member_store", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
-			"var holder := Holder.new()\nholder.value = wrapped\nvar transported: DESTINATION = holder.value",
+			"var holder := Holder.new()\nholder.value = BOUNDARY_VALUE\nvar transported: DESTINATION = holder.value",
 			SITE_CLASS_MEMBER, "Holder", "value" },
 	{ "container_element_store", "class Slots extends RefCounted:\n\tvar values: Array[DESTINATION] = [DEFAULT]",
-			"var slots := Slots.new()\nslots.values[0] = wrapped\n"
+			"var slots := Slots.new()\nslots.values[0] = BOUNDARY_VALUE\n"
 			"var transported: DESTINATION = slots.values[0]",
 			SITE_CLASS_MEMBER_ELEMENT, "Slots", "values" },
 	{ "reflective_write", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
-			"var holder := Holder.new()\nholder.set(&\"value\", wrapped)\n"
+			"var holder := Holder.new()\n@warning_ignore(\"unsafe_call_argument\")\n"
+			"holder.set(&\"value\", BOUNDARY_VALUE)\n"
 			"var transported: DESTINATION = holder.value",
 			SITE_CLASS_MEMBER, "Holder", "value" },
 	{ "proxy_write",
 			"class Proxy extends RefCounted:\n\tvar backing: DESTINATION = DEFAULT\n"
 			"\tvar value: DESTINATION = DEFAULT:\n\t\tset(incoming):\n\t\t\tbacking = incoming\n"
 			"\t\t\tvalue = incoming",
-			"var proxy := Proxy.new()\nproxy.value = wrapped\nvar transported: DESTINATION = proxy.backing",
+			"var proxy := Proxy.new()\nproxy.value = BOUNDARY_VALUE\nvar transported: DESTINATION = proxy.backing",
 			SITE_CLASS_MEMBER, "Proxy", "value" },
 };
 
@@ -170,6 +189,11 @@ static const BoundaryShape boundary_shapes[] = {
 struct SourceProofShape {
 	const char *leaf;
 	const char *expression;
+	// Expression the wrapper-parity layout uses, when it must differ. A bare `5` reaches a typed local
+	// as a provable constant but reaches a boundary through a `Variant` hop as an ordinary int, which
+	// a typed return refuses; the wrapper layout spells the constant at its own width so the cell
+	// measures the boundary rather than that separate question.
+	const char *wrapper_expression;
 	// True when the analyzer cannot prove the value's type at the store, so the destination owes a
 	// runtime membership or conversion check.
 	bool unproven;
@@ -179,14 +203,15 @@ struct SourceProofShape {
 };
 
 static const SourceProofShape source_proof_shapes[] = {
-	{ "static_member", "typed_source", false, false },
-	{ "numeric_constant", "5", false, true },
-	{ "inferred", "inferred_source", false, true },
-	{ "gradual", "supply(5U)", true, false },
-	{ "erased", "erase[uint](5U)", true, false },
-	{ "variant", "variant_source", true, false },
-	{ "nested_child", "nested_source[0]", true, false },
+	{ "static_member", "typed_source", "typed_source", false, false },
+	{ "numeric_constant", "5", "5U", false, true },
+	{ "inferred", "inferred_source", "inferred_source", false, true },
+	{ "gradual", "supply(5U)", "supply(5U)", true, false },
+	{ "erased", "erase[uint](5U)", "erase[uint](5U)", true, false },
+	{ "variant", "variant_source", "variant_source", true, false },
+	{ "nested_child", "nested_source[0]", "nested_source[0]", true, false },
 };
+
 
 // One census child slot and the declaration that forces a program to realize it. The leaf ids are
 // `<representation>.<child_slot>` pairs from `census/representations.json`; several representations
@@ -383,15 +408,21 @@ static String render_wrapper_parity_source(const DestinationShape &p_destination
 		source += "\n" + census_declarations + "\n";
 	}
 
+	const String boundary_value =
+			String(p_destination.boundary_value).replace("SOURCE", p_source_proof.wrapper_expression);
 	String body = "var typed_source: uint = 5U\n"
 				  "var variant_source: Variant = 5U\n"
 				  "var inferred_source := 5U\n"
 				  "var nested_source: Array = [5U]\n"
 				  "var _source_witnesses: Variant = [typed_source, variant_source, inferred_source, "
 				  "nested_source]\n";
-	const String source_expression = p_source_proof.expression;
-	body += String(p_destination.wrap_statements).replace("SOURCE", source_expression) + "\n";
-	body += substitute(p_boundary.statements) + "\n";
+	const String source_expression = p_source_proof.wrapper_expression;
+	const String wrap_statements =
+			String(p_destination.wrap_statements).replace("SOURCE", source_expression);
+	if (!wrap_statements.is_empty()) {
+		body += wrap_statements + "\n";
+	}
+	body += substitute(p_boundary.statements).replace("BOUNDARY_VALUE", boundary_value) + "\n";
 	const String census_use = p_census_witness.use_statement;
 	if (!census_use.is_empty()) {
 		body += census_use + "\n";

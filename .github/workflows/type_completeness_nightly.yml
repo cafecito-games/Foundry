@@ -31,6 +31,10 @@ jobs:
   mutation-shard:
     name: Mutation shard ${{ matrix.shard_id }}
     runs-on: ubuntu-22.04
+    # Bounds setup, every recipe of the shard at its own hard budget, and the summary step. A shard
+    # whose recipes could not all finish inside this would have its last recipes killed by the runner
+    # before they wrote a terminal result, which reads as a missing verdict rather than a timeout;
+    # tests/test_type_completeness_nightly_workflow.py holds the arithmetic.
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -39,10 +43,15 @@ jobs:
           - shard_id: union_core
             recipes: union_membership_drops_last_alternative
             budget_seconds: 1800
-          - shard_id: wrapper_parity_core
-            recipes: argument_destination_type_erased,return_destination_type_erased,tuple_carrier_arity_check_inverted
+          - shard_id: wrapper_parity_argument_destination_type_erased
+            recipes: argument_destination_type_erased
             budget_seconds: 1800
-
+          - shard_id: wrapper_parity_return_destination_type_erased
+            recipes: return_destination_type_erased
+            budget_seconds: 1800
+          - shard_id: wrapper_parity_tuple_carrier_arity_check_inverted
+            recipes: tuple_carrier_arity_check_inverted
+            budget_seconds: 1800
     steps:
       - name: Checkout
         uses: actions/checkout@v6
