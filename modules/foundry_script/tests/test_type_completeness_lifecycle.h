@@ -300,6 +300,30 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Lifecycle an incremental stage runs the whole transition again") {
+		// Applying the transition to its own output has to mean the whole transition, including whatever
+		// the family does before re-deriving. A second pass that skipped the language cycle would report
+		// one shutdown followed by two recompilations as if the subsystem had been taken down twice, and
+		// a defect that only appears on the second one would read as preserved.
+		const uint64_t before_clean = LifecycleInternal::language_cycles_for_test();
+		CHECK_EQ(lifecycle_identity_of("lifecycle_shutdown_reinitialization", "plain", "clean", "text"),
+				"preserved");
+		const uint64_t clean_cycles = LifecycleInternal::language_cycles_for_test() - before_clean;
+		CHECK_EQ(lifecycle_identity_of("lifecycle_shutdown_reinitialization", "plain", "incremental",
+						 "text"),
+				"preserved");
+		const uint64_t incremental_cycles =
+				LifecycleInternal::language_cycles_for_test() - before_clean - clean_cycles;
+
+		CHECK_EQ(clean_cycles, uint64_t(1));
+		CHECK_EQ(incremental_cycles, uint64_t(2));
+		// The families that re-derive without taking the language down never ask for a cycle at all, so
+		// the count belongs to the one family whose transition is the cycle.
+		const uint64_t before_reload = LifecycleInternal::language_cycles_for_test();
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "incremental", "text"), "preserved");
+		CHECK_EQ(LifecycleInternal::language_cycles_for_test(), before_reload);
+	}
+
 	TEST_CASE("TypeCompleteness Lifecycle reflection projection differs by what the surface can spell") {
 		// The reflection surface describes a member with a Variant type, a class name and a hint, so a
 		// declared type it cannot spell reaches it projected or not at all. These are the readings the

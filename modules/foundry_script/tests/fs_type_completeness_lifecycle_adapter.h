@@ -32,6 +32,8 @@
 
 #include "fs_type_completeness_adapter.h"
 
+#include "core/typedefs.h"
+
 namespace FSTests {
 
 namespace LifecycleInternal {
@@ -53,6 +55,11 @@ void set_load_transition_artifact_from_source_for_test(bool p_load_from_source);
 // what it was compiled from, and visible on the stale stage, which is what proves those families
 // re-derive rather than remember.
 void set_skip_transition_invalidation_for_test(bool p_skip);
+
+// How many times a transition has taken the language down and brought it back. A stage that applies
+// the transition to its own output has to be two of these rather than one cycle followed by two
+// re-derivations, which is a difference nothing else about the cell would show.
+uint64_t language_cycles_for_test();
 
 } // namespace LifecycleInternal
 

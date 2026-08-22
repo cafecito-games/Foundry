@@ -41,6 +41,7 @@
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/object/ref_counted.h"
 #include "core/os/mutex.h"
@@ -152,6 +153,11 @@ class LifecycleLanguageBoot {
 		return owns;
 	}
 
+	static uint64_t &cycles() {
+		static uint64_t performed = 0;
+		return performed;
+	}
+
 public:
 	LifecycleLanguageBoot() {
 		MutexLock lock(boot_mutex());
@@ -177,42 +183,18 @@ public:
 		MutexLock lock(boot_mutex());
 		FSLanguage::get_singleton()->finish();
 		FSLanguage::get_singleton()->init();
+		cycles()++;
+	}
+
+	// How many times a transition has taken the language down and brought it back. Read under the same
+	// lock it is written under, so a stage that asks for the transition twice is two here and never one.
+	static uint64_t observed_cycles() {
+		MutexLock lock(boot_mutex());
+		return cycles();
 	}
 
 	LifecycleLanguageBoot(const LifecycleLanguageBoot &) = delete;
 	LifecycleLanguageBoot &operator=(const LifecycleLanguageBoot &) = delete;
-};
-
-// A synthetic source identity that can be given up before the scope holding it ends. The `missing`
-// stage needs exactly that: the artifact is loaded after the identity it was taken at is gone, which
-// is the only way to tell a loader that reads its artifact from one that reaches back to the source.
-class ReleasableSourceScope {
-	DestinationWrapperInternal::SyntheticSourceScope *scope = nullptr;
-	String path;
-
-public:
-	ReleasableSourceScope(const String &p_identity, const String &p_source) {
-		scope = memnew(DestinationWrapperInternal::SyntheticSourceScope(p_identity, p_source));
-		path = scope->get_path();
-	}
-
-	~ReleasableSourceScope() { release(); }
-
-	ReleasableSourceScope(const ReleasableSourceScope &) = delete;
-	ReleasableSourceScope &operator=(const ReleasableSourceScope &) = delete;
-
-	bool is_available() const { return scope != nullptr && scope->is_available(); }
-
-	// Stays valid after the identity is released, because what the transition consumes afterwards is
-	// the path the artifact recorded rather than a source anyone can still read.
-	const String &get_path() const { return path; }
-
-	void release() {
-		if (scope != nullptr) {
-			memdelete(scope);
-			scope = nullptr;
-		}
-	}
 };
 
 static void append_diagnostic(FSCompletenessObservation &r_observation, const String &p_code,
@@ -340,6 +322,23 @@ static Error load_lifecycle_artifact_from_source(
 	}
 	FSParser parser;
 	return compile_lifecycle_source(source, p_artifact.path, parser, r_loaded);
+}
+
+// Everything the identity serves goes away: the file behind it and everything the cache holds for it.
+// The scope that owns the identity stays, because it is what keeps this observation serialized
+// against every other one.
+static Error retire_source_at(const String &p_path) {
+	FSCache::remove_parser(p_path);
+	FSCache::remove_script(p_path);
+	FSCache::clear_source_override(p_path);
+	if (!FileAccess::exists(p_path)) {
+		return OK;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return ERR_UNAVAILABLE;
+	}
+	return filesystem->remove(p_path);
 }
 
 // An artifact no loader can accept. The corruption is applied to the payload rather than to the
@@ -489,8 +488,8 @@ static Error carry_proxy_reflection(const LifecycleCarryRequest &p_request, Stri
 // The identity is compiled again, which is what a reload and a cache replacement both come down to.
 // `p_through_cache` decides where the reading is taken from: the object the compiler wrote, or what
 // the cache hands back for the identity afterwards.
-static Error carry_by_recompiling(
-		const LifecycleCarryRequest &p_request, bool p_through_cache, String &r_after) {
+static Error carry_by_recompiling(const LifecycleCarryRequest &p_request, bool p_through_cache,
+		void (*p_before_each_pass)(), String &r_after) {
 	r_after = String();
 	if (p_request.skip_invalidation) {
 		// The subsystem hands back what it already had for the identity instead of re-deriving it.
@@ -504,54 +503,55 @@ static Error carry_by_recompiling(
 		r_after = carried_type_spelling(cached);
 		return OK;
 	}
-	FSCache::remove_parser(p_request.path);
-	FSCache::remove_script(p_request.path);
-	String source = "class Holder:\n\tvar value: NoSuchTypeExists = 0\n\tvar marker: int = 0\n";
-	if (!p_request.damaged) {
-		Error read_error = OK;
-		source = FileAccess::get_file_as_string(p_request.path, &read_error);
-		if (read_error != OK || source.is_empty()) {
+	// Applying the transition to its own output means the whole transition again, including whatever
+	// the family does before re-deriving. A second pass that skipped that would report one shutdown
+	// followed by two recompilations as if the subsystem had been taken down twice.
+	const int passes = p_request.twice ? 2 : 1;
+	for (int pass = 0; pass < passes; pass++) {
+		if (p_before_each_pass != nullptr) {
+			p_before_each_pass();
+		}
+		FSCache::remove_parser(p_request.path);
+		FSCache::remove_script(p_request.path);
+		String source = "class Holder:\n\tvar value: NoSuchTypeExists = 0\n\tvar marker: int = 0\n";
+		if (!p_request.damaged) {
+			Error read_error = OK;
+			source = FileAccess::get_file_as_string(p_request.path, &read_error);
+			if (read_error != OK || source.is_empty()) {
+				return OK;
+			}
+		}
+		FSParser parser;
+		Ref<FoundryScript> reloaded;
+		const Error error = compile_lifecycle_source(source, p_request.path, parser, reloaded);
+		if (error != OK || reloaded.is_null()) {
 			return OK;
 		}
-	}
-	FSParser parser;
-	Ref<FoundryScript> reloaded;
-	const Error error = compile_lifecycle_source(source, p_request.path, parser, reloaded);
-	if (error != OK || reloaded.is_null()) {
-		return OK;
-	}
-	if (p_through_cache) {
-		Error cache_error = OK;
-		const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
-		if (cache_error != OK || cached.is_null()) {
-			return cache_error == OK ? ERR_INVALID_DATA : cache_error;
+		if (p_through_cache) {
+			Error cache_error = OK;
+			const Ref<FoundryScript> cached = FSCache::get_shallow_script(p_request.path, cache_error);
+			if (cache_error != OK || cached.is_null()) {
+				return cache_error == OK ? ERR_INVALID_DATA : cache_error;
+			}
+			reloaded = cached;
 		}
-		reloaded = cached;
+		r_after = carried_type_spelling(reloaded);
 	}
-	if (p_request.twice) {
-		LifecycleCarryRequest once_more = p_request;
-		once_more.twice = false;
-		return carry_by_recompiling(once_more, p_through_cache, r_after);
-	}
-	r_after = carried_type_spelling(reloaded);
 	return OK;
 }
 
 static Error carry_reload(const LifecycleCarryRequest &p_request, String &r_after) {
-	return carry_by_recompiling(p_request, false, r_after);
+	return carry_by_recompiling(p_request, false, nullptr, r_after);
 }
 
 static Error carry_cache_replacement(const LifecycleCarryRequest &p_request, String &r_after) {
-	return carry_by_recompiling(p_request, true, r_after);
+	return carry_by_recompiling(p_request, true, nullptr, r_after);
 }
 
 static Error carry_shutdown_reinitialization(const LifecycleCarryRequest &p_request, String &r_after) {
-	if (!p_request.skip_invalidation) {
-		// Everything the language holds for the identity goes with it, so what comes back can only
-		// have been rebuilt from the source rather than remembered.
-		LifecycleLanguageBoot::cycle();
-	}
-	return carry_by_recompiling(p_request, false, r_after);
+	// Everything the language holds for the identity goes down with it before each pass, so what comes
+	// back can only have been rebuilt from the source rather than remembered.
+	return carry_by_recompiling(p_request, false, LifecycleLanguageBoot::cycle, r_after);
 }
 
 struct LifecycleFamilyShape {
@@ -612,6 +612,10 @@ void LifecycleInternal::set_load_transition_artifact_from_source_for_test(bool p
 
 void LifecycleInternal::set_skip_transition_invalidation_for_test(bool p_skip) {
 	skip_transition_invalidation_for_test = p_skip;
+}
+
+uint64_t LifecycleInternal::language_cycles_for_test() {
+	return LifecycleLanguageBoot::observed_cycles();
 }
 
 Vector<String> lifecycle_destinations() {
@@ -740,7 +744,11 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	}
 
 	LifecycleLanguageBoot language;
-	ReleasableSourceScope synthetic_source("lifecycle_" + p_program.case_id, p_program.source);
+	// The scope is held for the whole observation. It is what serializes this run against every other
+	// user of a synthetic source, and a transition that takes the language down needs that: giving the
+	// scope up early would let a reinitialization clear a script another run was still reading.
+	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
+			"lifecycle_" + p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		append_diagnostic(observation, "identity_unavailable", "Lifecycle source identity is unavailable.");
 		if (r_structural_error != nullptr) {
@@ -810,7 +818,8 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 			// The revision is only usable as evidence if it declares something the original did not,
 			// and that is checked at an identity of its own so the cache entry behind `path` keeps
 			// describing what was compiled there.
-			ReleasableSourceScope probe("lifecycle_revision_probe_" + p_program.case_id, revised);
+			DestinationWrapperInternal::SyntheticSourceScope probe(
+					"lifecycle_revision_probe_" + p_program.case_id, revised);
 			FSParser probe_parser;
 			Ref<FoundryScript> probe_script;
 			error = probe.is_available()
@@ -879,9 +888,17 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		outcome = "recovered";
 	}
 	if (state == "missing") {
-		// The identity the subject was compiled at is gone before the transition runs, so nothing it
-		// carries may come from a source anyone can still read.
-		synthetic_source.release();
+		// The identity the subject was compiled at stops serving anything before the transition runs,
+		// so nothing it carries may come from a source anyone can still read.
+		error = retire_source_at(path);
+		if (error != OK) {
+			append_diagnostic(observation, "retirement_failed",
+					vformat("The lifecycle source could not be retired (error %d).", error));
+			if (r_structural_error != nullptr) {
+				*r_structural_error = error;
+			}
+			return observation;
+		}
 	}
 
 	request.damaged = corrupt_transition_artifact_for_test;
