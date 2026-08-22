@@ -263,7 +263,10 @@ def git_changed_paths(merge_base_ref: str, repository_root: Path) -> tuple[list[
     if merge_base.returncode != 0:
         raise PresubmitError(f"cannot resolve the merge base with {merge_base_ref}: {merge_base.stderr.strip()}")
     sha = merge_base.stdout.strip()
-    diff = _run(["git", "-C", str(repository_root), "diff", "--name-only", sha, "HEAD"])
+    # `--no-renames` on purpose: with rename detection a moved file reports only its destination, so
+    # a mapped production file moved under a nonproduction prefix would disappear from the change set
+    # and its family would never be selected. Both endpoints of a move must reach the capability map.
+    diff = _run(["git", "-C", str(repository_root), "diff", "--name-only", "--no-renames", sha, "HEAD"])
     if diff.returncode != 0:
         raise PresubmitError(f"cannot list changed paths against {sha}: {diff.stderr.strip()}")
     return [line for line in diff.stdout.split("\n") if line], sha

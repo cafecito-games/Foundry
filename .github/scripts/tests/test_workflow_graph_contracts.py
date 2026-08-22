@@ -839,9 +839,12 @@ class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
                 )
         self.assertEqual("linux-editor-binary", self.workflow.step_with("build-linux", "Upload editor binary")["name"])
 
-    def test_only_develop_publishes_a_baseline(self) -> None:
+    def test_only_an_unredirected_develop_run_publishes_a_baseline(self) -> None:
+        # `github.ref` alone describes the caller: `pr_platform_checks.yml` runs on the default branch
+        # from an `issue_comment` while checking out a pull request head, so a ref-only condition would
+        # publish a branch's own report as the develop baseline.
         self.assertEqual(
-            "github.ref == 'refs/heads/develop'",
+            "github.ref == 'refs/heads/develop' && inputs.checkout-ref == ''",
             workflow_graph.normalize_expression(self.workflow.job_if("type-completeness-baseline")),
         )
         # The gate itself is unconditional: a pull request must not be able to skip it.
@@ -858,8 +861,20 @@ class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
 
     def test_the_baseline_artifact_is_keyed_by_the_commit_it_measured(self) -> None:
         self.assertEqual(
-            "type-completeness-baseline-${{ github.sha }}",
+            "type-completeness-baseline-${{ env.baseline_sha }}",
             self.workflow.step_with("type-completeness-baseline", "Upload baseline reports")["name"],
+        )
+        self.assertIn(
+            "git rev-parse HEAD",
+            self.workflow.step_run("type-completeness-baseline", "Resolve the commit the baseline measures"),
+        )
+
+    def test_the_gate_reconciles_against_the_tracked_findings_ledger(self) -> None:
+        # Without the ledger every acknowledged mismatch on develop would reconcile as having no
+        # authority and block every pull request that selects its family.
+        self.assertIn(
+            "--ledger-dir modules/foundry_script/tests/type_completeness/findings",
+            self.workflow.step_run("type-completeness-presubmit", "Run the type-completeness gate"),
         )
 
     def test_the_gate_is_bounded_and_diffs_against_a_real_merge_base(self) -> None:

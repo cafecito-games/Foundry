@@ -216,6 +216,50 @@ class AbsentBaselineTests(unittest.TestCase):
             self.assertIs(artifact.status, comparator.Status.NEW)
 
 
+class ChangedPathTests(unittest.TestCase):
+    """The change set the selector is given must contain every path a change touched."""
+
+    def setUp(self) -> None:
+        self.repository = Path(tempfile.mkdtemp(prefix="type_completeness_repository_"))
+        self.addCleanup(shutil.rmtree, str(self.repository), True)
+        self._git("init", "--initial-branch", "main")
+        self._git("config", "user.email", "gate@example.invalid")
+        self._git("config", "user.name", "Gate")
+
+    def _git(self, *arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(self.repository), *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout)
+        return completed.stdout
+
+    def _write(self, relative: str, text: str) -> None:
+        path = self.repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_a_move_reports_both_of_its_endpoints(self) -> None:
+        # With rename detection a move reports only its destination, so moving a mapped production
+        # file under a nonproduction prefix would hide the family the move can break.
+        self._write("modules/foundry_script/fs_analyzer.cpp", "int analyzer() { return 0; }\n")
+        self._git("add", "-A")
+        self._git("commit", "-m", "seed")
+        self._git("branch", "baseline")
+        (self.repository / "modules" / "foundry_script" / "tests").mkdir(parents=True, exist_ok=True)
+        self._git("mv", "modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/tests/fs_analyzer.cpp")
+        self._git("commit", "-m", "move")
+
+        paths, sha = presubmit.git_changed_paths("baseline", self.repository)
+        self.assertTrue(sha)
+        self.assertEqual(
+            sorted(paths),
+            ["modules/foundry_script/fs_analyzer.cpp", "modules/foundry_script/tests/fs_analyzer.cpp"],
+        )
+
+
 class GateTestCase(unittest.TestCase):
     """Drives the wrapper end to end against the fake binary, one fail-closed row per test."""
 

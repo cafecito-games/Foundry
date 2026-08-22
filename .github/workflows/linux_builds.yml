@@ -147,9 +147,12 @@ jobs:
     runs-on: ubuntu-22.04
     name: Type-completeness develop baseline
     needs: build-linux
-    # Only `develop` produces a baseline. A pull-request run that uploaded one would let a branch
-    # publish the very report it is measured against.
-    if: github.ref == 'refs/heads/develop'
+    # Only an unredirected `develop` run produces a baseline. `github.ref` describes the caller, not
+    # the tree: `pr_platform_checks.yml` is triggered by `issue_comment`, which runs on the default
+    # branch while passing a pull request's head as `checkout-ref`. Publishing from such a run would
+    # upload a branch's own report under the `develop` commit's baseline name, and a later gate would
+    # compare that branch against itself.
+    if: github.ref == 'refs/heads/develop' && inputs.checkout-ref == ''
     timeout-minutes: 30
 
     steps:
@@ -157,6 +160,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - name: Resolve the commit the baseline measures
+        run: echo "baseline_sha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Download editor binary
         uses: actions/download-artifact@v4
@@ -194,7 +200,9 @@ jobs:
       - name: Upload baseline reports
         uses: actions/upload-artifact@v4
         with:
-          name: type-completeness-baseline-${{ github.sha }}
+          # Named after the commit that was actually checked out, so the gate that downloads it by
+          # merge base can never receive a report of a different tree.
+          name: type-completeness-baseline-${{ env.baseline_sha }}
           path: baseline/
           retention-days: 30
 
@@ -249,6 +257,7 @@ jobs:
             --output-dir type-completeness \
             --scratch "$FOUNDRY_TEST_SCRATCH/presubmit" \
             --baseline-dir baseline \
+            --ledger-dir modules/foundry_script/tests/type_completeness/findings \
             --merge-base-ref origin/develop
 
       - name: Upload gate artifacts
