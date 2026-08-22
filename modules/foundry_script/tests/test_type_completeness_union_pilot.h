@@ -32,6 +32,7 @@
 
 #include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_cache.h"
+#include "fs_type_completeness_census.h"
 #include "fs_type_completeness_json.h"
 #include "fs_type_completeness_runner.h"
 #include "fs_type_completeness_union_adapter.h"
@@ -828,7 +829,7 @@ static PackedStringArray union_pilot_timing_stages() {
 static void check_union_pilot_census(const Dictionary &p_report) {
 	REQUIRE(p_report.has("census"));
 	const Dictionary census = p_report["census"];
-	for (const String &member : { "covered", "uncovered", "unsupported", "quality_deferred" }) {
+	for (const String &member : FSCompletenessCensus::summary_count_members()) {
 		CAPTURE(member);
 		REQUIRE(census.has(member));
 		CHECK_EQ(Variant(census[member]).get_type(), Variant::FLOAT);

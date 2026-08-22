@@ -126,9 +126,13 @@ public:
 	// mistaken for an absent one. Returns ERR_INVALID_DATA when any message was appended.
 	static Error load(const String &p_root, FSCompletenessCensusSummary &r_summary, Vector<String> &r_errors);
 
-	// The report document of a summary: the four status counts as report numbers and one record per
-	// entry, in summary order.
+	// The report document of a summary: one count per coverage status as a report number, and one
+	// record per entry, in summary order.
 	static Dictionary summary_report(const FSCompletenessCensusSummary &p_summary);
+
+	// The count members a summary report carries, in status order. Named here rather than spelled by
+	// each consumer, so nothing can check a member the producer does not write.
+	static Vector<String> summary_count_members();
 
 	// True when p_entry's witness binds to something that observes it: a registered doctest case, a
 	// tracked fixture, or exactly one cell of a registered rule family. r_detail explains a refusal.

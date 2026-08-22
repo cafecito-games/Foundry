@@ -1460,7 +1460,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
 
 		const Dictionary report = FSCompletenessCensus::summary_report(summary);
-		for (const String &member : { "covered", "uncovered", "unsupported", "quality_deferred" }) {
+		for (const String &member : FSCompletenessCensus::summary_count_members()) {
 			CAPTURE(member);
 			REQUIRE(report.has(member));
 			CHECK_EQ(Variant(report[member]).get_type(), Variant::FLOAT);

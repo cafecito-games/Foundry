@@ -972,12 +972,33 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	return OK;
 }
 
+Vector<String> FSCompletenessCensus::summary_count_members() {
+	return implemented_vocabulary<CoverageStatus>(coverage_status_id);
+}
+
 Dictionary FSCompletenessCensus::summary_report(const FSCompletenessCensusSummary &p_summary) {
 	Dictionary report;
-	report["covered"] = double(p_summary.covered);
-	report["uncovered"] = double(p_summary.uncovered);
-	report["unsupported"] = double(p_summary.unsupported);
-	report["quality_deferred"] = double(p_summary.quality_deferred);
+	for (int value = 0; value < int(CoverageStatus::MAX); value++) {
+		const CoverageStatus status = CoverageStatus(value);
+		int count = 0;
+		switch (status) {
+			case CoverageStatus::COVERED:
+				count = p_summary.covered;
+				break;
+			case CoverageStatus::UNCOVERED:
+				count = p_summary.uncovered;
+				break;
+			case CoverageStatus::UNSUPPORTED:
+				count = p_summary.unsupported;
+				break;
+			case CoverageStatus::QUALITY_DEFERRED:
+				count = p_summary.quality_deferred;
+				break;
+			case CoverageStatus::MAX:
+				continue;
+		}
+		report[coverage_status_id(status)] = double(count);
+	}
 	Array entries;
 	for (const FSCompletenessCoverageEntry &entry : p_summary.entries) {
 		Dictionary record;
