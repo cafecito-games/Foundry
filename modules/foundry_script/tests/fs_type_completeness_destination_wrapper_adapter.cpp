@@ -109,7 +109,6 @@ static const DestinationShape destination_shapes[] = {
 			"trait_witness" },
 };
 
-
 // One write boundary: the declarations it needs and the statements that carry `wrapped` across it
 // into `transported`. DESTINATION and DEFAULT are replaced with the destination's spelling and its
 // initializer.
@@ -220,7 +219,6 @@ static const CensusWitnessShape census_witness_shapes[] = {
 			"var _census_use: Variant = census_exported" },
 	{ "specialization_evidence.evidence_type_arguments", census_arguments_witness, census_arguments_use },
 };
-
 
 static const DestinationShape *find_destination_shape(const String &p_leaf) {
 	for (const DestinationShape &shape : destination_shapes) {

@@ -33,9 +33,9 @@
 #include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_cache.h"
 #include "fs_type_completeness_census.h"
+#include "fs_type_completeness_destination_wrapper_adapter.h"
 #include "fs_type_completeness_json.h"
 #include "fs_type_completeness_runner.h"
-#include "fs_type_completeness_destination_wrapper_adapter.h"
 
 #include "../fs_analyzer.h"
 #include "../fs_parser.h"
