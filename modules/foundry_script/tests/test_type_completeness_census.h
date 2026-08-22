@@ -1091,6 +1091,50 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			CHECK_MESSAGE(census_errors_mention(errors, "names no owning issue"), String(" | ").join(errors));
 		}
 
+		SUBCASE("a malformed exemption list is refused rather than read as no exemption") {
+			// unsupported.json decides what coverage.json may exempt. Reading a malformed one as an
+			// empty list would relax that rule silently on a census that exempts nothing today.
+			tree.write_file("catalog/census/unsupported.json",
+					"{ \"schema_version\": 1, \"entries\": \"not an array\" }\n");
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "unsupported.json:$.entries: must be an array"),
+					String(" | ").join(errors));
+			CHECK(summary.entries.is_empty());
+		}
+
+		SUBCASE("an exemption without an executable negative witness is refused") {
+			Vector<String> read_errors;
+			Variant unsupported_data;
+			REQUIRE_MESSAGE(census_read_json("unsupported.json", unsupported_data, read_errors),
+					String(" | ").join(read_errors));
+			Dictionary document = Dictionary(unsupported_data).duplicate(true);
+			Array entries = document["entries"];
+			Dictionary entry = entries[0];
+			entry["witnesses"] = Array();
+			entries[0] = entry;
+			document["entries"] = entries;
+			tree.write_file("catalog/census/unsupported.json", JSON::stringify(document, "\t") + "\n");
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "carries no witness"), String(" | ").join(errors));
+		}
+
+		SUBCASE("a malformed policy matrix is refused rather than read as a shorter matrix") {
+			// A skipped policy entry would shrink the set of pairs coverage.json has to carry, so the
+			// document that decides completeness may not be read permissively.
+			tree.write_file("catalog/census/policies.json",
+					"{ \"schema_version\": 1, \"entries\": [ \"not an object\" ] }\n");
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "policies.json:$.entries[0]: must be an object"),
+					String(" | ").join(errors));
+		}
+
 		SUBCASE("a malformed document is refused rather than read as an absent census") {
 			tree.write_file("catalog/census/coverage.json", "{ \"schema_version\": 1, \"entries\": [ }\n");
 			Vector<String> errors;

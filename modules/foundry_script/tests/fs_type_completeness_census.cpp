@@ -213,6 +213,27 @@ HashSet<String> schema_vocabulary(const Dictionary &p_schema, const String &p_ke
 	return census_string_set(census_string_array(p_schema, p_key));
 }
 
+// Binds r_entries to p_document's p_key member when it is an array of objects. A member of another
+// type, or an element that is not an object, is a defect of the document rather than a shorter list:
+// skipping it would quietly relax whatever rule the list decides.
+bool require_object_array(const Dictionary &p_document, const String &p_key, const String &p_member_path,
+		Array &r_entries, Vector<String> &r_errors) {
+	const Variant &value = p_document.get(p_key, Variant());
+	if (value.get_type() != Variant::ARRAY) {
+		r_errors.push_back(vformat("%s: must be an array", p_member_path));
+		return false;
+	}
+	const Array entries = value;
+	for (int index = 0; index < entries.size(); index++) {
+		if (entries[index].get_type() != Variant::DICTIONARY) {
+			r_errors.push_back(vformat("%s[%d]: must be an object", p_member_path, index));
+			return false;
+		}
+	}
+	r_entries = entries;
+	return true;
+}
+
 String policy_pair_key(const String &p_representation, const String &p_child_slot, const String &p_surface) {
 	return p_representation + "::" + p_child_slot + "::" + p_surface;
 }
@@ -376,25 +397,83 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	// executable negative witnesses, so the shared vocabulary must not admit it there.
 	witness_kinds.insert(FAMILY_CASE_WITNESS_KIND);
 
+	// The pair matrix and the exemption list decide what coverage.json must contain and what it may
+	// exempt, so a malformed one of either is refused here rather than read as a shorter matrix or as
+	// an absent exemption. Skipping a malformed entry would silently relax both rules at once.
+	const String policies_path = census_directory(p_root).path_join("policies.json");
 	HashSet<String> declared_pairs;
 	HashSet<String> required_pairs;
-	for (const Dictionary &entry : census_dictionary_array(policies, "entries")) {
-		const String key = policy_pair_key(census_string(entry, "representation"),
-				census_string(entry, "child_slot"), census_string(entry, "surface"));
+	Array policy_entries;
+	if (!require_object_array(policies, "entries", policies_path + ":$.entries", policy_entries, r_errors)) {
+		return ERR_INVALID_DATA;
+	}
+	for (int index = 0; index < policy_entries.size(); index++) {
+		const Dictionary entry = policy_entries[index];
+		const String representation = census_string(entry, "representation");
+		const String child_slot = census_string(entry, "child_slot");
+		const String surface = census_string(entry, "surface");
+		const String policy = census_string(entry, "policy");
+		if (representation.is_empty() || child_slot.is_empty() || surface.is_empty() || policy.is_empty()) {
+			r_errors.push_back(vformat("%s:$.entries[%d]: names no representation, child slot, surface, and policy",
+					policies_path, index));
+			continue;
+		}
+		const String key = policy_pair_key(representation, child_slot, surface);
 		declared_pairs.insert(key);
-		if (census_string(entry, "policy") != "not_applicable") {
+		if (policy != "not_applicable") {
 			required_pairs.insert(key);
 		}
 	}
 	if (required_pairs.is_empty()) {
-		r_errors.push_back("census/policies.json:$.entries: no operative policy pair is declared");
+		r_errors.push_back(vformat("%s:$.entries: no operative policy pair is declared", policies_path));
 	}
 
+	const String unsupported_path = census_directory(p_root).path_join("unsupported.json");
+	const HashSet<String> witness_statuses = schema_vocabulary(schema, "witness_statuses");
 	HashSet<String> witnessed_unsupported_representations;
-	for (const Dictionary &entry : census_dictionary_array(unsupported, "entries")) {
-		for (const Dictionary &witness : census_dictionary_array(entry, "witnesses")) {
-			if (census_string(witness, "status") == "present") {
-				witnessed_unsupported_representations.insert(census_string(entry, "representation"));
+	Array unsupported_entries;
+	if (!require_object_array(
+				unsupported, "entries", unsupported_path + ":$.entries", unsupported_entries, r_errors)) {
+		return ERR_INVALID_DATA;
+	}
+	for (int index = 0; index < unsupported_entries.size(); index++) {
+		const Dictionary entry = unsupported_entries[index];
+		const String entry_path = vformat("%s:$.entries[%d]", unsupported_path, index);
+		const String representation = census_string(entry, "representation");
+		if (representation.is_empty()) {
+			r_errors.push_back(vformat("%s: names no representation", entry_path));
+			continue;
+		}
+		Array witnesses;
+		if (!require_object_array(entry, "witnesses", entry_path + ".witnesses", witnesses, r_errors)) {
+			continue;
+		}
+		if (witnesses.is_empty()) {
+			r_errors.push_back(vformat("%s.witnesses: an unsupported configuration carries no witness", entry_path));
+			continue;
+		}
+		for (int witness_index = 0; witness_index < witnesses.size(); witness_index++) {
+			const Dictionary witness = witnesses[witness_index];
+			const String witness_path = vformat("%s.witnesses[%d]", entry_path, witness_index);
+			const String kind = census_string(witness, "kind");
+			if (!witness_kinds.has(kind) || kind == FAMILY_CASE_WITNESS_KIND) {
+				// A family case observes a matrix cell, which is not an executable negative witness.
+				r_errors.push_back(vformat("%s.kind: '%s' is not an executable negative-witness kind",
+						witness_path, kind));
+				continue;
+			}
+			const String status = census_string(witness, "status");
+			if (!witness_statuses.has(status)) {
+				r_errors.push_back(vformat("%s.status: '%s' is outside the witness-status vocabulary",
+						witness_path, status));
+				continue;
+			}
+			if (census_string(witness, "reference").is_empty()) {
+				r_errors.push_back(vformat("%s.reference: a witness carries no reference", witness_path));
+				continue;
+			}
+			if (status == "present") {
+				witnessed_unsupported_representations.insert(representation);
 			}
 		}
 	}
