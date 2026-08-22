@@ -125,9 +125,12 @@ python3 scripts/type_completeness/presubmit.py \
   --baseline-dir baseline
 ```
 
-It writes `selection.json`, one runner report per family below `--scratch`, `comparison.json`, and
-`verdict.json` into `--output-dir`, and the same four documents come out of a CI run and a local run on the
-same inputs, `timings` aside. `verdict.json` carries a digest over the selection, the families run, the
+It writes `selection.json`, one `report-<family>.json` per family it ran, `comparison.json`, and
+`verdict.json` into `--output-dir`, and the same documents come out of a CI run and a local run on the same
+inputs, `timings` aside. The runner itself writes below `--scratch`, which defaults to
+`$FOUNDRY_TEST_SCRATCH/type-completeness-presubmit`, because the runner refuses a report path outside the
+test scratch space; each published report is copied out so the artifact carries the evidence behind the
+verdict. `verdict.json` carries a digest over the selection, the families run, the
 blocking and known-mismatch identities, the baseline state, and the state itself - never over timings, paths,
 run ids, or timestamps.
 

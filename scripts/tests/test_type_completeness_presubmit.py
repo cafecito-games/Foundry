@@ -18,14 +18,19 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from scripts.type_completeness import comparator, ledger, report  # noqa: E402
-from scripts.type_completeness import presubmit  # noqa: E402
+from scripts.type_completeness import (  # noqa: E402
+    comparator,
+    ledger,
+    presubmit,  # noqa: E402
+    report,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "type_completeness"
 FAKE_BINARY = Path(__file__).resolve().parent / "type_completeness_fake_binary.py"
@@ -295,25 +300,22 @@ class GateTests(GateTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(verdict["baseline_state"], "present")
         self.assertEqual(verdict["families_run"], [FAMILY])
-        for name in ("selection.json", "comparison.json", "verdict.json"):
+        # The artifact carries the evidence behind the verdict, not only the verdict.
+        for name in ("selection.json", "comparison.json", "verdict.json", f"report-{FAMILY}.json"):
             self.assertTrue((output / name).exists(), name)
 
     def test_a_new_failure_blocks(self) -> None:
         self.write_report(failed_report())
         baseline = self.work / "baseline"
         self.write_report(runner_report(), directory=baseline)
-        code, verdict, _ = self.run_gate(
-            baseline_dir=baseline, environment={"FOUNDRY_FAKE_RUN_EXIT": "1"}
-        )
+        code, verdict, _ = self.run_gate(baseline_dir=baseline, environment={"FOUNDRY_FAKE_RUN_EXIT": "1"})
         self.assertEqual(verdict["state"], "blocked")
         self.assertEqual(code, 1)
         self.assertTrue(verdict["blocking_comparison_ids"])
 
     def test_a_missing_baseline_makes_every_failure_new(self) -> None:
         self.write_report(failed_report())
-        code, verdict, _ = self.run_gate(
-            baseline_dir=self.work / "absent", environment={"FOUNDRY_FAKE_RUN_EXIT": "1"}
-        )
+        code, verdict, _ = self.run_gate(baseline_dir=self.work / "absent", environment={"FOUNDRY_FAKE_RUN_EXIT": "1"})
         self.assertEqual(verdict["baseline_state"], "missing")
         self.assertEqual(verdict["state"], "blocked")
         self.assertEqual(code, 1)
@@ -378,7 +380,7 @@ class GateTests(GateTestCase):
         self.assertEqual(code, 4)
         # The broad core is inside the families the selector reported, so it still ran and published.
         self.assertEqual(verdict["families_run"], [FAMILY])
-        self.assertTrue((output / "scratch" / FAMILY / "report.json").exists())
+        self.assertTrue((output / f"report-{FAMILY}.json").exists())
 
     def test_a_change_set_that_maps_to_nothing_selects_nothing(self) -> None:
         code, verdict, output = self.run_gate(selection_fixture="selection_none.json")
@@ -441,12 +443,10 @@ class GateTests(GateTestCase):
         gate.ledger_dir = None
         gate.provisional_dir = None
         gate.capabilities = CATALOG / "capabilities.json"
-        gate.now = None
+        gate.now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         evaluation = gate.evaluate(artifacts, ["some_other_family"])
         self.assertEqual(evaluation["blocking_comparison_ids"], [])
-        self.assertEqual(
-            [entry["family"] for entry in evaluation["out_of_slice_failures"]], [FAMILY] * len(artifacts)
-        )
+        self.assertEqual([entry["family"] for entry in evaluation["out_of_slice_failures"]], [FAMILY] * len(artifacts))
         self.assertEqual(gate.verdicts, [])
 
     def test_an_unchanged_failure_without_any_ledger_authority_blocks(self) -> None:
@@ -454,9 +454,7 @@ class GateTests(GateTestCase):
         self.write_report(document)
         baseline = self.work / "baseline"
         self.write_report(document, directory=baseline)
-        code, verdict, _ = self.run_gate(
-            baseline_dir=baseline, environment={"FOUNDRY_FAKE_RUN_EXIT": "1"}
-        )
+        code, verdict, _ = self.run_gate(baseline_dir=baseline, environment={"FOUNDRY_FAKE_RUN_EXIT": "1"})
         self.assertEqual(verdict["state"], "blocked")
         self.assertEqual(code, 1)
         self.assertTrue(any("conflicting" in reason for reason in verdict["reasons"]))

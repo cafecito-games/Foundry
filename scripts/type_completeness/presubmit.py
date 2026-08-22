@@ -19,6 +19,8 @@ from __future__ import annotations
 import argparse
 import enum
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -40,7 +42,7 @@ SELECTION_SCHEMA_VERSION = 1
 
 # Seconds allowed on top of the runner's own budget before the wrapper stops waiting. The runner
 # enforces the budget itself and republishes its reports when it crosses it; this deadline only covers
-# a child that stopped honouring its own budget, so it is a margin rather than a second policy.
+# a child that stopped honoring its own budget, so it is a margin rather than a second policy.
 RUNNER_GRACE_SECONDS = 30
 
 
@@ -225,6 +227,11 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 
+def _default_scratch_root(output_dir: Path) -> Path:
+    configured = os.environ.get("FOUNDRY_TEST_SCRATCH", "")
+    return Path(configured) / "type-completeness-presubmit" if configured else output_dir / "scratch"
+
+
 def _run(command: Sequence[str], timeout: Optional[float] = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(command),
@@ -241,10 +248,8 @@ def load_presubmit_budget(budgets_path: Path) -> int:
     except (OSError, ValueError) as error:
         raise PresubmitError(f"cannot read budgets document {budgets_path}: {error}") from error
     value = data.get("presubmit_hard_timeout_seconds") if isinstance(data, Mapping) else None
-    if not report.is_integral_number(value) or int(value) <= 0:
-        raise PresubmitError(
-            f"budgets document {budgets_path} has no positive 'presubmit_hard_timeout_seconds'"
-        )
+    if not report.is_integral_number(value) or not isinstance(value, (int, float)) or int(value) <= 0:
+        raise PresubmitError(f"budgets document {budgets_path} has no positive 'presubmit_hard_timeout_seconds'")
     return int(value)
 
 
@@ -270,7 +275,9 @@ class Gate:
         self.output_dir = Path(arguments.output_dir)
         self.repository_root = Path(arguments.repository_root).resolve()
         self.catalog = Path(arguments.catalog)
-        self.scratch = Path(arguments.scratch) if arguments.scratch else self.output_dir / "scratch"
+        # The runner only writes below the configured test scratch space and refuses a report path
+        # outside it, so the default follows that root rather than the output directory.
+        self.scratch = Path(arguments.scratch) if arguments.scratch else _default_scratch_root(self.output_dir)
         self.configuration = arguments.configuration
         self.baseline_dir = Path(arguments.baseline_dir) if arguments.baseline_dir else None
         self.ledger_dir = Path(arguments.ledger_dir) if arguments.ledger_dir else None
@@ -350,20 +357,47 @@ class Gate:
         try:
             completed = _run(command, timeout=self.budget_seconds + self.grace_seconds)
         except subprocess.TimeoutExpired:
-            return report_path, Verdict.TIMEOUT, f"family {family} exceeded the wrapper deadline"
+            # A partial report is still evidence, so whatever the run managed to publish is published.
+            return (
+                self.publish_report(family, report_path),
+                Verdict.TIMEOUT,
+                f"family {family} exceeded the wrapper deadline",
+            )
         if completed.returncode == RunnerExit.TIMEOUT:
-            return report_path, Verdict.TIMEOUT, f"family {family} crossed its {self.budget_seconds}s budget"
+            return (
+                self.publish_report(family, report_path),
+                Verdict.TIMEOUT,
+                f"family {family} crossed its {self.budget_seconds}s budget",
+            )
         if completed.returncode == RunnerExit.STRUCTURAL_FAILURE:
-            return report_path, Verdict.STRUCTURAL_FAILURE, f"family {family} reported a structural failure"
+            return (
+                self.publish_report(family, report_path),
+                Verdict.STRUCTURAL_FAILURE,
+                f"family {family} reported a structural failure",
+            )
         if completed.returncode not in (RunnerExit.PASSED, RunnerExit.PRODUCT_MISMATCH):
             # An exit code outside the runner's vocabulary says nothing about the product, so it is read
             # as a broken run rather than as a clean one.
             return (
-                report_path,
+                self.publish_report(family, report_path),
                 Verdict.STRUCTURAL_FAILURE,
                 f"family {family} exited {completed.returncode}, which is outside the runner's exit codes",
             )
-        return report_path, None, ""
+        return self.publish_report(family, report_path), None, ""
+
+    def publish_report(self, family: str, report_path: Path) -> Path:
+        """Copy a published report next to the other gate documents and read it from there.
+
+        The runner writes below the test scratch space, which the gate does not own and CI does not
+        upload. Every report the run produced therefore lands in the output directory, so the artifact
+        carries the evidence behind the verdict rather than a verdict with no evidence.
+        """
+        if not report_path.exists():
+            return report_path
+        destination = self.output_dir / f"report-{family}.json"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(report_path, destination)
+        return destination
 
     def baseline_for(self, family: str) -> tuple[Path, BaselineState, str]:
         """Resolve the `develop` side of one family, materializing the absent-baseline report when needed."""
@@ -596,7 +630,7 @@ def _publish(
     baseline_state = _aggregate_baseline_state(baseline_states)
     # Exactly the fields a rerun on the same branch and baseline must reproduce. Timings, artifact
     # paths, run ids, and the merge-base commit are all excluded: none of them is a conclusion.
-    digested = {
+    digested: dict[str, Any] = {
         "selection": selection.to_dict(),
         "families_run": list(families_run),
         "blocking_comparison_ids": list(evaluation["blocking_comparison_ids"]),
@@ -604,7 +638,7 @@ def _publish(
         "baseline_state": baseline_state.value,
         "state": verdict.value,
     }
-    payload = dict(digested)
+    payload: dict[str, Any] = dict(digested)
     payload.update(
         {
             "schema_version": VERDICT_SCHEMA_VERSION,
