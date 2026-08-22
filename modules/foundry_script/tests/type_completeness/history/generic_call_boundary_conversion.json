@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "generic_call_boundary_conversion",
+  "source": {
+    "kind": "issue",
+    "number": 2256,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2256",
+    "title": "An implicitly converted numeric argument is not converted at the generic call boundary"
+  },
+  "fix": {
+    "pull_request": 2396,
+    "commit": "d6be8bcb293142fa8cae10cc0b64c5d4da4c0ce1"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/runtime/features/generic_call_argument_converted_width.fs",
+    "probe": "`identity[int](f)` with `f: float = 7.5` observes `2 7` (TYPE_INT, truncated) inside the generic body."
+  },
+  "mapping": {
+    "family": "generic_call_boundary"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "Conversion at the generic call boundary is a call-boundary family concern.",
+  "deferral": {
+    "family": "generic_call_boundary",
+    "reason": "adapter_not_registered"
+  }
+}

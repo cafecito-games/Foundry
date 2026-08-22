@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "description": "Closed vocabularies of the mined-history records. Every record in this directory is one mined typing escape; the file name equals item_id plus .json.",
+  "item_id_pattern": "^[a-z0-9_]{1,64}$",
+  "source_kinds": [
+    "issue"
+  ],
+  "reverification_results": [
+    "still_failing",
+    "fixed",
+    "premise_false"
+  ],
+  "dispositions": [
+    "seeded",
+    "expanded",
+    "discarded",
+    "deferred_to_family"
+  ],
+  "deferral_reasons": [
+    "adapter_not_registered",
+    "domain_axis_missing"
+  ],
+  "required_members": [
+    "schema_version",
+    "item_id",
+    "source",
+    "reverification",
+    "mapping",
+    "disposition",
+    "rationale"
+  ],
+  "disposition_members": {
+    "seeded": [
+      "seed"
+    ],
+    "expanded": [
+      "mapping.case_coordinates",
+      "mapping.required_dimensions"
+    ],
+    "discarded": [],
+    "deferred_to_family": [
+      "deferral"
+    ]
+  }
+}

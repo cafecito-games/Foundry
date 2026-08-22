@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "reflective_tuple_type_parameter",
+  "source": {
+    "kind": "issue",
+    "number": 2286,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2286",
+    "title": "A reflective write to a generic tuple member leaves the type-parameter element gradual"
+  },
+  "fix": {
+    "pull_request": 2391,
+    "commit": "c76968a2a28a9e738847847e797e50e9296345a8"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/runtime/errors/tuple_generic_member_reflective_write_nested.fs",
+    "probe": "`Crate[String].set(\"pair\", (7, 8))` is rejected (`Trying to assign a value of type \"Array\" to a variable of type \"(int, String)\"`) and the member keeps its prior value."
+  },
+  "mapping": {
+    "family": "reflective_write_boundary"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "Type-parameter resolution at the reflective write boundary of tuple members is a reflective-write family concern.",
+  "deferral": {
+    "family": "reflective_write_boundary",
+    "reason": "adapter_not_registered"
+  }
+}

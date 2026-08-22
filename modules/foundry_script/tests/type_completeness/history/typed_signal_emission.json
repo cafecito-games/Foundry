@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "item_id": "typed_signal_emission",
+  "source": {
+    "kind": "issue",
+    "number": 2466,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2466",
+    "title": "Typed signal parameters are not enforced at emission for any parameter type"
+  },
+  "fix": null,
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "still_failing",
+    "evidence_path": "modules/foundry_script/tests/type_completeness/history/evidence/typed_signal_emission.fs",
+    "probe": "`reported.emit(loose)` with a Variant String into `signal reported(value: int)` delivers the String (`got not an int type 4`)."
+  },
+  "mapping": {
+    "family": "signal_emission_boundary"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "Signal emission is a value-flow boundary with no family adapter yet.",
+  "deferral": {
+    "family": "signal_emission_boundary",
+    "reason": "adapter_not_registered"
+  }
+}

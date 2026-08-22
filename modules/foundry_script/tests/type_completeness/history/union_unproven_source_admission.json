@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "item_id": "union_unproven_source_admission",
+  "source": {
+    "kind": "issue",
+    "number": 2439,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2439",
+    "title": "Union admission soundness: a union slot accepts and stores values that satisfy no alternative"
+  },
+  "fix": {
+    "pull_request": 2469,
+    "commit": "f42825c86d62dcb7cdaedbb6ba4357303b634f9d"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/runtime/errors/type_union_membership_container_literal.fs",
+    "probe": "A hard Variant holding a RefCounted passed to `take(v: int | String)` now fails the runtime membership test (`Argument 1 has type \"Box\", but the parameter requires \"String | int\"`)."
+  },
+  "mapping": {
+    "family": "union_destination_membership",
+    "case_coordinates": {
+      "destination": "union",
+      "source_proof": "erased",
+      "boundary": "argument_binding"
+    },
+    "required_dimensions": [
+      "analysis",
+      "runtime_obligation"
+    ]
+  },
+  "disposition": "expanded",
+  "rationale": "The unproven_source_requires_membership exception derives runtime_obligation=union_membership_check for every unproven source into a union destination; the matrix observes the checked store on both surfaces."
+}

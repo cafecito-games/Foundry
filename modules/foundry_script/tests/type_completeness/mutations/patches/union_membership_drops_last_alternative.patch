@@ -1,0 +1,24 @@
+diff --git a/modules/foundry_script/fs_vm.cpp b/modules/foundry_script/fs_vm.cpp
+index 3bd924aee6..9d68b1a5f5 100644
+--- a/modules/foundry_script/fs_vm.cpp
++++ b/modules/foundry_script/fs_vm.cpp
+@@ -2292,7 +2292,8 @@ bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant
+ 	// Walked here rather than through the union's own `is_type()` because the accepting alternative
+ 	// decides what the slot stores, and that answer is not the same for all of them: a tuple owes a
+ 	// carrier guarantee the others do not.
+-	for (const FSDataType &alternative : p_union.union_alternatives) {
++	for (int alternative_index = 0; alternative_index + 1 < p_union.union_alternatives.size(); alternative_index++) {
++		const FSDataType &alternative = p_union.union_alternatives[alternative_index];
+ 		if (!alternative.is_type(p_value)) {
+ 			continue;
+ 		}
+@@ -2309,7 +2310,8 @@ bool fs_union_accepts(const FSDataType &p_union, const Variant &p_value, Variant
+ 	// Pass two: no alternative describes the value as it stands, so the conversions a union performs are
+ 	// attempted -- again in canonical order, so the earliest alternative that can hold the value wins.
+ 	const Variant::Type carrier = p_value.get_type();
+-	for (const FSDataType &alternative : p_union.union_alternatives) {
++	for (int alternative_index = 0; alternative_index + 1 < p_union.union_alternatives.size(); alternative_index++) {
++		const FSDataType &alternative = p_union.union_alternatives[alternative_index];
+ 		if (fs_numeric_alternative_converts(alternative, p_value, r_value)) {
+ 			return true;
+ 		}

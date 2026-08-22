@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "item_id": "union_callable_invariant_identity",
+  "source": {
+    "kind": "issue",
+    "number": 2441,
+    "url": "https://github.com/cafecito-games/Foundry/issues/2441",
+    "title": "Shallow union identity in the invariant comparators ignores callable signatures"
+  },
+  "fix": {
+    "pull_request": 2458,
+    "commit": "5704120ea42dffaf3bb313f5804257642a346155"
+  },
+  "reverification": {
+    "commit": "ea7eb0e37b35cc72f1ef5ef510234575052997e3",
+    "result": "fixed",
+    "evidence_path": "modules/foundry_script/tests/scripts/analyzer/errors/type_union_invariant_argument_signature.fs",
+    "probe": "Two unions differing only in a callable alternative's signature are no longer identical in an invariant type-argument slot."
+  },
+  "mapping": {
+    "family": "generic_invariance"
+  },
+  "disposition": "deferred_to_family",
+  "rationale": "Invariant identity of type arguments is a generic-invariance concern; the union family measures destination membership, not argument identity.",
+  "deferral": {
+    "family": "generic_invariance",
+    "reason": "adapter_not_registered"
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "recipe_id": "union_membership_drops_last_alternative",
+  "description": "fs_union_accepts stops asking the last alternative in canonical order on both passes, so a value admitted only by that alternative is rejected at every union store and binding.",
+  "escape_class": "omit_composite_child_from_traversal",
+  "expected_detectors": [
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "gradual",
+        "boundary": "argument_binding",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "gradual",
+        "boundary": "argument_binding",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "gradual",
+        "boundary": "reflective_write",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "gradual",
+        "boundary": "reflective_write",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "erased",
+        "boundary": "argument_binding",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "erased",
+        "boundary": "argument_binding",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "erased",
+        "boundary": "reflective_write",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "erased",
+        "boundary": "reflective_write",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "variant",
+        "boundary": "argument_binding",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "variant",
+        "boundary": "argument_binding",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "variant",
+        "boundary": "reflective_write",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "union_destination_membership",
+      "case_coordinates": {
+        "destination": "union",
+        "source_proof": "variant",
+        "boundary": "reflective_write",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    }
+  ]
+}
