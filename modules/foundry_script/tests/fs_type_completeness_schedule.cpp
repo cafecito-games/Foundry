@@ -84,6 +84,9 @@ Error FSCompletenessScheduleController::arrive(const String &p_name) {
 	if (index == nullptr) {
 		return ERR_INVALID_PARAMETER;
 	}
+	if (abandoned) {
+		return ERR_LOCKED;
+	}
 	recorded_trace.push_back("arrive:" + p_name);
 	return OK;
 }
@@ -93,6 +96,13 @@ Error FSCompletenessScheduleController::release(const String &p_name) {
 	const int *index = barrier_index.getptr(p_name);
 	if (index == nullptr) {
 		return ERR_INVALID_PARAMETER;
+	}
+	// Abandonment is terminal. A schedule that could not be carried out cannot be resumed, and a
+	// release accepted afterwards would release a barrier whose waiters the trace already records as
+	// timed out - so the status a wait returns and the trace the cell retains could disagree, and which
+	// of the two won would depend on the order the machine happened to wake threads in.
+	if (abandoned) {
+		return ERR_LOCKED;
 	}
 	// Out-of-order and repeated releases are refused rather than tolerated: the release order is what
 	// makes the interleaving the manifest declares the one the cell actually observes.
@@ -116,10 +126,21 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 	}
 	Barrier &barrier = barriers[*index];
 	while (true) {
+		// The outcome of a participant that was parked when the schedule was abandoned was decided
+		// then, under this lock, at the same moment its timeout was written to the trace. Consuming
+		// that decision here rather than re-deriving one is what makes the status a wait returns and
+		// the record the trace holds the same fact rather than two readings of the same state.
+		if (barrier.decided_timeouts > 0) {
+			barrier.decided_timeouts--;
+			return WAIT_TIMED_OUT;
+		}
 		if (barrier.released) {
 			return WAIT_RELEASED;
 		}
 		if (abandoned) {
+			// The schedule was already abandoned when this participant asked, so no abandonment could
+			// have decided the wait it is about to lose. The record it owes the trace is its own.
+			recorded_trace.push_back("timeout:" + p_name);
 			return WAIT_TIMED_OUT;
 		}
 		// A participant waiting for a barrier that is not released yet cannot release anything, so a
@@ -140,18 +161,16 @@ FSCompletenessScheduleController::WaitOutcome FSCompletenessScheduleController::
 						!signal.wait_for(lock, p_budget_msec - elapsed_msec);
 			}
 			barrier.waiting--;
-			if (barrier.released) {
-				return WAIT_RELEASED;
-			}
-			if (abandoned) {
-				return WAIT_TIMED_OUT;
+			// Whatever happened while this participant was parked, the head of the loop is the only
+			// place an outcome is read, so anything it can decide takes precedence over a budget that
+			// ran out at the same time.
+			if (!decided || barrier.decided_timeouts > 0 || barrier.released || abandoned) {
+				continue;
 			}
 		}
-		if (decided) {
-			recorded_trace.push_back("timeout:" + p_name);
-			abandon_locked(true);
-			return WAIT_TIMED_OUT;
-		}
+		recorded_trace.push_back("timeout:" + p_name);
+		abandon_locked(true);
+		return WAIT_TIMED_OUT;
 	}
 }
 
@@ -181,6 +200,25 @@ void FSCompletenessScheduleController::abandon_locked(bool p_timed_out) {
 		return;
 	}
 	abandoned = true;
+	if (p_timed_out) {
+		// Every participant parked on a barrier the schedule can no longer reach ends in a timeout, and
+		// the trace has to name the barrier each one was blocked on: that is what makes the trace a
+		// diagnosis rather than a notice. The records are appended here, in declared barrier order,
+		// rather than by each woken participant, because the order threads wake in is not the schedule's
+		// and a trace that varies between two identical runs is not evidence.
+		for (Barrier &barrier : barriers) {
+			if (barrier.released) {
+				continue;
+			}
+			for (int waiter = 0; waiter < barrier.waiting; waiter++) {
+				recorded_trace.push_back("timeout:" + barrier.name);
+			}
+			// The decision each of those records stands for, waiting to be claimed by the participant
+			// it was made about. Nothing can release the barrier afterwards, so every one of them is
+			// claimed by a wait that returns exactly what was written here.
+			barrier.decided_timeouts += barrier.waiting;
+		}
+	}
 	signal.notify_all();
 }
 

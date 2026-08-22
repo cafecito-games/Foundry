@@ -18,6 +18,7 @@
         "modules/foundry_script/fs_function.h"
       ],
       "families": [
+        "lifecycle_bytecode_export_load",
         "union_destination_membership",
         "wrapper_parity_argument_binding",
         "wrapper_parity_assignment",
@@ -98,6 +99,7 @@
         "modules/foundry_script/tests/type_completeness/partitions/"
       ],
       "families": [
+        "lifecycle_bytecode_export_load",
         "union_destination_membership",
         "wrapper_parity_argument_binding",
         "wrapper_parity_assignment",
@@ -106,6 +108,14 @@
         "wrapper_parity_proxy_write",
         "wrapper_parity_reflective_write",
         "wrapper_parity_return"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/lifecycle_bytecode_export_load.json"
+      ],
+      "families": [
+        "lifecycle_bytecode_export_load"
       ]
     }
   ],
