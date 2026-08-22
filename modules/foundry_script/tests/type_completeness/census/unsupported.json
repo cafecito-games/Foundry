@@ -1,6 +1,6 @@
 {
 	"schema_version": 1,
-	"description": "Genuinely unsupported type-representation configurations. Every entry carries a rationale grounded in a production anchor and a witness reference; an entry whose witness status is deferred is an uncovered census cell, not a pass, and is owned by the negative-witness adapters of #2477/#2478. The census validator resolves every present fixture reference against the repository and shape-checks doctest_case references (suite-qualified names); binding those names to a registered TEST_CASE follows with the #2477 adapters.",
+	"description": "Genuinely unsupported type-representation configurations. Every entry carries a rationale grounded in a production anchor and a witness reference; an entry whose witness status is deferred is an uncovered census cell, not a pass, and may never back an `unsupported` coverage entry. The census validator resolves every present fixture reference against the repository and binds every doctest_case reference to a registered case.",
 	"entries": [
 		{
 			"id": "union_member_that_is_union_or_nullable",
@@ -49,9 +49,8 @@
 			"witnesses": [
 				{
 					"kind": "doctest_case",
-					"reference": "[FoundryScript][BytecodeHardening] Corrupt and truncated buffers never crash the loader",
-					"status": "deferred",
-					"deferred_reason": "The hardening suite covers corrupt buffers broadly; a dedicated kind-byte mutation witness belongs to the negative-witness adapters of #2477."
+					"reference": "[FoundryScript][BytecodeCodec] Loader rejects a data-type kind above the highest FSDataType kind",
+					"status": "present"
 				}
 			]
 		},
@@ -62,10 +61,9 @@
 			"rationale": "callable_is_over_bound marks such a Callable so that every invocation fails rather than reading past the fixed arity (modules/foundry_script/fs_parser.h:224).",
 			"witnesses": [
 				{
-					"kind": "doctest_case",
-					"reference": "[Modules][FoundryScript][GenericTypeModel] Copy and assignment preserve every provenance and identity field",
-					"status": "deferred",
-					"deferred_reason": "The existing test proves only that the flag survives a copy; an executable invocation-failure witness belongs to the runtime adapters of #2477."
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/analyzer/errors/typed_callable_over_bound_invocation.fs",
+					"status": "present"
 				}
 			]
 		},

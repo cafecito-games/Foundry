@@ -1,0 +1,8 @@
+{
+	"families": [
+		"union_destination_membership"
+	],
+	"schema_version": 1,
+	"used_broad_core_fallback": false,
+	"validation_errors": []
+}

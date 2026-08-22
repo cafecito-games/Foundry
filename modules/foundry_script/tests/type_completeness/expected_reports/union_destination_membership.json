@@ -12304,6 +12304,1092 @@
     }
   ],
   "cell_count": 40.0,
+  "census": {
+    "covered": 23.0,
+    "entries": [
+      {
+        "child_slot": "serialized_container_element_types",
+        "issue_url": "",
+        "representation": "bytecode_serialized_type",
+        "status": "covered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip"
+        }
+      },
+      {
+        "child_slot": "serialized_container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "bytecode_serialized_type",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "serialized_type_arguments",
+        "issue_url": "",
+        "representation": "bytecode_serialized_type",
+        "status": "covered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+        }
+      },
+      {
+        "child_slot": "serialized_type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "bytecode_serialized_type",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "serialized_union_alternatives",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "bytecode_serialized_type",
+        "status": "uncovered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "serialized_union_alternatives",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "bytecode_serialized_type",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "element_types",
+        "issue_url": "",
+        "representation": "container_descriptor",
+        "status": "covered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants"
+        }
+      },
+      {
+        "child_slot": "element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "container_descriptor",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "fixed",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "member_binding_descriptor",
+        "status": "uncovered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "fixed",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "member_binding_descriptor",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "fixed",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "member_binding_descriptor",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "fixed",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "member_binding_descriptor",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "tuple_slot_shape",
+        "issue_url": "",
+        "representation": "member_binding_descriptor",
+        "status": "covered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
+        }
+      },
+      {
+        "child_slot": "tuple_slot_shape",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "member_binding_descriptor",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "tuple_slot_shape",
+        "issue_url": "",
+        "representation": "member_binding_descriptor",
+        "status": "covered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
+        }
+      },
+      {
+        "child_slot": "tuple_slot_shape",
+        "issue_url": "",
+        "representation": "member_binding_descriptor",
+        "status": "covered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "fixture",
+          "reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs"
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into container element types"
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "enum_case_payload_field_names",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "fixture",
+          "reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs"
+        }
+      },
+      {
+        "child_slot": "enum_case_payload_field_names",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "enum_case_payload_field_names",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "enum_case_payload_field_types",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "fixture",
+          "reference": "modules/foundry_script/tests/scripts/analyzer/features/type_self_enum_payload_field_nested_self_union_alternatives.fs"
+        }
+      },
+      {
+        "child_slot": "enum_case_payload_field_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "enum_case_payload_field_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_parameter_types",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
+        }
+      },
+      {
+        "child_slot": "method_parameter_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_parameter_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_parameter_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_rest_parameter_type",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "fixture",
+          "reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_rest_parameter_concrete.fs"
+        }
+      },
+      {
+        "child_slot": "method_rest_parameter_type",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_rest_parameter_type",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_rest_parameter_type",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_return_type",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
+        }
+      },
+      {
+        "child_slot": "method_return_type",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_return_type",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "method_return_type",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into type arguments"
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_parameter_bound",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "fixture",
+          "reference": "modules/foundry_script/tests/scripts/analyzer/features/generic_class_bounds.fs"
+        }
+      },
+      {
+        "child_slot": "type_parameter_bound",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_parameter_bound",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "parser_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_members",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {
+            "boundary": "argument_binding",
+            "destination": "union",
+            "source_proof": "gradual",
+            "surface": "text"
+          },
+          "family": "union_destination_membership",
+          "kind": "family_case",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_members",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "parser_data_type",
+        "status": "quality_deferred",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source"
+        }
+      },
+      {
+        "child_slot": "union_members",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info"
+        }
+      },
+      {
+        "child_slot": "union_members",
+        "issue_url": "",
+        "representation": "parser_data_type",
+        "status": "covered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {
+            "boundary": "argument_binding",
+            "destination": "union",
+            "source_proof": "variant",
+            "surface": "text"
+          },
+          "family": "union_destination_membership",
+          "kind": "family_case",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "hint_string",
+        "issue_url": "",
+        "representation": "reflection_property_info",
+        "status": "covered",
+        "surface": "analyzer",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary"
+        }
+      },
+      {
+        "child_slot": "hint_string",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "reflection_property_info",
+        "status": "uncovered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "hint_string",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "reflection_property_info",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "hint_string",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "reflection_property_info",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "hint_string",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "reflection_property_info",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "hint_string",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "reflection_property_info",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "",
+        "representation": "runtime_data_type",
+        "status": "covered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "container_element_types",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "",
+        "representation": "runtime_data_type",
+        "status": "covered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "doctest_case",
+          "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_alternatives",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "bytecode_serialization",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_alternatives",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2482",
+        "representation": "runtime_data_type",
+        "status": "uncovered",
+        "surface": "editor_tools",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_alternatives",
+        "issue_url": "",
+        "representation": "runtime_data_type",
+        "status": "covered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {
+            "boundary": "reflective_write",
+            "destination": "union",
+            "source_proof": "erased",
+            "surface": "text"
+          },
+          "family": "union_destination_membership",
+          "kind": "family_case",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_alternatives",
+        "issue_url": "",
+        "representation": "runtime_data_type",
+        "status": "covered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {
+            "boundary": "argument_binding",
+            "destination": "union",
+            "source_proof": "erased",
+            "surface": "bytecode"
+          },
+          "family": "union_destination_membership",
+          "kind": "family_case",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "union_alternatives",
+        "issue_url": "",
+        "representation": "runtime_data_type",
+        "status": "covered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {
+            "boundary": "argument_binding",
+            "destination": "union",
+            "source_proof": "erased",
+            "surface": "text"
+          },
+          "family": "union_destination_membership",
+          "kind": "family_case",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "evidence_type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "specialization_evidence",
+        "status": "uncovered",
+        "surface": "reflection",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "evidence_type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "specialization_evidence",
+        "status": "uncovered",
+        "surface": "runtime_bytecode",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      },
+      {
+        "child_slot": "evidence_type_arguments",
+        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "representation": "specialization_evidence",
+        "status": "uncovered",
+        "surface": "runtime_text",
+        "witness": {
+          "coordinates": {},
+          "family": "",
+          "kind": "",
+          "reference": ""
+        }
+      }
+    ],
+    "quality_deferred": 1.0,
+    "uncovered": 57.0,
+    "unsupported": 0.0
+  },
   "coverage_by_chain_length": {
     "0": 10.0,
     "1": 28.0,

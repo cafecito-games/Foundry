@@ -155,6 +155,41 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Selector]") {
 		CHECK(completeness_selector_strings(document["validation_errors"]).is_empty());
 	}
 
+	// A rule manifest is the definition of a family's matrix: editing it can remove or rekey cases,
+	// which is exactly the coverage regression the comparison exists to catch, so it selects its family
+	// rather than reading as a test-tree edit that scopes nothing.
+	TEST_CASE("TypeCompleteness selector selects the owning family for a rule-only change set") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_selector_rules_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		int exit_code = -1;
+		const Dictionary document = completeness_selector_parse(completeness_selector_run(tree,
+				Vector<String>({ "modules/foundry_script/tests/type_completeness/rules/union_destination_membership.json" }),
+				exit_code));
+
+		CHECK_EQ(exit_code, FSCompletenessSelectCLI::EXIT_SELECTED);
+		CHECK_EQ(bool(document["used_broad_core_fallback"]), false);
+		CHECK(completeness_selector_strings(document["families"]).has("union_destination_membership"));
+		CHECK(completeness_selector_strings(document["validation_errors"]).is_empty());
+	}
+
+	// Partitions and dimensions are shared by every family, so a change to one is broad by construction.
+	TEST_CASE("TypeCompleteness selector selects the broad core for a shared catalog change set") {
+		TemporaryProjectTree tree(
+				vformat("type_completeness_selector_catalog_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		int exit_code = -1;
+		const Dictionary document = completeness_selector_parse(completeness_selector_run(tree,
+				Vector<String>({ "modules/foundry_script/tests/type_completeness/partitions/boundary.json",
+						"modules/foundry_script/tests/type_completeness/dimensions/core.json" }),
+				exit_code));
+
+		CHECK_EQ(exit_code, FSCompletenessSelectCLI::EXIT_SELECTED);
+		CHECK_EQ(bool(document["used_broad_core_fallback"]), false);
+		CHECK(completeness_selector_strings(document["families"]).has("union_destination_membership"));
+		CHECK(completeness_selector_strings(document["validation_errors"]).is_empty());
+	}
+
 	// Nothing about a changed path is repaired: a path the map cannot interpret is reported, and the
 	// broad core runs because an uninterpretable change set cannot be scoped.
 	TEST_CASE("TypeCompleteness selector refuses a path it would have to normalize") {

@@ -144,6 +144,8 @@ CAPABILITIES = {
 }
 
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "type_completeness"
+
 _CAPABILITIES_FILE = Path(tempfile.mkdtemp(prefix="type_completeness_capabilities_")) / "capabilities.json"
 _CAPABILITIES_FILE.write_text(json.dumps(CAPABILITIES))
 
@@ -584,6 +586,44 @@ class ReportLoadingTests(unittest.TestCase):
         capability_slice = report.capability_slice_for_family(manifest, "union_destination_membership")
         self.assertEqual(capability_slice.paths, ("modules/foundry_script/fs_analyzer.cpp",))
         self.assertTrue(capability_slice.broad_core)
+
+
+class ReportCensusMemberTests(unittest.TestCase):
+    """The runner publishes the representation census inside its report.
+
+    The fixture is the document a real `foundry test completeness run` published, so these assertions are
+    about what the producer writes rather than about a shape typed out here.
+    """
+
+    def _fixture_report(self) -> dict[str, Any]:
+        document = json.loads(
+            (FIXTURES / "runner_report_union_destination_membership.json").read_text(encoding="utf-8")
+        )
+        assert isinstance(document, dict)
+        return document
+
+    def test_the_captured_report_carries_a_census_summary_the_loader_accepts(self) -> None:
+        loaded = report.load_report(self._fixture_report())
+        census = loaded.raw["census"]
+        counts = [census[member] for member in ("covered", "uncovered", "unsupported", "quality_deferred")]
+        for count in counts:
+            self.assertTrue(report.is_integral_number(count))
+        self.assertEqual(sum(int(count) for count in counts), len(census["entries"]))
+
+    def test_every_uncovered_census_entry_names_an_owning_issue(self) -> None:
+        census = self._fixture_report()["census"]
+        for entry in census["entries"]:
+            if entry["status"] in ("uncovered", "quality_deferred"):
+                self.assertTrue(entry["issue_url"], entry)
+
+    def test_an_unknown_top_level_member_is_carried_rather_than_refused(self) -> None:
+        # A report member a later runner adds must not make an older consumer refuse the document; the
+        # loader validates the members it consumes and carries the rest as evidence.
+        document = self._fixture_report()
+        document["a_member_this_consumer_does_not_know"] = {"anything": 1.0}
+        loaded = report.load_report(document)
+        self.assertIn("a_member_this_consumer_does_not_know", loaded.raw)
+        self.assertIn("census", loaded.raw)
 
 
 class ComparatorTests(unittest.TestCase):

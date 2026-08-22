@@ -148,6 +148,23 @@ struct FSCompletenessBudgets {
 	int hard_timeout_seconds_for_tier(const String &p_tier) const;
 };
 
+// How a caller asks git whether a repository-relative path is tracked. Injectable so a refusal can be
+// proven without a repository, and shared so the runner and the census ask the question one way.
+using TrackedFileProbe = Error (*)(const String &p_repository_root, const String &p_path,
+		String &r_output, int &r_exit_code);
+
+// Runs `git ls-files --error-unmatch` for p_path inside p_repository_root. Exit code 1 means the path
+// is untracked; any other non-zero code, or a non-OK return, means the question could not be asked.
+Error default_tracked_file_probe(const String &p_repository_root, const String &p_path,
+		String &r_output, int &r_exit_code);
+
+// Nearest ancestor of p_start_path that carries a `.git` entry, or an empty string.
+String find_repository_root_ancestor(const String &p_start_path);
+
+// Repository root a catalog belongs to: the catalog's own ancestor when it has one, otherwise the
+// working directory's, which is what a staged copy outside the tree resolves through.
+String find_repository_root(const String &p_catalog_root);
+
 // Marks an intentionally skipped type-completeness test visibly. A bare early return makes a skipped
 // test indistinguishable from a passing one in the suite output.
 void fs_completeness_skip(const char *p_reason);

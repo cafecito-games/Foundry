@@ -37,7 +37,9 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/math/math_funcs.h"
+#include "core/os/os.h"
 #include "core/templates/hash_set.h"
+#include "core/templates/list.h"
 
 #include "tests/test_macros.h"
 
@@ -408,6 +410,67 @@ int FSCompletenessBudgets::hard_timeout_seconds_for_tier(const String &p_tier) c
 		return scheduled_shard_hard_timeout_seconds;
 	}
 	return -1;
+}
+
+Error default_tracked_file_probe(const String &p_repository_root, const String &p_path,
+		String &r_output, int &r_exit_code) {
+	List<String> arguments;
+	arguments.push_back("-C");
+	arguments.push_back(p_repository_root);
+	arguments.push_back("ls-files");
+	arguments.push_back("--error-unmatch");
+	arguments.push_back("--");
+	arguments.push_back(p_path);
+	if (OS::get_singleton() == nullptr) {
+		return ERR_UNAVAILABLE;
+	}
+	return OS::get_singleton()->execute("git", arguments, &r_output, &r_exit_code, true);
+}
+
+String find_repository_root_ancestor(const String &p_start_path) {
+	const String canonical_start_path = TemporaryProjectTree::canonicalize_existing_path(p_start_path);
+	if (canonical_start_path.is_empty() || !DirAccess::dir_exists_absolute(canonical_start_path)) {
+		return String();
+	}
+
+	for (String current = canonical_start_path; !current.is_empty();) {
+		const String git_marker = current.path_join(".git");
+		if (FileAccess::exists(git_marker) || DirAccess::dir_exists_absolute(git_marker)) {
+			return current;
+		}
+		const String parent = current.get_base_dir();
+		if (parent == current) {
+			break;
+		}
+		current = parent;
+	}
+	return String();
+}
+
+String find_repository_root(const String &p_catalog_root) {
+	const String catalog_repository_root = find_repository_root_ancestor(p_catalog_root);
+	if (!catalog_repository_root.is_empty()) {
+		return catalog_repository_root;
+	}
+
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return String();
+	}
+	const String current_repository_root = find_repository_root_ancestor(filesystem->get_current_dir());
+	if (!current_repository_root.is_empty()) {
+		return current_repository_root;
+	}
+
+	const String canonical_catalog_root = TemporaryProjectTree::canonicalize_existing_path(p_catalog_root);
+	const String canonical_current_directory =
+			TemporaryProjectTree::canonicalize_existing_path(filesystem->get_current_dir());
+	if (canonical_current_directory == canonical_catalog_root ||
+			TemporaryProjectTree::is_strict_descendant(
+					canonical_current_directory, canonical_catalog_root)) {
+		return canonical_current_directory;
+	}
+	return String();
 }
 
 void fs_completeness_skip(const char *p_reason) {
