@@ -107,6 +107,31 @@ void schedule_standstill_second(void *p_standstill) {
 	standstill->second_outcome = standstill->controller.wait("second_barrier", 0);
 }
 
+// Two participants parked on two barriers of a schedule that is about to be abandoned, and a release
+// that arrives afterwards. The release must not be able to turn either of their decided timeouts into
+// a WAIT_RELEASED that the trace does not record.
+struct ScheduleLateRelease {
+	FSCompletenessScheduleController controller;
+	FSCompletenessScheduleController::WaitOutcome first_outcome =
+			FSCompletenessScheduleController::WAIT_RELEASED;
+	FSCompletenessScheduleController::WaitOutcome second_outcome =
+			FSCompletenessScheduleController::WAIT_RELEASED;
+	Semaphore first_started;
+	Semaphore second_started;
+};
+
+void schedule_late_release_first(void *p_late) {
+	ScheduleLateRelease *late = static_cast<ScheduleLateRelease *>(p_late);
+	late->first_started.post();
+	late->first_outcome = late->controller.wait("first_barrier", 0);
+}
+
+void schedule_late_release_second(void *p_late) {
+	ScheduleLateRelease *late = static_cast<ScheduleLateRelease *>(p_late);
+	late->second_started.post();
+	late->second_outcome = late->controller.wait("second_barrier", 0);
+}
+
 Vector<String> run_publish_then_read_rehearsal(ScheduleRehearsal &r_rehearsal) {
 	REQUIRE_EQ(r_rehearsal.controller.declare(
 					   Vector<String>({ "write_published", "read_observed" }), 2),
@@ -196,6 +221,46 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Schedule") {
 		CHECK_EQ(trace,
 				Vector<String>({ "timeout:first_barrier", "timeout:second_barrier",
 						"timeout:third_barrier" }));
+	}
+
+	TEST_CASE("TypeCompleteness Schedule refuses a release that arrives after it abandoned") {
+		// The trace of an abandoned schedule records a timeout for every parked participant. A release
+		// accepted afterwards would hand one of them a WAIT_RELEASED the trace never mentions, and which
+		// of the two readings won would depend on which woken thread reached the lock first. The
+		// repetition is there to shake exactly that ordering out.
+		for (int attempt = 0; attempt < 25; attempt++) {
+			CAPTURE(attempt);
+			ScheduleLateRelease late;
+			REQUIRE_EQ(late.controller.declare(
+							   Vector<String>({ "first_barrier", "second_barrier", "third_barrier" }), 3),
+					OK);
+			Thread first;
+			Thread second;
+			first.start(schedule_late_release_first, &late);
+			second.start(schedule_late_release_second, &late);
+			late.first_started.wait();
+			late.second_started.wait();
+
+			const FSCompletenessScheduleController::WaitOutcome deciding =
+					late.controller.wait("third_barrier", 2000);
+			// The release races the two waking participants, and has to lose whichever way it lands.
+			const Error late_release = late.controller.release("first_barrier");
+			first.wait_to_finish();
+			second.wait_to_finish();
+
+			CHECK_EQ(deciding, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+			CHECK_EQ(late.first_outcome, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+			CHECK_EQ(late.second_outcome, FSCompletenessScheduleController::WAIT_TIMED_OUT);
+			CHECK_EQ(late_release, ERR_LOCKED);
+			CHECK_EQ(late.controller.arrive("first_barrier"), ERR_LOCKED);
+			CHECK(late.controller.timed_out());
+
+			Vector<String> trace = late.controller.trace();
+			trace.sort();
+			CHECK_EQ(trace,
+					Vector<String>({ "timeout:first_barrier", "timeout:second_barrier",
+							"timeout:third_barrier" }));
+		}
 	}
 
 	TEST_CASE("TypeCompleteness Schedule ends a wait whose budget elapses outside the controller") {

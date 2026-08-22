@@ -79,16 +79,22 @@ public:
 	Error declare(const Vector<String> &p_barrier_names, int p_participant_count);
 
 	// Records that the calling participant reached p_name. Ordering evidence only: arriving neither
-	// blocks nor releases.
+	// blocks nor releases. Refused with ERR_LOCKED once the schedule has been abandoned.
 	Error arrive(const String &p_name);
 
 	// Releases p_name and wakes every participant waiting for it. Barriers must be released in the
 	// declared order; releasing one twice, or out of order, is refused with ERR_UNAVAILABLE, because
 	// a schedule whose releases can be reordered is not the schedule the manifest declared.
+	//
+	// Abandonment is terminal: once a wait has ended without its barrier, every later release is
+	// refused with ERR_LOCKED. A release accepted afterwards would release a barrier whose waiters the
+	// trace already records as timed out, and the status they returned and the trace the cell retains
+	// would disagree by however the machine happened to order the wake-ups.
 	Error release(const String &p_name);
 
 	// Blocks the calling participant until p_name is released, until the schedule is proven stuck, or
-	// until p_budget_msec have elapsed. Zero waits without a budget, which is only safe when every
+	// until p_budget_msec have elapsed. Once the schedule is abandoned every wait on an unreleased
+	// barrier ends in WAIT_TIMED_OUT, whichever order the participants wake in. Zero waits without a budget, which is only safe when every
 	// participant is inside the controller, because the stuck-schedule proof is then the bound.
 	WaitOutcome wait(const String &p_name, uint32_t p_budget_msec);
 
@@ -116,6 +122,9 @@ private:
 		String name;
 		bool released = false;
 		int waiting = 0;
+		// Timeouts already decided and already written to the trace for participants parked here when
+		// the schedule was abandoned, each waiting to be claimed by the wait it was decided about.
+		int decided_timeouts = 0;
 	};
 
 	// Binary rather than recursive: a condition variable can only wait on a lock that is released
