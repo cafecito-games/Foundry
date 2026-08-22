@@ -1635,6 +1635,23 @@ class EveryStatusConsumerTests(unittest.TestCase):
                     with self.assertRaises(report.ReportError):
                         comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
 
+    def test_a_side_relabelled_as_not_covered_is_rejected(self) -> None:
+        # A blocking artifact re-tagged as a judgment the build never made would be ignored by the gate,
+        # so the side's own verdict is inside the digest its integrity check recomputes.
+        artifact = _artifact_with_status(comparator.Status.NEW).to_dict()
+        self.assertEqual(comparator.Status.NEW.value, artifact["status"])
+        tampered = dict(artifact, branch=dict(artifact["branch"], category=report.Category.NOT_COVERED.value))
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+        # Relabelling the status alongside it does not help: the digest no longer matches the side either way.
+        tampered = dict(
+            tampered,
+            status=comparator.Status.NOT_COVERED.value,
+            comparison_id=artifact["comparison_id"],
+        )
+        with self.assertRaises(report.ReportError):
+            comparator.deserialize_many(json.dumps({"schema_version": 1, "artifacts": [tampered]}))
+
     def test_tampered_side_values_are_rejected(self) -> None:
         artifact = _artifact_with_status(comparator.Status.UNCHANGED).to_dict()
         # Claim the branch passes while keeping the 'unchanged' label.

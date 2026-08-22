@@ -88,10 +88,21 @@ def _finding_digest_view(finding: Mapping[str, Any]) -> dict[str, Any]:
     return {field: _semantic_view(finding.get(field)) for field in FINDING_DIGEST_FIELDS}
 
 
+# The evidence a side's digest protects, derived once so the producer and the integrity check cannot drift.
+# The side's own verdict is part of it: classification reads `passed` and `category`, so leaving either
+# outside the digest would let a relabelled side - a blocking failure re-tagged as a judgment the build never
+# made - keep a digest that still validates.
+def _side_digest_view(passed: bool, category: str, observation: Any, findings: Any) -> dict[str, Any]:
+    return {
+        "observation": observation,
+        "findings": [_finding_digest_view(finding) for finding in findings],
+        "passed": passed,
+        "category": category,
+    }
+
+
 def _case_digest(case: CaseResult) -> str:
-    return digest_of(
-        {"observation": case.observation, "findings": [_finding_digest_view(finding) for finding in case.findings]}
-    )
+    return digest_of(_side_digest_view(case.passed, case.category.value, case.observation, case.findings))
 
 
 def _side(case: Optional[CaseResult]) -> dict[str, Any]:
@@ -253,7 +264,9 @@ def _check_side(side: Mapping[str, Any], name: str, case_id: str) -> None:
     if not isinstance(side.get("passed"), bool) or not isinstance(side.get("findings"), list):
         raise ReportError(f"artifact for case {case_id!r} has a malformed {name} side")
     expected = digest_of(
-        {"observation": side.get("observation"), "findings": [_finding_digest_view(f) for f in side["findings"]]}
+        _side_digest_view(
+            bool(side["passed"]), str(side.get("category", "")), side.get("observation"), side["findings"]
+        )
     )
     if side.get("digest") != expected:
         raise ReportError(f"artifact for case {case_id!r} has a {name} digest that does not match its evidence")
