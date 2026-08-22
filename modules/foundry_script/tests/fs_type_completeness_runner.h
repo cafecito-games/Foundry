@@ -173,6 +173,10 @@ class FSCompletenessRunner {
 public:
 	static Error run(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result);
 
+	// The one dimension whose evidence is the agreement of two surfaces rather than one observation,
+	// so it can only be decided by a run that executed both surfaces of a pair.
+	static constexpr const char *TEXT_BYTECODE_PARITY_DIMENSION = "text_bytecode_parity";
+
 	// The dimensions the runner itself observes for every family, whatever its adapter declares. A
 	// ledger entry may name one of these even though no cell carries it.
 	static HashSet<String> builtin_dimensions();

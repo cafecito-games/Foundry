@@ -638,6 +638,27 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Adapters]") {
 							   catalog_root.path_join("findings").path_join(finding_id + ".json")),
 					OK);
 		}
+
+		// A parity classification cannot be contradicted by a run that observed one surface of a pair,
+		// so a narrowed run must not report it stale either.
+		const String parity_finding_id = "fstcf-v1-syntheticparity";
+		tree.write_file(String("catalog/findings").path_join(parity_finding_id + ".json"),
+				synthetic_finding_record(parity_finding_id, case_id, "text_bytecode_parity"));
+		const String parity_scratch_root = tree.root.path_join("parity-scratch");
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(parity_scratch_root), OK);
+		FSCompletenessRunOptions parity_options;
+		parity_options.catalog_root = catalog_root;
+		parity_options.family = synthetic_completeness_family;
+		parity_options.scratch_root = parity_scratch_root;
+		parity_options.report_path = parity_scratch_root.path_join("report.json");
+		parity_options.tracked_file_probe = synthetic_tracked_file_probe;
+		parity_options.surfaces.insert("text");
+		FSCompletenessRunResult parity_result;
+		CHECK_EQ(FSCompletenessRunner::run(parity_options, parity_result), OK);
+		CHECK(parity_result.success);
+		CHECK(parity_result.structural_failures.is_empty());
+		CHECK(Array(Dictionary(parity_result.report["ledger"])["stale"]).is_empty());
+		CHECK(Array(Dictionary(parity_result.report["ledger"])["reconciled"]).is_empty());
 	}
 }
 

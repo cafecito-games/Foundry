@@ -1450,16 +1450,18 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	if (error != OK) {
 		return error;
 	}
-	if (!p_options.surfaces.is_empty()) {
+	if (selected_cells.size() != resolution.cells.size()) {
 		// A ledger entry about a case this run did not execute was neither reconciled nor contradicted,
-		// so it is not stale either. Only entries the run could observe stay in scope.
+		// so it is not stale either. A parity classification is in the same position whenever a pair was
+		// observed on one surface: the evidence that would contradict it was never gathered.
 		HashSet<String> selected_case_ids;
 		for (const FSCompletenessResolvedCell *cell : selected_cells) {
 			selected_case_ids.insert(cell->case_id);
 		}
 		HashMap<String, FSCompletenessFinding> scoped_ledger;
 		for (const KeyValue<String, FSCompletenessFinding> &entry : ledger) {
-			if (selected_case_ids.has(entry.value.case_id)) {
+			if (selected_case_ids.has(entry.value.case_id) &&
+					entry.value.dimension != FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION) {
 				scoped_ledger.insert(entry.key, entry.value);
 			}
 		}
@@ -1718,7 +1720,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			FSCompletenessFinding finding;
 			finding.case_id = pair.text->case_id;
 			finding.family = p_options.family;
-			finding.dimension = "text_bytecode_parity";
+			finding.dimension = FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION;
 			finding.finding_id = make_finding_id(finding.case_id, finding.dimension);
 			finding.expected = "matching_surface_observations";
 			finding.parity_evidence = evidence;
@@ -2121,8 +2123,8 @@ Error collect_witness_bindings(const FSCompletenessManifest &p_manifest,
 }
 
 HashSet<String> FSCompletenessRunner::builtin_dimensions() {
-	return HashSet<String>({ "output", "diagnostics", "runtime_status", "text_bytecode_parity",
-			"diagnostic_severity" });
+	return HashSet<String>({ "output", "diagnostics", "runtime_status",
+			FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION, "diagnostic_severity" });
 }
 
 Dictionary FSCompletenessRunner::structural_failure_report(
