@@ -176,6 +176,54 @@ TEST_CASE("[FoundryCLIHelp] Test completeness run help documents its required in
 	CHECK(text.contains("foundry --headless test completeness run"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Test completeness select help documents its required inputs") {
+	const String text = FoundryCLIHelp::get_command_help_text("test", "completeness select");
+	CHECK(text.contains("--changed-paths"));
+	CHECK(text.contains("--catalog"));
+	CHECK(text.contains("--json"));
+	CHECK(text.contains("(required)"));
+	CHECK(text.contains("foundry --headless test completeness select"));
+}
+
+// The selection is an editor-build capability, so it is documented in every build's text help and
+// listed in the machine-readable help only where the build can actually run it.
+TEST_CASE("[FoundryCLIHelp] Test completeness select is listed exactly where the build includes it") {
+	PackedStringArray scope;
+	scope.push_back("test");
+	scope.push_back("completeness");
+	scope.push_back("select");
+	bool valid = false;
+	const String text = FoundryCLIHelp::get_scoped_help_text("foundry", scope, valid);
+	CHECK(valid);
+	CHECK(text.contains("--changed-paths"));
+
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *registry = FoundryCLIHelp::get_commands(command_count);
+	const FoundryCLIHelp::CommandSpec *spec = nullptr;
+	for (int i = 0; i < command_count; i++) {
+		if (String(registry[i].noun) == "test" && String(registry[i].verb) == "completeness select") {
+			spec = &registry[i];
+			break;
+		}
+	}
+	REQUIRE_MESSAGE(spec != nullptr, "every configuration registers the selection command");
+
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
+	const Dictionary root = json.get_data();
+	const Array commands = root["commands"];
+	if (FoundryCLIHelp::is_command_in_build(*spec)) {
+		REQUIRE_EQ(commands.size(), 1);
+		const Dictionary command = commands[0];
+		const Array path = command["path"];
+		REQUIRE_EQ(path.size(), 2);
+		CHECK_EQ(String(path[0]), "test");
+		CHECK_EQ(String(path[1]), "completeness select");
+	} else {
+		CHECK(commands.is_empty());
+	}
+}
+
 TEST_CASE("[FoundryCLIHelp] A multi-word verb resolves from a deeper scope") {
 	PackedStringArray scope;
 	scope.push_back("test");

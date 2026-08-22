@@ -53,6 +53,7 @@ public:
 			TEST_BENCHMARK,
 			TEST_FIXTURES,
 			TEST_COMPLETENESS_RUN,
+			TEST_COMPLETENESS_SELECT,
 			TOOLING_SERVE,
 			DOCS_GENERATE_API,
 			DOCS_GENERATE_ENGINE,
@@ -138,6 +139,13 @@ public:
 		String completeness_surface;
 		String completeness_tier;
 		int completeness_timeout_seconds = 0;
+
+		// `test completeness select` inputs: the file listing one changed repository path per
+		// line and the catalog whose capability map maps them to families. `completeness_json`
+		// is the only supported output encoding and must be requested explicitly, so a future
+		// human-readable rendering can never be mistaken for the machine-readable one.
+		String completeness_changed_paths;
+		bool completeness_json = false;
 
 		// Empty means "use the tooling host default" (6005 for LSP, 6006 for DAP).
 		// Otherwise a validated decimal port in [0, 65535], where 0 requests an

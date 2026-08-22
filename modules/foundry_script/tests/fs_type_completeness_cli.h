@@ -87,4 +87,36 @@ public:
 	static int run(const Options &p_options, PackedStringArray *r_published_paths = nullptr);
 };
 
+// Command-line entry point of the capability-scoped selector: `foundry test completeness select`.
+//
+// The selector is the single source of truth for which families a change set can affect. It exists as
+// a command so the presubmit wrapper can consume the selection without re-implementing any part of
+// FSCompletenessCapabilityMap::select in another language.
+class FSCompletenessSelectCLI {
+public:
+	enum ExitCode {
+		EXIT_SELECTED = 0,
+		// Any validation error at all: an unreadable input, an unloadable capability map, a rule
+		// directory the map disagrees with, or a changed path the map refuses.
+		EXIT_REFUSED = 2,
+	};
+
+	struct Options {
+		// File listing one changed repository-relative path per line, LF separated.
+		String changed_paths_path;
+		// Catalog root holding `capabilities.json` and the `rules` directory.
+		String catalog_root;
+		// JSON is the only supported encoding and must be requested explicitly.
+		bool json = false;
+	};
+
+	// Runs the selection and returns its exit code. The JSON document is always produced, including
+	// when the selection is refused: a caller that has to publish a broad slice on a refusal needs
+	// the families the selector did reach.
+	//
+	// r_document, when given, receives the document instead of stdout; the command-line host passes
+	// nothing and the document is printed verbatim, with no other stdout output in any path.
+	static int run(const Options &p_options, String *r_document = nullptr);
+};
+
 } // namespace FSTests

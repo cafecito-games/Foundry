@@ -167,6 +167,13 @@ const CommandOption TEST_COMPLETENESS_RUN_OPTIONS[] = {
 	{ "--timeout-seconds", "120", "Wall-clock budget in seconds; defaults to the tier's hard timeout.", false },
 };
 
+const CommandOption TEST_COMPLETENESS_SELECT_OPTIONS[] = {
+	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
+	{ "--changed-paths", "file", "File listing one changed repository-relative path per line.", true },
+	{ "--catalog", "dir", "Type-completeness catalog root holding the capability map and rules.", true },
+	{ "--json", nullptr, "Write the selection as JSON on stdout; the only supported encoding.", true },
+};
+
 const CommandOption TOOLING_SERVE_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, true },
 	{ "--lsp-port", "6005", "Language server port; 0 requests an ephemeral port.", false },
@@ -233,6 +240,7 @@ const CommandSpec COMMANDS[] = {
 	{ "test", "benchmark", "Run the Foundry Script benchmark corpus.", "[--project <dir>] [--output <path>] [--profile] [--profile-output <path>] [dir]", FoundryCLIHelp::AVAILABILITY_RELEASE, TEST_BENCHMARK_OPTIONS, FOUNDRY_CLI_COUNT(TEST_BENCHMARK_OPTIONS), BENCHMARK_DIR_POSITIONAL, FOUNDRY_CLI_COUNT(BENCHMARK_DIR_POSITIONAL), "foundry --headless test benchmark modules/foundry_script/tests/benchmarks --output bench.json" },
 	{ "test", "fixtures", "Run named Foundry Script fixtures from the .fs corpus.", "[--project <dir>] [--dir <path>] [--pass <all|text|bytecode>] [--use-binary-tokens] [--output <path>] [--print-filenames] [patterns...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_FIXTURES_OPTIONS), FIXTURE_PATTERNS_POSITIONAL, FOUNDRY_CLI_COUNT(FIXTURE_PATTERNS_POSITIONAL), "foundry --headless test fixtures trait_argument_binding" },
 	{ "test", "completeness run", "Run a type-completeness family and publish its report.", "[--project <dir>] --family <name>... --catalog <dir> --scratch <dir> --report <path> --tier <presubmit|strict|scheduled> [--surface <text|bytecode>] [--timeout-seconds <n>]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_COMPLETENESS_RUN_OPTIONS, FOUNDRY_CLI_COUNT(TEST_COMPLETENESS_RUN_OPTIONS), nullptr, 0, "foundry --headless test completeness run --family union_destination_membership --catalog modules/foundry_script/tests/type_completeness --scratch \"$FOUNDRY_TEST_SCRATCH/completeness\" --report \"$FOUNDRY_TEST_SCRATCH/completeness/report.json\" --tier presubmit" },
+	{ "test", "completeness select", "Select the type-completeness families a change set can affect.", "[--project <dir>] --changed-paths <file> --catalog <dir> --json", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_COMPLETENESS_SELECT_OPTIONS, FOUNDRY_CLI_COUNT(TEST_COMPLETENESS_SELECT_OPTIONS), nullptr, 0, "foundry --headless test completeness select --changed-paths changed.txt --catalog modules/foundry_script/tests/type_completeness --json" },
 	{ "tooling", "serve", "Start the combined LSP and debug adapter tooling host.", "--project <dir> [--lsp-port <port>] [--dap-port <port>]", FoundryCLIHelp::AVAILABILITY_EDITOR, TOOLING_SERVE_OPTIONS, FOUNDRY_CLI_COUNT(TOOLING_SERVE_OPTIONS), nullptr, 0, "foundry tooling serve --project . --lsp-port 0 --dap-port 0" },
 	{ "docs", "generate-api", "Generate the extension API JSON dump.", "[--include-docs]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_API_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_API_OPTIONS), nullptr, 0, "foundry docs generate-api --include-docs" },
 	{ "docs", "generate-engine", "Dump the engine class reference XML.", "[--output <path>] [--no-docbase]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_ENGINE_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_ENGINE_OPTIONS), nullptr, 0, "foundry docs generate-engine --output doc-out" },

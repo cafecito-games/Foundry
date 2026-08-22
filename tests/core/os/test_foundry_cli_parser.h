@@ -119,6 +119,44 @@ TEST_CASE("[FoundryCLIParser] Test completeness run collects families and requir
 	CHECK_EQ(result.command_path, make_args({ "test", "completeness run" }));
 }
 
+TEST_CASE("[FoundryCLIParser] Test completeness select parses its inputs") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"completeness",
+			"select",
+			"--changed-paths",
+			"changed.txt",
+			"--catalog=catalog",
+			"--json",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_COMPLETENESS_SELECT);
+	CHECK_EQ(result.invocation.completeness_changed_paths, "changed.txt");
+	CHECK_EQ(result.invocation.completeness_catalog, "catalog");
+	CHECK(result.invocation.completeness_json);
+	CHECK_EQ(result.command_path, make_args({ "test", "completeness select" }));
+}
+
+// Every input of the selection is named. A selection that invented a catalog, read an unnamed change
+// set, or published an encoding nobody asked for would be unusable as the gate's single source.
+TEST_CASE("[FoundryCLIParser] Test completeness select requires every input") {
+	const Vector<PackedStringArray> incomplete = {
+			make_args({ "foundry", "test", "completeness", "select", "--catalog", "catalog", "--json" }),
+			make_args({ "foundry", "test", "completeness", "select", "--changed-paths", "changed.txt", "--json" }),
+			make_args({ "foundry", "test", "completeness", "select", "--changed-paths", "changed.txt",
+					"--catalog", "catalog" }),
+	};
+	for (const PackedStringArray &arguments : incomplete) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(arguments);
+		CHECK_FALSE(result.ok);
+	}
+
+	FoundryCLIParser::ParseResult unknown = FoundryCLIParser::parse(make_args({ "foundry", "test", "completeness",
+			"select", "--changed-paths", "changed.txt", "--catalog", "catalog", "--json", "--surface", "text" }));
+	CHECK_FALSE(unknown.ok);
+}
+
 TEST_CASE("[FoundryCLIParser] Test completeness run defaults the timeout to the tier budget") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",
