@@ -6985,6 +6985,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -6998,6 +6999,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7011,6 +7013,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7024,6 +7027,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7037,6 +7041,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7050,6 +7055,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7063,6 +7069,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7076,6 +7083,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7089,6 +7097,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7102,6 +7111,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7115,6 +7125,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7128,6 +7139,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7141,6 +7153,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7154,6 +7167,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7167,6 +7181,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7180,6 +7195,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7193,6 +7209,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7206,6 +7223,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7219,6 +7237,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7232,6 +7251,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7245,6 +7265,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7258,6 +7279,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -7271,6 +7293,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7284,6 +7307,7 @@
 					"kind": "fixture",
 					"reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7297,6 +7321,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into container element types",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7310,6 +7335,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7323,6 +7349,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7336,6 +7363,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7349,6 +7377,7 @@
 					"kind": "fixture",
 					"reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7362,6 +7391,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7375,6 +7405,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7388,6 +7419,7 @@
 					"kind": "fixture",
 					"reference": "modules/foundry_script/tests/scripts/analyzer/features/type_self_enum_payload_field_nested_self_union_alternatives.fs",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7401,6 +7433,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7414,6 +7447,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7427,6 +7461,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7440,6 +7475,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7453,6 +7489,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7466,6 +7503,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7479,6 +7517,7 @@
 					"kind": "fixture",
 					"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_rest_parameter_concrete.fs",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7492,6 +7531,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7505,6 +7545,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7518,6 +7559,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7531,6 +7573,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7544,6 +7587,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7557,6 +7601,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7570,6 +7615,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7583,6 +7629,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into type arguments",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7596,6 +7643,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7609,6 +7657,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7622,6 +7671,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7635,6 +7685,7 @@
 					"kind": "fixture",
 					"reference": "modules/foundry_script/tests/scripts/analyzer/features/generic_class_bounds.fs",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7648,6 +7699,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7661,6 +7713,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7674,6 +7727,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -7692,6 +7746,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7705,6 +7760,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7718,6 +7774,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -7736,6 +7793,7 @@
 					"kind": "doctest_case",
 					"reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7749,6 +7807,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7762,6 +7821,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7775,6 +7835,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7788,6 +7849,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7801,6 +7863,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7814,6 +7877,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7827,6 +7891,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7840,6 +7905,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7853,6 +7919,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7866,6 +7933,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7879,6 +7947,7 @@
 					"kind": "doctest_case",
 					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
 					"family": "",
+					"build_configuration": "editor",
 					"coordinates": {}
 				},
 				"issue_url": ""
@@ -7892,6 +7961,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7905,6 +7975,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7918,6 +7989,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7931,6 +8003,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7944,6 +8017,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
@@ -7957,6 +8031,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
@@ -7970,6 +8045,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "reflective_write",
 						"destination": "union",
@@ -7988,6 +8064,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -8006,6 +8083,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -8024,6 +8102,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -8037,6 +8116,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -8050,6 +8130,7 @@
 					"kind": "",
 					"reference": "",
 					"family": "",
+					"build_configuration": "",
 					"coordinates": {}
 				},
 				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
@@ -8062,15 +8143,17 @@
 			"destination_wrapper",
 			"lifecycle",
 			"synthetic_pair_identity"
-		]
+		],
+		"analyzer_warnings": true
 	},
+	"unconfirmed_census_witnesses": [],
 	"timings_ms": {
-		"load": 32.401,
+		"load": 34.263,
 		"resolve": 0.001,
-		"render": 51.189,
-		"analyze": 1.397,
-		"execute": 397.138,
-		"report": 236.077,
-		"total": 718.842
+		"render": 56.29,
+		"analyze": 1.474,
+		"execute": 445.627,
+		"report": 251.227,
+		"total": 789.535
 	}
 }

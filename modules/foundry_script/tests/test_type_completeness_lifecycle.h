@@ -61,11 +61,6 @@ static FSCompletenessProgram lifecycle_program(
 	return program;
 }
 
-// Everything below the guard exercises a transition the editor build is the only one that carries,
-// so it is compiled there only; the other branch asserts that the adapter refuses rather than
-// reporting a type that survived a transition this build cannot perform.
-#ifdef TOOLS_ENABLED
-
 // Families under `rules/` whose manifest names the lifecycle adapter, read from the rule directory
 // rather than from a list in a test: the catalog is the source of truth for which families exist, so
 // a family added without its fixtures fails here instead of going unnoticed.
@@ -390,35 +385,21 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 			const Array exceptions = result.report["exceptions"];
 			CHECK(exceptions.is_empty());
 
+			// The tracked document was captured on one configuration. Narrowing both sides to what this
+			// build could have observed is the identity on that configuration, so this stays the same
+			// byte-identity comparison there, and compares observations rather than configurations
+			// anywhere else.
+			const Dictionary configuration = Dictionary(result.report).get("configuration", Dictionary());
 			const Variant expected =
 					lifecycle_tracked_document(vformat("expected_reports/%s.json", family));
-			const Variant produced_evidence = lifecycle_tracked_evidence(result.report);
-			const Variant expected_evidence = lifecycle_tracked_evidence(expected);
+			const Variant produced_evidence = lifecycle_tracked_evidence(
+					FSCompletenessRunner::evidence_observable_in_configuration(result.report, configuration));
+			const Variant expected_evidence = lifecycle_tracked_evidence(
+					FSCompletenessRunner::evidence_observable_in_configuration(expected, configuration));
 			CHECK_EQ(JSON::stringify(produced_evidence, "  ", true, true),
 					JSON::stringify(expected_evidence, "  ", true, true));
 		}
 	}
 }
-
-#else // No editor tooling.
-
-TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
-	TEST_CASE("TypeCompleteness Lifecycle refuses a transition this build does not carry") {
-		// The bytecode export the family carries a declared type through is compiled into editor builds
-		// only. Reporting the absence structurally is the only honest reading: a build with no transition
-		// to observe has not observed a type surviving one.
-		const FSCompletenessProgram program =
-				lifecycle_program("lifecycle_bytecode_export_load", "plain", "clean", "text");
-		Error structural_error = OK;
-		const FSCompletenessObservation observation =
-				FSLifecycleAdapter::shared().observe_transition(program, "lifecycle_bytecode_export_load", &structural_error);
-		CHECK_EQ(structural_error, ERR_UNAVAILABLE);
-		CHECK_FALSE(observation.diagnostics.is_empty());
-		CHECK_FALSE(observation.dimensions.has("semantic_identity"));
-		CHECK_FALSE(observation.dimensions.has("transition_outcome"));
-	}
-}
-
-#endif // TOOLS_ENABLED
 
 } // namespace FSTests

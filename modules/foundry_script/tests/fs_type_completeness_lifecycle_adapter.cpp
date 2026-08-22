@@ -112,7 +112,6 @@ static String render_lifecycle_source(
 	return source;
 }
 
-#ifdef TOOLS_ENABLED
 class LifecycleBytecodeResolver : public FSBytecodeExternalResolver {
 public:
 	virtual Ref<Resource> resolve_resource(const String &) override {
@@ -124,7 +123,6 @@ public:
 		return Ref<Script>();
 	}
 };
-#endif
 
 // Brings the language up for the work this scope covers and puts the process back the way it found
 // it. A completeness run reaches this adapter two ways: from a unit test, where an earlier case has
@@ -270,7 +268,6 @@ struct LifecycleArtifact {
 static Error export_lifecycle_artifact(
 		const Ref<FoundryScript> &p_script, const String &p_path, LifecycleArtifact &r_artifact) {
 	r_artifact = LifecycleArtifact();
-#ifdef TOOLS_ENABLED
 	if (p_script.is_null()) {
 		return ERR_INVALID_PARAMETER;
 	}
@@ -283,14 +280,10 @@ static Error export_lifecycle_artifact(
 	r_artifact.buffer = buffer;
 	r_artifact.path = p_path;
 	return OK;
-#else
-	return ERR_UNAVAILABLE;
-#endif
 }
 
 static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<FoundryScript> &r_loaded) {
 	r_loaded.unref();
-#ifdef TOOLS_ENABLED
 	if (p_artifact.buffer.is_empty()) {
 		return ERR_INVALID_DATA;
 	}
@@ -312,9 +305,6 @@ static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<Fo
 	}
 	r_loaded = restored;
 	return OK;
-#else
-	return ERR_UNAVAILABLE;
-#endif
 }
 
 // Replaces what the identity an artifact recorded now serves. The artifact keeps the path it was
@@ -748,19 +738,6 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		}
 		return observation;
 	}
-#ifndef TOOLS_ENABLED
-	// The bytecode export this family carries a type through is compiled into editor builds only, so
-	// on any other build there is no transition to observe. Saying so is a structural refusal: a run
-	// that could not carry out its transition has no reading under which its silence means the type
-	// survived.
-	append_diagnostic(observation, "transition_unavailable_in_configuration",
-			"The bytecode writer every lifecycle transition stages its subject through is not compiled "
-			"into this build.");
-	if (r_structural_error != nullptr) {
-		*r_structural_error = ERR_UNAVAILABLE;
-	}
-	return observation;
-#else
 
 	LifecycleLanguageBoot language;
 	ReleasableSourceScope synthetic_source("lifecycle_" + p_program.case_id, p_program.source);
@@ -922,7 +899,6 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	observation.dimensions["transition_outcome"] = after.is_empty() ? "refused" : outcome;
 	observation.produced_output = String();
 	return observation;
-#endif // TOOLS_ENABLED
 }
 
 Error FSLifecycleAdapter::execute(const String &p_scratch_root,
