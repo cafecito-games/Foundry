@@ -716,11 +716,17 @@ static bool validate_mutation_recipe(HistoryCatalogState &p_state, const String 
 			ok = false;
 			continue;
 		}
-		ok = history_coordinates_resolve(p_state, family, coordinates, Vector<String>(), path, json_path, r_errors) && ok;
-		if (!p_state.dimensions.has(dimension)) {
-			r_errors.push_back(vformat("%s: %s.dimension '%s' is neither a catalog dimension nor a runner built-in", path, json_path, dimension));
-			ok = false;
+		// A runner built-in is judged for every cell; a catalog dimension only where the cell carries it,
+		// so a detector naming one the cell lacks could never be detected.
+		bool builtin = false;
+		for (const char *candidate : type_completeness_runner_builtin_dimensions) {
+			builtin = builtin || dimension == candidate;
 		}
+		Vector<String> required;
+		if (!builtin) {
+			required.push_back(dimension);
+		}
+		ok = history_coordinates_resolve(p_state, family, coordinates, required, path, json_path, r_errors) && ok;
 	}
 	return ok;
 }
@@ -1161,7 +1167,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][History]") {
 			{ "empty_detectors", head + "] }", "$.expected_detectors must be a non-empty array" },
 			{ "partial_coordinates", head + valid_detector.replace(", \"surface\": \"text\"", "") + "] }", "must name every domain axis" },
 			{ "unknown_family", head + valid_detector.replace("union_destination_membership", "no_such_family") + "] }", "cannot be resolved" },
-			{ "unknown_dimension", head + valid_detector.replace("runtime_status", "no_such_dimension") + "] }", "$.expected_detectors[0].dimension" },
+			{ "unknown_dimension", head + valid_detector.replace("runtime_status", "no_such_dimension") + "] }", "required_dimensions names 'no_such_dimension'" },
+			{ "dimension_absent_from_cell", head + valid_detector.replace("runtime_status", "stored_carrier") + "] }", "required_dimensions names 'stored_carrier'" },
 			{ "unknown_leaf", head + valid_detector.replace("\"gradual\"", "\"psychic\"") + "] }", "$.expected_detectors[0].case_coordinates" },
 			{ "float_schema_version", (head + valid_detector + "] }").replace("\"schema_version\": 1,", "\"schema_version\": 1.25,"), "$.schema_version must be a JSON integer" },
 		};

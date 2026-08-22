@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -301,6 +302,8 @@ def validate_recipe_against_rules(recipe: Recipe, rules_root: Path) -> None:
         for axis, leaf in detector.case_coordinates.items():
             if leaf not in vocabulary.axes[axis]:
                 raise MutationError(f"{context}.case_coordinates.{axis} has unknown leaf {leaf!r}")
+        # Whether the named cell itself carries the dimension is resolved through the graph by the
+        # C++ validator (test_type_completeness_history.h); Python holds no graph and does not re-derive it.
         if detector.dimension not in vocabulary.dimensions:
             raise MutationError(f"{context}.dimension {detector.dimension!r} is not a known dimension")
 
@@ -502,9 +505,23 @@ class Toolchain:
         remaining = deadline - self.clock()
         if remaining <= 0:
             raise subprocess.TimeoutExpired(list(arguments), 0)
-        return subprocess.run(
-            list(arguments), cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=remaining, env=env
+        # Each step runs in its own session so that a step which outlives the budget is killed as a
+        # whole process group: the build wrapper starts the compiler in a session of its own, and
+        # killing only the wrapper would leave compilers running inside a worktree about to be removed.
+        process = subprocess.Popen(
+            list(arguments),
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
         )
+        try:
+            output, _ = process.communicate(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(process)
+            raise
+        return subprocess.CompletedProcess(list(arguments), process.returncode, output, None)
 
     def head_commit(self, repository: Path) -> str:
         completed = subprocess.run(
@@ -589,6 +606,17 @@ class Toolchain:
             deadline,
             env=env,
         )
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 def _family_report_path(report_root: Path, family: str) -> Path:
