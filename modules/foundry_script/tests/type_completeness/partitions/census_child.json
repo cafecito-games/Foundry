@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "axis": "census_child",
+  "leaves": [
+    "none",
+    "parser_data_type.container_element_types",
+    "parser_data_type.union_members",
+    "parser_data_type.type_arguments",
+    "parser_data_type.type_parameter_bound",
+    "parser_data_type.method_parameter_types",
+    "parser_data_type.method_return_type",
+    "parser_data_type.method_rest_parameter_type",
+    "parser_data_type.enum_case_payload_field_types",
+    "parser_data_type.enum_case_payload_field_names",
+    "runtime_data_type.container_element_types",
+    "runtime_data_type.type_arguments",
+    "runtime_data_type.union_alternatives",
+    "container_descriptor.element_types",
+    "container_descriptor.type_arguments",
+    "bytecode_serialized_type.serialized_container_element_types",
+    "bytecode_serialized_type.serialized_type_arguments",
+    "bytecode_serialized_type.serialized_union_alternatives",
+    "member_binding_descriptor.fixed",
+    "member_binding_descriptor.tuple_slot_shape",
+    "reflection_property_info.hint_string",
+    "specialization_evidence.evidence_type_arguments"
+  ],
+  "classes": {}
+}

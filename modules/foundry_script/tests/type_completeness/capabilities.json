@@ -33,7 +33,33 @@
         "modules/foundry_script/tests/type_completeness/partitions/"
       ],
       "families": [
-        "union_destination_membership"
+        "union_destination_membership",
+        "wrapper_parity_argument_binding",
+        "wrapper_parity_assignment",
+        "wrapper_parity_container_element_store",
+        "wrapper_parity_member_store",
+        "wrapper_parity_proxy_write",
+        "wrapper_parity_reflective_write",
+        "wrapper_parity_return"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/fs_parser.cpp",
+        "modules/foundry_script/fs_parser_data_type.cpp",
+        "modules/foundry_script/foundry_script.cpp",
+        "modules/foundry_script/fs_bytecode_export.cpp",
+        "modules/foundry_script/fs_bytecode_loader.cpp",
+        "core/variant/container_type_validate.cpp"
+      ],
+      "families": [
+        "wrapper_parity_argument_binding",
+        "wrapper_parity_assignment",
+        "wrapper_parity_container_element_store",
+        "wrapper_parity_member_store",
+        "wrapper_parity_proxy_write",
+        "wrapper_parity_reflective_write",
+        "wrapper_parity_return"
       ]
     }
   ],

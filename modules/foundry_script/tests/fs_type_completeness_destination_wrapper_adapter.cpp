@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_union_adapter.cpp                                */
+/*  fs_type_completeness_destination_wrapper_adapter.cpp                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "fs_type_completeness_union_adapter.h"
+#include "fs_type_completeness_destination_wrapper_adapter.h"
 
 #include "fs_temporary_project_tree.h"
 #include "fs_test_runner.h"
@@ -55,8 +55,8 @@ using namespace Completeness;
 
 namespace {
 
-static const String union_completeness_family = "union_destination_membership";
-static thread_local UnionCompletenessInternal::PersistedWriteTestHook persisted_write_test_hook = nullptr;
+static const String destination_wrapper_adapter_id = "destination_wrapper";
+static thread_local DestinationWrapperInternal::PersistedWriteTestHook persisted_write_test_hook = nullptr;
 
 static bool read_coordinate(const Dictionary &p_coordinates, const String &p_axis, String &r_value) {
 	const Variant value = p_coordinates.get(p_axis, Variant());
@@ -64,23 +64,210 @@ static bool read_coordinate(const Dictionary &p_coordinates, const String &p_axi
 		return false;
 	}
 	r_value = value;
-	return FSUnionCompletenessAdapter::shared().can_render(p_axis, r_value);
+	return FSDestinationWrapperAdapter::shared().can_render(p_axis, r_value);
+}
+
+// One destination wrapper: how the program spells it, how it is initialized, how a source value is
+// wrapped into it, how the transported wrapper is unwrapped again, and which `stored_carrier`
+// outcome a provable source lands on there. Every axis of the rendered program is one of these
+// tables, so a new leaf is a new row rather than a new branch.
+struct DestinationShape {
+	const char *leaf;
+	const char *type_spelling;
+	const char *default_expression;
+	// Statements binding `wrapped` of the destination type from `SOURCE`, one per line.
+	const char *wrap_statements;
+	// Expression over `transported` yielding the value that crossed the destination; may name SOURCE
+	// when the destination is a slot the value only reaches at use, as a callable parameter is.
+	const char *unwrap_expression;
+	// Annotation the unwrap statement needs when reaching the destination raises a warning the
+	// program's own output would otherwise carry.
+	const char *unwrap_annotation;
+	const char *stored_carrier;
+};
+
+static const DestinationShape destination_shapes[] = {
+	{ "plain", "uint", "0U", "var wrapped: uint = SOURCE", "transported", "", "plain_destination" },
+	{ "union", "uint | String", "0U", "var wrapped: uint | String = SOURCE", "transported", "",
+			"admitting_alternative" },
+	{ "optional", "uint?", "null", "var wrapped: uint? = SOURCE", "transported", "", "optional_payload" },
+	{ "container_element", "Array[uint]", "[] as Array[uint]", "var wrapped: Array[uint] = [SOURCE]",
+			"transported[0]", "", "element_slot" },
+	{ "generic_argument", "Box[uint]", "Box[uint].new()",
+			"var wrapped: Box[uint] = Box[uint].new()\nwrapped.value = SOURCE", "transported.value", "",
+			"reified_argument" },
+	{ "tuple_field", "(uint, String)", "(0U, \"\")", "var wrapped: (uint, String) = (SOURCE, \"tag\")",
+			"transported[0]", "", "tuple_slot" },
+	{ "callable_slot", "Callable[[uint], Variant]", "Callable()",
+			"var wrapped: Callable[[uint], Variant] = identity_uint", "transported.call(SOURCE)",
+			"@warning_ignore(\"unsafe_call_argument\")", "callable_slot" },
+	{ "nominal_class", "Carrier", "Carrier.new()",
+			"var wrapped: Carrier = Carrier.new()\nwrapped.value = SOURCE", "transported.value", "",
+			"nominal_instance" },
+	{ "trait", "HasValue", "Carrier.new()",
+			"var wrapped: HasValue = Carrier.new()\nwrapped.value = SOURCE", "transported.value", "",
+			"trait_witness" },
+};
+
+
+// One write boundary: the declarations it needs and the statements that carry `wrapped` across it
+// into `transported`. DESTINATION and DEFAULT are replaced with the destination's spelling and its
+// initializer.
+struct BoundaryShape {
+	const char *leaf;
+	const char *declarations;
+	const char *statements;
+};
+
+static const BoundaryShape boundary_shapes[] = {
+	{ "argument_binding", "func accept_destination(value: DESTINATION) -> DESTINATION:\n\treturn value",
+			"var transported: DESTINATION = accept_destination(wrapped)" },
+	{ "return", "func produce(value: Variant) -> DESTINATION:\n\treturn value",
+			"var transported: DESTINATION = produce(wrapped)" },
+	{ "assignment", "", "var transported: DESTINATION = DEFAULT\ntransported = wrapped" },
+	{ "member_store", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
+			"var holder := Holder.new()\nholder.value = wrapped\nvar transported: DESTINATION = holder.value" },
+	{ "container_element_store", "",
+			"var slots: Array[DESTINATION] = [DEFAULT]\nslots[0] = wrapped\n"
+			"var transported: DESTINATION = slots[0]" },
+	{ "reflective_write", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
+			"var holder := Holder.new()\nholder.set(&\"value\", wrapped)\n"
+			"var transported: DESTINATION = holder.value" },
+	{ "proxy_write",
+			"class Proxy extends RefCounted:\n\tvar backing: DESTINATION = DEFAULT\n"
+			"\tvar value: DESTINATION = DEFAULT:\n\t\tset(incoming):\n\t\t\tbacking = incoming\n"
+			"\t\t\tvalue = incoming",
+			"var proxy := Proxy.new()\nproxy.value = wrapped\nvar transported: DESTINATION = proxy.backing" },
+};
+
+// One source of the transported value and how provable it is at the destination.
+struct SourceProofShape {
+	const char *leaf;
+	const char *expression;
+	// True when the analyzer cannot prove the value's type at the store, so the destination owes a
+	// runtime membership or conversion check.
+	bool unproven;
+	// True when the value's type is provable at the store, so the carrier it is stored in is decided
+	// statically and is observable as `stored_carrier`.
+	bool carrier_provable;
+};
+
+static const SourceProofShape source_proof_shapes[] = {
+	{ "static_member", "typed_source", false, false },
+	{ "numeric_constant", "5", false, true },
+	{ "inferred", "inferred_source", false, true },
+	{ "gradual", "supply(5U)", true, false },
+	{ "erased", "erase[uint](5U)", true, false },
+	{ "variant", "variant_source", true, false },
+	{ "nested_child", "nested_source[0]", true, false },
+};
+
+// One census child slot and the declaration that forces a program to realize it. The leaf ids are
+// `<representation>.<child_slot>` pairs from `census/representations.json`; several representations
+// describe the same declared shape at a different stage, so they legitimately share a declaration
+// and are told apart by the representation the observation reads it from.
+struct CensusWitnessShape {
+	const char *leaf;
+	const char *declarations;
+	// Body statement that consumes the declaration. A declaration nothing reads could be elided before
+	// it ever reaches the representation the coordinate names, so every witness is used.
+	const char *use_statement;
+};
+
+static const char *census_container_witness = "var census_container: Array[uint] = [5U]";
+static const char *census_container_use = "var _census_use: Variant = census_container";
+static const char *census_arguments_witness = "var census_arguments: Box[uint] = Box[uint].new()";
+static const char *census_arguments_use = "var _census_use: Variant = census_arguments.value";
+static const char *census_union_witness = "var census_union: uint | String = 0U";
+static const char *census_union_use = "var _census_use: Variant = census_union";
+
+static const CensusWitnessShape census_witness_shapes[] = {
+	{ "none", "", "" },
+	{ "parser_data_type.container_element_types", census_container_witness, census_container_use },
+	{ "parser_data_type.union_members", census_union_witness, census_union_use },
+	{ "parser_data_type.type_arguments", census_arguments_witness, census_arguments_use },
+	{ "parser_data_type.type_parameter_bound",
+			"func census_bounded[T: RefCounted](value: T) -> T:\n\treturn value",
+			"var _census_use: Variant = census_bounded(Carrier.new())" },
+	{ "parser_data_type.method_parameter_types",
+			"func census_parameters(first: uint, second: String) -> String:\n\treturn second + str(first)",
+			"var _census_use: Variant = census_parameters(5U, \"tag\")" },
+	{ "parser_data_type.method_return_type", "func census_return() -> uint:\n\treturn 5U",
+			"var _census_use: Variant = census_return()" },
+	{ "parser_data_type.method_rest_parameter_type",
+			"func census_rest(...values: Array[uint]) -> int:\n\treturn values.size()",
+			"var _census_use: Variant = census_rest(5U)" },
+	{ "parser_data_type.enum_case_payload_field_types",
+			"enum CensusPayloadTypes:\n\tNumeric(amount: uint)\n\tEmpty",
+			"var _census_use: Variant = CensusPayloadTypes.Numeric(5U)" },
+	{ "parser_data_type.enum_case_payload_field_names",
+			"enum CensusPayloadNames:\n\tLabelled(label: String)\n\tEmpty",
+			"var _census_use: Variant = CensusPayloadNames.Labelled(\"tag\")" },
+	{ "runtime_data_type.container_element_types", census_container_witness, census_container_use },
+	{ "runtime_data_type.type_arguments", census_arguments_witness, census_arguments_use },
+	{ "runtime_data_type.union_alternatives", census_union_witness, census_union_use },
+	{ "container_descriptor.element_types", census_container_witness, census_container_use },
+	{ "container_descriptor.type_arguments", census_arguments_witness, census_arguments_use },
+	{ "bytecode_serialized_type.serialized_container_element_types", census_container_witness,
+			census_container_use },
+	{ "bytecode_serialized_type.serialized_type_arguments", census_arguments_witness, census_arguments_use },
+	{ "bytecode_serialized_type.serialized_union_alternatives", census_union_witness, census_union_use },
+	{ "member_binding_descriptor.fixed", "var census_fixed: uint = 5U",
+			"var _census_use: Variant = census_fixed" },
+	{ "member_binding_descriptor.tuple_slot_shape", "var census_tuple: (uint, String) = (5U, \"tag\")",
+			"var _census_use: Variant = census_tuple" },
+	{ "reflection_property_info.hint_string", "@export var census_exported: Array[uint] = [5U]",
+			"var _census_use: Variant = census_exported" },
+	{ "specialization_evidence.evidence_type_arguments", census_arguments_witness, census_arguments_use },
+};
+
+
+static const DestinationShape *find_destination_shape(const String &p_leaf) {
+	for (const DestinationShape &shape : destination_shapes) {
+		if (p_leaf == shape.leaf) {
+			return &shape;
+		}
+	}
+	return nullptr;
+}
+
+static const BoundaryShape *find_boundary_shape(const String &p_leaf) {
+	for (const BoundaryShape &shape : boundary_shapes) {
+		if (p_leaf == shape.leaf) {
+			return &shape;
+		}
+	}
+	return nullptr;
+}
+
+static const SourceProofShape *find_source_proof_shape(const String &p_leaf) {
+	for (const SourceProofShape &shape : source_proof_shapes) {
+		if (p_leaf == shape.leaf) {
+			return &shape;
+		}
+	}
+	return nullptr;
+}
+
+static const CensusWitnessShape *find_census_witness_shape(const String &p_leaf) {
+	for (const CensusWitnessShape &shape : census_witness_shapes) {
+		if (p_leaf == shape.leaf) {
+			return &shape;
+		}
+	}
+	return nullptr;
+}
+
+// A typed container enforces exactly one element type at run time, so `Array[uint | String]` is not a
+// spellable slot. The pair is refused here rather than rendered into a program that cannot parse: a
+// coordinate the adapter cannot realize is a catalog defect, not an observation.
+static bool destination_crosses_boundary(const String &p_destination, const String &p_boundary) {
+	return !(p_destination == "union" && p_boundary == "container_element_store");
 }
 
 static String source_expression_for(const String &p_source_proof) {
-	if (p_source_proof == "static_member") {
-		return "typed_source";
-	}
-	if (p_source_proof == "numeric_constant") {
-		return "5";
-	}
-	if (p_source_proof == "gradual") {
-		return "supply(5U)";
-	}
-	if (p_source_proof == "erased") {
-		return "erase[uint](5U)";
-	}
-	return "variant_source";
+	const SourceProofShape *shape = find_source_proof_shape(p_source_proof);
+	return shape == nullptr ? String("variant_source") : String(shape->expression);
 }
 
 static String boundary_body_for(const String &p_boundary) {
@@ -92,6 +279,95 @@ static String boundary_body_for(const String &p_boundary) {
 		   "\t@warning_ignore(\"unsafe_call_argument\")\n"
 		   "\tholder.set(&\"value\", SOURCE)\n"
 		   "\tvar stored: Variant = holder.value";
+}
+
+static String indent_block(const String &p_block) {
+	const PackedStringArray lines = p_block.split("\n");
+	String indented;
+	for (int index = 0; index < lines.size(); index++) {
+		indented += "\t" + lines[index] + "\n";
+	}
+	return indented;
+}
+
+// Declarations every wrapper-parity program carries, whatever its coordinates: the trait and class a
+// nominal or trait destination is satisfied by, the generic carrier a reified argument lives in, the
+// gradual and erasing sources, the callable a callable slot is filled with, and the carrier probe the
+// program's output is read through.
+static const char *wrapper_parity_preamble = R"FS(trait HasValue:
+	var value: uint = 0U
+
+class Carrier extends RefCounted:
+	uses HasValue
+
+class Box[T] extends RefCounted:
+	var value: T
+
+func supply(value):
+	return value
+
+func erase[T](value: T) -> Variant:
+	return value
+
+func identity_uint(value: uint) -> Variant:
+	return value
+
+func carrier_of(value: Variant) -> String:
+	if value is uint:
+		return "uint " + str(value)
+	if value is int:
+		return "int " + str(value)
+	return "other"
+)FS";
+
+// The program one wrapper-parity cell observes. The destination type is declared four times over -
+// on the evidence member, on the boundary's own site, on the wrapper local, and on the transported
+// local - so the runtime descriptor of the destination is inspectable even for a boundary whose slot
+// is a local the compiled script does not expose.
+static String render_wrapper_parity_source(const DestinationShape &p_destination,
+		const BoundaryShape &p_boundary, const SourceProofShape &p_source_proof,
+		const CensusWitnessShape &p_census_witness) {
+	const String destination_type = p_destination.type_spelling;
+	const String default_expression = p_destination.default_expression;
+	auto substitute = [&](const String &p_text) {
+		return p_text.replace("DESTINATION", destination_type).replace("DEFAULT", default_expression);
+	};
+
+	String source = wrapper_parity_preamble;
+	source += vformat("\nclass DestinationEvidence extends RefCounted:\n\tvar value: %s = %s\n",
+			destination_type, default_expression);
+	const String declarations = substitute(p_boundary.declarations);
+	if (!declarations.is_empty()) {
+		source += "\n" + declarations + "\n";
+	}
+	const String census_declarations = p_census_witness.declarations;
+	if (!census_declarations.is_empty()) {
+		source += "\n" + census_declarations + "\n";
+	}
+
+	String body = "var typed_source: uint = 5U\n"
+				  "var variant_source: Variant = 5U\n"
+				  "var inferred_source := 5U\n"
+				  "var nested_source: Array = [5U]\n"
+				  "var _source_witnesses: Variant = [typed_source, variant_source, inferred_source, "
+				  "nested_source]\n";
+	const String source_expression = p_source_proof.expression;
+	body += String(p_destination.wrap_statements).replace("SOURCE", source_expression) + "\n";
+	body += substitute(p_boundary.statements) + "\n";
+	const String census_use = p_census_witness.use_statement;
+	if (!census_use.is_empty()) {
+		body += census_use + "\n";
+	}
+	const String unwrap_annotation = p_destination.unwrap_annotation;
+	if (!unwrap_annotation.is_empty()) {
+		body += unwrap_annotation + "\n";
+	}
+	body += vformat("var stored: Variant = %s\n",
+			String(p_destination.unwrap_expression).replace("SOURCE", source_expression));
+	body += "print(carrier_of(stored))";
+
+	source += "\nfunc test() -> void:\n" + indent_block(body);
+	return source;
 }
 
 static const char *DIAGNOSTIC_SEVERITY_ERROR = "error";
@@ -115,6 +391,23 @@ static void append_error_diagnostic(FSCompletenessObservation &r_observation, co
 	r_observation.diagnostics.push_back(p_message);
 	r_observation.diagnostic_records.push_back(make_diagnostic_record(
 			DIAGNOSTIC_SEVERITY_ERROR, "harness", p_code, 0, 0, p_message, false));
+}
+
+// The strongest severity the observation recorded, decided exactly the way the runner's own severity
+// profile decides it. Publishing it as a dimension lets a family require it, so an accepted cell that
+// starts erroring - or a rejected one that decays into a warning - is a named mismatch rather than an
+// unexplained diagnostics finding.
+static String observed_diagnostic_severity(const FSCompletenessObservation &p_observation) {
+	bool has_warning = false;
+	for (int index = 0; index < p_observation.diagnostic_records.size(); index++) {
+		const Dictionary record = p_observation.diagnostic_records[index];
+		const String severity = record.get("severity", String());
+		if (severity == DIAGNOSTIC_SEVERITY_ERROR) {
+			return DIAGNOSTIC_SEVERITY_ERROR;
+		}
+		has_warning = has_warning || severity == DIAGNOSTIC_SEVERITY_WARNING;
+	}
+	return has_warning ? DIAGNOSTIC_SEVERITY_WARNING : "none";
 }
 
 // Every diagnostic string must own an error record so the severity profile derived from
@@ -422,13 +715,50 @@ static bool is_safe_case_id(const String &p_case_id) {
 	return true;
 }
 
+// The coordinates one program was rendered from. A cell that names a census child slot lives in the
+// wrapper-parity coordinate space and carries five axes; the destination-membership pilot's space
+// carries four and no census child. Which space a cell belongs to decides the program layout, so it
+// is read once here and passed on rather than re-derived at each use.
+struct ProgramCoordinates {
+	String destination;
+	String source_proof;
+	String boundary;
+	String surface;
+	String census_child;
+	bool names_census_child = false;
+};
+
+static bool read_coordinates(const Dictionary &p_coordinates, ProgramCoordinates &r_read) {
+	r_read = ProgramCoordinates();
+	const bool names_census_child = p_coordinates.has("census_child");
+	if (p_coordinates.size() != (names_census_child ? 5 : 4)) {
+		return false;
+	}
+	if (!read_coordinate(p_coordinates, "destination", r_read.destination) ||
+			!read_coordinate(p_coordinates, "source_proof", r_read.source_proof) ||
+			!read_coordinate(p_coordinates, "boundary", r_read.boundary) ||
+			!read_coordinate(p_coordinates, "surface", r_read.surface)) {
+		return false;
+	}
+	r_read.names_census_child = names_census_child;
+	r_read.census_child = "none";
+	if (names_census_child && !read_coordinate(p_coordinates, "census_child", r_read.census_child)) {
+		return false;
+	}
+	return destination_crosses_boundary(r_read.destination, r_read.boundary);
+}
+
 static bool read_program_coordinates(const FSCompletenessProgram &p_program, String &r_destination,
 		String &r_source_proof, String &r_boundary, String &r_surface) {
-	return p_program.coordinates.size() == 4 &&
-			read_coordinate(p_program.coordinates, "destination", r_destination) &&
-			read_coordinate(p_program.coordinates, "source_proof", r_source_proof) &&
-			read_coordinate(p_program.coordinates, "boundary", r_boundary) &&
-			read_coordinate(p_program.coordinates, "surface", r_surface);
+	ProgramCoordinates coordinates;
+	if (!read_coordinates(p_program.coordinates, coordinates)) {
+		return false;
+	}
+	r_destination = coordinates.destination;
+	r_source_proof = coordinates.source_proof;
+	r_boundary = coordinates.boundary;
+	r_surface = coordinates.surface;
+	return true;
 }
 
 enum RuntimeDestinationKind {
@@ -641,7 +971,7 @@ static Error validate_runtime_staging_whitelist(
 }
 
 #ifdef TOOLS_ENABLED
-class UnionCompletenessBytecodeResolver : public FSBytecodeExternalResolver {
+class DestinationWrapperBytecodeResolver : public FSBytecodeExternalResolver {
 public:
 	virtual Ref<Resource> resolve_resource(const String &) override {
 		return Ref<Resource>();
@@ -701,7 +1031,7 @@ static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompl
 		Ref<FoundryScript> &r_original, Ref<FoundryScript> &r_inspected, PackedStringArray &r_diagnostics) {
 	r_original.unref();
 	r_inspected.unref();
-	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(
+	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
 			"runtime_contract_" + p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		r_diagnostics.push_back("Runtime contract source identity is unavailable.");
@@ -748,7 +1078,7 @@ static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompl
 		Ref<FoundryScript> restored;
 		restored.instantiate();
 		restored->set_path_cache(r_original->get_script_path());
-		UnionCompletenessBytecodeResolver resolver;
+		DestinationWrapperBytecodeResolver resolver;
 		FSBytecodeLoader loader;
 		loader.set_resolver(&resolver);
 		error = loader.load_skeleton(buffer, restored);
@@ -775,9 +1105,54 @@ static RuntimeInspectionStepResult compile_runtime_contract_script(const FSCompl
 	return RuntimeInspectionStepResult();
 }
 
+static bool is_builtin_of(const FSDataType &p_descriptor, Variant::Type p_builtin_type) {
+	return p_descriptor.kind == FSDataType::BUILTIN && p_descriptor.builtin_type == p_builtin_type;
+}
+
+static bool is_script_kind(const FSDataType &p_descriptor) {
+	return p_descriptor.kind == FSDataType::FOUNDRY_SCRIPT || p_descriptor.kind == FSDataType::SCRIPT;
+}
+
+// Whether the descriptor the runtime kept for the destination slot is the shape the coordinates
+// declare. The structure is checked rather than a rendered spelling, so a destination that erased its
+// wrapper at run time is caught even when it still prints the same name.
 static bool descriptor_is_expected_destination(const FSDataType &p_descriptor, const String &p_destination) {
 	if (p_destination == "plain") {
-		return p_descriptor.kind == FSDataType::BUILTIN && p_descriptor.builtin_type == Variant::UINT;
+		return is_builtin_of(p_descriptor, Variant::UINT) && !p_descriptor.is_nullable;
+	}
+	if (p_destination == "optional") {
+		return is_builtin_of(p_descriptor, Variant::UINT) && p_descriptor.is_nullable;
+	}
+	if (p_destination == "container_element") {
+		return is_builtin_of(p_descriptor, Variant::ARRAY) &&
+				p_descriptor.container_element_types.size() == 1 &&
+				is_builtin_of(p_descriptor.container_element_types[0], Variant::UINT);
+	}
+	if (p_destination == "generic_argument") {
+		return is_script_kind(p_descriptor) && !p_descriptor.is_script_trait &&
+				p_descriptor.type_arguments.size() == 1 &&
+				is_builtin_of(p_descriptor.type_arguments[0], Variant::UINT);
+	}
+	if (p_destination == "tuple_field") {
+		if (p_descriptor.kind == FSDataType::TUPLE) {
+			return p_descriptor.container_element_types.size() == 2 &&
+					is_builtin_of(p_descriptor.container_element_types[0], Variant::UINT) &&
+					is_builtin_of(p_descriptor.container_element_types[1], Variant::STRING);
+		}
+		// A tuple slot lowers to the read-only Array its values are carried in, with no element type:
+		// the shape survives only in `is` tests. An element-typed Array is a container destination and
+		// stays distinguishable from it.
+		return is_builtin_of(p_descriptor, Variant::ARRAY) && p_descriptor.container_element_types.is_empty();
+	}
+	if (p_destination == "callable_slot") {
+		return is_builtin_of(p_descriptor, Variant::CALLABLE);
+	}
+	if (p_destination == "nominal_class") {
+		return is_script_kind(p_descriptor) && !p_descriptor.is_script_trait &&
+				p_descriptor.type_arguments.is_empty();
+	}
+	if (p_destination == "trait") {
+		return p_descriptor.get_source_type_name() == "HasValue";
 	}
 	if (p_descriptor.kind != FSDataType::UNION || p_descriptor.union_alternatives.size() != 2) {
 		return false;
@@ -785,10 +1160,8 @@ static bool descriptor_is_expected_destination(const FSDataType &p_descriptor, c
 	bool has_uint = false;
 	bool has_string = false;
 	for (const FSDataType &alternative : p_descriptor.union_alternatives) {
-		has_uint = has_uint ||
-				(alternative.kind == FSDataType::BUILTIN && alternative.builtin_type == Variant::UINT);
-		has_string = has_string ||
-				(alternative.kind == FSDataType::BUILTIN && alternative.builtin_type == Variant::STRING);
+		has_uint = has_uint || is_builtin_of(alternative, Variant::UINT);
+		has_string = has_string || is_builtin_of(alternative, Variant::STRING);
 	}
 	return has_uint && has_string;
 }
@@ -801,7 +1174,7 @@ struct RuntimeDescriptorEvidence {
 };
 
 static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const Ref<FoundryScript> &p_inspected,
-		const String &p_boundary, RuntimeDescriptorEvidence &r_evidence,
+		const ProgramCoordinates &p_coordinates, RuntimeDescriptorEvidence &r_evidence,
 		PackedStringArray &r_diagnostics) {
 	r_evidence = RuntimeDescriptorEvidence();
 	if (p_inspected.is_null()) {
@@ -810,7 +1183,25 @@ static RuntimeInspectionStepResult inspect_runtime_destination_descriptor(const 
 	}
 	r_evidence.inspected_instance_id = p_inspected->get_instance_id();
 	r_evidence.inspected_compiled_binary = p_inspected->is_compiled_binary();
-	if (p_boundary == "argument_binding") {
+	// A wrapper-parity program declares the destination on a class member of its own, so a boundary
+	// whose slot is a local the compiled script never exposes still has an inspectable descriptor.
+	if (p_coordinates.names_census_child) {
+		const Ref<FoundryScript> *evidence =
+				p_inspected->get_subclasses().getptr(SNAME("DestinationEvidence"));
+		if (evidence == nullptr || evidence->is_null()) {
+			r_diagnostics.push_back("Compiled DestinationEvidence class is unavailable.");
+			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		r_evidence.inspected_owner_instance_id = (*evidence)->get_instance_id();
+		const FSDataType *descriptor = (*evidence)->find_member_data_type(SNAME("value"));
+		if (descriptor == nullptr) {
+			r_diagnostics.push_back("Compiled DestinationEvidence.value descriptor is unavailable.");
+			return runtime_inspection_failure(ERR_INVALID_DATA, RUNTIME_INSPECTION_PRODUCT_FAILURE);
+		}
+		r_evidence.descriptor = *descriptor;
+		return RuntimeInspectionStepResult();
+	}
+	if (p_coordinates.boundary == "argument_binding") {
 		FSFunction *const *accept = p_inspected->get_member_functions().getptr(SNAME("accept"));
 		if (accept == nullptr || *accept == nullptr || (*accept)->get_argument_count() != 1) {
 			r_diagnostics.push_back("Compiled accept function does not expose one destination argument.");
@@ -845,11 +1236,11 @@ static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outco
 
 } // namespace
 
-void UnionCompletenessInternal::set_persisted_write_test_hook(PersistedWriteTestHook p_hook) {
+void DestinationWrapperInternal::set_persisted_write_test_hook(PersistedWriteTestHook p_hook) {
 	persisted_write_test_hook = p_hook;
 }
 
-UnionCompletenessInternal::SyntheticSourceScope::SyntheticSourceScope(
+DestinationWrapperInternal::SyntheticSourceScope::SyntheticSourceScope(
 		const String &p_identity, const String &p_source) :
 		lock(synthetic_source_mutex()) {
 	tree = memnew(TemporaryProjectTree(next_synthetic_source_tree_name()));
@@ -869,7 +1260,7 @@ UnionCompletenessInternal::SyntheticSourceScope::SyntheticSourceScope(
 	source_available = true;
 }
 
-UnionCompletenessInternal::SyntheticSourceScope::~SyntheticSourceScope() {
+DestinationWrapperInternal::SyntheticSourceScope::~SyntheticSourceScope() {
 	if (!path.is_empty()) {
 		FSCache::remove_parser(path);
 		FSCache::remove_script(path);
@@ -880,45 +1271,102 @@ UnionCompletenessInternal::SyntheticSourceScope::~SyntheticSourceScope() {
 	}
 }
 
-const FSUnionCompletenessAdapter &FSUnionCompletenessAdapter::shared() {
-	static FSUnionCompletenessAdapter adapter;
+Vector<String> destination_wrapper_destinations() {
+	Vector<String> leaves;
+	for (const DestinationShape &shape : destination_shapes) {
+		leaves.push_back(shape.leaf);
+	}
+	return leaves;
+}
+
+Vector<String> destination_wrapper_boundaries() {
+	Vector<String> leaves;
+	for (const BoundaryShape &shape : boundary_shapes) {
+		leaves.push_back(shape.leaf);
+	}
+	return leaves;
+}
+
+Vector<String> destination_wrapper_source_proofs() {
+	Vector<String> leaves;
+	for (const SourceProofShape &shape : source_proof_shapes) {
+		leaves.push_back(shape.leaf);
+	}
+	return leaves;
+}
+
+Vector<String> destination_wrapper_census_children() {
+	Vector<String> leaves;
+	for (const CensusWitnessShape &shape : census_witness_shapes) {
+		leaves.push_back(shape.leaf);
+	}
+	return leaves;
+}
+
+const FSDestinationWrapperAdapter &FSDestinationWrapperAdapter::shared() {
+	static FSDestinationWrapperAdapter adapter;
 	return adapter;
 }
 
-String FSUnionCompletenessAdapter::id() const {
-	return union_completeness_family;
+String FSDestinationWrapperAdapter::id() const {
+	return destination_wrapper_adapter_id;
 }
 
-HashSet<String> FSUnionCompletenessAdapter::observable_dimensions() const {
-	return HashSet<String>({ "analysis", "runtime_obligation", "stored_carrier" });
+Vector<String> FSDestinationWrapperAdapter::families() {
+	Vector<String> family_ids;
+	family_ids.push_back("union_destination_membership");
+	for (const String &boundary : destination_wrapper_boundaries()) {
+		family_ids.push_back("wrapper_parity_" + boundary);
+	}
+	family_ids.sort();
+	return family_ids;
 }
 
-HashMap<String, Vector<String>> FSUnionCompletenessAdapter::renderable_leaves() const {
+HashSet<String> FSDestinationWrapperAdapter::observable_dimensions() const {
+	return HashSet<String>(
+			{ "analysis", "runtime_obligation", "stored_carrier", "diagnostic_severity" });
+}
+
+HashMap<String, Vector<String>> FSDestinationWrapperAdapter::renderable_leaves() const {
 	HashMap<String, Vector<String>> leaves;
-	leaves["destination"] = Vector<String>({ "plain", "union" });
-	leaves["source_proof"] =
-			Vector<String>({ "static_member", "numeric_constant", "gradual", "erased", "variant" });
-	leaves["boundary"] = Vector<String>({ "argument_binding", "reflective_write" });
+	leaves["destination"] = destination_wrapper_destinations();
+	leaves["source_proof"] = destination_wrapper_source_proofs();
+	leaves["boundary"] = destination_wrapper_boundaries();
+	leaves["census_child"] = destination_wrapper_census_children();
 	leaves["surface"] = Vector<String>({ "text", "bytecode" });
 	return leaves;
 }
 
-Error FSUnionCompletenessAdapter::render(
+Error FSDestinationWrapperAdapter::render(
 		const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) const {
 	r_program = FSCompletenessProgram();
-	if (p_cell.case_id.is_empty() || p_cell.coordinates.size() != 4) {
+	ProgramCoordinates coordinates;
+	if (p_cell.case_id.is_empty() || !read_coordinates(p_cell.coordinates, coordinates)) {
 		return ERR_INVALID_DATA;
 	}
+	const String &destination = coordinates.destination;
+	const String &source_proof = coordinates.source_proof;
+	const String &boundary = coordinates.boundary;
+	const String &surface = coordinates.surface;
 
-	String destination;
-	String source_proof;
-	String boundary;
-	String surface;
-	if (!read_coordinate(p_cell.coordinates, "destination", destination) ||
-			!read_coordinate(p_cell.coordinates, "source_proof", source_proof) ||
-			!read_coordinate(p_cell.coordinates, "boundary", boundary) ||
-			!read_coordinate(p_cell.coordinates, "surface", surface)) {
-		return ERR_INVALID_DATA;
+	if (coordinates.names_census_child) {
+		const DestinationShape *destination_shape = find_destination_shape(destination);
+		const BoundaryShape *boundary_shape = find_boundary_shape(boundary);
+		const SourceProofShape *source_proof_shape = find_source_proof_shape(source_proof);
+		const CensusWitnessShape *census_witness_shape = find_census_witness_shape(coordinates.census_child);
+		if (destination_shape == nullptr || boundary_shape == nullptr || source_proof_shape == nullptr ||
+				census_witness_shape == nullptr) {
+			return ERR_INVALID_DATA;
+		}
+		FSCompletenessProgram wrapper_program;
+		wrapper_program.case_id = p_cell.case_id;
+		wrapper_program.surface = surface;
+		wrapper_program.coordinates = p_cell.coordinates.duplicate();
+		wrapper_program.source = render_wrapper_parity_source(
+				*destination_shape, *boundary_shape, *source_proof_shape, *census_witness_shape);
+		wrapper_program.expected_output = "uint 5\n";
+		r_program = wrapper_program;
+		return OK;
 	}
 
 	const String destination_type = destination == "plain" ? "uint" : "uint | String";
@@ -962,7 +1410,7 @@ BOUNDARY_BODY
 	return OK;
 }
 
-FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
+FSCompletenessObservation FSDestinationWrapperAdapter::analyze(
 		const FSCompletenessProgram &p_program, const String &p_surface) const {
 	if (p_surface != "text" && p_surface != "bytecode") {
 		return rejected_observation(p_program, p_surface, vformat("Unknown surface '%s'.", p_surface));
@@ -978,7 +1426,7 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	FSCompletenessObservation observation;
 	observation.case_id = p_program.case_id;
 	observation.surface = p_surface;
-	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
+	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
 	if (!synthetic_source.is_available()) {
 		observation.dimensions["analysis"] = "reject";
 		append_error_diagnostic(
@@ -1006,25 +1454,27 @@ FSCompletenessObservation FSUnionCompletenessAdapter::analyze(
 	append_unsuppressed_diagnostic_records(p_program.source, path, observation);
 	observation.dimensions["analysis"] = parse_error == OK && analyzer_error == OK ? "accept" : "reject";
 	cover_diagnostics_with_records(observation);
+	observation.dimensions["diagnostic_severity"] = observed_diagnostic_severity(observation);
 	return observation;
 }
 
 static FSCompletenessObservation inspect_runtime_contract_body(
 		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context, Error &r_structural_error) {
 	r_structural_error = OK;
-	FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(p_program, p_program.surface);
+	FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(p_program, p_program.surface);
 
-	String destination;
-	String source_proof;
-	String boundary;
-	String surface;
-	if (!read_program_coordinates(p_program, destination, source_proof, boundary, surface) ||
-			surface != p_program.surface) {
+	ProgramCoordinates coordinates;
+	if (!read_coordinates(p_program.coordinates, coordinates) ||
+			coordinates.surface != p_program.surface) {
 		observation.diagnostics.push_back("Runtime contract coordinates are invalid.");
 		r_structural_error = ERR_INVALID_DATA;
 		return observation;
 	}
-	for (const String &axis : { String("destination"), String("source_proof"), String("boundary"), String("surface") }) {
+	const String &destination = coordinates.destination;
+	const String &source_proof = coordinates.source_proof;
+	const String &boundary = coordinates.boundary;
+	const String &surface = coordinates.surface;
+	for (const String &axis : Completeness::sorted_dictionary_keys(p_program.coordinates)) {
 		if (p_runtime_context.has(axis) &&
 				p_runtime_context.get(axis, Variant()) != p_program.coordinates.get(axis, Variant())) {
 			observation.diagnostics.push_back(
@@ -1066,13 +1516,14 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 	}
 	RuntimeDescriptorEvidence descriptor_evidence;
 	const RuntimeInspectionStepResult descriptor_result = inspect_runtime_destination_descriptor(
-			inspected, boundary, descriptor_evidence, observation.diagnostics);
+			inspected, coordinates, descriptor_evidence, observation.diagnostics);
 	observation.dimensions["original_instance_id"] = int64_t(original_instance_id);
 	if (descriptor_evidence.inspected_instance_id.is_valid()) {
 		observation.dimensions["inspected_instance_id"] = int64_t(descriptor_evidence.inspected_instance_id);
 	}
 	observation.dimensions["inspected_compiled_binary"] = descriptor_evidence.inspected_compiled_binary;
-	if (boundary == "reflective_write" && descriptor_evidence.inspected_owner_instance_id.is_valid()) {
+	if ((coordinates.names_census_child || boundary == "reflective_write") &&
+			descriptor_evidence.inspected_owner_instance_id.is_valid()) {
 		observation.dimensions["inspected_owner_instance_id"] =
 				int64_t(descriptor_evidence.inspected_owner_instance_id);
 	}
@@ -1085,7 +1536,8 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 
 	if (!descriptor_is_expected_destination(descriptor_evidence.descriptor, destination)) {
 		observation.diagnostics.push_back(vformat(
-				"Runtime destination descriptor does not match declared '%s' coordinates.", destination));
+				"Runtime destination descriptor '%s' does not match declared '%s' coordinates.",
+				descriptor_evidence.descriptor.get_source_type_name(), destination));
 	}
 	Ref<RefCounted> unrelated;
 	unrelated.instantiate();
@@ -1106,13 +1558,19 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 		return observation;
 	}
 
-	if (source_proof == "gradual" || source_proof == "erased" || source_proof == "variant") {
+	const SourceProofShape *source_proof_shape = find_source_proof_shape(source_proof);
+	const DestinationShape *destination_shape = find_destination_shape(destination);
+	if (source_proof_shape == nullptr || destination_shape == nullptr) {
+		observation.diagnostics.push_back("Runtime contract coordinates name no rendered shape.");
+		r_structural_error = ERR_INVALID_DATA;
+		return observation;
+	}
+	if (source_proof_shape->unproven) {
 		observation.dimensions["runtime_obligation"] =
 				destination == "union" ? "union_membership_check" : "typed_destination_check";
 	}
-	if (source_proof == "numeric_constant") {
-		observation.dimensions["stored_carrier"] =
-				destination == "union" ? "admitting_alternative" : "plain_destination";
+	if (source_proof_shape->carrier_provable) {
+		observation.dimensions["stored_carrier"] = destination_shape->stored_carrier;
 	}
 	return observation;
 }
@@ -1122,16 +1580,17 @@ static FSCompletenessObservation inspect_runtime_contract_internal(
 	FSCompletenessObservation observation =
 			inspect_runtime_contract_body(p_program, p_runtime_context, r_structural_error);
 	cover_diagnostics_with_records(observation);
+	observation.dimensions["diagnostic_severity"] = observed_diagnostic_severity(observation);
 	return observation;
 }
 
-FSCompletenessObservation FSUnionCompletenessAdapter::inspect_runtime_contract(
+FSCompletenessObservation FSDestinationWrapperAdapter::inspect_runtime_contract(
 		const FSCompletenessProgram &p_program, const Dictionary &p_runtime_context) const {
 	Error structural_error = OK;
 	return inspect_runtime_contract_internal(p_program, p_runtime_context, structural_error);
 }
 
-Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
+Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 		const Vector<FSCompletenessProgram> &p_programs, FSCompletenessRuntimeBatch &r_batch) const {
 	r_batch = FSCompletenessRuntimeBatch();
 	const String test_scratch_root = TemporaryProjectTree::get_test_scratch_root();
@@ -1157,6 +1616,11 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 		String bytecode_id;
 	};
 	HashMap<String, SemanticPair> pairs;
+	// The family every case ID in this batch must be canonical under. A rendered program carries no
+	// family, so the first program decides which of the adapter's families the batch belongs to and
+	// every later one has to agree: a batch mixing two families would otherwise pass an identity check
+	// that only ever asked "is this canonical under some family".
+	String batch_family;
 	HashSet<String> case_ids;
 	HashMap<String, String> case_id_pair_keys;
 	HashMap<String, String> case_id_surfaces;
@@ -1186,7 +1650,17 @@ Error FSUnionCompletenessAdapter::execute(const String &p_scratch_root,
 		case_ids.insert(program.case_id);
 		case_id_pair_keys[program.case_id] = pair_key;
 		case_id_surfaces[program.case_id] = surface;
-		if (program.case_id != FSCompletenessCaseID::make(union_completeness_family, program.coordinates)) {
+		if (batch_family.is_empty()) {
+			for (const String &candidate : FSDestinationWrapperAdapter::families()) {
+				if (program.case_id == FSCompletenessCaseID::make(candidate, program.coordinates)) {
+					batch_family = candidate;
+					break;
+				}
+			}
+			if (batch_family.is_empty()) {
+				return ERR_INVALID_DATA;
+			}
+		} else if (program.case_id != FSCompletenessCaseID::make(batch_family, program.coordinates)) {
 			return ERR_INVALID_DATA;
 		}
 

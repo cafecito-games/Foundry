@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "adapter": "union_destination_membership",
+  "adapter": "destination_wrapper",
   "dimensions": [
     {
       "id": "analysis",
@@ -20,7 +20,22 @@
       "id": "stored_carrier",
       "outcomes": [
         "plain_destination",
-        "admitting_alternative"
+        "admitting_alternative",
+        "optional_payload",
+        "element_slot",
+        "reified_argument",
+        "tuple_slot",
+        "callable_slot",
+        "nominal_instance",
+        "trait_witness"
+      ]
+    },
+    {
+      "id": "diagnostic_severity",
+      "outcomes": [
+        "none",
+        "warning",
+        "error"
       ]
     }
   ]

@@ -458,7 +458,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		warned.surface = "text";
 		warned.source = "func test() -> void:\n\tvar unused_local := 1\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(warned, "text");
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(warned, "text");
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 		CHECK(observation.diagnostics.is_empty());
 		bool found_warning = false;
@@ -482,7 +482,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 				"func test() -> void:\n\t@warning_ignore(\"unused_variable\")\n\tvar unused_local := 1\n";
 
 		const FSCompletenessObservation suppressed_observation =
-				FSUnionCompletenessAdapter::shared().analyze(suppressed, "text");
+				FSDestinationWrapperAdapter::shared().analyze(suppressed, "text");
 		CHECK_EQ(String(suppressed_observation.dimensions.get("analysis", String())), "accept");
 		CHECK(suppressed_observation.diagnostics.is_empty());
 		bool found_suppressed = false;
@@ -505,7 +505,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local := 1\n";
 
 		const FSCompletenessObservation inline_observation =
-				FSUnionCompletenessAdapter::shared().analyze(inline_suppressed, "text");
+				FSDestinationWrapperAdapter::shared().analyze(inline_suppressed, "text");
 		CHECK_EQ(String(inline_observation.dimensions.get("analysis", String())), "accept");
 		CHECK(inline_observation.diagnostics.is_empty());
 		bool found_inline_suppressed = false;
@@ -527,7 +527,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 				"func test() -> void:\n\t@warning_ignore(\n\t\t\"unused_variable\")\n\tvar unused_local := 1\n";
 
 		const FSCompletenessObservation multiline_observation =
-				FSUnionCompletenessAdapter::shared().analyze(multiline_suppressed, "text");
+				FSDestinationWrapperAdapter::shared().analyze(multiline_suppressed, "text");
 		CHECK_EQ(String(multiline_observation.dimensions.get("analysis", String())), "accept");
 		CHECK(multiline_observation.diagnostics.is_empty());
 		bool found_multiline_suppressed = false;
@@ -558,7 +558,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 				"\tvar unused_local := 1\n";
 
 		const FSCompletenessObservation commented_observation =
-				FSUnionCompletenessAdapter::shared().analyze(commented_suppressed, "text");
+				FSDestinationWrapperAdapter::shared().analyze(commented_suppressed, "text");
 		CHECK_EQ(String(commented_observation.dimensions.get("analysis", String())), "accept");
 		CHECK(commented_observation.diagnostics.is_empty());
 		bool found_commented_suppressed = false;
@@ -583,7 +583,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local = 1\n";
 
 		const FSCompletenessObservation mixed_observation =
-				FSUnionCompletenessAdapter::shared().analyze(mixed_suppression, "text");
+				FSDestinationWrapperAdapter::shared().analyze(mixed_suppression, "text");
 		CHECK_EQ(String(mixed_observation.dimensions.get("analysis", String())), "accept");
 		bool found_emitted_untyped = false;
 		bool found_ignored_unused = false;
@@ -633,7 +633,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		suppressed.source =
 				"func test() -> void:\n\t@warning_ignore(\"unused_variable\")\n\tvar unused_local := 1\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(suppressed, "text");
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(suppressed, "text");
 		// The annotation hides the promoted diagnostic from the analysis outcome entirely.
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 		CHECK(observation.diagnostics.is_empty());
@@ -833,7 +833,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 			program.surface = "text";
 			program.source = source;
 			const FSCompletenessObservation observation =
-					FSUnionCompletenessAdapter::shared().analyze(program, "text");
+					FSDestinationWrapperAdapter::shared().analyze(program, "text");
 			CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 
 			int emitted_records = 0;
@@ -873,7 +873,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 				"@warning_ignore(\"unused_parameter\") func test(first: int, second: int) -> void:\n\tpass\n";
 
 		const FSCompletenessObservation observation =
-				FSUnionCompletenessAdapter::shared().analyze(shared_line, "text");
+				FSDestinationWrapperAdapter::shared().analyze(shared_line, "text");
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 		CHECK(observation.diagnostics.is_empty());
 		Vector<Dictionary> parameter_records;
@@ -909,7 +909,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		rejected.source =
 				"func test() -> void:\n\t@warning_ignore(\"unused_variable\") var unused_local: int = \"text\"\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(rejected, "text");
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(rejected, "text");
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
 		REQUIRE_FALSE(observation.diagnostics.is_empty());
 		int reported_errors = 0;
@@ -940,7 +940,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		invalid.surface = "text";
 		invalid.source = "func test() -> void:\n\tvar value: int = \"not an integer\"\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(invalid, "text");
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(invalid, "text");
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
 		REQUIRE_FALSE(observation.diagnostics.is_empty());
 		int error_records = 0;

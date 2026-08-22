@@ -35,7 +35,7 @@
 #include "fs_type_completeness_census.h"
 #include "fs_type_completeness_json.h"
 #include "fs_type_completeness_runner.h"
-#include "fs_type_completeness_union_adapter.h"
+#include "fs_type_completeness_destination_wrapper_adapter.h"
 
 #include "../fs_analyzer.h"
 #include "../fs_parser.h"
@@ -133,7 +133,7 @@ static Vector<FSCompletenessProgram> render_union_pilot_programs(const FSComplet
 	Vector<FSCompletenessProgram> programs;
 	for (const FSCompletenessResolvedCell &cell : p_resolution.cells) {
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
 		programs.push_back(program);
 	}
 	return programs;
@@ -418,7 +418,7 @@ static String union_pilot_resolved_source_fingerprint(
 
 static UnionPilotSemanticFingerprint union_pilot_semantic_fingerprint(const FSCompletenessProgram &p_program) {
 	UnionPilotSemanticFingerprint fingerprint;
-	UnionCompletenessInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
+	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(p_program.case_id, p_program.source);
 	REQUIRE(synthetic_source.is_available());
 	const String &path = synthetic_source.get_path();
 
@@ -531,7 +531,7 @@ struct UnionPilotProgramMutationScope {
 		union_pilot_persisted_write_mutation_count = 0;
 		union_pilot_runner_artifact_mutation_count = 0;
 		union_pilot_runner_report_mutation_count = 0;
-		UnionCompletenessInternal::set_persisted_write_test_hook(nullptr);
+		DestinationWrapperInternal::set_persisted_write_test_hook(nullptr);
 	}
 };
 
@@ -940,7 +940,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 					continue;
 				}
 				FSCompletenessProgram program;
-				REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
+				REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
 				CHECK_EQ(FileAccess::get_file_as_string(artifact_path), program.source);
 				durable_artifacts++;
 				break;
@@ -1009,7 +1009,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		union_pilot_mutated_case_id.clear();
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
+			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
 			if (is_union_pilot_adapter_diagnostic_target(program)) {
 				union_pilot_mutated_case_id = cell.case_id;
 				break;
@@ -1114,7 +1114,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		union_pilot_mutated_case_id.clear();
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
+			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
 			if (program.coordinates.get("surface", String()) != "text" ||
 					program.coordinates.get("destination", String()) != "plain" ||
 					program.coordinates.get("source_proof", String()) != "static_member" ||
@@ -1135,13 +1135,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		FSCompletenessProgram analysis_program;
 		for (const FSCompletenessResolvedCell &cell : resolution.cells) {
 			if (cell.case_id == union_pilot_mutated_case_id) {
-				REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, analysis_program), OK);
+				REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, analysis_program), OK);
 				analysis_program.source = union_pilot_program_mutation_source;
 				break;
 			}
 		}
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::shared().analyze(analysis_program, analysis_program.surface);
+				FSDestinationWrapperAdapter::shared().analyze(analysis_program, analysis_program.surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -1338,7 +1338,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE(text_cell != nullptr);
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(*text_cell, program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(*text_cell, program), OK);
 
 		TemporaryProjectTree tree(
 				vformat("type_completeness_union_artifact_report_%d", OS::get_singleton()->get_process_id()));
@@ -2365,7 +2365,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 			FSCompletenessRuntimeBatch batch;
-			const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
+			const Error execution_error = FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch);
 			REQUIRE_EQ(execution_error, OK);
 			if (execution_error != OK) {
 				return;
@@ -2457,7 +2457,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), OK);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch), OK);
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
 		const FSCompletenessRuntimeResult *target = batch.text.getptr(target_case_id);
@@ -2488,7 +2488,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		target_program->source = union_pilot_preload_source(
 				target_program->source, dependency_path, "CompilerFailureDependency");
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::shared().analyze(*target_program, target_program->surface);
+				FSDestinationWrapperAdapter::shared().analyze(*target_program, target_program->surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -2497,7 +2497,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(tree.is_valid());
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
+		const Error execution_error = FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch);
 		REQUIRE_EQ(execution_error, OK);
 		if (execution_error != OK) {
 			return;
@@ -2531,7 +2531,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		target_program->source = union_pilot_preload_source(
 				target_program->source, dependency_path, "BytecodeReloadDependency");
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::shared().analyze(*target_program, target_program->surface);
+				FSDestinationWrapperAdapter::shared().analyze(*target_program, target_program->surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -2542,7 +2542,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
 		ErrorDetector reload_error_detector;
 		ERR_PRINT_OFF;
-		const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
+		const Error execution_error = FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch);
 		ERR_PRINT_ON;
 		REQUIRE_EQ(execution_error, OK);
 		if (execution_error != OK) {
@@ -2576,7 +2576,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		target_program->source = target_program->source.replace("accept(", "accept_probe(");
 		const FSCompletenessObservation analysis =
-				FSUnionCompletenessAdapter::shared().analyze(*target_program, target_program->surface);
+				FSDestinationWrapperAdapter::shared().analyze(*target_program, target_program->surface);
 		CHECK_EQ(String(analysis.dimensions.get("analysis", String())), "accept");
 		CHECK(analysis.diagnostics.is_empty());
 
@@ -2585,7 +2585,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(tree.is_valid());
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		const Error execution_error = FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch);
+		const Error execution_error = FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch);
 		REQUIRE_EQ(execution_error, OK);
 		if (execution_error != OK) {
 			return;
@@ -2622,7 +2622,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> duplicate = valid;
 		duplicate.push_back(valid[0]);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_IN_USE);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_IN_USE);
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
 
@@ -2635,13 +2635,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> unknown = valid;
 		unknown.write[0].case_id = "unknown_case";
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_NE(FSUnionCompletenessAdapter::shared().execute(tree.root, unknown, batch), OK);
+		CHECK_NE(FSDestinationWrapperAdapter::shared().execute(tree.root, unknown, batch), OK);
 		check_union_pilot_runtime_batch_cleared(batch);
 
 		Vector<FSCompletenessProgram> duplicate = valid;
 		duplicate.write[1].case_id = duplicate[0].case_id;
 		batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_EXISTS);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(tree.root, duplicate, batch), ERR_ALREADY_EXISTS);
 		check_union_pilot_runtime_batch_cleared(batch);
 	}
 
@@ -2654,7 +2654,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> mismatch = valid;
 		mismatch.write[0].expected_output = "wrong output\n";
 		FSCompletenessRuntimeBatch batch;
-		const Error mismatch_error = FSUnionCompletenessAdapter::shared().execute(mismatch_tree.root, mismatch, batch);
+		const Error mismatch_error = FSDestinationWrapperAdapter::shared().execute(mismatch_tree.root, mismatch, batch);
 		REQUIRE_EQ(mismatch_error, OK);
 		if (mismatch_error != OK) {
 			return;
@@ -2671,7 +2671,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		Vector<FSCompletenessProgram> bad_carrier = valid;
 		bad_carrier.write[0].source = bad_carrier[0].source.replace("return \"uint \" + str(value)", "return \"bad \" + str(value)");
 		batch = stale_union_pilot_runtime_batch();
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().execute(carrier_tree.root, bad_carrier, batch), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().execute(carrier_tree.root, bad_carrier, batch), OK);
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
 		const HashMap<String, FSCompletenessRuntimeResult> &carrier_results =
@@ -2698,7 +2698,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		for (const String &unsafe_root : unsafe_roots) {
 			CAPTURE(unsafe_root);
 			FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-			CHECK_NE(FSUnionCompletenessAdapter::shared().execute(unsafe_root, programs, batch), OK);
+			CHECK_NE(FSDestinationWrapperAdapter::shared().execute(unsafe_root, programs, batch), OK);
 			check_union_pilot_runtime_batch_cleared(batch);
 		}
 
@@ -2706,7 +2706,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(invalid_tree.is_valid());
 		invalid_tree.write_file("occupied", "not a directory");
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_NE(FSUnionCompletenessAdapter::shared().execute(
+		CHECK_NE(FSDestinationWrapperAdapter::shared().execute(
 						 invalid_tree.root.path_join("occupied"), programs, batch),
 				OK);
 		check_union_pilot_runtime_batch_cleared(batch);
@@ -2731,7 +2731,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		ErrorDetector setup_error_detector;
 		ERR_PRINT_OFF;
 		const Error setup_error =
-				FSUnionCompletenessAdapter::shared().execute(tree.root, duplicate_class_programs, batch);
+				FSDestinationWrapperAdapter::shared().execute(tree.root, duplicate_class_programs, batch);
 		ERR_PRINT_ON;
 		CHECK_EQ(setup_error, ERR_CANT_OPEN);
 		CHECK(setup_error_detector.has_error);
@@ -2748,10 +2748,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(tree.is_valid());
 		const PackedStringArray entries_before = union_pilot_directory_entries(tree.root);
 
-		UnionCompletenessInternal::set_persisted_write_test_hook(
+		DestinationWrapperInternal::set_persisted_write_test_hook(
 				truncate_first_union_pilot_persisted_source);
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), ERR_FILE_CORRUPT);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch), ERR_FILE_CORRUPT);
 		CHECK_EQ(union_pilot_persisted_write_mutation_count, 1);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_EQ(union_pilot_directory_entries(tree.root), entries_before);
@@ -2770,14 +2770,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE_EQ(filesystem->create_link(neighbor.root, outside_root_link), OK);
 
 		FSCompletenessRuntimeBatch batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(outside_root_link, programs, batch), ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
 		CHECK_FALSE(FileAccess::exists(neighbor.root.path_join("text/project.foundry")));
 
 		REQUIRE_EQ(filesystem->create_link(neighbor.root, tree.root.path_join("ancestor_link")), OK);
 		REQUIRE_EQ(filesystem->make_dir_recursive(neighbor.root.path_join("existing_root")), OK);
 		batch = stale_union_pilot_runtime_batch();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(
 						 tree.root.path_join("ancestor_link/existing_root"), programs, batch),
 				ERR_UNAUTHORIZED);
 		check_union_pilot_runtime_batch_cleared(batch);
@@ -2798,7 +2798,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const PackedStringArray caller_entries_before = union_pilot_directory_entries(tree.root);
 
 		FSCompletenessRuntimeBatch batch;
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), OK);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch), OK);
 		CHECK_EQ(batch.text.size(), 20);
 		CHECK_EQ(batch.bytecode.size(), 20);
 		CHECK_EQ(union_pilot_directory_entries(tree.root), caller_entries_before);
@@ -2821,13 +2821,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE(union_gradual != nullptr);
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(*union_gradual, program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(*union_gradual, program), OK);
 		program.source = program.source.replace("uint | String", "uint | String | RefCounted");
 		Dictionary runtime_context = union_gradual->coordinates.duplicate();
 		runtime_context["produced_output"] = "uint 5\n";
 
 		const FSCompletenessObservation observation =
-				FSUnionCompletenessAdapter::shared().inspect_runtime_contract(program, runtime_context);
+				FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
 		CHECK(observation.diagnostics.has("Runtime destination descriptor admits RefCounted.new()."));
 		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
 	}
@@ -2836,14 +2836,14 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(resolution.cells[0], program), OK);
 		Dictionary runtime_context;
 		runtime_context["produced_output"] = "uint 5\n";
 		runtime_context["destination"] =
 				program.coordinates.get("destination", String()) == "plain" ? "union" : "plain";
 
 		const FSCompletenessObservation observation =
-				FSUnionCompletenessAdapter::shared().inspect_runtime_contract(program, runtime_context);
+				FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
 		CHECK(observation.diagnostics.has(
 				"Runtime context coordinate 'destination' disagrees with the program."));
 		CHECK_FALSE(observation.dimensions.has("runtime_obligation"));
@@ -2853,7 +2853,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(resolution.cells[0], program), OK);
 		const HashSet<String> packed_paths_before = PackedData::get_singleton()->get_file_paths();
 		const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
 		REQUIRE_FALSE(scratch_root.is_empty());
@@ -2861,7 +2861,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		String owned_path;
 		String owned_root;
 		{
-			UnionCompletenessInternal::SyntheticSourceScope source_scope(program.case_id, program.source);
+			DestinationWrapperInternal::SyntheticSourceScope source_scope(program.case_id, program.source);
 			REQUIRE(source_scope.is_available());
 			owned_path = source_scope.get_path();
 			owned_root = owned_path.get_base_dir();
@@ -2895,13 +2895,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			REQUIRE(expected_analysis != nullptr);
 
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
+			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
 			const String surface = cell.coordinates.get("surface", String());
 			CHECK_EQ(program.case_id, cell.case_id);
 			CHECK_EQ(program.surface, surface);
 			CHECK_EQ(program.expected_output, "uint 5\n");
 
-			const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(program, surface);
+			const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(program, surface);
 			CHECK_EQ(observation.case_id, cell.case_id);
 			CHECK_EQ(observation.surface, surface);
 			CHECK_EQ(String(observation.dimensions.get("analysis", String())), String(expected_analysis->expected));
@@ -2953,28 +2953,28 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			missing.coordinates = valid.coordinates.duplicate();
 			missing.coordinates.erase(axis);
 			FSCompletenessProgram program = stale_union_pilot_program();
-			CHECK_EQ(FSUnionCompletenessAdapter::shared().render(missing, program), ERR_INVALID_DATA);
+			CHECK_EQ(FSDestinationWrapperAdapter::shared().render(missing, program), ERR_INVALID_DATA);
 			check_union_pilot_program_cleared(program);
 
 			FSCompletenessResolvedCell unknown = valid;
 			unknown.coordinates = valid.coordinates.duplicate();
 			unknown.coordinates[axis] = "unknown";
 			program = stale_union_pilot_program();
-			CHECK_EQ(FSUnionCompletenessAdapter::shared().render(unknown, program), ERR_INVALID_DATA);
+			CHECK_EQ(FSDestinationWrapperAdapter::shared().render(unknown, program), ERR_INVALID_DATA);
 			check_union_pilot_program_cleared(program);
 
 			FSCompletenessResolvedCell wrong_type = valid;
 			wrong_type.coordinates = valid.coordinates.duplicate();
 			wrong_type.coordinates[axis] = 7;
 			program = stale_union_pilot_program();
-			CHECK_EQ(FSUnionCompletenessAdapter::shared().render(wrong_type, program), ERR_INVALID_DATA);
+			CHECK_EQ(FSDestinationWrapperAdapter::shared().render(wrong_type, program), ERR_INVALID_DATA);
 			check_union_pilot_program_cleared(program);
 		}
 
 		FSCompletenessResolvedCell empty_case = valid;
 		empty_case.case_id.clear();
 		FSCompletenessProgram program = stale_union_pilot_program();
-		CHECK_EQ(FSUnionCompletenessAdapter::shared().render(empty_case, program), ERR_INVALID_DATA);
+		CHECK_EQ(FSDestinationWrapperAdapter::shared().render(empty_case, program), ERR_INVALID_DATA);
 		check_union_pilot_program_cleared(program);
 	}
 
@@ -3087,7 +3087,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		malformed.surface = "text";
 		malformed.source = "func test(:\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(malformed, "text");
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(malformed, "text");
 		CHECK_EQ(observation.case_id, malformed.case_id);
 		CHECK_EQ(observation.surface, malformed.surface);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
@@ -3100,7 +3100,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		invalid.surface = "bytecode";
 		invalid.source = "func test() -> void:\n\tvar value: int = \"not an integer\"\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(invalid, "bytecode");
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(invalid, "bytecode");
 		CHECK_EQ(observation.case_id, invalid.case_id);
 		CHECK_EQ(observation.surface, invalid.surface);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
@@ -3118,15 +3118,15 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		}
 		REQUIRE(text_cell != nullptr);
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(*text_cell, program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(*text_cell, program), OK);
 
-		const FSCompletenessObservation mismatch = FSUnionCompletenessAdapter::shared().analyze(program, "bytecode");
+		const FSCompletenessObservation mismatch = FSDestinationWrapperAdapter::shared().analyze(program, "bytecode");
 		CHECK_EQ(mismatch.case_id, program.case_id);
 		CHECK_EQ(mismatch.surface, "bytecode");
 		CHECK_EQ(String(mismatch.dimensions.get("analysis", String())), "reject");
 		CHECK_FALSE(mismatch.diagnostics.is_empty());
 
-		const FSCompletenessObservation unknown = FSUnionCompletenessAdapter::shared().analyze(program, "unknown");
+		const FSCompletenessObservation unknown = FSDestinationWrapperAdapter::shared().analyze(program, "unknown");
 		CHECK_EQ(unknown.case_id, program.case_id);
 		CHECK_EQ(unknown.surface, "unknown");
 		CHECK_EQ(String(unknown.dimensions.get("analysis", String())), "reject");
@@ -3138,10 +3138,10 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(resolution.cells[0], program), OK);
 		program.case_id = "../../escape|x";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(program, program.surface);
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(program, program.surface);
 		CHECK_EQ(observation.case_id, program.case_id);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "accept");
 		CHECK(observation.diagnostics.is_empty());
@@ -3156,11 +3156,11 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		REQUIRE_FALSE(resolution.cells.is_empty());
 		FSCompletenessProgram program;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(resolution.cells[0], program), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(resolution.cells[0], program), OK);
 		program.case_id = "repeated_identity";
 
-		const FSCompletenessObservation first = FSUnionCompletenessAdapter::shared().analyze(program, program.surface);
-		const FSCompletenessObservation second = FSUnionCompletenessAdapter::shared().analyze(program, program.surface);
+		const FSCompletenessObservation first = FSDestinationWrapperAdapter::shared().analyze(program, program.surface);
+		const FSCompletenessObservation second = FSDestinationWrapperAdapter::shared().analyze(program, program.surface);
 		CHECK_EQ(first.case_id, program.case_id);
 		CHECK_EQ(second.case_id, program.case_id);
 		CHECK_EQ(String(first.dimensions.get("analysis", String())), "accept");
@@ -3177,7 +3177,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		malformed.source = "func first(:\nfunc second(:\n";
 
 		const FSCompletenessObservation malformed_observation =
-				FSUnionCompletenessAdapter::shared().analyze(malformed, malformed.surface);
+				FSDestinationWrapperAdapter::shared().analyze(malformed, malformed.surface);
 		CHECK_EQ(String(malformed_observation.dimensions.get("analysis", String())), "reject");
 		REQUIRE_EQ(malformed_observation.diagnostics.size(), 6);
 		CHECK_EQ(malformed_observation.diagnostics[0], "1:11: Expected parameter name.");
@@ -3192,7 +3192,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		invalid.surface = "text";
 		invalid.source = "func test() -> void:\n\tvar first: int = \"bad\"\n\tvar second: String = 7\n";
 
-		const FSCompletenessObservation observation = FSUnionCompletenessAdapter::shared().analyze(invalid, invalid.surface);
+		const FSCompletenessObservation observation = FSDestinationWrapperAdapter::shared().analyze(invalid, invalid.surface);
 		CHECK_EQ(String(observation.dimensions.get("analysis", String())), "reject");
 		REQUIRE_EQ(observation.diagnostics.size(), 2);
 		CHECK_EQ(observation.diagnostics[0],

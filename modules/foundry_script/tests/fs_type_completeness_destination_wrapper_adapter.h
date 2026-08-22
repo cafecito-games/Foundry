@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_type_completeness_union_adapter.h                                  */
+/*  fs_type_completeness_destination_wrapper_adapter.h                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -56,7 +56,7 @@ FSCompletenessProbeSource make_unsuppressed_probe_source(const String &p_source)
 
 struct TemporaryProjectTree;
 
-namespace UnionCompletenessInternal {
+namespace DestinationWrapperInternal {
 
 using PersistedWriteTestHook = void (*)(const String &);
 
@@ -82,12 +82,26 @@ public:
 	const String &get_path() const { return path; }
 };
 
-} // namespace UnionCompletenessInternal
+} // namespace DestinationWrapperInternal
 
-class FSUnionCompletenessAdapter : public FSCompletenessFamilyAdapter {
+// The leaves this adapter renders on each axis. Declared once here and returned verbatim by
+// `renderable_leaves()`, so a manifest domain, a partition test, and the renderer cannot disagree
+// about what the adapter covers.
+Vector<String> destination_wrapper_destinations();
+Vector<String> destination_wrapper_boundaries();
+Vector<String> destination_wrapper_source_proofs();
+Vector<String> destination_wrapper_census_children();
+
+class FSDestinationWrapperAdapter : public FSCompletenessFamilyAdapter {
 public:
 	// The one instance of this adapter, and the one the registry hands out.
-	static const FSUnionCompletenessAdapter &shared();
+	static const FSDestinationWrapperAdapter &shared();
+
+	// Families whose rule manifests name this adapter. A rendered program carries its coordinates and
+	// its identity but never the family that derived them, so the adapter needs the list to prove a
+	// batch's case IDs are the canonical identities of their coordinates under one family. The rule
+	// directory is the source of truth; a test holds this list and that directory together.
+	static Vector<String> families();
 
 	String id() const override;
 	Error render(const FSCompletenessResolvedCell &p_cell, FSCompletenessProgram &r_program) const override;

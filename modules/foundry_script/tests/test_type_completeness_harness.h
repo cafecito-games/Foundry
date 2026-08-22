@@ -654,13 +654,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Harness]") {
 		Vector<FSCompletenessProgram> programs;
 		for (const FSCompletenessResolvedCell &cell : record->resolution.cells) {
 			FSCompletenessProgram program;
-			REQUIRE_EQ(FSUnionCompletenessAdapter::shared().render(cell, program), OK);
+			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
 			programs.push_back(program);
 		}
 		TemporaryProjectTree tree(vformat("type_completeness_parity_%d", OS::get_singleton()->get_process_id()));
 		REQUIRE(tree.is_valid());
 		FSCompletenessRuntimeBatch batch;
-		REQUIRE_EQ(FSUnionCompletenessAdapter::shared().execute(tree.root, programs, batch), OK);
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().execute(tree.root, programs, batch), OK);
 
 		HashMap<String, int> disagreeing_pairs;
 		for (const FSCompletenessResolvedCell &cell : record->resolution.cells) {

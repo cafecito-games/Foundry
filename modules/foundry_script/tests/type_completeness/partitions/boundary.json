@@ -3,7 +3,12 @@
   "axis": "boundary",
   "leaves": [
     "argument_binding",
-    "reflective_write"
+    "return",
+    "assignment",
+    "member_store",
+    "container_element_store",
+    "reflective_write",
+    "proxy_write"
   ],
   "classes": {}
 }

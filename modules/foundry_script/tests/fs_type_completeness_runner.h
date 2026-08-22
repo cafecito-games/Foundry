@@ -31,7 +31,7 @@
 #pragma once
 
 #include "fs_type_completeness_common.h"
-#include "fs_type_completeness_union_adapter.h"
+#include "fs_type_completeness_destination_wrapper_adapter.h"
 
 #include "core/error/error_list.h"
 #include "core/templates/hash_set.h"
