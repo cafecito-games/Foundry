@@ -1946,10 +1946,10 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 				String(), String(), String(), ERR_INVALID_DATA));
 	} else {
 		for (const String &unresolved :
-				FSCompletenessCensus::unresolved_covered_witnesses(p_options.catalog_root, census_summary)) {
+				FSCompletenessCensus::unresolved_witnesses(p_options.catalog_root, census_summary)) {
 			structural_failures.push_back(make_structural_failure(
 					FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED,
-					vformat("A census cell declared covered has no witness that resolves: %s", unresolved),
+					vformat("A census claim has no witness that resolves: %s", unresolved),
 					String(), String(), String(), ERR_INVALID_DATA));
 		}
 	}

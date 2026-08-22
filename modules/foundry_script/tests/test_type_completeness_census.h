@@ -404,78 +404,109 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 	}
 
 	TEST_CASE("TypeCompleteness Census policy matrix is exactly complete") {
+		// Completeness of the matrix is decided by FSCompletenessCensus::load, because a run has to
+		// decide it too: a matrix that shrank together with its coverage entries would otherwise load
+		// clean inside the runner while only this test noticed.
 		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		CHECK_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+
 		Variant schema_data;
 		Variant representations_data;
 		Variant policies_data;
 		REQUIRE_MESSAGE(census_read_json("schema.json", schema_data, errors), String(" | ").join(errors));
 		REQUIRE_MESSAGE(census_read_json("representations.json", representations_data, errors), String(" | ").join(errors));
 		REQUIRE_MESSAGE(census_read_json("policies.json", policies_data, errors), String(" | ").join(errors));
-
-		const Dictionary schema = schema_data;
-		const HashSet<String> policies = census_string_set(census_string_array(schema, "policies"));
-		const Vector<String> surfaces = census_string_array(schema, "surfaces");
-		const HashSet<String> surface_set = census_string_set(surfaces);
-		REQUIRE_MESSAGE(policies.size() == 6, "schema.json must declare the six handling policies");
+		const Vector<String> surfaces = census_string_array(schema_data, "surfaces");
+		REQUIRE_MESSAGE(census_string_array(schema_data, "policies").size() == 6,
+				"schema.json must declare the six handling policies");
 		REQUIRE_MESSAGE(surfaces.size() == 6, "schema.json must declare the six surfaces");
 
-		const Vector<Dictionary> representations = census_dictionary_array(representations_data, "representations");
 		HashMap<String, HashSet<String>> slots_by_representation;
-		census_collect_representation_slots(representations, slots_by_representation, errors);
-
-		HashMap<String, int> entry_counts;
-		for (const Dictionary &entry : census_dictionary_array(policies_data, "entries")) {
-			const String representation = census_string(entry, "representation");
-			const String child_slot = census_string(entry, "child_slot");
-			const String surface = census_string(entry, "surface");
-			const String policy = census_string(entry, "policy");
-			const String rationale = census_string(entry, "rationale");
-
-			const HashSet<String> *slots = slots_by_representation.getptr(representation);
-			if (slots == nullptr) {
-				errors.push_back(vformat("policies: representation '%s' is not inventoried", representation));
-				continue;
-			}
-			if (!slots->has(child_slot)) {
-				errors.push_back(vformat("policies: %s has no child slot '%s'", representation, child_slot));
-				continue;
-			}
-			if (!surface_set.has(surface)) {
-				errors.push_back(vformat("policies: unknown surface '%s'", surface));
-				continue;
-			}
-			if (!policies.has(policy)) {
-				errors.push_back(vformat("policies: unknown policy '%s'", policy));
-				continue;
-			}
-			if (rationale.is_empty()) {
-				errors.push_back(vformat("policies: %s.%s on %s has no rationale", representation, child_slot, surface));
-				continue;
-			}
-			entry_counts[representation + "::" + child_slot + "::" + surface] += 1;
-		}
-
+		census_collect_representation_slots(
+				census_dictionary_array(representations_data, "representations"), slots_by_representation, errors);
 		int expected_entries = 0;
 		for (const KeyValue<String, HashSet<String>> &representation : slots_by_representation) {
-			for (const String &child_slot : representation.value) {
-				for (const String &surface : surfaces) {
-					expected_entries += 1;
-					const String key = representation.key + "::" + child_slot + "::" + surface;
-					const int *count = entry_counts.getptr(key);
-					if (count == nullptr) {
-						errors.push_back(vformat("policies: no policy for %s.%s on %s (uncovered child)",
-								representation.key, child_slot, surface));
-					} else if (*count > 1) {
-						errors.push_back(vformat("policies: %d policies for %s.%s on %s (ambiguous)",
-								*count, representation.key, child_slot, surface));
-					}
+			expected_entries += representation.value.size() * surfaces.size();
+		}
+		CHECK_EQ(census_dictionary_array(policies_data, "entries").size(), expected_entries);
+		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+	}
+
+	TEST_CASE("TypeCompleteness Census refuses a policy matrix that no longer covers the inventory") {
+		TemporaryProjectTree tree(vformat("type_completeness_census_matrix_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		Vector<String> read_errors;
+		Variant policies_data;
+		REQUIRE_MESSAGE(census_read_json("policies.json", policies_data, read_errors), String(" | ").join(read_errors));
+		Variant coverage_data;
+		REQUIRE_MESSAGE(census_read_json("coverage.json", coverage_data, read_errors), String(" | ").join(read_errors));
+
+		SUBCASE("a deleted policy takes its coverage entry with it and is still refused") {
+			// The pair disappears from both documents, which is exactly the shape a shrinking census
+			// takes: without the inventory cross-check both documents agree and nothing observes the
+			// loss.
+			Dictionary policies = Dictionary(policies_data).duplicate(true);
+			Array policy_entries = policies["entries"];
+			const Dictionary removed = policy_entries[0];
+			policy_entries.remove_at(0);
+			policies["entries"] = policy_entries;
+			tree.write_file("catalog/census/policies.json", JSON::stringify(policies, "\t") + "\n");
+
+			Dictionary coverage = Dictionary(coverage_data).duplicate(true);
+			Array coverage_entries = coverage["entries"];
+			for (int index = 0; index < coverage_entries.size(); index++) {
+				const Dictionary entry = coverage_entries[index];
+				if (entry["representation"] == removed["representation"] &&
+						entry["child_slot"] == removed["child_slot"] && entry["surface"] == removed["surface"]) {
+					coverage_entries.remove_at(index);
+					break;
 				}
 			}
+			coverage["entries"] = coverage_entries;
+			write_staged_coverage(tree, coverage);
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors,
+								  vformat("no policy for %s::%s::%s", String(removed["representation"]),
+										  String(removed["child_slot"]), String(removed["surface"]))),
+					String(" | ").join(errors));
+			CHECK(summary.entries.is_empty());
 		}
-		const int actual_entries = census_dictionary_array(policies_data, "entries").size();
-		CHECK_MESSAGE(actual_entries == expected_entries,
-				vformat("policies.json has %d entries but the inventory expects exactly %d", actual_entries, expected_entries));
-		CHECK_MESSAGE(errors.is_empty(), String(" | ").join(errors));
+
+		SUBCASE("a duplicated policy is ambiguous rather than accepted") {
+			Dictionary policies = Dictionary(policies_data).duplicate(true);
+			Array policy_entries = policies["entries"];
+			policy_entries.push_back(Dictionary(policy_entries[0]).duplicate(true));
+			policies["entries"] = policy_entries;
+			tree.write_file("catalog/census/policies.json", JSON::stringify(policies, "\t") + "\n");
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "policies for"), String(" | ").join(errors));
+		}
+
+		SUBCASE("a policy for a slot the inventory does not declare is refused") {
+			Dictionary policies = Dictionary(policies_data).duplicate(true);
+			Array policy_entries = policies["entries"];
+			Dictionary entry = Dictionary(policy_entries[0]).duplicate(true);
+			entry["child_slot"] = "a_slot_no_representation_declares";
+			policy_entries.push_back(entry);
+			policies["entries"] = policy_entries;
+			tree.write_file("catalog/census/policies.json", JSON::stringify(policies, "\t") + "\n");
+
+			Vector<String> errors;
+			FSCompletenessCensusSummary summary;
+			CHECK_EQ(load_staged_census(staged_root, summary, errors), ERR_INVALID_DATA);
+			CHECK_MESSAGE(census_errors_mention(errors, "has no child slot 'a_slot_no_representation_declares'"),
+					String(" | ").join(errors));
+		}
 	}
 
 	TEST_CASE("TypeCompleteness Census vocabularies and references are closed") {
@@ -824,14 +855,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		}
 	}
 
-	TEST_CASE("TypeCompleteness Census every covered witness resolves") {
+	TEST_CASE("TypeCompleteness Census every witness the census claims resolves") {
 		Vector<String> errors;
 		FSCompletenessCensusSummary summary;
 		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
 		CHECK(summary.covered > 0);
+		// An exemption stands on an executable negative witness, so those are claims too and resolve
+		// here alongside the coverage witnesses.
+		CHECK(summary.unsupported_witnesses.size() > 0);
 
 		const Vector<String> unresolved =
-				FSCompletenessCensus::unresolved_covered_witnesses(type_census_root(), summary);
+				FSCompletenessCensus::unresolved_witnesses(type_census_root(), summary);
 		CHECK_MESSAGE(unresolved.is_empty(), String(" | ").join(unresolved));
 
 		// Every witness kind the census can express is exercised, so a resolution path cannot rot
@@ -845,6 +879,37 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		CHECK(witness_kinds.has("doctest_case"));
 		CHECK(witness_kinds.has("fixture"));
 		CHECK(witness_kinds.has("family_case"));
+	}
+
+	TEST_CASE("TypeCompleteness Census refuses an exemption whose negative witness observes nothing") {
+		TemporaryProjectTree tree(vformat("type_completeness_census_exempt_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		Vector<String> read_errors;
+		Variant unsupported_data;
+		REQUIRE_MESSAGE(census_read_json("unsupported.json", unsupported_data, read_errors),
+				String(" | ").join(read_errors));
+		Dictionary document = Dictionary(unsupported_data).duplicate(true);
+		Array entries = document["entries"];
+		Dictionary entry = entries[0];
+		Array witnesses = entry["witnesses"];
+		Dictionary witness = witnesses[0];
+		witness["kind"] = "fixture";
+		witness["reference"] = "modules/foundry_script/tests/scripts/analyzer/errors/not_a_fixture.fs";
+		witnesses[0] = witness;
+		entry["witnesses"] = witnesses;
+		entries[0] = entry;
+		document["entries"] = entries;
+		tree.write_file("catalog/census/unsupported.json", JSON::stringify(document, "\t") + "\n");
+
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
+		const Vector<String> unresolved = FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+		REQUIRE_EQ(unresolved.size(), 1);
+		CHECK_MESSAGE(unresolved[0].begins_with(vformat("unsupported '%s'", String(entry["id"]))), unresolved[0]);
+		CHECK_MESSAGE(unresolved[0].contains("does not exist"), unresolved[0]);
 	}
 
 	TEST_CASE("TypeCompleteness Census names a broken witness of every kind") {
@@ -883,7 +948,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
 			REQUIRE_EQ(unresolved.size(), 1);
 			CHECK(unresolved[0].begins_with(String(entry["representation"]) + "::"));
 			CHECK_MESSAGE(unresolved[0].contains(broken.expected_fragment), unresolved[0]);
@@ -909,7 +974,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
 			REQUIRE_EQ(unresolved.size(), 1);
 			CHECK_MESSAGE(unresolved[0].contains("resolve to 0 cells"), unresolved[0]);
 		}
@@ -933,7 +998,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
 			REQUIRE_EQ(unresolved.size(), 1);
 			CHECK_MESSAGE(unresolved[0].contains("is not a repository-relative path"), unresolved[0]);
 		}
@@ -952,7 +1017,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		FSCompletenessCensusSummary summary;
 		REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 		const Vector<String> unresolved =
-				FSCompletenessCensus::unresolved_covered_witnesses(staged_root, summary);
+				FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
 		REQUIRE_EQ(unresolved.size(), 1);
 		CHECK_MESSAGE(unresolved[0].contains("declares no witness"), unresolved[0]);
 	}

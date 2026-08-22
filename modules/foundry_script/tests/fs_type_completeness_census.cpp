@@ -368,10 +368,12 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	const int error_count_on_entry = r_errors.size();
 
 	Dictionary schema;
+	Dictionary representations;
 	Dictionary policies;
 	Dictionary unsupported;
 	Dictionary coverage;
 	if (!read_census_document(p_root, "schema.json", schema, r_errors) ||
+			!read_census_document(p_root, "representations.json", representations, r_errors) ||
 			!read_census_document(p_root, "policies.json", policies, r_errors) ||
 			!read_census_document(p_root, "unsupported.json", unsupported, r_errors) ||
 			!read_census_document(p_root, "coverage.json", coverage, r_errors)) {
@@ -397,32 +399,108 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	// executable negative witnesses, so the shared vocabulary must not admit it there.
 	witness_kinds.insert(FAMILY_CASE_WITNESS_KIND);
 
+	const HashSet<String> policy_vocabulary = schema_vocabulary(schema, "policies");
+	const Vector<String> surfaces = census_string_array(schema, "surfaces");
+	if (policy_vocabulary.is_empty() || surfaces.is_empty()) {
+		r_errors.push_back("census/schema.json: no policy or surface vocabulary is declared");
+		return ERR_INVALID_DATA;
+	}
+
+	// The child slots the representations are inventoried with, crossed with the surfaces, are what the
+	// policy matrix must cover exactly. Deriving the matrix from policies.json alone would let a deleted
+	// policy and its coverage entry shrink the census together and still load.
+	HashMap<String, HashSet<String>> slots_by_representation;
+	Array representation_entries;
+	if (!require_object_array(representations, "representations",
+				census_directory(p_root).path_join("representations.json") + ":$.representations",
+				representation_entries, r_errors)) {
+		return ERR_INVALID_DATA;
+	}
+	for (int index = 0; index < representation_entries.size(); index++) {
+		const Dictionary representation = representation_entries[index];
+		const String id = census_string(representation, "id");
+		if (id.is_empty()) {
+			r_errors.push_back(vformat("%s:$.representations[%d]: names no id",
+					census_directory(p_root).path_join("representations.json"), index));
+			continue;
+		}
+		HashSet<String> slots;
+		for (const Dictionary &slot : census_dictionary_array(representation, "child_slots")) {
+			const String slot_id = census_string(slot, "id");
+			if (slot_id.is_empty()) {
+				r_errors.push_back(vformat("%s: a child slot of '%s' names no id",
+						census_directory(p_root).path_join("representations.json"), id));
+				continue;
+			}
+			slots.insert(slot_id);
+		}
+		slots_by_representation.insert(id, slots);
+	}
+
 	// The pair matrix and the exemption list decide what coverage.json must contain and what it may
 	// exempt, so a malformed one of either is refused here rather than read as a shorter matrix or as
 	// an absent exemption. Skipping a malformed entry would silently relax both rules at once.
 	const String policies_path = census_directory(p_root).path_join("policies.json");
-	HashSet<String> declared_pairs;
 	HashSet<String> required_pairs;
+	HashMap<String, int> policy_counts;
 	Array policy_entries;
 	if (!require_object_array(policies, "entries", policies_path + ":$.entries", policy_entries, r_errors)) {
 		return ERR_INVALID_DATA;
 	}
 	for (int index = 0; index < policy_entries.size(); index++) {
 		const Dictionary entry = policy_entries[index];
+		const String entry_path = vformat("%s:$.entries[%d]", policies_path, index);
 		const String representation = census_string(entry, "representation");
 		const String child_slot = census_string(entry, "child_slot");
 		const String surface = census_string(entry, "surface");
 		const String policy = census_string(entry, "policy");
-		if (representation.is_empty() || child_slot.is_empty() || surface.is_empty() || policy.is_empty()) {
-			r_errors.push_back(vformat("%s:$.entries[%d]: names no representation, child slot, surface, and policy",
-					policies_path, index));
+		const HashSet<String> *slots = slots_by_representation.getptr(representation);
+		if (slots == nullptr) {
+			r_errors.push_back(vformat("%s: representation '%s' is not inventoried", entry_path, representation));
+			continue;
+		}
+		if (!slots->has(child_slot)) {
+			r_errors.push_back(vformat("%s: %s has no child slot '%s'", entry_path, representation, child_slot));
+			continue;
+		}
+		if (!surfaces.has(surface)) {
+			r_errors.push_back(vformat("%s.surface: '%s' is outside the surface vocabulary", entry_path, surface));
+			continue;
+		}
+		if (!policy_vocabulary.has(policy)) {
+			r_errors.push_back(vformat("%s.policy: '%s' is outside the policy vocabulary", entry_path, policy));
+			continue;
+		}
+		if (census_string(entry, "rationale").is_empty()) {
+			r_errors.push_back(vformat("%s: declares a policy with no rationale", entry_path));
 			continue;
 		}
 		const String key = policy_pair_key(representation, child_slot, surface);
-		declared_pairs.insert(key);
+		policy_counts[key] += 1;
 		if (policy != "not_applicable") {
 			required_pairs.insert(key);
 		}
+	}
+
+	Vector<String> policy_matrix_errors;
+	for (const KeyValue<String, HashSet<String>> &representation : slots_by_representation) {
+		for (const String &child_slot : representation.value) {
+			for (const String &surface : surfaces) {
+				const String key = policy_pair_key(representation.key, child_slot, surface);
+				const int *count = policy_counts.getptr(key);
+				if (count == nullptr) {
+					policy_matrix_errors.push_back(
+							vformat("%s: no policy for %s (uncovered representation child)", policies_path, key));
+				} else if (*count > 1) {
+					policy_matrix_errors.push_back(
+							vformat("%s: %d policies for %s (ambiguous)", policies_path, *count, key));
+				}
+			}
+		}
+	}
+	policy_matrix_errors.sort();
+	for (const String &matrix_error : policy_matrix_errors) {
+		r_errors.push_back(matrix_error);
 	}
 	if (required_pairs.is_empty()) {
 		r_errors.push_back(vformat("%s:$.entries: no operative policy pair is declared", policies_path));
@@ -431,6 +509,7 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 	const String unsupported_path = census_directory(p_root).path_join("unsupported.json");
 	const HashSet<String> witness_statuses = schema_vocabulary(schema, "witness_statuses");
 	HashSet<String> witnessed_unsupported_representations;
+	Vector<FSCompletenessUnsupportedWitness> unsupported_witnesses;
 	Array unsupported_entries;
 	if (!require_object_array(
 				unsupported, "entries", unsupported_path + ":$.entries", unsupported_entries, r_errors)) {
@@ -474,6 +553,12 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			}
 			if (status == "present") {
 				witnessed_unsupported_representations.insert(representation);
+				FSCompletenessUnsupportedWitness present_witness;
+				present_witness.entry_id = census_string(entry, "id");
+				present_witness.representation = representation;
+				present_witness.witness.kind = kind;
+				present_witness.witness.reference = census_string(witness, "reference");
+				unsupported_witnesses.push_back(present_witness);
 			}
 		}
 	}
@@ -512,7 +597,7 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 			continue;
 		}
 		seen_keys.insert(key);
-		if (!declared_pairs.has(key)) {
+		if (policy_counts.getptr(key) == nullptr) {
 			r_errors.push_back(vformat("%s: %s is not a policy pair", json_path, key));
 			continue;
 		}
@@ -567,6 +652,7 @@ Error FSCompletenessCensus::load(const String &p_root, FSCompletenessCensusSumma
 		}
 	}
 	r_summary.entries = parsed_entries;
+	r_summary.unsupported_witnesses = unsupported_witnesses;
 	return OK;
 }
 
@@ -611,7 +697,7 @@ bool FSCompletenessCensus::resolve_witness(const String &p_root, const FSComplet
 	return false;
 }
 
-Vector<String> FSCompletenessCensus::unresolved_covered_witnesses(
+Vector<String> FSCompletenessCensus::unresolved_witnesses(
 		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
 	Vector<String> unresolved;
 	for (const FSCompletenessCoverageEntry &entry : p_summary.entries) {
@@ -621,6 +707,18 @@ Vector<String> FSCompletenessCensus::unresolved_covered_witnesses(
 		String detail;
 		if (!resolve_witness(p_root, entry, detail)) {
 			unresolved.push_back(vformat("%s: %s", entry.key(), detail));
+		}
+	}
+	// An exemption is only an exemption while the negative witness it stands on still observes the
+	// rejection. A reference nothing binds authorizes nothing, whatever its declared status says.
+	for (const FSCompletenessUnsupportedWitness &unsupported : p_summary.unsupported_witnesses) {
+		FSCompletenessCoverageEntry entry;
+		entry.representation = unsupported.representation;
+		entry.status = "unsupported";
+		entry.witness = unsupported.witness;
+		String detail;
+		if (!resolve_witness(p_root, entry, detail)) {
+			unresolved.push_back(vformat("unsupported '%s': %s", unsupported.entry_id, detail));
 		}
 	}
 	return unresolved;

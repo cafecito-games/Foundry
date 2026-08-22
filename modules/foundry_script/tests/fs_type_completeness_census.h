@@ -90,6 +90,14 @@ struct FSCompletenessCoverageEntry {
 	String key() const;
 };
 
+// A declared negative witness of an unsupported configuration, kept on the summary so a consumer
+// resolves the same evidence the census claims without reading unsupported.json a second time.
+struct FSCompletenessUnsupportedWitness {
+	String entry_id;
+	String representation;
+	FSCompletenessCoverageWitness witness;
+};
+
 struct FSCompletenessCensusSummary {
 	// Ascending by key, so a report assembled from a summary is byte-identical between runs.
 	Vector<FSCompletenessCoverageEntry> entries;
@@ -97,6 +105,9 @@ struct FSCompletenessCensusSummary {
 	int uncovered = 0;
 	int unsupported = 0;
 	int quality_deferred = 0;
+	// Present witnesses of unsupported.json, in document order. A deferred witness observes nothing and
+	// is not recorded here, so it can never authorize an exemption.
+	Vector<FSCompletenessUnsupportedWitness> unsupported_witnesses;
 
 	// covered + uncovered + unsupported + quality_deferred, which always equals entries.size().
 	int total() const;
@@ -124,9 +135,10 @@ public:
 	static bool resolve_witness(const String &p_root, const FSCompletenessCoverageEntry &p_entry,
 			String &r_detail);
 
-	// One message per entry that declares itself covered and whose witness does not resolve, in
-	// summary order. An empty result is what lets a run publish the census as evidence.
-	static Vector<String> unresolved_covered_witnesses(
+	// One message per witness the census claims and that does not resolve: the witness of every
+	// `covered` cell, and every present negative witness an exemption stands on. An empty result is
+	// what lets a run publish the census as evidence.
+	static Vector<String> unresolved_witnesses(
 			const String &p_root, const FSCompletenessCensusSummary &p_summary);
 };
 
