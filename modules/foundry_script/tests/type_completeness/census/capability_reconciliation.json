@@ -27,6 +27,34 @@
 			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
 		},
 		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_argument_binding.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_assignment.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_container_element_store.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_member_store.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_proxy_write.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_reflective_write.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_return.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
 			"path": "modules/foundry_script/tests/type_completeness/dimensions/",
 			"rationale": "Dimension declarations are shared by every family, so a change to one selects the broad core."
 		},

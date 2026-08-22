@@ -36,6 +36,62 @@
     },
     {
       "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_argument_binding.json"
+      ],
+      "families": [
+        "wrapper_parity_argument_binding"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_assignment.json"
+      ],
+      "families": [
+        "wrapper_parity_assignment"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_container_element_store.json"
+      ],
+      "families": [
+        "wrapper_parity_container_element_store"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_member_store.json"
+      ],
+      "families": [
+        "wrapper_parity_member_store"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_proxy_write.json"
+      ],
+      "families": [
+        "wrapper_parity_proxy_write"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_reflective_write.json"
+      ],
+      "families": [
+        "wrapper_parity_reflective_write"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_return.json"
+      ],
+      "families": [
+        "wrapper_parity_return"
+      ]
+    },
+    {
+      "paths": [
         "modules/foundry_script/tests/type_completeness/dimensions/",
         "modules/foundry_script/tests/type_completeness/partitions/"
       ],

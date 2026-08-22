@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "fs_type_completeness_common.h"
 #include "fs_type_completeness_manifest.h"
 
 #include "fs_temporary_project_tree.h"
@@ -1471,6 +1472,42 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Manifest]") {
 			CHECK_EQ(capability_map.validate_against_rule_directory(tree.root.path_join("rules"), errors),
 					ERR_INVALID_DATA);
 			CHECK(completeness_errors_contain_text(errors, test_case.diagnostic));
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Manifest every rule manifest selects exactly its own family") {
+		FSCompletenessCapabilityMap capability_map;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(capability_map.load(type_completeness_capability_path, errors) == OK,
+				String(" | ").join(errors));
+
+		const String rules_directory = String(type_completeness_catalog_root).path_join("rules");
+		Vector<String> rule_files;
+		Vector<Completeness::JsonDirectoryError> directory_errors;
+		REQUIRE_EQ(Completeness::enumerate_json_directory(rules_directory,
+						   Completeness::JsonDirectoryPolicy(), rule_files, directory_errors),
+				OK);
+		REQUIRE_FALSE(rule_files.is_empty());
+
+		for (const String &rule_file : rule_files) {
+			CAPTURE(rule_file);
+			FSCompletenessManifest manifest;
+			Vector<String> load_errors;
+			REQUIRE_MESSAGE(FSCompletenessManifest::load(rule_file, manifest, load_errors) == OK,
+					String(" | ").join(load_errors));
+			// A rule manifest is its family's own definition. A change that weakens a rule and
+			// regenerates that family's evidence has to select the family, or the gate compares the
+			// weakened rule against nothing and reports a clean run. The map is keyed by
+			// repository-relative paths, which is what a change set carries; the enumeration resolves
+			// to absolute ones.
+			const String changed_path = rules_directory.path_join(rule_file.get_file());
+			const FSCompletenessSelection selection = capability_map.select(Vector<String>({ changed_path }));
+			CHECK_MESSAGE(selection_has_only_family(selection, manifest.family),
+					vformat("%s selected %d families instead of only '%s'", changed_path,
+							selection.families.size(), manifest.family));
+			CHECK_FALSE(selection.used_broad_core_fallback);
+			CHECK_MESSAGE(selection.validation_errors.is_empty(),
+					String(" | ").join(selection.validation_errors));
 		}
 	}
 
