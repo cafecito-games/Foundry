@@ -362,6 +362,19 @@ static Dictionary aggregate_parity_evidence(const FSCompletenessResolvedCell &p_
 		if (text_value == bytecode_value) {
 			continue;
 		}
+		// Parity is agreement where the catalog says the surfaces must agree. A dimension whose expected
+		// value differs between the two cells was declared surface-dependent by the manifest that
+		// resolved them, and holding those two observations to each other would report the difference
+		// the catalog asked for as a disagreement. The observations are still judged against their own
+		// expectations, so a surface-dependent dimension is checked, just not against the other surface.
+		const FSCompletenessResolvedDimension *text_expectation =
+				p_text_cell.find_dimension(dimension_name);
+		const FSCompletenessResolvedDimension *bytecode_expectation =
+				p_bytecode_cell.find_dimension(dimension_name);
+		if (text_expectation != nullptr && bytecode_expectation != nullptr &&
+				text_expectation->expected != bytecode_expectation->expected) {
+			continue;
+		}
 		dimensions[dimension_name] = parity_evidence(
 				text_value, bytecode_value, p_text.case_id, p_bytecode.case_id);
 		if (!has_primary) {
