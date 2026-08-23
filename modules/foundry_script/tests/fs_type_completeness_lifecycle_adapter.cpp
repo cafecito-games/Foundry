@@ -77,6 +77,12 @@ static const LifecycleDestinationShape lifecycle_destination_shapes[] = {
 // What the source declares after the stale stage revises it. It only has to be a type no rendered
 // destination spells, so an artifact taken before the revision is distinguishable from the source
 // that exists when it is loaded. The stage checks that rather than assuming it.
+// The family whose program spans two files: a dependency that declares the carried type and a
+// dependent whose member is the dependency's class. Named here so the renderer, the carrier and the
+// observation agree on which cells are two-file cells.
+static const char *lifecycle_dependency_family = "lifecycle_dependency_invalidation";
+static const char *lifecycle_dependency_file = "dependency.fs";
+
 static const char *lifecycle_revised_spelling = "String";
 static const char *lifecycle_revised_initializer = "\"revised\"";
 
@@ -100,6 +106,33 @@ static bool read_coordinate(const Dictionary &p_coordinates, const String &p_axi
 
 // The source of one cell. `reordered` declares the carried member after the unrelated one instead of
 // before it, so the member set is identical and only its position in the class differs.
+// The dependency of a two-file cell: the file that declares the carried type. The dependent below
+// never names that type, so what it reports about it can only have come through the dependency.
+static String render_lifecycle_dependency(
+		const LifecycleDestinationShape &p_shape, const String &p_state, bool p_revised) {
+	const String spelling = p_revised ? String(lifecycle_revised_spelling) : String(p_shape.spelling);
+	const String initializer =
+			p_revised ? String(lifecycle_revised_initializer) : String(p_shape.initializer);
+	const String carried = vformat("\tvar value: %s = %s\n", spelling, initializer);
+	const String unrelated = "\tvar marker: int = 0\n";
+	String source = "class Carrier:\n";
+	source += p_state == "reordered" ? unrelated + carried : carried + unrelated;
+	return source;
+}
+
+// The dependent of a two-file cell. Its member is the dependency's class, so the carried type is
+// reached only by following that link.
+static String render_lifecycle_dependent() {
+	String source = vformat("const Dependency := preload(\"%s\")\n\n", lifecycle_dependency_file);
+	source += "class Holder:\n";
+	source += "\tvar value: Dependency.Carrier = Dependency.Carrier.new()\n";
+	source += "\tvar marker: int = 0\n";
+	source += "\nfunc test() -> void:\n";
+	source += "\tvar holder: Holder = Holder.new()\n";
+	source += "\tprint(holder.marker)\n";
+	return source;
+}
+
 static String render_lifecycle_source(
 		const LifecycleDestinationShape &p_shape, const String &p_state, bool p_revised) {
 	const String spelling = p_revised ? String(lifecycle_revised_spelling) : String(p_shape.spelling);
@@ -427,6 +460,43 @@ static String carried_type_spelling(const Ref<FoundryScript> &p_script) {
 	return carried->get_source_type_name();
 }
 
+// What a two-file cell reports: the carried type as the dependent's own compiled artifact describes
+// it, reached by following the member's script link into the dependency. Nothing here reads the
+// dependency directly, so a dependent that kept a stale view of it reports that stale view.
+// The carried type as the dependency itself declares it. Used to check that a revision of the
+// dependency declares something the original did not, which is what makes a stale view detectable.
+static String carrier_carried_type_spelling(const Ref<FoundryScript> &p_dependency) {
+	if (p_dependency.is_null()) {
+		return String();
+	}
+	const Ref<FoundryScript> *carrier = p_dependency->get_subclasses().getptr(SNAME("Carrier"));
+	if (carrier == nullptr || carrier->is_null()) {
+		return String();
+	}
+	const FSDataType *carried = (*carrier)->find_member_data_type(SNAME("value"));
+	return carried == nullptr ? String() : carried->get_source_type_name();
+}
+
+static String dependency_carried_type_spelling(const Ref<FoundryScript> &p_dependent) {
+	if (p_dependent.is_null()) {
+		return String();
+	}
+	const Ref<FoundryScript> *holder = p_dependent->get_subclasses().getptr(SNAME("Holder"));
+	if (holder == nullptr || holder->is_null()) {
+		return String();
+	}
+	const FSDataType *linked = (*holder)->find_member_data_type(SNAME("value"));
+	if (linked == nullptr) {
+		return String();
+	}
+	const Ref<FoundryScript> carrier = linked->script_type_ref;
+	if (carrier.is_null()) {
+		return String();
+	}
+	const FSDataType *carried = carrier->find_member_data_type(SNAME("value"));
+	return carried == nullptr ? String() : carried->get_source_type_name();
+}
+
 static bool spelling_is_erased(const String &p_spelling) {
 	return p_spelling.is_empty() || p_spelling == "Variant";
 }
@@ -447,6 +517,8 @@ struct LifecycleCarryRequest {
 	bool skip_invalidation = false;
 	// Reconstruct from whatever the identity serves now rather than from the artifact's own bytes.
 	bool from_source = false;
+	// The file the identity depends on, for a cell whose program spans two of them. Empty otherwise.
+	String dependency_path;
 	// Apply the transition to its own output once more.
 	bool twice = false;
 };
@@ -644,6 +716,76 @@ static Error carry_through_cache(const LifecycleCarryRequest &p_request,
 	return OK;
 }
 
+// The dependent is re-derived after its dependency changed, through the closure the product itself
+// computes for that file. What the cell reports is the dependent's own view of the carried type, so a
+// dependent that was never re-derived reports the view it already had.
+static Error carry_dependency_invalidation(const LifecycleCarryRequest &p_request, String &r_after) {
+	r_after = String();
+	if (p_request.dependency_path.is_empty()) {
+		return ERR_INVALID_PARAMETER;
+	}
+	if (p_request.skip_invalidation) {
+		// The dependency was given up and the dependent was never told, which is exactly what a missed
+		// invalidation is: the file changed, its own cache entry went, and everything that reached it
+		// kept the view it had already recorded. Nothing re-derives the dependent, so what it reports
+		// is that stale view.
+		FSCache::remove_parser(p_request.dependency_path);
+		FSCache::remove_script(p_request.dependency_path);
+		const Ref<FoundryScript> held = FSCache::get_cached_script(p_request.path);
+		if (held.is_null()) {
+			return ERR_INVALID_DATA;
+		}
+		r_after = dependency_carried_type_spelling(held);
+		return OK;
+	}
+	const int passes = p_request.twice ? 2 : 1;
+	for (int pass = 0; pass < passes; pass++) {
+		// Damaging this transition means damaging what the dependency serves, because that is what the
+		// re-derivation reads. It is put back afterwards, since the stage that damages it goes on to ask
+		// for the same transition undamaged.
+		Vector<uint8_t> healthy_dependency;
+		if (p_request.damaged) {
+			Error read_error = OK;
+			healthy_dependency = FileAccess::get_file_as_bytes(p_request.dependency_path, &read_error);
+			if (read_error != OK) {
+				return read_error;
+			}
+			const Error damage_error = write_artifact_at(
+					p_request.dependency_path, String(lifecycle_damaged_source).to_utf8_buffer());
+			if (damage_error != OK) {
+				return damage_error;
+			}
+		}
+		// What has to be re-derived when this file changes is the product's own answer, not a list kept
+		// here: asking it is the transition.
+		for (const String &reached :
+				FSCache::collect_parser_invalidation_closure(p_request.dependency_path)) {
+			FSCache::remove_parser(reached);
+			FSCache::remove_script(reached);
+		}
+		FSCache::remove_parser(p_request.dependency_path);
+		FSCache::remove_script(p_request.dependency_path);
+
+		Error error = OK;
+		const Ref<FoundryScript> rederived =
+				FSCache::get_full_script(p_request.path, error, String(), true);
+		if (p_request.damaged) {
+			const Error restore_error = write_artifact_at(p_request.dependency_path, healthy_dependency);
+			if (restore_error != OK) {
+				return restore_error;
+			}
+		}
+		if (error != OK || rederived.is_null() || !rederived->is_valid()) {
+			return OK;
+		}
+		r_after = dependency_carried_type_spelling(rederived);
+		if (r_after.is_empty()) {
+			return OK;
+		}
+	}
+	return OK;
+}
+
 static Error carry_reload(const LifecycleCarryRequest &p_request, String &r_after) {
 	return carry_through_cache(p_request, ENTRY_SURVIVES_THE_TRANSITION, nullptr, r_after);
 }
@@ -668,6 +810,7 @@ struct LifecycleFamilyShape {
 static const LifecycleFamilyShape lifecycle_family_shapes[] = {
 	{ "lifecycle_bytecode_export_load", carry_bytecode_export_load },
 	{ "lifecycle_cache_replacement", carry_cache_replacement },
+	{ "lifecycle_dependency_invalidation", carry_dependency_invalidation },
 	{ "lifecycle_proxy_reflection", carry_proxy_reflection },
 	{ "lifecycle_reload", carry_reload },
 	{ "lifecycle_shutdown_reinitialization", carry_shutdown_reinitialization },
@@ -794,7 +937,12 @@ Error FSLifecycleAdapter::render(
 	program.case_id = p_cell.case_id;
 	program.surface = surface;
 	program.coordinates = p_cell.coordinates.duplicate();
-	program.source = render_lifecycle_source(*shape, state, false);
+	// A two-file cell's program is the dependent; the dependency it preloads is rendered from the same
+	// coordinates when the cell is observed, so one cell never carries two sources around.
+	const bool spans_two_files =
+			p_cell.case_id == FSCompletenessCaseID::make(lifecycle_dependency_family, p_cell.coordinates);
+	program.source = spans_two_files ? render_lifecycle_dependent()
+									 : render_lifecycle_source(*shape, state, false);
 	// The evidence of a lifecycle cell is the type the transition handed back, not what the program
 	// printed, so the program is never run and both sides of the output comparison are empty.
 	program.expected_output = String();
@@ -857,8 +1005,16 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	// The scope is held for the whole observation. It is what serializes this run against every other
 	// user of a synthetic source, and a transition that takes the language down needs that: giving the
 	// scope up early would let a reinitialization clear a script another run was still reading.
-	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(
-			"lifecycle_" + p_program.case_id, p_program.source);
+	// A cell whose program spans two files puts both in one scope, so the dependent's `preload`
+	// resolves the way it would in a project and both files are serialized under the same lock.
+	const bool spans_two_files = p_family == lifecycle_dependency_family;
+	Vector<DestinationWrapperInternal::SyntheticSourceFile> scope_files;
+	scope_files.push_back({ ("lifecycle_" + p_program.case_id).sha256_text() + ".fs", p_program.source });
+	if (spans_two_files) {
+		scope_files.push_back(
+				{ String(lifecycle_dependency_file), render_lifecycle_dependency(*shape, state, false) });
+	}
+	DestinationWrapperInternal::SyntheticSourceScope synthetic_source(scope_files);
 	if (!synthetic_source.is_available()) {
 		append_diagnostic(observation, "identity_unavailable", "Lifecycle source identity is unavailable.");
 		if (r_structural_error != nullptr) {
@@ -867,6 +1023,17 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		return observation;
 	}
 	const String path = synthetic_source.get_path();
+	// The file a stage revises or retires: for a two-file cell that is the dependency, because what
+	// the cell measures is the dependent's view of it.
+	const String dependency_path =
+			spans_two_files ? synthetic_source.get_path_for(lifecycle_dependency_file) : String();
+	if (spans_two_files && dependency_path.is_empty()) {
+		append_diagnostic(observation, "identity_unavailable", "The lifecycle dependency is unavailable.");
+		if (r_structural_error != nullptr) {
+			*r_structural_error = ERR_CANT_CREATE;
+		}
+		return observation;
+	}
 
 	FSParser parser;
 	Ref<FoundryScript> compiled;
@@ -884,7 +1051,8 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	// against is taken from the freshly compiled script whatever surface the cell runs on. Taking it
 	// off the transition's own input instead would compare a round trip against its own output, which
 	// is blind to an erasure that is already in the artifact it started from.
-	const String before = carried_type_spelling(compiled);
+	const String before = spans_two_files ? dependency_carried_type_spelling(compiled)
+										  : carried_type_spelling(compiled);
 	if (before.is_empty()) {
 		append_diagnostic(observation, "carried_member_absent",
 				"The compiled program does not carry the member the transition is measured on.");
@@ -936,7 +1104,8 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		// now declares a type the subject does not. A transition that reads its own bytes still carries
 		// the original; one that re-derives from the identity carries the revision. Both are correct
 		// answers to different questions, and which one a family gives is exactly what this stage pins.
-		const String revised = render_lifecycle_source(*shape, state, true);
+		const String revised = spans_two_files ? render_lifecycle_dependency(*shape, state, true)
+											   : render_lifecycle_source(*shape, state, true);
 		{
 			// The revision is only usable as evidence if it declares something the original did not, and
 			// that is checked at an identity of its own so the entry behind `path` keeps serving what was
@@ -956,7 +1125,9 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 				}
 				return observation;
 			}
-			if (carried_type_spelling(probe_script) == before) {
+			const String probe_spelling = spans_two_files ? carrier_carried_type_spelling(probe_script)
+														  : carried_type_spelling(probe_script);
+			if (probe_spelling == before) {
 				append_diagnostic(observation, "revision_indistinguishable",
 						"The revised program declares the same type, so a stale identity cannot be told "
 						"apart.");
@@ -966,7 +1137,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 				return observation;
 			}
 		}
-		error = revise_source_at(path, revised);
+		error = revise_source_at(spans_two_files ? dependency_path : path, revised);
 		if (error == OK && identity != path) {
 			// The identity under test is the compiled binary, so what it serves is revised by exporting
 			// the revision and replacing that artifact - the same edit, expressed in the artifact the
@@ -997,6 +1168,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	LifecycleCarryRequest request;
 	request.subject = subject;
 	request.path = identity;
+	request.dependency_path = dependency_path;
 	request.from_source = load_transition_artifact_from_source_for_test;
 	request.skip_invalidation = skip_transition_invalidation_for_test;
 	request.twice = state == "incremental";
@@ -1004,7 +1176,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	if (state == "missing") {
 		// The identity the subject was compiled at stops serving anything before the transition runs,
 		// so nothing it carries may come from a source anyone can still read.
-		error = retire_source_at(identity);
+		error = retire_source_at(spans_two_files ? dependency_path : identity);
 		if (error != OK) {
 			append_diagnostic(observation, "retirement_failed",
 					vformat("The lifecycle source could not be retired (error %d).", error));

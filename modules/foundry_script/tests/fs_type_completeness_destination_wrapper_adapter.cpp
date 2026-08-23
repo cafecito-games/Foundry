@@ -1702,25 +1702,61 @@ void DestinationWrapperInternal::set_blank_reflection_hint_for_test(bool p_blank
 DestinationWrapperInternal::SyntheticSourceScope::SyntheticSourceScope(
 		const String &p_identity, const String &p_source) :
 		lock(synthetic_source_mutex()) {
+	open(Vector<SyntheticSourceFile>({ { p_identity.sha256_text() + ".fs", p_source } }));
+}
+
+DestinationWrapperInternal::SyntheticSourceScope::SyntheticSourceScope(
+		const Vector<SyntheticSourceFile> &p_files) :
+		lock(synthetic_source_mutex()) {
+	open(p_files);
+}
+
+void DestinationWrapperInternal::SyntheticSourceScope::open(const Vector<SyntheticSourceFile> &p_files) {
+	if (p_files.is_empty()) {
+		return;
+	}
 	tree = memnew(TemporaryProjectTree(next_synthetic_source_tree_name()));
 	if (!tree->is_valid()) {
 		return;
 	}
-
-	const String filename = p_identity.sha256_text() + ".fs";
-	path = tree->root.path_join(filename);
-	tree->write_file(filename, p_source);
-	if (!FileAccess::exists(path)) {
-		return;
+	// Every file is written before any of them is registered, because one may `preload` another and a
+	// half-written tree would resolve that to a file that is not there yet.
+	for (const SyntheticSourceFile &file : p_files) {
+		if (file.name.is_empty()) {
+			return;
+		}
+		const String file_path = tree->root.path_join(file.name);
+		tree->write_file(file.name, file.source);
+		if (!FileAccess::exists(file_path)) {
+			return;
+		}
+		files.push_back(file);
+		paths.push_back(file_path);
 	}
-	FSCache::clear_source_override(path);
-	FSCache::remove_parser(path);
-	FSCache::remove_script(path);
+	for (const String &file_path : paths) {
+		FSCache::clear_source_override(file_path);
+		FSCache::remove_parser(file_path);
+		FSCache::remove_script(file_path);
+	}
 	source_available = true;
 }
 
+const String &DestinationWrapperInternal::SyntheticSourceScope::get_path() const {
+	static const String no_path;
+	return paths.is_empty() ? no_path : paths[0];
+}
+
+String DestinationWrapperInternal::SyntheticSourceScope::get_path_for(const String &p_name) const {
+	for (int index = 0; index < files.size(); index++) {
+		if (files[index].name == p_name) {
+			return paths[index];
+		}
+	}
+	return String();
+}
+
 DestinationWrapperInternal::SyntheticSourceScope::~SyntheticSourceScope() {
-	if (!path.is_empty()) {
+	for (const String &path : paths) {
 		FSCache::remove_parser(path);
 		FSCache::remove_script(path);
 		FSCache::clear_source_override(path);

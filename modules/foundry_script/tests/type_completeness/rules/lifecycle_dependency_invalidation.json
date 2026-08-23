@@ -1,0 +1,303 @@
+{
+  "schema_version": 2,
+  "family": "lifecycle_dependency_invalidation",
+  "adapter": "lifecycle",
+  "domain": {
+    "destination": [
+      "plain",
+      "union",
+      "optional",
+      "container_element",
+      "tuple_field"
+    ],
+    "lifecycle_state": [
+      "clean",
+      "incremental",
+      "stale",
+      "missing",
+      "reordered",
+      "failure_recovery"
+    ],
+    "surface": [
+      "text",
+      "bytecode"
+    ]
+  },
+  "required_dimensions": [
+    {
+      "dimension": "semantic_identity",
+      "when": {}
+    },
+    {
+      "dimension": "transition_outcome",
+      "when": {}
+    }
+  ],
+  "anchors": [
+    {
+      "id": "plain_clean",
+      "coordinates": {
+        "destination": "plain",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "union_clean",
+      "coordinates": {
+        "destination": "union",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "optional_clean",
+      "coordinates": {
+        "destination": "optional",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "container_element_clean",
+      "coordinates": {
+        "destination": "container_element",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    },
+    {
+      "id": "tuple_field_clean",
+      "coordinates": {
+        "destination": "tuple_field",
+        "lifecycle_state": "clean"
+      },
+      "expect": {
+        "semantic_identity": "preserved",
+        "transition_outcome": "completed"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "clean_to_incremental",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "incremental"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_stale",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "stale"
+      },
+      "derive": {
+        "semantic_identity": "projected",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_missing",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "missing"
+      },
+      "derive": {
+        "semantic_identity": "rejected",
+        "transition_outcome": "refused"
+      }
+    },
+    {
+      "id": "clean_to_reordered",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "reordered"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      }
+    },
+    {
+      "id": "clean_to_failure_recovery",
+      "from": {
+        "lifecycle_state": "clean"
+      },
+      "to": {
+        "lifecycle_state": "failure_recovery"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "recovered"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "a_loaded_binary_does_not_follow_its_dependency_on_stale",
+      "parent": "clean_to_stale",
+      "when": {
+        "surface": "bytecode"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      },
+      "rationale": "A compiled binary carries the dependency's type inside it and an already loaded one is never re-read, so nothing that happens to the file the dependency lives in reaches this artifact: the dependent's view of the carried type is the one the binary was built with whether that file was revised, retired, or damaged.",
+      "positive_witnesses": [
+        {
+          "id": "bytecode_plain_stale",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "stale",
+            "surface": "bytecode"
+          }
+        },
+        {
+          "id": "bytecode_container_element_stale",
+          "coordinates": {
+            "destination": "container_element",
+            "lifecycle_state": "stale",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_plain_stale_boundary",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "stale",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a_loaded_binary_does_not_follow_its_dependency_on_missing",
+      "parent": "clean_to_missing",
+      "when": {
+        "surface": "bytecode"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "same"
+      },
+      "rationale": "A compiled binary carries the dependency's type inside it and an already loaded one is never re-read, so nothing that happens to the file the dependency lives in reaches this artifact: the dependent's view of the carried type is the one the binary was built with whether that file was revised, retired, or damaged.",
+      "positive_witnesses": [
+        {
+          "id": "bytecode_plain_missing",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "missing",
+            "surface": "bytecode"
+          }
+        },
+        {
+          "id": "bytecode_container_element_missing",
+          "coordinates": {
+            "destination": "container_element",
+            "lifecycle_state": "missing",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_plain_missing_boundary",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "missing",
+            "surface": "text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a_loaded_binary_does_not_follow_its_dependency_on_failure_recovery",
+      "parent": "clean_to_failure_recovery",
+      "when": {
+        "surface": "bytecode"
+      },
+      "derive": {
+        "semantic_identity": "same",
+        "transition_outcome": "indistinguishable"
+      },
+      "rationale": "A compiled binary carries the dependency's type inside it and an already loaded one is never re-read, so nothing that happens to the file the dependency lives in reaches this artifact: the dependent's view of the carried type is the one the binary was built with whether that file was revised, retired, or damaged.",
+      "positive_witnesses": [
+        {
+          "id": "bytecode_plain_failure_recovery",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "failure_recovery",
+            "surface": "bytecode"
+          }
+        },
+        {
+          "id": "bytecode_container_element_failure_recovery",
+          "coordinates": {
+            "destination": "container_element",
+            "lifecycle_state": "failure_recovery",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_plain_failure_recovery_boundary",
+          "coordinates": {
+            "destination": "plain",
+            "lifecycle_state": "failure_recovery",
+            "surface": "text"
+          }
+        }
+      ]
+    }
+  ],
+  "max_chain_length": 3
+}
