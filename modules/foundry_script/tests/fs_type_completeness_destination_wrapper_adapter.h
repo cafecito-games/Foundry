@@ -67,24 +67,46 @@ void set_persisted_write_test_hook(PersistedWriteTestHook p_hook);
 // string can be proven to fail when it is lost.
 void set_blank_reflection_hint_for_test(bool p_blank);
 
-// Serializes the whole lifetime of one synthetic source file: the tree, the cache overrides keyed by
-// its path, and its removal. The lock is a member so it is released exactly when the scope ends,
-// whichever way the constructor left the scope unusable.
+// One synthetic source file: the name it takes inside the tree, and the text it holds.
+struct SyntheticSourceFile {
+	String name;
+	String source;
+};
+
+// Serializes the whole lifetime of a synthetic source tree: the tree, the cache overrides keyed by
+// each path in it, and their removal. The lock is a member so it is released exactly when the scope
+// ends, whichever way the constructor left the scope unusable.
+//
+// A scope may hold several files. They share one tree, so a `preload` between them resolves the way
+// it would in a project, and one lock, so a program that spans two files is still serialized against
+// every other synthetic source in the process.
 class SyntheticSourceScope {
 	MutexLock<Mutex> lock;
-	String path;
+	Vector<SyntheticSourceFile> files;
+	Vector<String> paths;
 	TemporaryProjectTree *tree = nullptr;
 	bool source_available = false;
 
+	void open(const Vector<SyntheticSourceFile> &p_files);
+
 public:
+	// One file, named after the identity.
 	SyntheticSourceScope(const String &p_identity, const String &p_source);
+	// Several files in one tree, named verbatim. The first is the identity the scope stands for.
+	SyntheticSourceScope(const Vector<SyntheticSourceFile> &p_files);
 	~SyntheticSourceScope();
 
 	SyntheticSourceScope(const SyntheticSourceScope &) = delete;
 	SyntheticSourceScope &operator=(const SyntheticSourceScope &) = delete;
 
 	bool is_available() const { return source_available; }
-	const String &get_path() const { return path; }
+	// The identity the scope stands for: the only file of a single-file scope, the first of a
+	// multi-file one.
+	const String &get_path() const;
+	// The path of the file registered under p_name, or an empty string when the scope holds no such
+	// file. Never a guess: a caller that names a file the scope does not hold gets nothing rather than
+	// a path that does not exist.
+	String get_path_for(const String &p_name) const;
 };
 
 } // namespace DestinationWrapperInternal

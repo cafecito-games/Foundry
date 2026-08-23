@@ -353,6 +353,46 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Lifecycle a synthetic scope holds several files in one identity space") {
+		// A dependent and its dependency have to share a tree for `preload` to resolve between them, and
+		// one lock so a two-file program is still serialized against every other synthetic source.
+		Vector<DestinationWrapperInternal::SyntheticSourceFile> files;
+		files.push_back({ "dependent.fs", "const Dependency := preload(\"dependency.fs\")\n" });
+		files.push_back({ "dependency.fs", "class Carrier:\n\tvar value: uint = 0U\n" });
+		DestinationWrapperInternal::SyntheticSourceScope scope(files);
+		REQUIRE(scope.is_available());
+		// The identity the scope stands for is its first file, and each file is reachable by name.
+		CHECK_EQ(scope.get_path(), scope.get_path_for("dependent.fs"));
+		CHECK_NE(scope.get_path_for("dependency.fs"), String());
+		CHECK_EQ(scope.get_path_for("dependency.fs").get_base_dir(), scope.get_path().get_base_dir());
+		CHECK(FileAccess::exists(scope.get_path()));
+		CHECK(FileAccess::exists(scope.get_path_for("dependency.fs")));
+		// A file the scope does not hold is nothing rather than a path that does not exist.
+		CHECK_EQ(scope.get_path_for("absent.fs"), String());
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a dependent follows the dependency it was invalidated for") {
+		// The dependent never names the carried type: it holds the dependency's class, and what the cell
+		// reports is the dependent's own view of that class's member. Revising the dependency has to
+		// reach the dependent through the closure the product computes for that file, and a transition
+		// that invalidated only the dependency leaves the dependent reporting the view it already had.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_dependency_invalidation", "plain", "clean", "text"),
+				"preserved");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_dependency_invalidation", "plain", "stale", "text"),
+				"projected");
+		{
+			TransitionInvalidationSkipped reused;
+			CHECK_EQ(lifecycle_identity_of("lifecycle_dependency_invalidation", "plain", "stale", "text"),
+					"preserved");
+			// A stage that revised nothing cannot tell the two apart, which is why the stale stage is
+			// the one carrying this evidence.
+			CHECK_EQ(lifecycle_identity_of("lifecycle_dependency_invalidation", "plain", "clean", "text"),
+					"preserved");
+		}
+		CHECK_EQ(lifecycle_identity_of("lifecycle_dependency_invalidation", "plain", "stale", "text"),
+				"projected");
+	}
+
 	TEST_CASE("TypeCompleteness Lifecycle a loaded binary is not re-read when its identity reloads") {
 		// On the bytecode surface the identity under test is a compiled binary the cache loads in its
 		// own right, so this is the reload of a binary rather than of a source file. An exported binary
