@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/io/json.h"
+#include "core/string/print_string.h"
 #include "main/cli_parser.h"
 #include "tests/foundry_test_progress.h"
 
@@ -78,6 +79,30 @@ TEST_CASE("[FoundryTestProgress] CLI configuration enables stdout and file sinks
 	CHECK_FALSE(FoundryTestProgress::get_config().stdout_enabled);
 	CHECK(FoundryTestProgress::get_config().file_enabled);
 	CHECK_EQ((int)FoundryTestProgress::get_config().format, (int)FoundryTestProgress::Format::JSONL);
+}
+
+TEST_CASE("[FoundryTestProgress] Progress lines never reach the engine's print handlers") {
+	// A test that judges output captures it with a print handler, and the heartbeat thread emits while
+	// such a test is running. An event delivered to the handler list would land inside the output the
+	// running test is about to judge, which is a failure invented by the runner watching the run.
+	struct CapturedPrints {
+		Vector<String> lines;
+		static void handle(void *p_userdata, const String &p_message, bool, bool) {
+			static_cast<CapturedPrints *>(p_userdata)->lines.push_back(p_message);
+		}
+	};
+
+	CapturedPrints captured;
+	PrintHandlerList handler;
+	handler.printfunc = &CapturedPrints::handle;
+	handler.userdata = &captured;
+	add_print_handler(&handler);
+	FoundryTestProgress::write_stdout_line("[foundry-test] HEARTBEAT 1/1 30000ms example");
+	print_line("output of the code under test");
+	remove_print_handler(&handler);
+
+	REQUIRE_EQ(captured.lines.size(), 1);
+	CHECK_EQ(captured.lines[0], "output of the code under test");
 }
 
 TEST_CASE("[FoundryTestProgress] Failure flags map to progress status strings") {
