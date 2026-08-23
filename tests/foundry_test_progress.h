@@ -68,4 +68,9 @@ String format_event_text(const String &p_kind, int p_index, int p_test_count, co
 String format_event_jsonl(const Dictionary &p_event);
 String status_from_failure_flags(int p_failure_flags, bool p_test_case_success);
 
+// Writes one progress line to the process' stdout without passing it to the engine's print handlers.
+// The stream describes the run rather than the code under test, and a test that captures prints must
+// never see it in the output it is judging.
+void write_stdout_line(const String &p_line);
+
 } // namespace FoundryTestProgress

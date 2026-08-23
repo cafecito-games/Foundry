@@ -40,6 +40,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - shard_id: lifecycle_export_erases_declared_kind
+            recipes: lifecycle_export_erases_declared_kind
+            budget_seconds: 1800
           - shard_id: union_core
             recipes: union_membership_drops_last_alternative
             budget_seconds: 1800

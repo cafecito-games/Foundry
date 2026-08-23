@@ -39,6 +39,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <mutex>
 #include <thread>
 
@@ -146,6 +147,19 @@ String format_event_jsonl(const Dictionary &p_event) {
 	return JSON::stringify(p_event);
 }
 
+// Progress is the runner's own telemetry about the run, not output of the code under test, so it is
+// written straight to the process' stdout rather than through `print_line()`. A print handler is how
+// a test captures the output it judges - the Foundry Script fixture runner installs one for the whole
+// execution of a fixture - and an event routed through the handler list would be spliced into that
+// captured output by whichever test happened to be running when the event was emitted. Heartbeats are
+// emitted from a timer thread precisely while a long test runs, so this is the common case, not an
+// exotic one. Writing here also keeps events flowing while a test has stdout switched off.
+void write_stdout_line(const String &p_line) {
+	const CharString utf8 = (p_line + "\n").utf8();
+	fwrite(utf8.get_data(), sizeof(char), utf8.length(), stdout);
+	fflush(stdout);
+}
+
 String status_from_failure_flags(int p_failure_flags, bool p_test_case_success) {
 	using namespace doctest::TestCaseFailureReason;
 	if (p_failure_flags & (Crash | Exception)) {
@@ -196,9 +210,9 @@ struct FoundryTestProgressListener : public doctest::IReporter {
 	void write_event(const String &p_text, const Dictionary &p_json) {
 		if (g_config.stdout_enabled && !g_config.doctest_quiet) {
 			if (g_config.format == Format::JSONL) {
-				print_line("FOUNDRY_TEST_EVENT " + format_event_jsonl(p_json));
+				write_stdout_line("FOUNDRY_TEST_EVENT " + format_event_jsonl(p_json));
 			} else {
-				print_line(p_text);
+				write_stdout_line(p_text);
 			}
 		}
 
