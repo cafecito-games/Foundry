@@ -26,7 +26,62 @@
 		"reconciled": [],
 		"stale": []
 	},
-	"exceptions": [],
+	"exceptions": [
+		{
+			"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
+			"parent": "clean_to_stale",
+			"witnessed": true,
+			"positive_witnesses": [
+				{
+					"witness_id": "bytecode_plain_stale",
+					"case_id": "fstc-v1-95f1f1ef0a422bfa1e73",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				},
+				{
+					"witness_id": "bytecode_union_stale",
+					"case_id": "fstc-v1-567d6d13504168ed9967",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			],
+			"boundary_witnesses": [
+				{
+					"witness_id": "text_plain_stale_boundary",
+					"case_id": "fstc-v1-a1054d19ba0226925892",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			]
+		},
+		{
+			"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
+			"parent": "clean_to_failure_recovery",
+			"witnessed": true,
+			"positive_witnesses": [
+				{
+					"witness_id": "bytecode_plain_failure_recovery",
+					"case_id": "fstc-v1-84df0aab771e905dde95",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				},
+				{
+					"witness_id": "bytecode_union_failure_recovery",
+					"case_id": "fstc-v1-dc5ebcabebfad9e83b2e",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			],
+			"boundary_witnesses": [
+				{
+					"witness_id": "text_plain_failure_recovery_boundary",
+					"case_id": "fstc-v1-d7cee1fc377c7ee553db",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			]
+		}
+	],
 	"cases": [
 		{
 			"case_id": "fstc-v1-04c32b3a0d7447bf154a",
@@ -36,18 +91,18 @@
 				"surface": "bytecode"
 			},
 			"expected": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"actual": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "optional",
 							"lifecycle_state": "clean",
@@ -63,7 +118,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -71,7 +126,7 @@
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "optional",
 							"lifecycle_state": "clean",
@@ -87,7 +142,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -98,7 +153,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "optional",
 								"lifecycle_state": "clean",
@@ -114,7 +169,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -124,7 +179,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "optional",
 								"lifecycle_state": "clean",
@@ -140,7 +195,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -429,18 +484,18 @@
 				"surface": "bytecode"
 			},
 			"expected": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"actual": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "tuple_field",
 							"lifecycle_state": "clean",
@@ -456,7 +511,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -464,7 +519,7 @@
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "tuple_field",
 							"lifecycle_state": "clean",
@@ -480,7 +535,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -491,7 +546,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "tuple_field",
 								"lifecycle_state": "clean",
@@ -507,7 +562,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -517,7 +572,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "tuple_field",
 								"lifecycle_state": "clean",
@@ -533,7 +588,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -1124,17 +1179,17 @@
 			},
 			"expected": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "optional",
 							"lifecycle_state": "clean",
@@ -1151,14 +1206,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "optional",
 							"lifecycle_state": "clean",
@@ -1175,7 +1230,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -1185,7 +1240,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "optional",
 								"lifecycle_state": "clean",
@@ -1202,7 +1257,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -1211,7 +1266,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "optional",
 								"lifecycle_state": "clean",
@@ -1228,7 +1283,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -2249,18 +2304,18 @@
 				"surface": "bytecode"
 			},
 			"expected": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"actual": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -2276,7 +2331,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -2284,7 +2339,7 @@
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -2300,7 +2355,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -2311,7 +2366,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -2327,7 +2382,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -2337,7 +2392,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -2353,7 +2408,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -2774,17 +2829,17 @@
 			},
 			"expected": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "plain",
 							"lifecycle_state": "clean",
@@ -2801,14 +2856,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "plain",
 							"lifecycle_state": "clean",
@@ -2825,7 +2880,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -2835,7 +2890,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "plain",
 								"lifecycle_state": "clean",
@@ -2852,7 +2907,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -2861,7 +2916,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "plain",
 								"lifecycle_state": "clean",
@@ -2878,7 +2933,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -3036,17 +3091,17 @@
 			},
 			"expected": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "tuple_field",
 							"lifecycle_state": "clean",
@@ -3063,14 +3118,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "tuple_field",
 							"lifecycle_state": "clean",
@@ -3087,7 +3142,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -3097,7 +3152,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "tuple_field",
 								"lifecycle_state": "clean",
@@ -3114,7 +3169,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -3123,7 +3178,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "tuple_field",
 								"lifecycle_state": "clean",
@@ -3140,7 +3195,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -3336,18 +3391,18 @@
 				"surface": "bytecode"
 			},
 			"expected": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"actual": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "plain",
 							"lifecycle_state": "clean",
@@ -3363,7 +3418,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -3371,7 +3426,7 @@
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "plain",
 							"lifecycle_state": "clean",
@@ -3387,7 +3442,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -3398,7 +3453,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "plain",
 								"lifecycle_state": "clean",
@@ -3414,7 +3469,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -3424,7 +3479,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "plain",
 								"lifecycle_state": "clean",
@@ -3440,7 +3495,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -3769,17 +3824,17 @@
 			},
 			"expected": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "container_element",
 							"lifecycle_state": "clean",
@@ -3796,14 +3851,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "container_element",
 							"lifecycle_state": "clean",
@@ -3820,7 +3875,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -3830,7 +3885,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "container_element",
 								"lifecycle_state": "clean",
@@ -3847,7 +3902,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -3856,7 +3911,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "container_element",
 								"lifecycle_state": "clean",
@@ -3873,7 +3928,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -5248,18 +5303,18 @@
 				"surface": "bytecode"
 			},
 			"expected": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"actual": {
-				"semantic_identity": "projected",
+				"semantic_identity": "preserved",
 				"transition_outcome": "completed"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "container_element",
 							"lifecycle_state": "clean",
@@ -5275,7 +5330,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -5283,7 +5338,7 @@
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_stale",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 						"source_coordinates": {
 							"destination": "container_element",
 							"lifecycle_state": "clean",
@@ -5299,7 +5354,7 @@
 							"transition_outcome": "completed"
 						},
 						"output_dimensions": {
-							"semantic_identity": "projected",
+							"semantic_identity": "preserved",
 							"transition_outcome": "completed"
 						}
 					}
@@ -5310,7 +5365,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "container_element",
 								"lifecycle_state": "clean",
@@ -5326,7 +5381,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -5336,7 +5391,7 @@
 					[
 						{
 							"relation_id": "clean_to_stale",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_stale",
 							"source_coordinates": {
 								"destination": "container_element",
 								"lifecycle_state": "clean",
@@ -5352,7 +5407,7 @@
 								"transition_outcome": "completed"
 							},
 							"output_dimensions": {
-								"semantic_identity": "projected",
+								"semantic_identity": "preserved",
 								"transition_outcome": "completed"
 							}
 						}
@@ -5982,17 +6037,17 @@
 			},
 			"expected": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"actual": {
 				"semantic_identity": "preserved",
-				"transition_outcome": "recovered"
+				"transition_outcome": "indistinguishable"
 			},
 			"canonical_provenance": {
 				"semantic_identity": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -6009,14 +6064,14 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				],
 				"transition_outcome": [
 					{
 						"relation_id": "clean_to_failure_recovery",
-						"exception_id": "",
+						"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 						"source_coordinates": {
 							"destination": "union",
 							"lifecycle_state": "clean",
@@ -6033,7 +6088,7 @@
 						},
 						"output_dimensions": {
 							"semantic_identity": "preserved",
-							"transition_outcome": "recovered"
+							"transition_outcome": "indistinguishable"
 						}
 					}
 				]
@@ -6043,7 +6098,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -6060,7 +6115,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -6069,7 +6124,7 @@
 					[
 						{
 							"relation_id": "clean_to_failure_recovery",
-							"exception_id": "",
+							"exception_id": "a_loaded_binary_is_not_re_read_on_failure_recovery",
 							"source_coordinates": {
 								"destination": "union",
 								"lifecycle_state": "clean",
@@ -6086,7 +6141,7 @@
 							},
 							"output_dimensions": {
 								"semantic_identity": "preserved",
-								"transition_outcome": "recovered"
+								"transition_outcome": "indistinguishable"
 							}
 						}
 					]
@@ -8148,12 +8203,12 @@
 	},
 	"unconfirmed_census_witnesses": [],
 	"timings_ms": {
-		"load": 34.754,
-		"resolve": 0.001,
-		"render": 51.453,
-		"analyze": 1.471,
-		"execute": 350.858,
-		"report": 256.439,
-		"total": 695.769
+		"load": 49.164,
+		"resolve": 0.312,
+		"render": 70.309,
+		"analyze": 2.077,
+		"execute": 425.719,
+		"report": 342.494,
+		"total": 891.037
 	}
 }

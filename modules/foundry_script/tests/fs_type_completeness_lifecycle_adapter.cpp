@@ -309,15 +309,19 @@ static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<Fo
 // The cache entries for the identity are deliberately left alone. Invalidating them is the work a
 // re-deriving transition has to do for itself, and a stage that did it on the transition's behalf
 // could not tell a transition that invalidates from one that hands back what it already had.
-static Error revise_source_at(const String &p_path, const String &p_source) {
+static Error write_artifact_at(const String &p_path, const Vector<uint8_t> &p_bytes) {
 	Error error = OK;
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &error);
 	if (file.is_null()) {
 		return error == OK ? ERR_FILE_CANT_WRITE : error;
 	}
-	file->store_string(p_source);
+	file->store_buffer(p_bytes.ptr(), p_bytes.size());
 	file->close();
 	return FileAccess::exists(p_path) ? OK : ERR_FILE_CANT_WRITE;
+}
+
+static Error revise_source_at(const String &p_path, const String &p_source) {
+	return write_artifact_at(p_path, p_source.to_utf8_buffer());
 }
 
 // Test seam: reconstructs the artifact by recompiling whatever the path it recorded serves now,
@@ -335,6 +339,49 @@ static Error load_lifecycle_artifact_from_source(
 	FSParser parser;
 	return compile_lifecycle_source(source, p_artifact.path, parser, r_loaded);
 }
+
+// Writes the exported bytes to a file the cache will load as a compiled binary in its own right, and
+// takes everything it holds for that identity back when the cell ends. A `.fsb` path is the one thing
+// FSCache::get_shallow_script serves from bytecode, so this is how a cell puts the identity under
+// test into the state its surface names rather than standing a restored object next to it.
+class BytecodeIdentity {
+	String binary_path;
+
+public:
+	BytecodeIdentity() = default;
+
+	~BytecodeIdentity() {
+		if (binary_path.is_empty()) {
+			return;
+		}
+		FSCache::remove_parser(binary_path);
+		FSCache::remove_script(binary_path);
+		FSCache::clear_source_override(binary_path);
+	}
+
+	BytecodeIdentity(const BytecodeIdentity &) = delete;
+	BytecodeIdentity &operator=(const BytecodeIdentity &) = delete;
+
+	const String &get_path() const { return binary_path; }
+
+	// Publishes p_buffer as the identity's artifact. Called again to replace it, which is what a stage
+	// that revises what the identity serves needs.
+	Error publish(const String &p_source_path, const Vector<uint8_t> &p_buffer) {
+		const String candidate = p_source_path.get_basename() + ".fsb";
+		Error error = OK;
+		Ref<FileAccess> file = FileAccess::open(candidate, FileAccess::WRITE, &error);
+		if (file.is_null()) {
+			return error == OK ? ERR_FILE_CANT_WRITE : error;
+		}
+		file->store_buffer(p_buffer.ptr(), p_buffer.size());
+		file->close();
+		if (!FileAccess::exists(candidate)) {
+			return ERR_FILE_CANT_WRITE;
+		}
+		binary_path = candidate;
+		return OK;
+	}
+};
 
 // Everything the identity serves goes away: the file behind it and everything the cache holds for it.
 // The scope that owns the identity stays, because it is what keeps this observation serialized
@@ -550,14 +597,17 @@ static Error carry_through_cache(const LifecycleCarryRequest &p_request,
 		// Damaging a re-deriving transition means damaging what it will read. The identity has to serve
 		// the healthy program again afterwards, because the stage that damages it goes on to ask for
 		// the same transition undamaged.
-		String healthy_source;
+		// The artifact behind the identity is read and put back as bytes: on the bytecode surface it is
+		// a compiled binary, and reading it as text would not survive the round trip.
+		Vector<uint8_t> healthy_artifact;
 		if (p_request.damaged) {
 			Error read_error = OK;
-			healthy_source = FileAccess::get_file_as_string(p_request.path, &read_error);
+			healthy_artifact = FileAccess::get_file_as_bytes(p_request.path, &read_error);
 			if (read_error != OK) {
 				return read_error;
 			}
-			const Error damage_error = revise_source_at(p_request.path, lifecycle_damaged_source);
+			const Error damage_error = write_artifact_at(
+					p_request.path, String(lifecycle_damaged_source).to_utf8_buffer());
 			if (damage_error != OK) {
 				return damage_error;
 			}
@@ -570,7 +620,7 @@ static Error carry_through_cache(const LifecycleCarryRequest &p_request,
 		const Ref<FoundryScript> reloaded =
 				FSCache::get_full_script(p_request.path, error, String(), true);
 		if (p_request.damaged) {
-			const Error restore_error = revise_source_at(p_request.path, healthy_source);
+			const Error restore_error = write_artifact_at(p_request.path, healthy_artifact);
 			if (restore_error != OK) {
 				return restore_error;
 			}
@@ -844,36 +894,38 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		return observation;
 	}
 
-	// The one place the artifact under test is selected. On `text` the identity is served by what the
-	// front-end compiled; on `bytecode` it is served by a compiled binary restored from that script's
-	// export, and the source-compiled entry is retired so the binary is the only thing standing for
-	// the identity. Every transition is anchored on the object this returns, so none of them can
-	// measure the other surface's artifact and report it as this surface's evidence.
+	// The one place the artifact under test is selected, and the one place the identity it is reached
+	// through is decided. On `text` the identity is the `.fs` the front-end compiled. On `bytecode` the
+	// identity is a `.fsb` the cache loads as a compiled binary in its own right - the only artifact
+	// FSCache::get_shallow_script serves from bytecode - so the subject is what the cache holds for
+	// that identity rather than a restored object standing beside it. Every transition below is given
+	// this identity and this subject, so none of them can reach the other surface's artifact.
 	Ref<FoundryScript> subject = compiled;
+	String identity = path;
+	BytecodeIdentity binary_identity;
 	if (p_program.surface == "bytecode") {
 		LifecycleArtifact staged;
 		error = export_lifecycle_artifact(compiled, path, staged);
 		if (error == OK && corrupt_restored_subject_for_test) {
 			staged = corrupted_artifact(staged);
 		}
-		Ref<FoundryScript> restored;
 		if (error == OK) {
-			error = load_lifecycle_artifact(staged, restored);
+			error = binary_identity.publish(path, staged.buffer);
 		}
-		if (error != OK || restored.is_null() || !restored->is_compiled_binary()) {
+		Ref<FoundryScript> binary;
+		if (error == OK) {
+			binary = FSCache::get_full_script(binary_identity.get_path(), error, String(), false);
+		}
+		if (error != OK || binary.is_null() || !binary->is_valid() || !binary->is_compiled_binary()) {
 			append_diagnostic(observation, "surface_unavailable",
-					vformat("Lifecycle subject could not be restored for the bytecode surface (error %d).",
-							error));
+					vformat("The identity could not be served by a compiled binary (error %d).", error));
 			if (r_structural_error != nullptr) {
 				*r_structural_error = error == OK ? ERR_INVALID_DATA : error;
 			}
 			return observation;
 		}
-		// The source-compiled script stops standing for the identity. A transition asked about this
-		// cell would otherwise find it in the cache and answer about it instead of about the binary.
-		FSCache::remove_parser(path);
-		FSCache::remove_script(path);
-		subject = restored;
+		subject = binary;
+		identity = binary_identity.get_path();
 	}
 
 	// What makes a stage a stage is the state the transition's input is in, never a different way of
@@ -915,6 +967,23 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 			}
 		}
 		error = revise_source_at(path, revised);
+		if (error == OK && identity != path) {
+			// The identity under test is the compiled binary, so what it serves is revised by exporting
+			// the revision and replacing that artifact - the same edit, expressed in the artifact the
+			// surface names.
+			FSParser revised_parser;
+			Ref<FoundryScript> revised_script;
+			error = compile_lifecycle_source(revised, path, revised_parser, revised_script);
+			LifecycleArtifact revised_artifact;
+			if (error == OK) {
+				error = export_lifecycle_artifact(revised_script, path, revised_artifact);
+			}
+			if (error == OK) {
+				error = binary_identity.publish(path, revised_artifact.buffer);
+			}
+			FSCache::remove_parser(path);
+			FSCache::remove_script(path);
+		}
 		if (error != OK) {
 			append_diagnostic(observation, "revision_failed",
 					vformat("The lifecycle source could not be revised in place (error %d).", error));
@@ -927,7 +996,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 
 	LifecycleCarryRequest request;
 	request.subject = subject;
-	request.path = path;
+	request.path = identity;
 	request.from_source = load_transition_artifact_from_source_for_test;
 	request.skip_invalidation = skip_transition_invalidation_for_test;
 	request.twice = state == "incremental";
@@ -935,7 +1004,7 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 	if (state == "missing") {
 		// The identity the subject was compiled at stops serving anything before the transition runs,
 		// so nothing it carries may come from a source anyone can still read.
-		error = retire_source_at(path);
+		error = retire_source_at(identity);
 		if (error != OK) {
 			append_diagnostic(observation, "retirement_failed",
 					vformat("The lifecycle source could not be retired (error %d).", error));

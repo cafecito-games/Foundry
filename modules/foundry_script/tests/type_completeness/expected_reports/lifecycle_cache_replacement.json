@@ -8148,12 +8148,12 @@
 	},
 	"unconfirmed_census_witnesses": [],
 	"timings_ms": {
-		"load": 33.416,
-		"resolve": 0.001,
-		"render": 49.833,
-		"analyze": 1.396,
-		"execute": 384.635,
-		"report": 237.53,
-		"total": 707.453
+		"load": 46.676,
+		"resolve": 0.002,
+		"render": 71.946,
+		"analyze": 1.994,
+		"execute": 477.559,
+		"report": 342.998,
+		"total": 942.1
 	}
 }

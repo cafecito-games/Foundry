@@ -7727,7 +7727,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
-						"build_configuration": "",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -7774,7 +7774,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
-						"build_configuration": "",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -8045,7 +8045,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
-						"build_configuration": "",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "reflective_write",
 						"destination": "union",
@@ -8064,7 +8064,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
-						"build_configuration": "",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -8083,7 +8083,7 @@
 					"kind": "family_case",
 					"reference": "",
 					"family": "union_destination_membership",
-						"build_configuration": "",
+					"build_configuration": "",
 					"coordinates": {
 						"boundary": "argument_binding",
 						"destination": "union",
@@ -8143,15 +8143,17 @@
 			"destination_wrapper",
 			"lifecycle",
 			"synthetic_pair_identity"
-		]
+		],
+		"analyzer_warnings": true
 	},
+	"unconfirmed_census_witnesses": [],
 	"timings_ms": {
-		"load": 37.662,
-		"resolve": 0.002,
-		"render": 53.071,
-		"analyze": 1.487,
-		"execute": 255.371,
-		"report": 267.997,
-		"total": 616.286
+		"load": 48.499,
+		"resolve": 0.001,
+		"render": 70.537,
+		"analyze": 2.02,
+		"execute": 360.323,
+		"report": 356.841,
+		"total": 839.351
 	}
 }

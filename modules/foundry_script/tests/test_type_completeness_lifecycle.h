@@ -353,6 +353,25 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Lifecycle a loaded binary is not re-read when its identity reloads") {
+		// On the bytecode surface the identity under test is a compiled binary the cache loads in its
+		// own right, so this is the reload of a binary rather than of a source file. An exported binary
+		// is immutable and an already loaded one is never re-read, so reloading the identity carries the
+		// type the binary was built with even after the artifact behind it was replaced - and a damaged
+		// artifact reads the same as a healthy one, because neither is read at all.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "stale", "text"), "projected");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "stale", "bytecode"), "preserved");
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_reload", "plain", "failure_recovery", "text"), "recovered");
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_reload", "plain", "failure_recovery", "bytecode"),
+				"indistinguishable");
+		// The families that retire what stands for the identity do read the replacement, on either
+		// surface, so the difference above is the reload rather than the surface.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "bytecode"),
+				"projected");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_shutdown_reinitialization", "plain", "stale", "bytecode"),
+				"projected");
+	}
+
 	TEST_CASE("TypeCompleteness Lifecycle a recovery is measured against the healthy reading") {
 		// A damaged attempt is only evidence of a recovery if it reads differently from a healthy one.
 		// The reflection surface spells a union member as an untyped slot, which is also what it spells
