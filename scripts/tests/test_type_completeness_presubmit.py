@@ -72,6 +72,29 @@ def failed_report(dimension: str = "destination", classification: str = "unclass
     return document
 
 
+# `Error::ERR_TIMEOUT`, the code the runner stamps on a `run_timeout` structural failure; it reads
+# back as a float because the runner writes every number as one.
+RUNNER_ERR_TIMEOUT = 24.0
+
+
+def timed_out_report() -> dict[str, Any]:
+    """The captured report as the runner republishes it after crossing its budget: evidence kept, verdict replaced."""
+    document = copy.deepcopy(runner_report())
+    document["success"] = False
+    document["outcome"] = "structural_failure"
+    document["structural_failures"] = [
+        {
+            "stage": "run_timeout",
+            "detail": "The run exceeded its wall-clock budget while publishing its report.",
+            "case_id": "",
+            "witness_id": "",
+            "exception_id": "",
+            "error_code": RUNNER_ERR_TIMEOUT,
+        }
+    ]
+    return document
+
+
 def renamed_report(document: dict[str, Any], family: str) -> dict[str, Any]:
     """The captured report republished under another family name, findings included."""
     document = copy.deepcopy(document)
@@ -95,6 +118,7 @@ class VerdictTableTests(unittest.TestCase):
                 "nothing_selected": 0,
                 "blocked": 1,
                 "baseline_missing": 1,
+                "baseline_invalid": 1,
                 "structural_failure": 2,
                 "baseline_malformed": 2,
                 "malformed_input": 2,
@@ -136,15 +160,26 @@ class BaselineStateTableTests(unittest.TestCase):
                 verdict = presubmit.verdict_for_baseline(state)
                 self.assertTrue(verdict is None or isinstance(verdict, presubmit.Verdict))
 
-    def test_only_the_two_comparable_states_proceed_without_a_verdict(self) -> None:
-        proceeding = {state for state, verdict in presubmit.BASELINE_VERDICTS.items() if verdict is None}
-        self.assertEqual(proceeding, {presubmit.BaselineState.PRESENT, presubmit.BaselineState.NEW_FAMILY})
-        self.assertIs(
-            presubmit.verdict_for_baseline(presubmit.BaselineState.MISSING), presubmit.Verdict.BASELINE_MISSING
+    def test_each_state_maps_to_its_own_verdict(self) -> None:
+        expected = {
+            presubmit.BaselineState.PRESENT: None,
+            presubmit.BaselineState.NEW_FAMILY: None,
+            presubmit.BaselineState.MISSING: presubmit.Verdict.BASELINE_MISSING,
+            presubmit.BaselineState.INVALID: presubmit.Verdict.BASELINE_INVALID,
+            presubmit.BaselineState.MALFORMED: presubmit.Verdict.BASELINE_MALFORMED,
+        }
+        for state, verdict in expected.items():
+            with self.subTest(state=state.value):
+                self.assertIs(presubmit.verdict_for_baseline(state), verdict)
+
+    def test_only_the_states_with_verdicts_to_compare_proceed(self) -> None:
+        # A missing baseline still compares (against the absent develop side, so every failure is
+        # new); an invalid or malformed one carries no develop verdict and refuses the family.
+        self.assertEqual(
+            presubmit.COMPARABLE_BASELINE_STATES,
+            {presubmit.BaselineState.PRESENT, presubmit.BaselineState.NEW_FAMILY, presubmit.BaselineState.MISSING},
         )
-        self.assertIs(
-            presubmit.verdict_for_baseline(presubmit.BaselineState.MALFORMED), presubmit.Verdict.BASELINE_MALFORMED
-        )
+        self.assertTrue(presubmit.COMPARABLE_BASELINE_STATES <= set(presubmit.BASELINE_VERDICTS))
 
 
 class StatusDispositionTests(unittest.TestCase):
@@ -568,6 +603,28 @@ class GateTests(GateTestCase):
         self.assertEqual(verdict["state"], "baseline_malformed")
         self.assertEqual(verdict["baseline_state"], "malformed")
         self.assertEqual(code, 2)
+
+    def test_a_structurally_failed_baseline_is_invalid_not_present(self) -> None:
+        # The develop run timed out: its per-case verdicts all read passed although the run never
+        # finished, so a branch regression compared against it would read as unchanged.
+        self.write_report(failed_report())
+        baseline = self.work / "baseline"
+        self.write_report(timed_out_report(), directory=baseline)
+        code, verdict, _ = self.run_gate(baseline_dir=baseline, environment={"FOUNDRY_FAKE_RUN_EXIT": "1"})
+        self.assertEqual(verdict["state"], "baseline_invalid")
+        self.assertEqual(code, 1)
+        self.assertEqual(verdict["baseline_states"], {FAMILY: "invalid"})
+        self.assertEqual(verdict["blocking_comparison_ids"], [])
+        self.assertTrue(any("run_timeout" in reason for reason in verdict["reasons"]), verdict["reasons"])
+
+    def test_a_structurally_failed_baseline_refuses_even_a_clean_branch(self) -> None:
+        self.write_report(runner_report())
+        baseline = self.work / "baseline"
+        self.write_report(timed_out_report(), directory=baseline)
+        code, verdict, _ = self.run_gate(baseline_dir=baseline)
+        self.assertEqual(verdict["state"], "baseline_invalid")
+        self.assertEqual(verdict["baseline_state"], "invalid")
+        self.assertEqual(code, 1)
 
     def test_the_runner_timeout_code_is_a_timeout(self) -> None:
         self.write_report(runner_report())

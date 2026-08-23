@@ -58,6 +58,7 @@ class Verdict(str, enum.Enum):
     NOTHING_SELECTED = "nothing_selected"
     BLOCKED = "blocked"
     BASELINE_MISSING = "baseline_missing"
+    BASELINE_INVALID = "baseline_invalid"
     STRUCTURAL_FAILURE = "structural_failure"
     BASELINE_MALFORMED = "baseline_malformed"
     MALFORMED_INPUT = "malformed_input"
@@ -70,6 +71,7 @@ EXIT_CODES: dict[Verdict, int] = {
     Verdict.NOTHING_SELECTED: 0,
     Verdict.BLOCKED: 1,
     Verdict.BASELINE_MISSING: 1,
+    Verdict.BASELINE_INVALID: 1,
     Verdict.STRUCTURAL_FAILURE: 2,
     Verdict.BASELINE_MALFORMED: 2,
     Verdict.MALFORMED_INPUT: 2,
@@ -88,6 +90,7 @@ VERDICT_PRECEDENCE: tuple[Verdict, ...] = (
     Verdict.BASELINE_MALFORMED,
     Verdict.MALFORMED_INPUT,
     Verdict.BLOCKED,
+    Verdict.BASELINE_INVALID,
     Verdict.BASELINE_MISSING,
     Verdict.NOTHING_SELECTED,
     Verdict.PASSED,
@@ -134,6 +137,10 @@ class BaselineState(str, enum.Enum):
     PRESENT = "present"
     MISSING = "missing"
     MALFORMED = "malformed"
+    # The artifact loads, but the run that published it failed structurally - it timed out or broke
+    # before judging its cases - so it is evidence of nothing. Comparing against it would read every
+    # branch failure as unchanged against verdicts develop never reached.
+    INVALID = "invalid"
     # The family is in the branch catalog but not in the catalog at the merge base, so no develop run
     # could ever have produced a baseline for it. Every branch case compares as `new` against an empty
     # develop side; a product finding still blocks, and a clean run is a pass rather than a refusal.
@@ -147,6 +154,7 @@ class BaselineState(str, enum.Enum):
 # whole gate to "everything is new" rather than being averaged away by the families that had one.
 BASELINE_PRECEDENCE: tuple[BaselineState, ...] = (
     BaselineState.MALFORMED,
+    BaselineState.INVALID,
     BaselineState.MISSING,
     BaselineState.NEW_FAMILY,
     BaselineState.PRESENT,
@@ -159,8 +167,15 @@ BASELINE_VERDICTS: dict[BaselineState, Optional[Verdict]] = {
     BaselineState.PRESENT: None,
     BaselineState.NEW_FAMILY: None,
     BaselineState.MISSING: Verdict.BASELINE_MISSING,
+    BaselineState.INVALID: Verdict.BASELINE_INVALID,
     BaselineState.MALFORMED: Verdict.BASELINE_MALFORMED,
 }
+
+# The states the comparison still runs under. A missing baseline compares against the absent develop
+# side so every branch failure surfaces as new; every other verdict-carrying state refuses the family.
+COMPARABLE_BASELINE_STATES: frozenset[BaselineState] = frozenset(
+    {BaselineState.PRESENT, BaselineState.NEW_FAMILY, BaselineState.MISSING}
+)
 
 
 def verdict_for_baseline(state: BaselineState) -> Optional[Verdict]:
@@ -487,9 +502,19 @@ class Gate:
                 )
             return destination, BaselineState.MISSING, f"no develop baseline artifact for family {family}"
         try:
-            report.load_report_file(candidate)
+            loaded = report.load_report_file(candidate)
         except report.ReportError as error:
             return candidate, BaselineState.MALFORMED, f"develop baseline for family {family} is malformed: {error}"
+        if loaded.is_structural_failure:
+            stages = sorted(
+                {str(entry.get("stage", "")) for entry in loaded.raw.get("structural_failures") or []} - {""}
+            ) or ["unnamed"]
+            return (
+                candidate,
+                BaselineState.INVALID,
+                f"develop baseline for family {family} is a structural failure at {', '.join(stages)}, "
+                "so it holds no verdicts to compare against",
+            )
         return candidate, BaselineState.PRESENT, ""
 
     def compare(self, family: str, branch_report: Path, develop_report: Path) -> tuple[Path, Optional[Verdict], str]:
@@ -667,8 +692,8 @@ def run_gate(arguments: argparse.Namespace) -> int:
             refusals.append(str(error))
             continue
         baseline_states[family] = baseline_state
-        if baseline_verdict is Verdict.BASELINE_MALFORMED:
-            gate.record(baseline_verdict, baseline_reason)
+        if baseline_state not in COMPARABLE_BASELINE_STATES:
+            gate.record(baseline_verdict or Verdict.MALFORMED_INPUT, baseline_reason)
             refusals.append(baseline_reason)
             continue
         if baseline_verdict is not None:
