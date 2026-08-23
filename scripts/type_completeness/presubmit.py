@@ -11,7 +11,8 @@ Every refusal is fail-closed. A selection the selector itself distrusts, a basel
 loaded, a run that broke or crossed its budget, and a comparison carrying a status this module has no
 disposition for all end the run with a distinct non-zero exit code. A missing baseline is not an
 error: it makes every in-slice failure compare against an absent `develop` side, which classifies as
-`new` and therefore blocks.
+`new` and therefore blocks. A family the branch itself introduces has no baseline by construction:
+it is told apart from a missing one by the catalog at the merge base, never by artifact presence alone.
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ class Verdict(str, enum.Enum):
     NOTHING_SELECTED = "nothing_selected"
     BLOCKED = "blocked"
     BASELINE_MISSING = "baseline_missing"
+    BASELINE_INVALID = "baseline_invalid"
     STRUCTURAL_FAILURE = "structural_failure"
     BASELINE_MALFORMED = "baseline_malformed"
     MALFORMED_INPUT = "malformed_input"
@@ -69,6 +71,7 @@ EXIT_CODES: dict[Verdict, int] = {
     Verdict.NOTHING_SELECTED: 0,
     Verdict.BLOCKED: 1,
     Verdict.BASELINE_MISSING: 1,
+    Verdict.BASELINE_INVALID: 1,
     Verdict.STRUCTURAL_FAILURE: 2,
     Verdict.BASELINE_MALFORMED: 2,
     Verdict.MALFORMED_INPUT: 2,
@@ -87,6 +90,7 @@ VERDICT_PRECEDENCE: tuple[Verdict, ...] = (
     Verdict.BASELINE_MALFORMED,
     Verdict.MALFORMED_INPUT,
     Verdict.BLOCKED,
+    Verdict.BASELINE_INVALID,
     Verdict.BASELINE_MISSING,
     Verdict.NOTHING_SELECTED,
     Verdict.PASSED,
@@ -128,9 +132,19 @@ def disposition_of(status: comparator.Status) -> Disposition:
 
 
 class BaselineState(str, enum.Enum):
+    """Every state one family's `develop` side can be in; the verdict each one records is in one table below."""
+
     PRESENT = "present"
     MISSING = "missing"
     MALFORMED = "malformed"
+    # The artifact loads, but the run that published it failed structurally - it timed out or broke
+    # before judging its cases - so it is evidence of nothing. Comparing against it would read every
+    # branch failure as unchanged against verdicts develop never reached.
+    INVALID = "invalid"
+    # The family is in the branch catalog but not in the catalog at the merge base, so no develop run
+    # could ever have produced a baseline for it. Every branch case compares as `new` against an empty
+    # develop side; a product finding still blocks, and a clean run is a pass rather than a refusal.
+    NEW_FAMILY = "new_family"
     # No family reached the comparison step, so no baseline was looked at. Reported as itself rather
     # than as "present", which would claim a baseline this run never saw.
     NOT_CONSULTED = "not_consulted"
@@ -140,9 +154,35 @@ class BaselineState(str, enum.Enum):
 # whole gate to "everything is new" rather than being averaged away by the families that had one.
 BASELINE_PRECEDENCE: tuple[BaselineState, ...] = (
     BaselineState.MALFORMED,
+    BaselineState.INVALID,
     BaselineState.MISSING,
+    BaselineState.NEW_FAMILY,
     BaselineState.PRESENT,
 )
+
+# The verdict one family's baseline state records, or `None` when the comparison proceeds with nothing
+# to hold against the branch. Spelled out per state so adding a state forces a decision here; the
+# aggregate-only state is absent on purpose and `verdict_for_baseline` refuses it.
+BASELINE_VERDICTS: dict[BaselineState, Optional[Verdict]] = {
+    BaselineState.PRESENT: None,
+    BaselineState.NEW_FAMILY: None,
+    BaselineState.MISSING: Verdict.BASELINE_MISSING,
+    BaselineState.INVALID: Verdict.BASELINE_INVALID,
+    BaselineState.MALFORMED: Verdict.BASELINE_MALFORMED,
+}
+
+# The states the comparison still runs under. A missing baseline compares against the absent develop
+# side so every branch failure surfaces as new; every other verdict-carrying state refuses the family.
+COMPARABLE_BASELINE_STATES: frozenset[BaselineState] = frozenset(
+    {BaselineState.PRESENT, BaselineState.NEW_FAMILY, BaselineState.MISSING}
+)
+
+
+def verdict_for_baseline(state: BaselineState) -> Optional[Verdict]:
+    try:
+        return BASELINE_VERDICTS[state]
+    except KeyError as error:
+        raise PresubmitError(f"baseline state {state!r} is not a per-family state") from error
 
 
 class RunnerExit(enum.IntEnum):
@@ -267,16 +307,65 @@ def load_presubmit_budget(budgets_path: Path) -> int:
     return int(value)
 
 
+def git_merge_base(merge_base_ref: str, repository_root: Path) -> str:
+    """The `develop` commit the branch is measured against."""
+    merge_base = _run(["git", "-C", str(repository_root), "merge-base", merge_base_ref, "HEAD"])
+    if merge_base.returncode != 0:
+        raise PresubmitError(f"cannot resolve the merge base with {merge_base_ref}: {merge_base.stderr.strip()}")
+    return merge_base.stdout.strip()
+
+
+def git_path_exists_at(commit: str, relative_path: str, repository_root: Path) -> bool:
+    """Whether a tracked path exists in one commit's tree, read from git rather than from the checkout."""
+    listed = _run(["git", "-C", str(repository_root), "ls-tree", "--name-only", commit, "--", relative_path])
+    if listed.returncode != 0:
+        raise PresubmitError(f"cannot read {relative_path} at {commit}: {listed.stderr.strip()}")
+    return bool(listed.stdout.strip())
+
+
+def git_tree_names(commit: str, relative_directory: str, repository_root: Path) -> list[str]:
+    """The base names of the entries one commit's tree holds directly under a directory."""
+    listed = _run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "ls-tree",
+            "--name-only",
+            commit,
+            "--",
+            relative_directory.rstrip("/") + "/",
+        ]
+    )
+    if listed.returncode != 0:
+        raise PresubmitError(f"cannot list {relative_directory} at {commit}: {listed.stderr.strip()}")
+    return [Path(line).name for line in listed.stdout.split("\n") if line]
+
+
+def structural_failure_stages(raw: Mapping[str, Any]) -> list[str]:
+    """The stages a structural-failure report names, read without trusting the member's shape.
+
+    The loader validates nothing below `structural_failures`, so an entry that is not an object or
+    carries no string `stage` is named as malformed rather than raised on: the baseline is already
+    being refused, and the refusal must still be published.
+    """
+    entries = raw.get("structural_failures")
+    if not isinstance(entries, list) or not entries:
+        return ["unnamed"]
+    stages: list[str] = []
+    for entry in entries:
+        stage = entry.get("stage") if isinstance(entry, Mapping) else None
+        stages.append(stage if isinstance(stage, str) and stage else "unnamed (malformed structural_failures entry)")
+    return sorted(set(stages))
+
+
 def git_changed_paths(merge_base_ref: str, repository_root: Path) -> tuple[list[str], str]:
     """The change set and the `develop` commit it is measured against.
 
     Both come from one merge base, so the baseline the gate downloads is the report of exactly the
     commit the diff was taken against.
     """
-    merge_base = _run(["git", "-C", str(repository_root), "merge-base", merge_base_ref, "HEAD"])
-    if merge_base.returncode != 0:
-        raise PresubmitError(f"cannot resolve the merge base with {merge_base_ref}: {merge_base.stderr.strip()}")
-    sha = merge_base.stdout.strip()
+    sha = git_merge_base(merge_base_ref, repository_root)
     # `--no-renames` on purpose: with rename detection a moved file reports only its destination, so
     # a mapped production file moved under a nonproduction prefix would disappear from the change set
     # and its family would never be selected. Both endpoints of a move must reach the capability map.
@@ -308,11 +397,16 @@ class Gate:
         self.now = deadline.parse_timestamp(arguments.now) if arguments.now else datetime.now(timezone.utc)
         self.reasons: list[str] = []
         self.verdicts: list[Verdict] = []
+        self.notes: list[str] = []
 
     # Recording, not deciding: the worst recorded verdict is chosen once, at the end.
     def record(self, verdict: Verdict, reason: str) -> None:
         self.verdicts.append(verdict)
         self.reasons.append(reason)
+
+    # A diagnostic that changes no verdict but must still be published with it.
+    def note(self, text: str) -> None:
+        self.notes.append(text)
 
     def worst_verdict(self) -> Verdict:
         for verdict in VERDICT_PRECEDENCE:
@@ -322,7 +416,9 @@ class Gate:
 
     def changed_paths(self) -> tuple[Path, str]:
         if self.changed_paths_file is not None:
-            return self.changed_paths_file, ""
+            # The change set is given, but the merge base is still what decides whether a family is
+            # new to the branch, so it is resolved either way.
+            return self.changed_paths_file, git_merge_base(self.merge_base_ref, self.repository_root)
         paths, sha = git_changed_paths(self.merge_base_ref, self.repository_root)
         destination = self.output_dir / "changed_paths.txt"
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -417,17 +513,84 @@ class Gate:
         shutil.copyfile(report_path, destination)
         return destination
 
-    def baseline_for(self, family: str) -> tuple[Path, BaselineState, str]:
-        """Resolve the `develop` side of one family, materializing the absent-baseline report when needed."""
+    def catalog_in_repository(self) -> Path:
+        try:
+            return self.catalog.resolve().relative_to(self.repository_root)
+        except ValueError as error:
+            raise PresubmitError(
+                f"catalog {self.catalog} is outside repository {self.repository_root}, so the merge-base "
+                "catalog cannot be consulted"
+            ) from error
+
+    def family_exists_at(self, family: str, merge_base: str) -> bool:
+        """Whether the catalog at the merge base defines the family, read from the rule manifest's path."""
+        rules = self.catalog_in_repository() / "rules" / f"{family}.json"
+        return git_path_exists_at(merge_base, rules.as_posix(), self.repository_root)
+
+    def vanished_families(self, merge_base: str) -> dict[str, list[str]]:
+        """Families the merge-base catalog defines that the branch catalog no longer does, with the case
+        IDs their develop baseline judged.
+
+        A family the branch removed is never selected, so no comparison would ever see its cases
+        vanish; without this check a family could be deleted and replaced under another name with
+        fewer cases while the gate passed. The case IDs come from the baseline artifact when it loads;
+        a family whose artifact is absent or unusable is still vanished, with no IDs to list.
+        """
+        rules = self.catalog_in_repository() / "rules"
+        # The catalog loader ignores dot-prefixed entries under rules/, so they are not families on
+        # either side and their removal is not a vanished family.
+        merge_base_families = {
+            Path(name).stem
+            for name in git_tree_names(merge_base, rules.as_posix(), self.repository_root)
+            if name.endswith(".json") and not name.startswith(".")
+        }
+        branch_families = {
+            path.stem for path in (self.catalog / "rules").glob("*.json") if not path.name.startswith(".")
+        }
+        vanished: dict[str, list[str]] = {}
+        for family in sorted(merge_base_families - branch_families):
+            case_ids: list[str] = []
+            candidate = None if self.baseline_dir is None else self.baseline_dir / f"{family}.json"
+            if candidate is not None and candidate.exists():
+                try:
+                    case_ids = [case.case_id for case in report.load_report_file(candidate).cases]
+                except report.ReportError:
+                    case_ids = []
+            vanished[family] = case_ids
+        return vanished
+
+    def baseline_for(self, family: str, merge_base: str) -> tuple[Path, BaselineState, str]:
+        """Resolve the `develop` side of one family, materializing the absent-baseline report when needed.
+
+        Provenance comes from the merge-base catalog alone: a family that catalog does not define is
+        new to the branch whatever the baseline directory holds, and an artifact found for it is stale
+        or foreign evidence that is set aside, never compared. Only for a family the merge base does
+        define is the artifact's existence consulted, and its absence is then a missing baseline.
+        """
         candidate = None if self.baseline_dir is None else self.baseline_dir / f"{family}.json"
+        if not self.family_exists_at(family, merge_base):
+            destination = self.output_dir / f"baseline-absent-{family}.json"
+            write_json(destination, absent_baseline_report(family))
+            reason = f"family {family} is not in the develop catalog at {merge_base}; every case is new"
+            if candidate is not None and candidate.exists():
+                reason += f" (ignoring {candidate}, which cannot be a develop baseline for a family develop lacks)"
+            return destination, BaselineState.NEW_FAMILY, reason
         if candidate is None or not candidate.exists():
             destination = self.output_dir / f"baseline-absent-{family}.json"
             write_json(destination, absent_baseline_report(family))
             return destination, BaselineState.MISSING, f"no develop baseline artifact for family {family}"
         try:
-            report.load_report_file(candidate)
+            loaded = report.load_report_file(candidate)
         except report.ReportError as error:
             return candidate, BaselineState.MALFORMED, f"develop baseline for family {family} is malformed: {error}"
+        if loaded.is_structural_failure:
+            stages = structural_failure_stages(loaded.raw)
+            return (
+                candidate,
+                BaselineState.INVALID,
+                f"develop baseline for family {family} is a structural failure at {', '.join(stages)}, "
+                "so it holds no verdicts to compare against",
+            )
         return candidate, BaselineState.PRESENT, ""
 
     def compare(self, family: str, branch_report: Path, develop_report: Path) -> tuple[Path, Optional[Verdict], str]:
@@ -540,6 +703,7 @@ def _empty_evaluation() -> dict[str, Any]:
         "known_mismatches": [],
         "known_mismatch_ids": [],
         "out_of_slice_failures": [],
+        "vanished_families": {},
     }
 
 
@@ -547,7 +711,7 @@ def run_gate(arguments: argparse.Namespace) -> int:
     started = time.monotonic()
     gate = Gate(arguments)
     gate.output_dir.mkdir(parents=True, exist_ok=True)
-    baseline_states: list[BaselineState] = []
+    baseline_states: dict[str, BaselineState] = {}
     families_run: list[str] = []
     evaluation = _empty_evaluation()
     merge_base = ""
@@ -561,6 +725,19 @@ def run_gate(arguments: argparse.Namespace) -> int:
         return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
 
     write_json(gate.output_dir / "selection.json", selection.to_dict())
+
+    try:
+        vanished = gate.vanished_families(merge_base)
+    except PresubmitError as error:
+        gate.record(Verdict.MALFORMED_INPUT, str(error))
+        return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
+    for family, case_ids in vanished.items():
+        gate.record(
+            Verdict.BLOCKED,
+            f"family {family} is in the develop catalog at {merge_base} but not on the branch; its "
+            f"{len(case_ids)} baseline cases can no longer be compared: {', '.join(case_ids) or 'no baseline artifact'}",
+        )
+    evaluation = dict(evaluation, vanished_families=vanished)
 
     if selection.validation_errors:
         # The selection cannot be trusted to scope anything, so nothing is compared against develop.
@@ -597,17 +774,26 @@ def run_gate(arguments: argparse.Namespace) -> int:
             gate.record(Verdict.STRUCTURAL_FAILURE, f"family {family} published a structural failure")
             refusals.append(f"family {family} published a structural failure")
             continue
-        develop_report, baseline_state, baseline_reason = gate.baseline_for(family)
-        baseline_states.append(baseline_state)
-        if baseline_state is BaselineState.MALFORMED:
-            gate.record(Verdict.BASELINE_MALFORMED, baseline_reason)
+        try:
+            develop_report, baseline_state, baseline_reason = gate.baseline_for(family, merge_base)
+            baseline_verdict = verdict_for_baseline(baseline_state)
+        except PresubmitError as error:
+            gate.record(Verdict.MALFORMED_INPUT, str(error))
+            refusals.append(str(error))
+            continue
+        baseline_states[family] = baseline_state
+        if baseline_state not in COMPARABLE_BASELINE_STATES:
+            gate.record(baseline_verdict or Verdict.MALFORMED_INPUT, baseline_reason)
             refusals.append(baseline_reason)
             continue
-        if baseline_state is BaselineState.MISSING:
+        if baseline_state is BaselineState.NEW_FAMILY:
+            gate.note(baseline_reason)
+        if baseline_verdict is not None:
             # Without a develop side the comparison can only see the branch: a case that existed on
             # develop and vanished from the branch produces no artifact at all, so a run with no
-            # baseline cannot demonstrate the absence of a regression and must not report one.
-            gate.record(Verdict.BASELINE_MISSING, baseline_reason)
+            # baseline cannot demonstrate the absence of a regression and must not report one. A new
+            # family is exempt: nothing could have vanished from a develop catalog that never had it.
+            gate.record(baseline_verdict, baseline_reason)
         comparison_path, verdict, reason = gate.compare(family, branch_report, develop_report)
         if verdict is not None:
             gate.record(verdict, reason)
@@ -627,7 +813,7 @@ def run_gate(arguments: argparse.Namespace) -> int:
             json.loads(comparator.serialize_many(sorted(artifacts, key=lambda entry: entry.comparison_id))),
         )
         try:
-            evaluation = gate.evaluate(artifacts, selection.families)
+            evaluation = dict(gate.evaluate(artifacts, selection.families), vanished_families=vanished)
         # Evaluation reads the tracked ledger and the provisional records the tracking issues carry, and
         # every one of those is an input this run did not write. A malformed one is a verdict about the
         # input, not a reason for the gate to terminate without publishing anything. `ValueError` is the
@@ -639,9 +825,9 @@ def run_gate(arguments: argparse.Namespace) -> int:
     return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
 
 
-def _aggregate_baseline_state(states: Sequence[BaselineState]) -> BaselineState:
+def _aggregate_baseline_state(states: Mapping[str, BaselineState]) -> BaselineState:
     for state in BASELINE_PRECEDENCE:
-        if state in states:
+        if state in states.values():
             return state
     return BaselineState.NOT_CONSULTED
 
@@ -650,7 +836,7 @@ def _publish(
     gate: Gate,
     selection: Selection,
     families_run: Sequence[str],
-    baseline_states: Sequence[BaselineState],
+    baseline_states: Mapping[str, BaselineState],
     evaluation: Mapping[str, Any],
     merge_base: str,
     started: float,
@@ -665,6 +851,8 @@ def _publish(
         "blocking_comparison_ids": list(evaluation["blocking_comparison_ids"]),
         "known_mismatch_ids": list(evaluation["known_mismatch_ids"]),
         "baseline_state": baseline_state.value,
+        "baseline_states": {family: state.value for family, state in sorted(baseline_states.items())},
+        "vanished_families": {family: list(ids) for family, ids in sorted(evaluation["vanished_families"].items())},
         "state": verdict.value,
     }
     payload: dict[str, Any] = dict(digested)
@@ -676,6 +864,7 @@ def _publish(
             "known_mismatches": list(evaluation["known_mismatches"]),
             "out_of_slice_failures": list(evaluation["out_of_slice_failures"]),
             "reasons": list(gate.reasons),
+            "notes": list(gate.notes),
             "merge_base": merge_base,
             "timings": {"total_seconds": round(time.monotonic() - started, 3)},
         }
@@ -683,6 +872,8 @@ def _publish(
     write_json(gate.output_dir / "verdict.json", payload)
     for reason in gate.reasons:
         print(f"{verdict.value}: {reason}")
+    for text in gate.notes:
+        print(f"note: {text}")
     print(f"type-completeness presubmit {verdict.value} (exit {exit_code_for(verdict)})")
     return exit_code_for(verdict)
 
