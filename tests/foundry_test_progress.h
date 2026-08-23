@@ -73,4 +73,12 @@ String status_from_failure_flags(int p_failure_flags, bool p_test_case_success);
 // never see it in the output it is judging.
 void write_stdout_line(const String &p_line);
 
+typedef void (*LineSink)(void *p_userdata, const String &p_line);
+
+// Redirects `write_stdout_line()` on the calling thread only, so a test can observe the routing of a
+// synthetic line without it reaching the real progress stream. The override is thread-local because
+// the heartbeat thread emits real events concurrently and must keep writing to the actual stream.
+// Passing `nullptr` restores stdout for the calling thread.
+void set_thread_line_sink(LineSink p_sink, void *p_userdata);
+
 } // namespace FoundryTestProgress

@@ -92,17 +92,52 @@ TEST_CASE("[FoundryTestProgress] Progress lines never reach the engine's print h
 		}
 	};
 
+	// The synthetic event is delivered to a thread-local sink instead of the process' stdout, so this
+	// test never injects a fabricated heartbeat into the progress stream of the run executing it.
+	struct CapturedProgress {
+		Vector<String> lines;
+		static void handle(void *p_userdata, const String &p_line) {
+			static_cast<CapturedProgress *>(p_userdata)->lines.push_back(p_line);
+		}
+	};
+
+	struct ScopedProgressSink {
+		explicit ScopedProgressSink(CapturedProgress *p_target) {
+			FoundryTestProgress::set_thread_line_sink(&CapturedProgress::handle, p_target);
+		}
+		~ScopedProgressSink() {
+			FoundryTestProgress::set_thread_line_sink(nullptr, nullptr);
+		}
+	};
+
+	struct ScopedPrintHandler {
+		PrintHandlerList handler;
+		explicit ScopedPrintHandler(CapturedPrints *p_target) {
+			handler.printfunc = &CapturedPrints::handle;
+			handler.userdata = p_target;
+			add_print_handler(&handler);
+		}
+		~ScopedPrintHandler() {
+			remove_print_handler(&handler);
+		}
+	};
+
+	const String heartbeat_line = FoundryTestProgress::format_event_text("HEARTBEAT", 1, 1, "example", String(), 30000);
+
+	CapturedProgress progress;
 	CapturedPrints captured;
-	PrintHandlerList handler;
-	handler.printfunc = &CapturedPrints::handle;
-	handler.userdata = &captured;
-	add_print_handler(&handler);
-	FoundryTestProgress::write_stdout_line("[foundry-test] HEARTBEAT 1/1 30000ms example");
-	print_line("output of the code under test");
-	remove_print_handler(&handler);
+	{
+		ScopedProgressSink progress_sink(&progress);
+		ScopedPrintHandler print_handler(&captured);
+		FoundryTestProgress::write_stdout_line(heartbeat_line);
+		print_line("output of the code under test");
+	}
 
 	REQUIRE_EQ(captured.lines.size(), 1);
 	CHECK_EQ(captured.lines[0], "output of the code under test");
+
+	REQUIRE_EQ(progress.lines.size(), 1);
+	CHECK_EQ(progress.lines[0], heartbeat_line);
 }
 
 TEST_CASE("[FoundryTestProgress] Failure flags map to progress status strings") {

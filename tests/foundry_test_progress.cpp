@@ -154,7 +154,20 @@ String format_event_jsonl(const Dictionary &p_event) {
 // captured output by whichever test happened to be running when the event was emitted. Heartbeats are
 // emitted from a timer thread precisely while a long test runs, so this is the common case, not an
 // exotic one. Writing here also keeps events flowing while a test has stdout switched off.
+static thread_local LineSink g_thread_line_sink = nullptr;
+static thread_local void *g_thread_line_sink_userdata = nullptr;
+
+void set_thread_line_sink(LineSink p_sink, void *p_userdata) {
+	g_thread_line_sink = p_sink;
+	g_thread_line_sink_userdata = p_userdata;
+}
+
 void write_stdout_line(const String &p_line) {
+	if (g_thread_line_sink != nullptr) {
+		g_thread_line_sink(g_thread_line_sink_userdata, p_line);
+		return;
+	}
+
 	const CharString utf8 = (p_line + "\n").utf8();
 	fwrite(utf8.get_data(), sizeof(char), utf8.length(), stdout);
 	fflush(stdout);
