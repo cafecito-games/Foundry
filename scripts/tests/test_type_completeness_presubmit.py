@@ -564,6 +564,57 @@ class GateTests(GateTestCase):
         self.assertEqual(code, 1)
         self.assertTrue(verdict["blocking_comparison_ids"])
 
+    def test_a_stale_artifact_for_a_new_family_never_turns_its_failure_into_a_known_mismatch(self) -> None:
+        # Provenance is the merge-base catalog, never the baseline directory: a leftover artifact for a
+        # family develop lacks would otherwise let a matching ledger record clear the failure.
+        self.add_family_on_branch()
+        document = renamed_report(failed_report(classification="product_defect"), NEW_FAMILY)
+        self.write_report(document, family=NEW_FAMILY)
+        baseline = self.work / "baseline"
+        self.write_report(document, family=NEW_FAMILY, directory=baseline)
+        ledger_dir = self.work / "ledger"
+        ledger_dir.mkdir()
+        finding = document["findings"][0]
+        ledger.write_record(
+            ledger_dir,
+            ledger.proposed_record(
+                finding_id=finding["finding_id"],
+                family=finding["family"],
+                case_id=finding["case_id"],
+                dimension=finding["dimension"],
+                issue_url="https://example.invalid/issues/1",
+                closure_packet_url="https://example.invalid/packets/1",
+                permanent_test_paths=["modules/foundry_script/tests/test_type_completeness_harness.h"],
+                classification="product_defect",
+            ),
+        )
+        code, verdict, _ = self.run_gate(
+            selection_fixture=str(self.write_selection([NEW_FAMILY])),
+            baseline_dir=baseline,
+            environment={"FOUNDRY_FAKE_RUN_EXIT": "1"},
+            extra_arguments=["--ledger-dir", str(ledger_dir)],
+        )
+        self.assertEqual(verdict["baseline_states"], {NEW_FAMILY: "new_family"})
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(code, 1)
+        self.assertEqual(verdict["known_mismatch_ids"], [])
+        self.assertTrue(verdict["blocking_comparison_ids"])
+        self.assertTrue(
+            any(str(baseline / f"{NEW_FAMILY}.json") in note for note in verdict["notes"]), verdict["notes"]
+        )
+
+    def test_a_stale_artifact_for_a_new_family_is_set_aside_on_a_clean_run(self) -> None:
+        self.add_family_on_branch()
+        self.write_report(renamed_report(runner_report(), NEW_FAMILY), family=NEW_FAMILY)
+        baseline = self.work / "baseline"
+        self.write_report(renamed_report(runner_report(), NEW_FAMILY), family=NEW_FAMILY, directory=baseline)
+        code, verdict, _ = self.run_gate(
+            selection_fixture=str(self.write_selection([NEW_FAMILY])), baseline_dir=baseline
+        )
+        self.assertEqual(verdict["baseline_states"], {NEW_FAMILY: "new_family"})
+        self.assertEqual(verdict["state"], "passed")
+        self.assertEqual(code, 0)
+
     def test_a_new_family_is_decided_by_the_merge_base_catalog_not_by_the_artifact(self) -> None:
         # The same absent artifact for a family the develop catalog does define stays a missing
         # baseline: only the merge-base catalog tells the two apart.

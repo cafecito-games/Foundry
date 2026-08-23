@@ -397,11 +397,16 @@ class Gate:
         self.now = deadline.parse_timestamp(arguments.now) if arguments.now else datetime.now(timezone.utc)
         self.reasons: list[str] = []
         self.verdicts: list[Verdict] = []
+        self.notes: list[str] = []
 
     # Recording, not deciding: the worst recorded verdict is chosen once, at the end.
     def record(self, verdict: Verdict, reason: str) -> None:
         self.verdicts.append(verdict)
         self.reasons.append(reason)
+
+    # A diagnostic that changes no verdict but must still be published with it.
+    def note(self, text: str) -> None:
+        self.notes.append(text)
 
     def worst_verdict(self) -> Verdict:
         for verdict in VERDICT_PRECEDENCE:
@@ -557,20 +562,22 @@ class Gate:
     def baseline_for(self, family: str, merge_base: str) -> tuple[Path, BaselineState, str]:
         """Resolve the `develop` side of one family, materializing the absent-baseline report when needed.
 
-        An absent artifact is read two ways, decided by the merge-base catalog and never by the artifact
-        alone: a family that catalog does not define is new to the branch, and a family it does define
-        has a baseline that could not be fetched.
+        Provenance comes from the merge-base catalog alone: a family that catalog does not define is
+        new to the branch whatever the baseline directory holds, and an artifact found for it is stale
+        or foreign evidence that is set aside, never compared. Only for a family the merge base does
+        define is the artifact's existence consulted, and its absence is then a missing baseline.
         """
         candidate = None if self.baseline_dir is None else self.baseline_dir / f"{family}.json"
+        if not self.family_exists_at(family, merge_base):
+            destination = self.output_dir / f"baseline-absent-{family}.json"
+            write_json(destination, absent_baseline_report(family))
+            reason = f"family {family} is not in the develop catalog at {merge_base}; every case is new"
+            if candidate is not None and candidate.exists():
+                reason += f" (ignoring {candidate}, which cannot be a develop baseline for a family develop lacks)"
+            return destination, BaselineState.NEW_FAMILY, reason
         if candidate is None or not candidate.exists():
             destination = self.output_dir / f"baseline-absent-{family}.json"
             write_json(destination, absent_baseline_report(family))
-            if not self.family_exists_at(family, merge_base):
-                return (
-                    destination,
-                    BaselineState.NEW_FAMILY,
-                    f"family {family} is not in the develop catalog at {merge_base}; every case is new",
-                )
             return destination, BaselineState.MISSING, f"no develop baseline artifact for family {family}"
         try:
             loaded = report.load_report_file(candidate)
@@ -779,6 +786,8 @@ def run_gate(arguments: argparse.Namespace) -> int:
             gate.record(baseline_verdict or Verdict.MALFORMED_INPUT, baseline_reason)
             refusals.append(baseline_reason)
             continue
+        if baseline_state is BaselineState.NEW_FAMILY:
+            gate.note(baseline_reason)
         if baseline_verdict is not None:
             # Without a develop side the comparison can only see the branch: a case that existed on
             # develop and vanished from the branch produces no artifact at all, so a run with no
@@ -855,6 +864,7 @@ def _publish(
             "known_mismatches": list(evaluation["known_mismatches"]),
             "out_of_slice_failures": list(evaluation["out_of_slice_failures"]),
             "reasons": list(gate.reasons),
+            "notes": list(gate.notes),
             "merge_base": merge_base,
             "timings": {"total_seconds": round(time.monotonic() - started, 3)},
         }
@@ -862,6 +872,8 @@ def _publish(
     write_json(gate.output_dir / "verdict.json", payload)
     for reason in gate.reasons:
         print(f"{verdict.value}: {reason}")
+    for text in gate.notes:
+        print(f"note: {text}")
     print(f"type-completeness presubmit {verdict.value} (exit {exit_code_for(verdict)})")
     return exit_code_for(verdict)
 
