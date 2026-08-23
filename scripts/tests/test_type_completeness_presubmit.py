@@ -143,6 +143,36 @@ class VerdictTableTests(unittest.TestCase):
             self.assertIs(gate.worst_verdict(), worse)
 
 
+class StructuralFailureStageTests(unittest.TestCase):
+    """The loader validates nothing below `structural_failures`, so every shape must name a stage without raising."""
+
+    def test_the_runner_record_names_its_stage(self) -> None:
+        self.assertEqual(presubmit.structural_failure_stages(timed_out_report()), ["run_timeout"])
+
+    def test_every_malformed_shape_is_named_rather_than_raised_on(self) -> None:
+        shapes: dict[str, Any] = {
+            "absent": None,
+            "not_an_array": "run_timeout",
+            "empty": [],
+            "entry_not_an_object": ["run_timeout"],
+            "entry_number": [1],
+            "entry_null": [None],
+            "stage_missing": [{"detail": "x"}],
+            "stage_not_a_string": [{"stage": 3}],
+            "stage_empty": [{"stage": ""}],
+        }
+        for name, value in shapes.items():
+            with self.subTest(shape=name):
+                document = timed_out_report()
+                if value is None:
+                    del document["structural_failures"]
+                else:
+                    document["structural_failures"] = value
+                stages = presubmit.structural_failure_stages(document)
+                self.assertTrue(stages)
+                self.assertTrue(all(isinstance(stage, str) and stage for stage in stages))
+
+
 class BaselineStateTableTests(unittest.TestCase):
     def test_every_per_family_state_has_exactly_one_verdict_entry(self) -> None:
         per_family = set(presubmit.BaselineState) - {presubmit.BaselineState.NOT_CONSULTED}
@@ -626,6 +656,56 @@ class GateTests(GateTestCase):
         self.assertEqual(verdict["baseline_state"], "invalid")
         self.assertEqual(code, 1)
 
+    def test_a_baseline_with_malformed_structural_failure_entries_is_still_published_as_invalid(self) -> None:
+        for name, entries in {"not_objects": ["run_timeout"], "no_stage": [{"detail": "x"}], "numbers": [1]}.items():
+            with self.subTest(shape=name):
+                self.write_report(runner_report())
+                baseline = Path(self._make_temporary_directory())
+                document = timed_out_report()
+                document["structural_failures"] = entries
+                self.write_report(document, directory=baseline)
+                code, verdict, _ = self.run_gate(
+                    baseline_dir=baseline, output_dir=Path(self._make_temporary_directory())
+                )
+                self.assertEqual(verdict.get("state"), "baseline_invalid")
+                self.assertEqual(code, 1)
+                self.assertEqual(verdict["baseline_states"], {FAMILY: "invalid"})
+
+    def test_a_family_removed_from_the_catalog_blocks_with_its_baseline_cases(self) -> None:
+        # Deleting a family and adding a differently named replacement must not pass: the deleted
+        # family is never selected, so only a catalog-level check can see its cases vanish.
+        self.add_family_on_branch()
+        self._git("rm", "-q", f"catalog/rules/{FAMILY}.json")
+        self._git("commit", "-q", "-m", f"remove family {FAMILY}")
+        self.write_report(renamed_report(runner_report(), NEW_FAMILY), family=NEW_FAMILY)
+        baseline = self.work / "baseline"
+        self.write_report(runner_report(), directory=baseline)
+        code, verdict, _ = self.run_gate(
+            selection_fixture=str(self.write_selection([NEW_FAMILY])), baseline_dir=baseline
+        )
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(code, 1)
+        expected_ids = [case["case_id"] for case in runner_report()["cases"]]
+        self.assertEqual(verdict["vanished_families"], {FAMILY: expected_ids})
+        self.assertEqual(verdict["baseline_states"], {NEW_FAMILY: "new_family"})
+        self.assertTrue(any(FAMILY in reason and expected_ids[0] in reason for reason in verdict["reasons"]))
+
+    def test_a_removed_family_without_a_baseline_artifact_still_blocks(self) -> None:
+        self._git("rm", "-q", f"catalog/rules/{FAMILY}.json")
+        self._git("commit", "-q", "-m", f"remove family {FAMILY}")
+        code, verdict, _ = self.run_gate(selection_fixture="selection_none.json", baseline_dir=self.work / "absent")
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(code, 1)
+        self.assertEqual(verdict["vanished_families"], {FAMILY: []})
+
+    def test_an_unchanged_catalog_reports_no_vanished_family(self) -> None:
+        self.write_report(runner_report())
+        baseline = self.work / "baseline"
+        self.write_report(runner_report(), directory=baseline)
+        _, verdict, _ = self.run_gate(baseline_dir=baseline)
+        self.assertEqual(verdict["vanished_families"], {})
+        self.assertEqual(verdict["state"], "passed")
+
     def test_the_runner_timeout_code_is_a_timeout(self) -> None:
         self.write_report(runner_report())
         code, verdict, _ = self.run_gate(environment={"FOUNDRY_FAKE_RUN_EXIT": "3"})
@@ -876,6 +956,7 @@ class IntegrityTests(GateTestCase):
             "known_mismatch_ids": verdict["known_mismatch_ids"],
             "baseline_state": verdict["baseline_state"],
             "baseline_states": verdict["baseline_states"],
+            "vanished_families": verdict["vanished_families"],
             "state": verdict["state"],
         }
         self.assertEqual(verdict["digest"], comparator.digest_of(digested))

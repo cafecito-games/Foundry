@@ -323,6 +323,42 @@ def git_path_exists_at(commit: str, relative_path: str, repository_root: Path) -
     return bool(listed.stdout.strip())
 
 
+def git_tree_names(commit: str, relative_directory: str, repository_root: Path) -> list[str]:
+    """The base names of the entries one commit's tree holds directly under a directory."""
+    listed = _run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "ls-tree",
+            "--name-only",
+            commit,
+            "--",
+            relative_directory.rstrip("/") + "/",
+        ]
+    )
+    if listed.returncode != 0:
+        raise PresubmitError(f"cannot list {relative_directory} at {commit}: {listed.stderr.strip()}")
+    return [Path(line).name for line in listed.stdout.split("\n") if line]
+
+
+def structural_failure_stages(raw: Mapping[str, Any]) -> list[str]:
+    """The stages a structural-failure report names, read without trusting the member's shape.
+
+    The loader validates nothing below `structural_failures`, so an entry that is not an object or
+    carries no string `stage` is named as malformed rather than raised on: the baseline is already
+    being refused, and the refusal must still be published.
+    """
+    entries = raw.get("structural_failures")
+    if not isinstance(entries, list) or not entries:
+        return ["unnamed"]
+    stages: list[str] = []
+    for entry in entries:
+        stage = entry.get("stage") if isinstance(entry, Mapping) else None
+        stages.append(stage if isinstance(stage, str) and stage else "unnamed (malformed structural_failures entry)")
+    return sorted(set(stages))
+
+
 def git_changed_paths(merge_base_ref: str, repository_root: Path) -> tuple[list[str], str]:
     """The change set and the `develop` commit it is measured against.
 
@@ -472,16 +508,47 @@ class Gate:
         shutil.copyfile(report_path, destination)
         return destination
 
-    def family_exists_at(self, family: str, merge_base: str) -> bool:
-        """Whether the catalog at the merge base defines the family, read from the rule manifest's path."""
+    def catalog_in_repository(self) -> Path:
         try:
-            catalog = self.catalog.resolve().relative_to(self.repository_root)
+            return self.catalog.resolve().relative_to(self.repository_root)
         except ValueError as error:
             raise PresubmitError(
                 f"catalog {self.catalog} is outside repository {self.repository_root}, so the merge-base "
                 "catalog cannot be consulted"
             ) from error
-        return git_path_exists_at(merge_base, (catalog / "rules" / f"{family}.json").as_posix(), self.repository_root)
+
+    def family_exists_at(self, family: str, merge_base: str) -> bool:
+        """Whether the catalog at the merge base defines the family, read from the rule manifest's path."""
+        rules = self.catalog_in_repository() / "rules" / f"{family}.json"
+        return git_path_exists_at(merge_base, rules.as_posix(), self.repository_root)
+
+    def vanished_families(self, merge_base: str) -> dict[str, list[str]]:
+        """Families the merge-base catalog defines that the branch catalog no longer does, with the case
+        IDs their develop baseline judged.
+
+        A family the branch removed is never selected, so no comparison would ever see its cases
+        vanish; without this check a family could be deleted and replaced under another name with
+        fewer cases while the gate passed. The case IDs come from the baseline artifact when it loads;
+        a family whose artifact is absent or unusable is still vanished, with no IDs to list.
+        """
+        rules = self.catalog_in_repository() / "rules"
+        merge_base_families = {
+            Path(name).stem
+            for name in git_tree_names(merge_base, rules.as_posix(), self.repository_root)
+            if name.endswith(".json")
+        }
+        branch_families = {path.stem for path in (self.catalog / "rules").glob("*.json")}
+        vanished: dict[str, list[str]] = {}
+        for family in sorted(merge_base_families - branch_families):
+            case_ids: list[str] = []
+            candidate = None if self.baseline_dir is None else self.baseline_dir / f"{family}.json"
+            if candidate is not None and candidate.exists():
+                try:
+                    case_ids = [case.case_id for case in report.load_report_file(candidate).cases]
+                except report.ReportError:
+                    case_ids = []
+            vanished[family] = case_ids
+        return vanished
 
     def baseline_for(self, family: str, merge_base: str) -> tuple[Path, BaselineState, str]:
         """Resolve the `develop` side of one family, materializing the absent-baseline report when needed.
@@ -506,9 +573,7 @@ class Gate:
         except report.ReportError as error:
             return candidate, BaselineState.MALFORMED, f"develop baseline for family {family} is malformed: {error}"
         if loaded.is_structural_failure:
-            stages = sorted(
-                {str(entry.get("stage", "")) for entry in loaded.raw.get("structural_failures") or []} - {""}
-            ) or ["unnamed"]
+            stages = structural_failure_stages(loaded.raw)
             return (
                 candidate,
                 BaselineState.INVALID,
@@ -627,6 +692,7 @@ def _empty_evaluation() -> dict[str, Any]:
         "known_mismatches": [],
         "known_mismatch_ids": [],
         "out_of_slice_failures": [],
+        "vanished_families": {},
     }
 
 
@@ -648,6 +714,19 @@ def run_gate(arguments: argparse.Namespace) -> int:
         return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
 
     write_json(gate.output_dir / "selection.json", selection.to_dict())
+
+    try:
+        vanished = gate.vanished_families(merge_base)
+    except PresubmitError as error:
+        gate.record(Verdict.MALFORMED_INPUT, str(error))
+        return _publish(gate, selection, families_run, baseline_states, evaluation, merge_base, started)
+    for family, case_ids in vanished.items():
+        gate.record(
+            Verdict.BLOCKED,
+            f"family {family} is in the develop catalog at {merge_base} but not on the branch; its "
+            f"{len(case_ids)} baseline cases can no longer be compared: {', '.join(case_ids) or 'no baseline artifact'}",
+        )
+    evaluation = dict(evaluation, vanished_families=vanished)
 
     if selection.validation_errors:
         # The selection cannot be trusted to scope anything, so nothing is compared against develop.
@@ -721,7 +800,7 @@ def run_gate(arguments: argparse.Namespace) -> int:
             json.loads(comparator.serialize_many(sorted(artifacts, key=lambda entry: entry.comparison_id))),
         )
         try:
-            evaluation = gate.evaluate(artifacts, selection.families)
+            evaluation = dict(gate.evaluate(artifacts, selection.families), vanished_families=vanished)
         # Evaluation reads the tracked ledger and the provisional records the tracking issues carry, and
         # every one of those is an input this run did not write. A malformed one is a verdict about the
         # input, not a reason for the gate to terminate without publishing anything. `ValueError` is the
@@ -760,6 +839,7 @@ def _publish(
         "known_mismatch_ids": list(evaluation["known_mismatch_ids"]),
         "baseline_state": baseline_state.value,
         "baseline_states": {family: state.value for family, state in sorted(baseline_states.items())},
+        "vanished_families": {family: list(ids) for family, ids in sorted(evaluation["vanished_families"].items())},
         "state": verdict.value,
     }
     payload: dict[str, Any] = dict(digested)
