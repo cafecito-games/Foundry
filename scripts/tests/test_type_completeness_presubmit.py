@@ -35,6 +35,9 @@ from scripts.type_completeness import (  # noqa: E402
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "type_completeness"
 FAKE_BINARY = Path(__file__).resolve().parent / "type_completeness_fake_binary.py"
 FAMILY = "union_destination_membership"
+# A real catalog family the temporary repository's baseline branch deliberately lacks, so a test can
+# introduce it on the branch the way a family-adding pull request does.
+NEW_FAMILY = "lifecycle_reload"
 CATALOG = REPOSITORY_ROOT / "modules" / "foundry_script" / "tests" / "type_completeness"
 
 
@@ -66,6 +69,15 @@ def failed_report(dimension: str = "destination", classification: str = "unclass
         "classification": classification,
     }
     document["findings"] = [finding]
+    return document
+
+
+def renamed_report(document: dict[str, Any], family: str) -> dict[str, Any]:
+    """The captured report republished under another family name, findings included."""
+    document = copy.deepcopy(document)
+    document["family"] = family
+    for finding in document["findings"]:
+        finding["family"] = family
     return document
 
 
@@ -105,6 +117,34 @@ class VerdictTableTests(unittest.TestCase):
             gate.verdicts = [better, worse]
             gate.reasons = []
             self.assertIs(gate.worst_verdict(), worse)
+
+
+class BaselineStateTableTests(unittest.TestCase):
+    def test_every_per_family_state_has_exactly_one_verdict_entry(self) -> None:
+        per_family = set(presubmit.BaselineState) - {presubmit.BaselineState.NOT_CONSULTED}
+        self.assertEqual(set(presubmit.BASELINE_VERDICTS), per_family)
+        self.assertEqual(set(presubmit.BASELINE_PRECEDENCE), per_family)
+        self.assertEqual(len(presubmit.BASELINE_PRECEDENCE), len(set(presubmit.BASELINE_PRECEDENCE)))
+
+    def test_every_state_is_handled_or_refused(self) -> None:
+        for state in presubmit.BaselineState:
+            with self.subTest(state=state.value):
+                if state is presubmit.BaselineState.NOT_CONSULTED:
+                    with self.assertRaises(presubmit.PresubmitError):
+                        presubmit.verdict_for_baseline(state)
+                    continue
+                verdict = presubmit.verdict_for_baseline(state)
+                self.assertTrue(verdict is None or isinstance(verdict, presubmit.Verdict))
+
+    def test_only_the_two_comparable_states_proceed_without_a_verdict(self) -> None:
+        proceeding = {state for state, verdict in presubmit.BASELINE_VERDICTS.items() if verdict is None}
+        self.assertEqual(proceeding, {presubmit.BaselineState.PRESENT, presubmit.BaselineState.NEW_FAMILY})
+        self.assertIs(
+            presubmit.verdict_for_baseline(presubmit.BaselineState.MISSING), presubmit.Verdict.BASELINE_MISSING
+        )
+        self.assertIs(
+            presubmit.verdict_for_baseline(presubmit.BaselineState.MALFORMED), presubmit.Verdict.BASELINE_MALFORMED
+        )
 
 
 class StatusDispositionTests(unittest.TestCase):
@@ -273,7 +313,11 @@ class ChangedPathTests(unittest.TestCase):
 
 
 class GateTestCase(unittest.TestCase):
-    """Drives the wrapper end to end against the fake binary, one fail-closed row per test."""
+    """Drives the wrapper end to end against the fake binary, one fail-closed row per test.
+
+    The change set is measured in a temporary repository whose `baseline` branch carries the catalog's
+    rule manifest for `FAMILY` alone, so the merge-base catalog a test sees is exactly what it committed.
+    """
 
     def setUp(self) -> None:
         self.work = Path(self._make_temporary_directory())
@@ -283,6 +327,43 @@ class GateTestCase(unittest.TestCase):
         self.changed_paths = self.work / "changed.txt"
         self.changed_paths.write_text("modules/foundry_script/fs_analyzer.cpp\n", encoding="utf-8")
         self.environment = dict(os.environ)
+        self.repository = self.work / "repository"
+        self.catalog = self.repository / "catalog"
+        self.repository.mkdir()
+        self._git("init", "--initial-branch", "main")
+        self._git("config", "user.email", "gate@example.invalid")
+        self._git("config", "user.name", "Gate")
+        self._commit_rule_manifest(FAMILY, "seed the develop catalog")
+        self._git("branch", "baseline")
+
+    def _git(self, *arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(self.repository), *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout)
+        return completed.stdout
+
+    def _commit_rule_manifest(self, family: str, message: str) -> None:
+        destination = self.catalog / "rules" / f"{family}.json"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(CATALOG / "rules" / f"{family}.json", destination)
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", message)
+
+    def add_family_on_branch(self, family: str = NEW_FAMILY) -> None:
+        """Introduce a family the way a pull request does: its rule manifest is committed after the merge base."""
+        self._commit_rule_manifest(family, f"add family {family}")
+
+    def write_selection(self, families: Sequence[str]) -> Path:
+        """The captured selection document with its family list replaced; no other member is invented."""
+        document = json.loads(read_fixture("selection_mapped.json"))
+        document["families"] = list(families)
+        destination = self.work / "selection.json"
+        destination.write_text(json.dumps(document), encoding="utf-8")
+        return destination
 
     def _make_temporary_directory(self) -> str:
         directory = tempfile.mkdtemp(prefix="type_completeness_presubmit_")
@@ -317,8 +398,12 @@ class GateTestCase(unittest.TestCase):
             str(FAKE_BINARY),
             "--output-dir",
             str(destination),
+            "--repository-root",
+            str(self.repository),
             "--catalog",
-            str(CATALOG),
+            str(self.catalog),
+            "--merge-base-ref",
+            "baseline",
             "--changed-paths",
             str(self.changed_paths),
             "--capabilities",
@@ -386,6 +471,85 @@ class GateTests(GateTestCase):
         self.assertEqual(verdict["baseline_state"], "missing")
         self.assertEqual(verdict["state"], "baseline_missing")
         self.assertEqual(code, 1)
+
+    def test_a_family_the_branch_introduces_passes_on_a_clean_run(self) -> None:
+        # The family cannot have a develop baseline by construction, so its absence is not a refusal.
+        self.add_family_on_branch()
+        self.write_report(renamed_report(runner_report(), NEW_FAMILY), family=NEW_FAMILY)
+        code, verdict, output = self.run_gate(
+            selection_fixture=str(self.write_selection([NEW_FAMILY])), baseline_dir=self.work / "absent"
+        )
+        self.assertEqual(verdict["state"], "passed")
+        self.assertEqual(code, 0)
+        self.assertEqual(verdict["baseline_state"], "new_family")
+        self.assertEqual(verdict["baseline_states"], {NEW_FAMILY: "new_family"})
+        self.assertEqual(verdict["families_run"], [NEW_FAMILY])
+        self.assertTrue((output / f"comparison-{NEW_FAMILY}.json").exists())
+
+    def test_a_failure_in_a_family_the_branch_introduces_still_blocks(self) -> None:
+        self.add_family_on_branch()
+        self.write_report(renamed_report(failed_report(), NEW_FAMILY), family=NEW_FAMILY)
+        code, verdict, _ = self.run_gate(
+            selection_fixture=str(self.write_selection([NEW_FAMILY])),
+            baseline_dir=self.work / "absent",
+            environment={"FOUNDRY_FAKE_RUN_EXIT": "1"},
+        )
+        self.assertEqual(verdict["baseline_states"], {NEW_FAMILY: "new_family"})
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(code, 1)
+        self.assertTrue(verdict["blocking_comparison_ids"])
+
+    def test_a_new_family_is_decided_by_the_merge_base_catalog_not_by_the_artifact(self) -> None:
+        # The same absent artifact for a family the develop catalog does define stays a missing
+        # baseline: only the merge-base catalog tells the two apart.
+        self.write_report(runner_report())
+        code, verdict, _ = self.run_gate(baseline_dir=self.work / "absent")
+        self.assertEqual(verdict["baseline_states"], {FAMILY: "missing"})
+        self.assertEqual(verdict["state"], "baseline_missing")
+        self.assertEqual(code, 1)
+
+    def test_a_mixed_selection_reports_each_family_state(self) -> None:
+        self.add_family_on_branch()
+        self.write_report(runner_report())
+        self.write_report(renamed_report(runner_report(), NEW_FAMILY), family=NEW_FAMILY)
+        baseline = self.work / "baseline"
+        self.write_report(runner_report(), directory=baseline)
+        code, verdict, _ = self.run_gate(
+            selection_fixture=str(self.write_selection([FAMILY, NEW_FAMILY])), baseline_dir=baseline
+        )
+        self.assertEqual(verdict["baseline_states"], {FAMILY: "present", NEW_FAMILY: "new_family"})
+        self.assertEqual(verdict["baseline_state"], "new_family")
+        self.assertEqual(verdict["state"], "passed")
+        self.assertEqual(code, 0)
+        self.assertEqual(verdict["families_run"], [FAMILY, NEW_FAMILY])
+
+    def test_a_new_family_never_hides_a_missing_baseline_beside_it(self) -> None:
+        self.add_family_on_branch()
+        self.write_report(runner_report())
+        self.write_report(renamed_report(runner_report(), NEW_FAMILY), family=NEW_FAMILY)
+        code, verdict, _ = self.run_gate(
+            selection_fixture=str(self.write_selection([FAMILY, NEW_FAMILY])), baseline_dir=self.work / "absent"
+        )
+        self.assertEqual(verdict["baseline_states"], {FAMILY: "missing", NEW_FAMILY: "new_family"})
+        self.assertEqual(verdict["baseline_state"], "missing")
+        self.assertEqual(verdict["state"], "baseline_missing")
+        self.assertEqual(code, 1)
+
+    def test_an_unresolvable_merge_base_is_refused_before_any_family_runs(self) -> None:
+        self.write_report(runner_report())
+        code, verdict, _ = self.run_gate(extra_arguments=["--merge-base-ref", "no-such-ref"])
+        self.assertEqual(verdict["state"], "malformed_input")
+        self.assertEqual(code, 2)
+        self.assertEqual(verdict["families_run"], [])
+
+    def test_a_catalog_outside_the_repository_cannot_decide_a_new_family(self) -> None:
+        # Without the merge-base catalog the gate cannot tell a new family from a missing baseline, so
+        # it refuses rather than guessing from the artifact.
+        self.write_report(runner_report())
+        code, verdict, _ = self.run_gate(baseline_dir=self.work / "absent", extra_arguments=["--catalog", str(CATALOG)])
+        self.assertEqual(verdict["state"], "malformed_input")
+        self.assertEqual(code, 2)
+        self.assertEqual(verdict["baseline_states"], {})
 
     def test_an_unnamed_scratch_root_is_refused(self) -> None:
         # The runner refuses a report path outside the test scratch space, so a wrapper that invented
@@ -654,6 +818,7 @@ class IntegrityTests(GateTestCase):
             "blocking_comparison_ids": verdict["blocking_comparison_ids"],
             "known_mismatch_ids": verdict["known_mismatch_ids"],
             "baseline_state": verdict["baseline_state"],
+            "baseline_states": verdict["baseline_states"],
             "state": verdict["state"],
         }
         self.assertEqual(verdict["digest"], comparator.digest_of(digested))
