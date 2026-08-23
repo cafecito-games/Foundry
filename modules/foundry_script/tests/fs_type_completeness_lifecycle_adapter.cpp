@@ -55,6 +55,7 @@ static const String lifecycle_adapter_id = "lifecycle";
 static thread_local bool corrupt_transition_artifact_for_test = false;
 static thread_local bool load_transition_artifact_from_source_for_test = false;
 static thread_local bool skip_transition_invalidation_for_test = false;
+static thread_local bool corrupt_restored_subject_for_test = false;
 
 // One member type the transition has to carry, and a value it can be initialized with. The spelling
 // is the declaration the program contains; the observation renders what came back out of the
@@ -265,26 +266,36 @@ static Error export_lifecycle_artifact(
 	return OK;
 }
 
-static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<FoundryScript> &r_loaded) {
-	r_loaded.unref();
-	if (p_artifact.buffer.is_empty()) {
+// Restores an exported artifact into p_target. The target is the caller's choice on purpose: an
+// export/load transition restores into a fresh script, while selecting the subject of a bytecode-
+// surface cell restores into the script the identity already serves, so that identity is served by a
+// compiled binary rather than by a source-compiled object standing next to one.
+static Error restore_lifecycle_artifact_into(
+		const LifecycleArtifact &p_artifact, const Ref<FoundryScript> &p_target) {
+	if (p_artifact.buffer.is_empty() || p_target.is_null()) {
 		return ERR_INVALID_DATA;
 	}
-	Ref<FoundryScript> restored;
-	restored.instantiate();
-	restored->set_path_cache(p_artifact.path);
+	p_target->set_path_cache(p_artifact.path);
 	LifecycleBytecodeResolver resolver;
 	FSBytecodeLoader loader;
 	loader.set_resolver(&resolver);
-	Error error = loader.load_skeleton(p_artifact.buffer, restored);
+	Error error = loader.load_skeleton(p_artifact.buffer, p_target);
 	if (error == OK) {
-		error = loader.load_full(p_artifact.buffer, restored);
+		error = loader.load_full(p_artifact.buffer, p_target);
 	}
 	if (error != OK) {
 		return error;
 	}
-	if (restored.is_null() || !restored->is_valid() || !restored->is_compiled_binary()) {
-		return ERR_INVALID_DATA;
+	return p_target->is_valid() && p_target->is_compiled_binary() ? OK : ERR_INVALID_DATA;
+}
+
+static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<FoundryScript> &r_loaded) {
+	r_loaded.unref();
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	const Error error = restore_lifecycle_artifact_into(p_artifact, restored);
+	if (error != OK) {
+		return error;
 	}
 	r_loaded = restored;
 	return OK;
@@ -292,7 +303,7 @@ static Error load_lifecycle_artifact(const LifecycleArtifact &p_artifact, Ref<Fo
 
 // Replaces what the identity an artifact recorded now serves. The artifact keeps the path it was
 // taken at, so rewriting the file behind that path is what makes the artifact stale: a transition
-// that reached back to the source, or that re-derived from the identity, hands back the revision
+// that reached back to the source, or that re-derives from the identity, hands back the revision
 // while one that reads its own bytes does not.
 //
 // The cache entries for the identity are deliberately left alone. Invalidating them is the work a
@@ -311,8 +322,8 @@ static Error revise_source_at(const String &p_path, const String &p_source) {
 
 // Test seam: reconstructs the artifact by recompiling whatever the path it recorded serves now,
 // which is what a loader that resolved a serialized type against current state instead of against
-// its own bytes would arrive at. Every stage whose source is unchanged is unaffected; the stale stage,
-// whose source was revised behind that path, is exactly the one this has to be visible in.
+// its own bytes would arrive at. Every stage whose source is unchanged is unaffected; the stale
+// stage, whose source was revised behind that path, is exactly the one this has to be visible in.
 static Error load_lifecycle_artifact_from_source(
 		const LifecycleArtifact &p_artifact, Ref<FoundryScript> &r_loaded) {
 	r_loaded.unref();
@@ -510,11 +521,10 @@ static Error carry_through_cache(const LifecycleCarryRequest &p_request,
 		// The subsystem hands back what it already had for the identity instead of re-deriving it.
 		// Nothing else about the cell changes, so a stage whose identity now serves a different
 		// declaration is the one this is visible in.
-		const Ref<FoundryScript> held = FSCache::get_cached_script(p_request.path);
-		if (held.is_null()) {
+		if (p_request.subject.is_null()) {
 			return ERR_INVALID_DATA;
 		}
-		r_after = carried_type_spelling(held);
+		r_after = carried_type_spelling(p_request.subject);
 		return OK;
 	}
 	// Applying the transition to its own output means the whole transition again, including whatever
@@ -525,8 +535,17 @@ static Error carry_through_cache(const LifecycleCarryRequest &p_request,
 		if (p_before_each_pass != nullptr) {
 			p_before_each_pass();
 		}
-		const Ref<FoundryScript> held = FSCache::get_cached_script(p_request.path);
-		const ObjectID entry_before = held.is_valid() ? held->get_instance_id() : ObjectID();
+		// The artifact under test is what the transition has to act on, so what it is measured against
+		// is the subject this cell selected rather than whatever the cache happens to hold. Whether
+		// the subject survives the transition is evidence only where the subject is what stands for the
+		// identity: a bytecode-surface cell hands the transition a compiled binary that has already
+		// stopped standing for it, so there is no entry of the subject's for the transition to keep or
+		// retire and both families re-derive alike. That is why the two surfaces of one pair agree.
+		const Ref<FoundryScript> serving = FSCache::get_cached_script(p_request.path);
+		const bool subject_stands_for_the_identity = p_request.subject.is_valid() && serving.is_valid() &&
+				serving->get_instance_id() == p_request.subject->get_instance_id();
+		const ObjectID subject_before =
+				subject_stands_for_the_identity ? p_request.subject->get_instance_id() : ObjectID();
 
 		// Damaging a re-deriving transition means damaging what it will read. The identity has to serve
 		// the healthy program again afterwards, because the stage that damages it goes on to ask for
@@ -559,8 +578,10 @@ static Error carry_through_cache(const LifecycleCarryRequest &p_request,
 		if (error != OK || reloaded.is_null() || !reloaded->is_valid()) {
 			return OK;
 		}
-		const bool entry_survived = entry_before.is_valid() && reloaded->get_instance_id() == entry_before;
-		if (p_expectation == ENTRY_SURVIVES_THE_TRANSITION ? !entry_survived : entry_survived) {
+		const bool subject_survived =
+				subject_before.is_valid() && reloaded->get_instance_id() == subject_before;
+		if (subject_before.is_valid() &&
+				(p_expectation == ENTRY_SURVIVES_THE_TRANSITION ? !subject_survived : subject_survived)) {
 			// The subsystem did the other family's job. There is no reading to take from that: what it
 			// handed back is not the artifact this transition was supposed to produce.
 			return OK;
@@ -643,6 +664,10 @@ void LifecycleInternal::set_corrupt_transition_artifact_for_test(bool p_corrupt)
 
 void LifecycleInternal::set_load_transition_artifact_from_source_for_test(bool p_load_from_source) {
 	load_transition_artifact_from_source_for_test = p_load_from_source;
+}
+
+void LifecycleInternal::set_corrupt_restored_subject_for_test(bool p_corrupt) {
+	corrupt_restored_subject_for_test = p_corrupt;
 }
 
 void LifecycleInternal::set_skip_transition_invalidation_for_test(bool p_skip) {
@@ -819,17 +844,23 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		return observation;
 	}
 
-	// The subject is the artifact the transition is applied to. On the bytecode surface it has already
-	// been through one export and load, so a family that claims a type survives its transition has to
-	// say so about a restored artifact as well as about a freshly compiled one.
+	// The one place the artifact under test is selected. On `text` the identity is served by what the
+	// front-end compiled; on `bytecode` it is served by a compiled binary restored from that script's
+	// export, and the source-compiled entry is retired so the binary is the only thing standing for
+	// the identity. Every transition is anchored on the object this returns, so none of them can
+	// measure the other surface's artifact and report it as this surface's evidence.
 	Ref<FoundryScript> subject = compiled;
 	if (p_program.surface == "bytecode") {
 		LifecycleArtifact staged;
 		error = export_lifecycle_artifact(compiled, path, staged);
-		if (error == OK) {
-			error = load_lifecycle_artifact(staged, subject);
+		if (error == OK && corrupt_restored_subject_for_test) {
+			staged = corrupted_artifact(staged);
 		}
-		if (error != OK || subject.is_null()) {
+		Ref<FoundryScript> restored;
+		if (error == OK) {
+			error = load_lifecycle_artifact(staged, restored);
+		}
+		if (error != OK || restored.is_null() || !restored->is_compiled_binary()) {
 			append_diagnostic(observation, "surface_unavailable",
 					vformat("Lifecycle subject could not be restored for the bytecode surface (error %d).",
 							error));
@@ -838,6 +869,11 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 			}
 			return observation;
 		}
+		// The source-compiled script stops standing for the identity. A transition asked about this
+		// cell would otherwise find it in the cache and answer about it instead of about the binary.
+		FSCache::remove_parser(path);
+		FSCache::remove_script(path);
+		subject = restored;
 	}
 
 	// What makes a stage a stage is the state the transition's input is in, never a different way of
@@ -850,9 +886,9 @@ FSCompletenessObservation FSLifecycleAdapter::observe_transition(const FSComplet
 		// answers to different questions, and which one a family gives is exactly what this stage pins.
 		const String revised = render_lifecycle_source(*shape, state, true);
 		{
-			// The revision is only usable as evidence if it declares something the original did not,
-			// and that is checked at an identity of its own so the cache entry behind `path` keeps
-			// describing what was compiled there.
+			// The revision is only usable as evidence if it declares something the original did not, and
+			// that is checked at an identity of its own so the entry behind `path` keeps serving what was
+			// compiled there.
 			DestinationWrapperInternal::SyntheticSourceScope probe(
 					"lifecycle_revision_probe_" + p_program.case_id, revised);
 			FSParser probe_parser;

@@ -191,6 +191,12 @@ static String lifecycle_identity_of(const String &p_family, const String &p_dest
 	return observation.dimensions.get("semantic_identity", String());
 }
 
+// Damages the artifact a bytecode-surface cell restores its subject from, and nothing else.
+struct CorruptedRestoredSubject {
+	CorruptedRestoredSubject() { LifecycleInternal::set_corrupt_restored_subject_for_test(true); }
+	~CorruptedRestoredSubject() { LifecycleInternal::set_corrupt_restored_subject_for_test(false); }
+};
+
 struct ArtifactLoadedFromSource {
 	ArtifactLoadedFromSource() {
 		LifecycleInternal::set_load_transition_artifact_from_source_for_test(true);
@@ -316,6 +322,34 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 				CHECK_NE(damaged, carried);
 			}
 			CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "text"), carried);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a fault in one surface's subject cannot reach the other") {
+		// Each cell selects the artifact under test once, from its surface: the script the front-end
+		// compiled, or a compiled binary restored from that script's export. Damaging what the binary is
+		// restored from has to stop the bytecode cell and leave the text cell of the same family reading
+		// exactly what it read before, or the two surfaces are not measuring two different objects.
+		for (const String &family : FSLifecycleAdapter::families()) {
+			CAPTURE(family);
+			const String text_reading = lifecycle_identity_of(family, "plain", "clean", "text");
+			const String bytecode_reading = lifecycle_identity_of(family, "plain", "clean", "bytecode");
+			CHECK_EQ(text_reading, bytecode_reading);
+			{
+				CorruptedRestoredSubject damaged;
+				const FSCompletenessProgram bytecode_program =
+						lifecycle_program(family, "plain", "clean", "bytecode");
+				Error structural_error = OK;
+				const FSCompletenessObservation refused = FSLifecycleAdapter::shared().observe_transition(
+						bytecode_program, family, &structural_error);
+				// The cell could not select its subject, which is a defect in the harness rather than a
+				// reading about the product, so it publishes no dimension at all.
+				CHECK_NE(structural_error, OK);
+				CHECK_FALSE(refused.dimensions.has("semantic_identity"));
+				CHECK_FALSE(refused.dimensions.has("transition_outcome"));
+				CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "text"), text_reading);
+			}
+			CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "bytecode"), bytecode_reading);
 		}
 	}
 

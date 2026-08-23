@@ -56,6 +56,11 @@ void set_load_transition_artifact_from_source_for_test(bool p_load_from_source);
 // re-derive rather than remember.
 void set_skip_transition_invalidation_for_test(bool p_skip);
 
+// Test seam: damages the artifact a bytecode-surface cell restores its subject from, and nothing
+// else. A text-surface cell restores nothing, so this reaches only the cells whose subject is the
+// compiled binary - which is what proves the two surfaces are measured on two different objects.
+void set_corrupt_restored_subject_for_test(bool p_corrupt);
+
 // How many times a transition has taken the language down and brought it back. A stage that applies
 // the transition to its own output has to be two of these rather than one cycle followed by two
 // re-derivations, which is a difference nothing else about the cell would show.
