@@ -532,12 +532,16 @@ class Gate:
         a family whose artifact is absent or unusable is still vanished, with no IDs to list.
         """
         rules = self.catalog_in_repository() / "rules"
+        # The catalog loader ignores dot-prefixed entries under rules/, so they are not families on
+        # either side and their removal is not a vanished family.
         merge_base_families = {
             Path(name).stem
             for name in git_tree_names(merge_base, rules.as_posix(), self.repository_root)
-            if name.endswith(".json")
+            if name.endswith(".json") and not name.startswith(".")
         }
-        branch_families = {path.stem for path in (self.catalog / "rules").glob("*.json")}
+        branch_families = {
+            path.stem for path in (self.catalog / "rules").glob("*.json") if not path.name.startswith(".")
+        }
         vanished: dict[str, list[str]] = {}
         for family in sorted(merge_base_families - branch_families):
             case_ids: list[str] = []

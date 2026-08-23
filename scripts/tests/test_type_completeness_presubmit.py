@@ -698,6 +698,23 @@ class GateTests(GateTestCase):
         self.assertEqual(code, 1)
         self.assertEqual(verdict["vanished_families"], {FAMILY: []})
 
+    def test_removing_dot_prefixed_rules_metadata_is_not_a_vanished_family(self) -> None:
+        # The catalog loader ignores dot-prefixed entries under rules/, so they are families on no side.
+        metadata = self.catalog / "rules" / ".metadata.json"
+        metadata.write_text("{}\n", encoding="utf-8")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "add rules metadata")
+        self._git("update-ref", "refs/heads/baseline", "HEAD")
+        self._git("rm", "-q", "catalog/rules/.metadata.json")
+        self._git("commit", "-q", "-m", "remove rules metadata")
+        self.write_report(runner_report())
+        baseline = self.work / "baseline"
+        self.write_report(runner_report(), directory=baseline)
+        code, verdict, _ = self.run_gate(baseline_dir=baseline)
+        self.assertEqual(verdict["vanished_families"], {})
+        self.assertEqual(verdict["state"], "passed")
+        self.assertEqual(code, 0)
+
     def test_an_unchanged_catalog_reports_no_vanished_family(self) -> None:
         self.write_report(runner_report())
         baseline = self.work / "baseline"
