@@ -16,7 +16,8 @@
       "outcomes": [
         "completed",
         "recovered",
-        "refused"
+        "refused",
+        "indistinguishable"
       ]
     }
   ]

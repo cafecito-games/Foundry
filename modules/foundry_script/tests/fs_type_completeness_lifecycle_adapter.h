@@ -32,6 +32,8 @@
 
 #include "fs_type_completeness_adapter.h"
 
+#include "core/typedefs.h"
+
 namespace FSTests {
 
 namespace LifecycleInternal {
@@ -46,6 +48,23 @@ void set_corrupt_transition_artifact_for_test(bool p_corrupt);
 // against its own bytes would arrive at. It is invisible to every stage whose source is unchanged and
 // visible to the stale stage, which is what proves that stage detects the regression it names.
 void set_load_transition_artifact_from_source_for_test(bool p_load_from_source);
+
+// Test seam: makes a transition hand back whatever the subsystem already held for the identity
+// instead of re-deriving it, which is what a reload, a cache replacement, or a reinitialization that
+// quietly kept its old answer would do. It is invisible to every stage whose identity still serves
+// what it was compiled from, and visible on the stale stage, which is what proves those families
+// re-derive rather than remember.
+void set_skip_transition_invalidation_for_test(bool p_skip);
+
+// Test seam: damages the artifact a bytecode-surface cell restores its subject from, and nothing
+// else. A text-surface cell restores nothing, so this reaches only the cells whose subject is the
+// compiled binary - which is what proves the two surfaces are measured on two different objects.
+void set_corrupt_restored_subject_for_test(bool p_corrupt);
+
+// How many times a transition has taken the language down and brought it back. A stage that applies
+// the transition to its own output has to be two of these rather than one cycle followed by two
+// re-derivations, which is a difference nothing else about the cell would show.
+uint64_t language_cycles_for_test();
 
 } // namespace LifecycleInternal
 
@@ -89,8 +108,10 @@ public:
 	// `r_structural_error`, when given, reports whether the observation failed as a harness defect
 	// rather than as an observation about the product: a run that could not carry out its transition
 	// at all has no reading under which its silence means the type survived.
-	FSCompletenessObservation observe_transition(
-			const FSCompletenessProgram &p_program, Error *r_structural_error = nullptr) const;
+	// p_family names the transition to carry the program's declared type across; a rendered program
+	// carries its coordinates and its identity but never its family.
+	FSCompletenessObservation observe_transition(const FSCompletenessProgram &p_program,
+			const String &p_family, Error *r_structural_error = nullptr) const;
 };
 
 } // namespace FSTests

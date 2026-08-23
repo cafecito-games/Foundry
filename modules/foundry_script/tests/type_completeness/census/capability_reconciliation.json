@@ -37,6 +37,22 @@
 			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
 		},
 		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/lifecycle_cache_replacement.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/lifecycle_proxy_reflection.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/lifecycle_reload.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/lifecycle_shutdown_reinitialization.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
 			"path": "modules/foundry_script/tests/type_completeness/rules/union_destination_membership.json",
 			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
 		},

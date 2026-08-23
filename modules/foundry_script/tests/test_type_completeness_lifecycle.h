@@ -61,11 +61,6 @@ static FSCompletenessProgram lifecycle_program(
 	return program;
 }
 
-// Everything below the guard exercises a transition the editor build is the only one that carries,
-// so it is compiled there only; the other branch asserts that the adapter refuses rather than
-// reporting a type that survived a transition this build cannot perform.
-#ifdef TOOLS_ENABLED
-
 // Families under `rules/` whose manifest names the lifecycle adapter, read from the rule directory
 // rather than from a list in a test: the catalog is the source of truth for which families exist, so
 // a family added without its fixtures fails here instead of going unnoticed.
@@ -154,6 +149,54 @@ struct CorruptedTransitionArtifact {
 	~CorruptedTransitionArtifact() { LifecycleInternal::set_corrupt_transition_artifact_for_test(false); }
 };
 
+// The transition hands back whatever the subsystem already held for the identity instead of doing the
+// work the family names. Restored whichever way the scope ends.
+struct TransitionInvalidationSkipped {
+	TransitionInvalidationSkipped() { LifecycleInternal::set_skip_transition_invalidation_for_test(true); }
+	~TransitionInvalidationSkipped() {
+		LifecycleInternal::set_skip_transition_invalidation_for_test(false);
+	}
+};
+
+// The dimensions one cell observed, so a fault can be stated as the values it changed.
+static FSCompletenessObservation lifecycle_observation_of(const String &p_family,
+		const String &p_destination, const String &p_state, const String &p_surface) {
+	const FSCompletenessProgram program =
+			lifecycle_program(p_family, p_destination, p_state, p_surface);
+	Error structural_error = ERR_BUG;
+	const FSCompletenessObservation observation =
+			FSLifecycleAdapter::shared().observe_transition(program, p_family, &structural_error);
+	CHECK_EQ(structural_error, OK);
+	CHECK_MESSAGE(observation.diagnostics.is_empty(),
+			String(" | ").join(Vector<String>(observation.diagnostics)));
+	return observation;
+}
+
+static String lifecycle_outcome_of(const String &p_family, const String &p_destination,
+		const String &p_state, const String &p_surface) {
+	return lifecycle_observation_of(p_family, p_destination, p_state, p_surface)
+			.dimensions.get("transition_outcome", String());
+}
+
+static String lifecycle_identity_of(const String &p_family, const String &p_destination,
+		const String &p_state, const String &p_surface) {
+	const FSCompletenessProgram program =
+			lifecycle_program(p_family, p_destination, p_state, p_surface);
+	Error structural_error = ERR_BUG;
+	const FSCompletenessObservation observation =
+			FSLifecycleAdapter::shared().observe_transition(program, p_family, &structural_error);
+	CHECK_EQ(structural_error, OK);
+	CHECK_MESSAGE(observation.diagnostics.is_empty(),
+			String(" | ").join(Vector<String>(observation.diagnostics)));
+	return observation.dimensions.get("semantic_identity", String());
+}
+
+// Damages the artifact a bytecode-surface cell restores its subject from, and nothing else.
+struct CorruptedRestoredSubject {
+	CorruptedRestoredSubject() { LifecycleInternal::set_corrupt_restored_subject_for_test(true); }
+	~CorruptedRestoredSubject() { LifecycleInternal::set_corrupt_restored_subject_for_test(false); }
+};
+
 struct ArtifactLoadedFromSource {
 	ArtifactLoadedFromSource() {
 		LifecycleInternal::set_load_transition_artifact_from_source_for_test(true);
@@ -205,7 +248,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 							"lifecycle_bytecode_export_load", destination, state, surface);
 					Error structural_error = ERR_BUG;
 					const FSCompletenessObservation observation =
-							FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
+							FSLifecycleAdapter::shared().observe_transition(program, "lifecycle_bytecode_export_load", &structural_error);
 					CHECK_EQ(structural_error, OK);
 					CHECK_MESSAGE(observation.diagnostics.is_empty(),
 							String(" | ").join(Vector<String>(observation.diagnostics)));
@@ -215,27 +258,6 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 				}
 			}
 		}
-	}
-
-	TEST_CASE("TypeCompleteness Lifecycle reports a refused transition rather than a preserved type") {
-		// A dimension nothing can flip is a dimension nobody is observing. Corrupting the artifact the
-		// transition consumes is a fault in the transition, not in the reading of it.
-		const FSCompletenessProgram program =
-				lifecycle_program("lifecycle_bytecode_export_load", "union", "clean", "text");
-		{
-			CorruptedTransitionArtifact corrupted;
-			Error structural_error = ERR_BUG;
-			const FSCompletenessObservation observation =
-					FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
-			CHECK_EQ(structural_error, OK);
-			CHECK_EQ(String(observation.dimensions.get("semantic_identity", String())), "rejected");
-			CHECK_EQ(String(observation.dimensions.get("transition_outcome", String())), "refused");
-		}
-		Error structural_error = ERR_BUG;
-		const FSCompletenessObservation restored =
-				FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
-		CHECK_EQ(structural_error, OK);
-		CHECK_EQ(String(restored.dimensions.get("semantic_identity", String())), "preserved");
 	}
 
 	TEST_CASE("TypeCompleteness Lifecycle stale stage catches a loader that reaches back to the source") {
@@ -248,22 +270,195 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 				lifecycle_program("lifecycle_bytecode_export_load", "plain", "clean", "text");
 		Error structural_error = ERR_BUG;
 		CHECK_EQ(String(FSLifecycleAdapter::shared()
-								 .observe_transition(stale, &structural_error)
+								 .observe_transition(stale, "lifecycle_bytecode_export_load", &structural_error)
 								 .dimensions.get("semantic_identity", String())),
 				"preserved");
 		REQUIRE_EQ(structural_error, OK);
 
 		ArtifactLoadedFromSource from_source;
 		const FSCompletenessObservation reaching_stale =
-				FSLifecycleAdapter::shared().observe_transition(stale, &structural_error);
+				FSLifecycleAdapter::shared().observe_transition(stale, "lifecycle_bytecode_export_load", &structural_error);
 		CHECK_EQ(structural_error, OK);
 		CHECK_EQ(String(reaching_stale.dimensions.get("semantic_identity", String())), "projected");
 		// A stage whose source nobody revised cannot tell the two loaders apart, which is why the
 		// stale stage exists rather than the clean one carrying this evidence.
 		const FSCompletenessObservation reaching_clean =
-				FSLifecycleAdapter::shared().observe_transition(clean, &structural_error);
+				FSLifecycleAdapter::shared().observe_transition(clean, "lifecycle_bytecode_export_load", &structural_error);
 		CHECK_EQ(structural_error, OK);
 		CHECK_EQ(String(reaching_clean.dimensions.get("semantic_identity", String())), "preserved");
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle re-deriving families read the identity, not what they held") {
+		// A reload, a cache replacement and a reinitialization all answer the same question - what does
+		// this identity declare now - so on the stale stage, where the identity was revised after the
+		// subject was compiled, each has to carry the revision. A transition that handed back what the
+		// subsystem already had would carry the original instead, and that is the fault seam.
+		for (const String &family : { String("lifecycle_reload"), String("lifecycle_cache_replacement"),
+					 String("lifecycle_shutdown_reinitialization") }) {
+			CAPTURE(family);
+			CHECK_EQ(lifecycle_identity_of(family, "plain", "stale", "text"), "projected");
+			CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "text"), "preserved");
+			{
+				TransitionInvalidationSkipped reused;
+				CHECK_EQ(lifecycle_identity_of(family, "plain", "stale", "text"), "preserved");
+				// A stage whose identity nobody revised cannot tell the two apart, which is why the
+				// stale stage is the one carrying this evidence.
+				CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "text"), "preserved");
+			}
+			CHECK_EQ(lifecycle_identity_of(family, "plain", "stale", "text"), "projected");
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle reports a refused transition rather than a carried type") {
+		// Damaging what each family's transition produces has to be visible in every family, or the
+		// cell is reporting a canned outcome rather than what its subsystem did.
+		for (const String &family : FSLifecycleAdapter::families()) {
+			CAPTURE(family);
+			const String carried = lifecycle_identity_of(family, "plain", "clean", "text");
+			CHECK_EQ(carried, "preserved");
+			{
+				CorruptedTransitionArtifact corrupted;
+				const String damaged = lifecycle_identity_of(family, "plain", "clean", "text");
+				CHECK_NE(damaged, carried);
+			}
+			CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "text"), carried);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a fault in one surface's subject cannot reach the other") {
+		// Each cell selects the artifact under test once, from its surface: the script the front-end
+		// compiled, or a compiled binary restored from that script's export. Damaging what the binary is
+		// restored from has to stop the bytecode cell and leave the text cell of the same family reading
+		// exactly what it read before, or the two surfaces are not measuring two different objects.
+		for (const String &family : FSLifecycleAdapter::families()) {
+			CAPTURE(family);
+			const String text_reading = lifecycle_identity_of(family, "plain", "clean", "text");
+			const String bytecode_reading = lifecycle_identity_of(family, "plain", "clean", "bytecode");
+			CHECK_EQ(text_reading, bytecode_reading);
+			{
+				CorruptedRestoredSubject damaged;
+				const FSCompletenessProgram bytecode_program =
+						lifecycle_program(family, "plain", "clean", "bytecode");
+				Error structural_error = OK;
+				const FSCompletenessObservation refused = FSLifecycleAdapter::shared().observe_transition(
+						bytecode_program, family, &structural_error);
+				// The cell could not select its subject, which is a defect in the harness rather than a
+				// reading about the product, so it publishes no dimension at all.
+				CHECK_NE(structural_error, OK);
+				CHECK_FALSE(refused.dimensions.has("semantic_identity"));
+				CHECK_FALSE(refused.dimensions.has("transition_outcome"));
+				CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "text"), text_reading);
+			}
+			CHECK_EQ(lifecycle_identity_of(family, "plain", "clean", "bytecode"), bytecode_reading);
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a loaded binary is not re-read when its identity reloads") {
+		// On the bytecode surface the identity under test is a compiled binary the cache loads in its
+		// own right, so this is the reload of a binary rather than of a source file. An exported binary
+		// is immutable and an already loaded one is never re-read, so reloading the identity carries the
+		// type the binary was built with even after the artifact behind it was replaced - and a damaged
+		// artifact reads the same as a healthy one, because neither is read at all.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "stale", "text"), "projected");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "stale", "bytecode"), "preserved");
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_reload", "plain", "failure_recovery", "text"), "recovered");
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_reload", "plain", "failure_recovery", "bytecode"),
+				"indistinguishable");
+		// The families that retire what stands for the identity do read the replacement, on either
+		// surface, so the difference above is the reload rather than the surface.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "bytecode"),
+				"projected");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_shutdown_reinitialization", "plain", "stale", "bytecode"),
+				"projected");
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a recovery is measured against the healthy reading") {
+		// A damaged attempt is only evidence of a recovery if it reads differently from a healthy one.
+		// The reflection surface spells a union member as an untyped slot, which is also what it spells
+		// when nothing reached it, so that cell recovers from nothing it can observe and says so.
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_proxy_reflection", "union", "failure_recovery", "text"),
+				"indistinguishable");
+		// The same stage on a destination the surface can spell does observe the difference, so the
+		// verdict is a property of what the surface carries rather than of the stage.
+		CHECK_EQ(lifecycle_outcome_of("lifecycle_proxy_reflection", "plain", "failure_recovery", "text"),
+				"recovered");
+		// A transition that refuses a damaged input reads differently from a healthy one whatever the
+		// declared type is, so no destination of those families is ever indistinguishable.
+		for (const String &family : { String("lifecycle_bytecode_export_load"), String("lifecycle_reload"),
+					 String("lifecycle_cache_replacement"),
+					 String("lifecycle_shutdown_reinitialization") }) {
+			CAPTURE(family);
+			CHECK_EQ(lifecycle_outcome_of(family, "union", "failure_recovery", "text"), "recovered");
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a reload updates the entry the identity already holds") {
+		// A reload and a replacement both re-read the identity from disk and differ in what happens to
+		// the entry the cache holds for it. Each family refuses the other's outcome, so a "reload" that
+		// installed a fresh object could not report a carried type.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "clean", "text"), "preserved");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "clean", "text"),
+				"preserved");
+		// Both re-read the identity, so both carry the revision the stale stage put behind it - which a
+		// transition that re-parsed the source the script already held would not.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "stale", "text"), "projected");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "text"),
+				"projected");
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle a cache replacement has to replace the entry") {
+		// Reading the type back through the cache is only evidence of a replacement if the entry that
+		// comes back is not the one that went in. Handing back the entry the replacement was supposed to
+		// retire is the regression this family exists to catch, so it reports nothing carried rather
+		// than the type it would have read out of the stale object.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "clean", "text"),
+				"preserved");
+		{
+			TransitionInvalidationSkipped reused;
+			CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "text"),
+					"preserved");
+		}
+		CHECK_EQ(lifecycle_identity_of("lifecycle_cache_replacement", "plain", "stale", "text"),
+				"projected");
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle an incremental stage runs the whole transition again") {
+		// Applying the transition to its own output has to mean the whole transition, including whatever
+		// the family does before re-deriving. A second pass that skipped the language cycle would report
+		// one shutdown followed by two recompilations as if the subsystem had been taken down twice, and
+		// a defect that only appears on the second one would read as preserved.
+		const uint64_t before_clean = LifecycleInternal::language_cycles_for_test();
+		CHECK_EQ(lifecycle_identity_of("lifecycle_shutdown_reinitialization", "plain", "clean", "text"),
+				"preserved");
+		const uint64_t clean_cycles = LifecycleInternal::language_cycles_for_test() - before_clean;
+		CHECK_EQ(lifecycle_identity_of("lifecycle_shutdown_reinitialization", "plain", "incremental",
+						 "text"),
+				"preserved");
+		const uint64_t incremental_cycles =
+				LifecycleInternal::language_cycles_for_test() - before_clean - clean_cycles;
+
+		CHECK_EQ(clean_cycles, uint64_t(1));
+		CHECK_EQ(incremental_cycles, uint64_t(2));
+		// The families that re-derive without taking the language down never ask for a cycle at all, so
+		// the count belongs to the one family whose transition is the cycle.
+		const uint64_t before_reload = LifecycleInternal::language_cycles_for_test();
+		CHECK_EQ(lifecycle_identity_of("lifecycle_reload", "plain", "incremental", "text"), "preserved");
+		CHECK_EQ(LifecycleInternal::language_cycles_for_test(), before_reload);
+	}
+
+	TEST_CASE("TypeCompleteness Lifecycle reflection projection differs by what the surface can spell") {
+		// The reflection surface describes a member with a Variant type, a class name and a hint, so a
+		// declared type it cannot spell reaches it projected or not at all. These are the readings the
+		// surface actually produced, not a shape assumed for it.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_proxy_reflection", "plain", "clean", "text"), "preserved");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_proxy_reflection", "union", "clean", "text"), "erased");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_proxy_reflection", "optional", "clean", "text"),
+				"projected");
+		// The bytecode writer carries all three, so the difference is the surface rather than the type.
+		CHECK_EQ(lifecycle_identity_of("lifecycle_bytecode_export_load", "union", "clean", "text"),
+				"preserved");
+		CHECK_EQ(lifecycle_identity_of("lifecycle_bytecode_export_load", "optional", "clean", "text"),
+				"preserved");
 	}
 
 	TEST_CASE("TypeCompleteness Lifecycle families resolve every required dimension") {
@@ -330,41 +525,31 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
 			CHECK(result.success);
 			CHECK(FSCompletenessRunner::report_carries_evidence(result.report));
 
-			// The family declares no carve-out: every stage of the transition is expected to carry the
-			// declared type, and the one stage that reports a different transition outcome reports it
-			// from its relation rather than from an exception to one.
+			// A family declares a carve-out only where one destination answers differently from the rest;
+			// everything a whole stage does belongs to that stage's relation. Whichever it is, an
+			// exception nothing observes is a carve-out no cell exercises.
 			const Array exceptions = result.report["exceptions"];
-			CHECK(exceptions.is_empty());
+			for (int index = 0; index < exceptions.size(); index++) {
+				const Dictionary exception_report = exceptions[index];
+				CAPTURE(String(exception_report["exception_id"]));
+				CHECK(bool(exception_report["witnessed"]));
+			}
 
+			// The tracked document was captured on one configuration. Narrowing both sides to what this
+			// build could have observed is the identity on that configuration, so this stays the same
+			// byte-identity comparison there, and compares observations rather than configurations
+			// anywhere else.
+			const Dictionary configuration = Dictionary(result.report).get("configuration", Dictionary());
 			const Variant expected =
 					lifecycle_tracked_document(vformat("expected_reports/%s.json", family));
-			const Variant produced_evidence = lifecycle_tracked_evidence(result.report);
-			const Variant expected_evidence = lifecycle_tracked_evidence(expected);
+			const Variant produced_evidence = lifecycle_tracked_evidence(
+					FSCompletenessRunner::evidence_observable_in_configuration(result.report, configuration));
+			const Variant expected_evidence = lifecycle_tracked_evidence(
+					FSCompletenessRunner::evidence_observable_in_configuration(expected, configuration));
 			CHECK_EQ(JSON::stringify(produced_evidence, "  ", true, true),
 					JSON::stringify(expected_evidence, "  ", true, true));
 		}
 	}
 }
-
-#else // No editor tooling.
-
-TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Lifecycle") {
-	TEST_CASE("TypeCompleteness Lifecycle refuses a transition this build does not carry") {
-		// The bytecode export the family carries a declared type through is compiled into editor builds
-		// only. Reporting the absence structurally is the only honest reading: a build with no transition
-		// to observe has not observed a type surviving one.
-		const FSCompletenessProgram program =
-				lifecycle_program("lifecycle_bytecode_export_load", "plain", "clean", "text");
-		Error structural_error = OK;
-		const FSCompletenessObservation observation =
-				FSLifecycleAdapter::shared().observe_transition(program, &structural_error);
-		CHECK_EQ(structural_error, ERR_UNAVAILABLE);
-		CHECK_FALSE(observation.diagnostics.is_empty());
-		CHECK_FALSE(observation.dimensions.has("semantic_identity"));
-		CHECK_FALSE(observation.dimensions.has("transition_outcome"));
-	}
-}
-
-#endif // TOOLS_ENABLED
 
 } // namespace FSTests

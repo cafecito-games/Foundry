@@ -19,6 +19,10 @@
       ],
       "families": [
         "lifecycle_bytecode_export_load",
+        "lifecycle_cache_replacement",
+        "lifecycle_proxy_reflection",
+        "lifecycle_reload",
+        "lifecycle_shutdown_reinitialization",
         "union_destination_membership",
         "wrapper_parity_argument_binding",
         "wrapper_parity_assignment",
@@ -100,6 +104,10 @@
       ],
       "families": [
         "lifecycle_bytecode_export_load",
+        "lifecycle_cache_replacement",
+        "lifecycle_proxy_reflection",
+        "lifecycle_reload",
+        "lifecycle_shutdown_reinitialization",
         "union_destination_membership",
         "wrapper_parity_argument_binding",
         "wrapper_parity_assignment",
@@ -116,6 +124,38 @@
       ],
       "families": [
         "lifecycle_bytecode_export_load"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/lifecycle_cache_replacement.json"
+      ],
+      "families": [
+        "lifecycle_cache_replacement"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/lifecycle_proxy_reflection.json"
+      ],
+      "families": [
+        "lifecycle_proxy_reflection"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/lifecycle_reload.json"
+      ],
+      "families": [
+        "lifecycle_reload"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/lifecycle_shutdown_reinitialization.json"
+      ],
+      "families": [
+        "lifecycle_shutdown_reinitialization"
       ]
     }
   ],
