@@ -554,9 +554,15 @@ bool resolve_family_case_witness(const String &p_root, const FSCompletenessCover
 		String &r_detail) {
 	const String canonical_root = TemporaryProjectTree::canonicalize_existing_path(p_root);
 	const String catalog_root = canonical_root.is_empty() ? p_root : canonical_root;
+	// The witness goes through the same load-validate-resolve the runner performs, so a coverage claim
+	// can only stand on a family that would actually run: one whose manifest parses, whose vocabulary
+	// holds against the catalog, and whose derivation graph leaves every cell with a reachable
+	// disposition. The cache makes that one resolution per family per process rather than one per
+	// witness, which is what keeps a census check affordable without deciding less.
 	const FSCompletenessCatalogRecord *record = nullptr;
 	Vector<String> errors;
-	if (FSCompletenessCatalogCache::get(catalog_root, p_witness.family, record, errors) != OK || record == nullptr) {
+	FSCompletenessCatalogCache::get(catalog_root, p_witness.family, record, errors);
+	if (record == nullptr || record->resolution_error != OK) {
 		r_detail = vformat("rule family '%s' does not load: %s", p_witness.family,
 				errors.is_empty() ? String("no rules file") : String(" | ").join(errors));
 		return false;
@@ -1034,7 +1040,51 @@ Vector<String> FSCompletenessCensus::summary_count_members() {
 	return implemented_vocabulary<CoverageStatus>(coverage_status_id);
 }
 
-Dictionary FSCompletenessCensus::summary_report(const FSCompletenessCensusSummary &p_summary) {
+FSCompletenessCensusScope FSCompletenessCensusScope::everything() {
+	return FSCompletenessCensusScope();
+}
+
+FSCompletenessCensusScope FSCompletenessCensusScope::for_family(const String &p_family) {
+	FSCompletenessCensusScope scope;
+	scope.exhaustive = false;
+	if (!p_family.is_empty()) {
+		scope.families.insert(p_family);
+	}
+	return scope;
+}
+
+bool FSCompletenessCensusScope::includes(const FSCompletenessCoverageWitness &p_witness) const {
+	if (exhaustive) {
+		return true;
+	}
+	// A witness that names no family belongs to no family's run, so every scope answers for it.
+	return p_witness.family.is_empty() || families.has(p_witness.family);
+}
+
+Vector<String> FSCompletenessCensus::claimed_families(const FSCompletenessCensusSummary &p_summary) {
+	HashSet<String> seen;
+	Vector<String> families;
+	auto record = [&](const FSCompletenessCoverageWitness &p_witness) {
+		if (p_witness.family.is_empty() || seen.has(p_witness.family)) {
+			return;
+		}
+		seen.insert(p_witness.family);
+		families.push_back(p_witness.family);
+	};
+	for (const FSCompletenessCoverageEntry &entry : p_summary.entries) {
+		if (entry.status == coverage_status_id(CoverageStatus::COVERED)) {
+			record(entry.witness);
+		}
+	}
+	for (const FSCompletenessUnsupportedWitness &unsupported : p_summary.unsupported_witnesses) {
+		record(unsupported.witness);
+	}
+	families.sort();
+	return families;
+}
+
+Dictionary FSCompletenessCensus::summary_report(
+		const FSCompletenessCensusSummary &p_summary, const FSCompletenessCensusScope &p_scope) {
 	Dictionary report;
 	for (int value = 0; value < int(CoverageStatus::MAX); value++) {
 		const CoverageStatus status = CoverageStatus(value);
@@ -1069,6 +1119,17 @@ Dictionary FSCompletenessCensus::summary_report(const FSCompletenessCensusSummar
 		entries.push_back(record);
 	}
 	report["entries"] = entries;
+	const Vector<String> families = claimed_families(p_summary);
+	int validated = 0;
+	for (const String &family : families) {
+		FSCompletenessCoverageWitness probe;
+		probe.family = family;
+		if (p_scope.includes(probe)) {
+			validated++;
+		}
+	}
+	report["declared_families"] = double(families.size());
+	report["validated_families"] = double(validated);
 	return report;
 }
 
@@ -1113,9 +1174,14 @@ bool FSCompletenessCensus::witness_needs_other_configuration(
 // Both verdicts read the same claims in the same order, so a witness is either resolved, unresolved,
 // or unconfirmable here, and never two of the three.
 static Vector<String> claimed_witnesses(const String &p_root, const FSCompletenessCensusSummary &p_summary,
-		bool p_collect_unconfirmable) {
+		const FSCompletenessCensusScope &p_scope, bool p_collect_unconfirmable) {
 	Vector<String> messages;
 	auto record = [&](const String &p_label, const FSCompletenessCoverageEntry &p_entry) {
+		// A claim outside the scope is not this consumer's to answer: it is neither bound nor broken
+		// here, and the report says how much of the census was asked about.
+		if (!p_scope.includes(p_entry.witness)) {
+			return;
+		}
 		const bool needs_other_configuration =
 				FSCompletenessCensus::witness_needs_other_configuration(p_entry.witness);
 		if (needs_other_configuration != p_collect_unconfirmable) {
@@ -1149,14 +1215,14 @@ static Vector<String> claimed_witnesses(const String &p_root, const FSCompletene
 	return messages;
 }
 
-Vector<String> FSCompletenessCensus::unresolved_witnesses(
-		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
-	return claimed_witnesses(p_root, p_summary, false);
+Vector<String> FSCompletenessCensus::unresolved_witnesses(const String &p_root,
+		const FSCompletenessCensusSummary &p_summary, const FSCompletenessCensusScope &p_scope) {
+	return claimed_witnesses(p_root, p_summary, p_scope, false);
 }
 
-Vector<String> FSCompletenessCensus::unconfirmable_witnesses(
-		const String &p_root, const FSCompletenessCensusSummary &p_summary) {
-	return claimed_witnesses(p_root, p_summary, true);
+Vector<String> FSCompletenessCensus::unconfirmable_witnesses(const String &p_root,
+		const FSCompletenessCensusSummary &p_summary, const FSCompletenessCensusScope &p_scope) {
+	return claimed_witnesses(p_root, p_summary, p_scope, true);
 }
 
 } // namespace FSTests

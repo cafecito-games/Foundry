@@ -12305,7 +12305,8 @@
   ],
   "cell_count": 40.0,
   "census": {
-    "covered": 23.0,
+    "covered": 40.0,
+    "declared_families": 6.0,
     "entries": [
       {
         "child_slot": "serialized_container_element_types",
@@ -12314,9 +12315,9 @@
         "status": "covered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip"
         }
@@ -12328,9 +12329,9 @@
         "status": "uncovered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12342,9 +12343,9 @@
         "status": "covered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
         }
@@ -12356,9 +12357,9 @@
         "status": "uncovered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12370,9 +12371,9 @@
         "status": "uncovered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12384,9 +12385,9 @@
         "status": "uncovered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12398,9 +12399,9 @@
         "status": "covered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants"
         }
@@ -12412,9 +12413,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12426,9 +12427,9 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12440,9 +12441,9 @@
         "status": "uncovered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12454,9 +12455,9 @@
         "status": "uncovered",
         "surface": "runtime_text",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12468,9 +12469,9 @@
         "status": "uncovered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12482,9 +12483,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12496,9 +12497,9 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12510,9 +12511,9 @@
         "status": "uncovered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12524,9 +12525,9 @@
         "status": "uncovered",
         "surface": "runtime_text",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12538,9 +12539,9 @@
         "status": "uncovered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12552,38 +12553,50 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "fixed",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "issue_url": "",
         "representation": "member_binding_descriptor",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_bytecode",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "member_store",
+            "census_child": "member_binding_descriptor.fixed",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "bytecode"
+          },
+          "family": "wrapper_parity_member_store",
+          "kind": "family_case",
           "reference": ""
         }
       },
       {
         "child_slot": "fixed",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2480",
+        "issue_url": "",
         "representation": "member_binding_descriptor",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "member_store",
+            "census_child": "member_binding_descriptor.fixed",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_member_store",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12594,9 +12607,9 @@
         "status": "covered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
         }
@@ -12608,9 +12621,9 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12622,9 +12635,9 @@
         "status": "covered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects"
         }
@@ -12636,9 +12649,9 @@
         "status": "covered",
         "surface": "runtime_text",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs"
         }
@@ -12650,9 +12663,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into container element types"
         }
@@ -12664,9 +12677,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12678,24 +12691,30 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "container_element_types",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "argument_binding",
+            "census_child": "parser_data_type.container_element_types",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_argument_binding",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12706,9 +12725,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs"
         }
@@ -12720,24 +12739,30 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "enum_case_payload_field_names",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "reflective_write",
+            "census_child": "parser_data_type.enum_case_payload_field_names",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_reflective_write",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12748,9 +12773,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/analyzer/features/type_self_enum_payload_field_nested_self_union_alternatives.fs"
         }
@@ -12762,24 +12787,30 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "enum_case_payload_field_types",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "reflective_write",
+            "census_child": "parser_data_type.enum_case_payload_field_types",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_reflective_write",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12790,9 +12821,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
         }
@@ -12804,9 +12835,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12818,24 +12849,30 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "method_parameter_types",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "argument_binding",
+            "census_child": "parser_data_type.method_parameter_types",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_argument_binding",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12846,9 +12883,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_rest_parameter_concrete.fs"
         }
@@ -12860,9 +12897,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12874,24 +12911,30 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "method_rest_parameter_type",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "member_store",
+            "census_child": "parser_data_type.method_rest_parameter_type",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_member_store",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12902,9 +12945,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures"
         }
@@ -12916,9 +12959,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12930,24 +12973,30 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "method_return_type",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "return",
+            "census_child": "parser_data_type.method_return_type",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_return",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -12958,9 +13007,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into type arguments"
         }
@@ -12972,9 +13021,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -12986,24 +13035,30 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "type_arguments",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "assignment",
+            "census_child": "parser_data_type.type_arguments",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_assignment",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -13014,9 +13069,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "fixture",
           "reference": "modules/foundry_script/tests/scripts/analyzer/features/generic_class_bounds.fs"
         }
@@ -13028,24 +13083,30 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "type_parameter_bound",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "parser_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "assignment",
+            "census_child": "parser_data_type.type_parameter_bound",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_assignment",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -13056,6 +13117,7 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {
             "boundary": "argument_binding",
             "destination": "union",
@@ -13063,7 +13125,6 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
-          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -13075,9 +13136,9 @@
         "status": "quality_deferred",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source"
         }
@@ -13089,9 +13150,9 @@
         "status": "covered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info"
         }
@@ -13103,6 +13164,7 @@
         "status": "covered",
         "surface": "runtime_text",
         "witness": {
+          "build_configuration": "",
           "coordinates": {
             "boundary": "argument_binding",
             "destination": "union",
@@ -13110,7 +13172,6 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
-          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -13122,9 +13183,9 @@
         "status": "covered",
         "surface": "analyzer",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "doctest_case",
           "reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary"
         }
@@ -13136,9 +13197,9 @@
         "status": "uncovered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13150,52 +13211,70 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "hint_string",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "reflection_property_info",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "reflection",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "reflective_write",
+            "census_child": "reflection_property_info.hint_string",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_reflective_write",
+          "kind": "family_case",
           "reference": ""
         }
       },
       {
         "child_slot": "hint_string",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "reflection_property_info",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_bytecode",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "reflective_write",
+            "census_child": "reflection_property_info.hint_string",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "bytecode"
+          },
+          "family": "wrapper_parity_reflective_write",
+          "kind": "family_case",
           "reference": ""
         }
       },
       {
         "child_slot": "hint_string",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "reflection_property_info",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "reflective_write",
+            "census_child": "reflection_property_info.hint_string",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_reflective_write",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -13206,9 +13285,9 @@
         "status": "covered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
         }
@@ -13220,9 +13299,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13234,38 +13313,50 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "container_element_types",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "runtime_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_bytecode",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "argument_binding",
+            "census_child": "runtime_data_type.container_element_types",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "bytecode"
+          },
+          "family": "wrapper_parity_argument_binding",
+          "kind": "family_case",
           "reference": ""
         }
       },
       {
         "child_slot": "container_element_types",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "runtime_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "argument_binding",
+            "census_child": "runtime_data_type.container_element_types",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_argument_binding",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -13276,9 +13367,9 @@
         "status": "covered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "editor",
           "coordinates": {},
           "family": "",
-          "build_configuration": "editor",
           "kind": "doctest_case",
           "reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments"
         }
@@ -13290,9 +13381,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13304,38 +13395,50 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       },
       {
         "child_slot": "type_arguments",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "runtime_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_bytecode",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "assignment",
+            "census_child": "runtime_data_type.type_arguments",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "bytecode"
+          },
+          "family": "wrapper_parity_assignment",
+          "kind": "family_case",
           "reference": ""
         }
       },
       {
         "child_slot": "type_arguments",
-        "issue_url": "https://github.com/cafecito-games/Foundry/issues/2481",
+        "issue_url": "",
         "representation": "runtime_data_type",
-        "status": "uncovered",
+        "status": "covered",
         "surface": "runtime_text",
         "witness": {
-          "coordinates": {},
-          "family": "",
           "build_configuration": "",
-          "kind": "",
+          "coordinates": {
+            "boundary": "assignment",
+            "census_child": "runtime_data_type.type_arguments",
+            "destination": "plain",
+            "source_proof": "static_member",
+            "surface": "text"
+          },
+          "family": "wrapper_parity_assignment",
+          "kind": "family_case",
           "reference": ""
         }
       },
@@ -13346,9 +13449,9 @@
         "status": "uncovered",
         "surface": "bytecode_serialization",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13360,9 +13463,9 @@
         "status": "uncovered",
         "surface": "editor_tools",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13374,6 +13477,7 @@
         "status": "covered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {
             "boundary": "reflective_write",
             "destination": "union",
@@ -13381,7 +13485,6 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
-          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -13393,6 +13496,7 @@
         "status": "covered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {
             "boundary": "argument_binding",
             "destination": "union",
@@ -13400,7 +13504,6 @@
             "surface": "bytecode"
           },
           "family": "union_destination_membership",
-          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -13412,6 +13515,7 @@
         "status": "covered",
         "surface": "runtime_text",
         "witness": {
+          "build_configuration": "",
           "coordinates": {
             "boundary": "argument_binding",
             "destination": "union",
@@ -13419,7 +13523,6 @@
             "surface": "text"
           },
           "family": "union_destination_membership",
-          "build_configuration": "",
           "kind": "family_case",
           "reference": ""
         }
@@ -13431,9 +13534,9 @@
         "status": "uncovered",
         "surface": "reflection",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13445,9 +13548,9 @@
         "status": "uncovered",
         "surface": "runtime_bytecode",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
@@ -13459,17 +13562,18 @@
         "status": "uncovered",
         "surface": "runtime_text",
         "witness": {
+          "build_configuration": "",
           "coordinates": {},
           "family": "",
-          "build_configuration": "",
           "kind": "",
           "reference": ""
         }
       }
     ],
     "quality_deferred": 1.0,
-    "uncovered": 57.0,
-    "unsupported": 0.0
+    "uncovered": 40.0,
+    "unsupported": 0.0,
+    "validated_families": 1.0
   },
   "coverage_by_chain_length": {
     "0": 10.0,

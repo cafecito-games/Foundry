@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "recipe_id": "nullable_return_refuses_null",
+  "description": "OPCODE_RETURN_TYPED_BUILTIN admits null only when the declared type is itself Nil, so a typed return into a nullable destination refuses null while still accepting a uint and still refusing a value the destination cannot hold. Only a cell whose nullable evidence crosses the return boundary notices.",
+  "escape_class": "reject_admissible_value_at_one_boundary",
+  "expected_detectors": [
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "numeric_constant",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "numeric_constant",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "inferred",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "inferred",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "gradual",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "gradual",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "erased",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "erased",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "variant",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "variant",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "nested_child",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_status"
+    },
+    {
+      "family": "wrapper_parity_return",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "nested_child",
+        "boundary": "return",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_status"
+    }
+  ]
+}

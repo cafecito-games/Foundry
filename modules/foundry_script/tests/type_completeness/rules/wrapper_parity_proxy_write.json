@@ -52,11 +52,7 @@
     },
     {
       "dimension": "runtime_obligation",
-      "when": {
-        "source_proof": {
-          "class": "unproven"
-        }
-      }
+      "when": {}
     },
     {
       "dimension": "stored_carrier",
@@ -75,8 +71,9 @@
       "expect": {
         "analysis": "accept",
         "diagnostic_severity": "none",
-        "census_child_evidence": "absent",
-        "stored_carrier": "plain_destination"
+        "runtime_obligation": "typed_destination_check",
+        "stored_carrier": "plain_destination",
+        "census_child_evidence": "absent"
       },
       "surfaces": [
         "text",
@@ -93,8 +90,9 @@
       },
       "expect": {
         "analysis": "accept",
-        "stored_carrier": "plain_destination",
         "diagnostic_severity": "none",
+        "runtime_obligation": "typed_destination_check",
+        "stored_carrier": "plain_destination",
         "census_child_evidence": "absent"
       },
       "surfaces": [
@@ -112,10 +110,10 @@
       },
       "expect": {
         "analysis": "accept",
-        "runtime_obligation": "typed_destination_check",
         "diagnostic_severity": "none",
-        "census_child_evidence": "absent",
-        "stored_carrier": "plain_destination"
+        "runtime_obligation": "typed_destination_check",
+        "stored_carrier": "plain_destination",
+        "census_child_evidence": "absent"
       },
       "surfaces": [
         "text",
@@ -246,7 +244,7 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "typed_destination_check",
         "stored_carrier": "admitting_alternative",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
@@ -278,11 +276,12 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "wrapper_construction_check",
         "stored_carrier": "element_slot",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
-      }
+      },
+      "rationale": "The language admits no unwrapped value into this destination: the wrapper is built before it can cross a boundary, so this relation's cells measure the check that construction performs. The probe reports that separately from the boundary's own check, which it never reaches."
     },
     {
       "id": "wrapper_parity_to_generic_argument",
@@ -294,11 +293,12 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "wrapper_construction_check",
         "stored_carrier": "reified_argument",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
-      }
+      },
+      "rationale": "The language admits no unwrapped value into this destination: the wrapper is built before it can cross a boundary, so this relation's cells measure the check that construction performs. The probe reports that separately from the boundary's own check, which it never reaches."
     },
     {
       "id": "wrapper_parity_to_tuple_field",
@@ -310,11 +310,12 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "wrapper_construction_check",
         "stored_carrier": "tuple_slot",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
-      }
+      },
+      "rationale": "The language admits no unwrapped value into this destination: the wrapper is built before it can cross a boundary, so this relation's cells measure the check that construction performs. The probe reports that separately from the boundary's own check, which it never reaches."
     },
     {
       "id": "wrapper_parity_to_callable_slot",
@@ -326,11 +327,12 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "deferred_use_check",
         "stored_carrier": "callable_slot",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
-      }
+      },
+      "rationale": "A callable destination is reached at the call, which happens after the boundary has transported the callable, so no value a cell can send through this boundary is the one the destination checks. The probe records that the boundary did not carry it and the rejection is reported as the deferred check it is, rather than as this boundary's own."
     },
     {
       "id": "wrapper_parity_to_nominal_class",
@@ -342,11 +344,12 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "wrapper_construction_check",
         "stored_carrier": "nominal_instance",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
-      }
+      },
+      "rationale": "The language admits no unwrapped value into this destination: the wrapper is built before it can cross a boundary, so this relation's cells measure the check that construction performs. The probe reports that separately from the boundary's own check, which it never reaches."
     },
     {
       "id": "wrapper_parity_to_trait",
@@ -358,11 +361,12 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "wrapper_construction_check",
         "stored_carrier": "trait_witness",
         "diagnostic_severity": "same",
         "census_child_evidence": "same"
-      }
+      },
+      "rationale": "The language admits no unwrapped value into this destination: the wrapper is built before it can cross a boundary, so this relation's cells measure the check that construction performs. The probe reports that separately from the boundary's own check, which it never reaches."
     }
   ],
   "exceptions": [
@@ -376,7 +380,7 @@
       },
       "derive": {
         "analysis": "same",
-        "runtime_obligation": "same",
+        "runtime_obligation": "deferred_use_check",
         "stored_carrier": "callable_slot",
         "diagnostic_severity": "warning",
         "census_child_evidence": "same"
@@ -409,57 +413,6 @@
           "id": "bytecode_callable_slot_static_member_boundary",
           "coordinates": {
             "destination": "callable_slot",
-            "source_proof": "static_member",
-            "boundary": "proxy_write",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ]
-    },
-    {
-      "id": "unproven_source_requires_membership",
-      "parent": "wrapper_parity_to_union",
-      "when": {
-        "source_proof": {
-          "class": "unproven"
-        }
-      },
-      "derive": {
-        "analysis": "same",
-        "runtime_obligation": "union_membership_check",
-        "stored_carrier": "admitting_alternative",
-        "diagnostic_severity": "same",
-        "census_child_evidence": "same"
-      },
-      "rationale": "A union destination must prove membership when the source cannot.",
-      "positive_witnesses": [
-        {
-          "id": "text_union_gradual",
-          "coordinates": {
-            "destination": "union",
-            "source_proof": "gradual",
-            "boundary": "proxy_write",
-            "census_child": "none",
-            "surface": "text"
-          }
-        },
-        {
-          "id": "bytecode_union_gradual",
-          "coordinates": {
-            "destination": "union",
-            "source_proof": "gradual",
-            "boundary": "proxy_write",
-            "census_child": "none",
-            "surface": "bytecode"
-          }
-        }
-      ],
-      "boundary_witnesses": [
-        {
-          "id": "bytecode_union_static_member_boundary",
-          "coordinates": {
-            "destination": "union",
             "source_proof": "static_member",
             "boundary": "proxy_write",
             "census_child": "none",

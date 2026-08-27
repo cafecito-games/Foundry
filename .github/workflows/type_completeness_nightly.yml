@@ -49,11 +49,20 @@ jobs:
           - shard_id: wrapper_parity_argument_destination_type_erased
             recipes: argument_destination_type_erased
             budget_seconds: 1800
+          - shard_id: wrapper_parity_nullable_return_refuses_null
+            recipes: nullable_return_refuses_null
+            budget_seconds: 1800
           - shard_id: wrapper_parity_return_destination_type_erased
             recipes: return_destination_type_erased
             budget_seconds: 1800
           - shard_id: wrapper_parity_tuple_carrier_arity_check_inverted
             recipes: tuple_carrier_arity_check_inverted
+            budget_seconds: 1800
+          - shard_id: wrapper_parity_typed_array_store_drops_element_type
+            recipes: typed_array_store_drops_element_type
+            budget_seconds: 1800
+          - shard_id: wrapper_parity_typed_local_store_admits_any_value
+            recipes: typed_local_store_admits_any_value
             budget_seconds: 1800
     steps:
       - name: Checkout

@@ -219,8 +219,10 @@ jobs:
       && (needs.type-completeness-baseline.result == 'success'
       || needs.type-completeness-baseline.result == 'skipped') }}
     # The matrix portion is bounded separately by the runner's own `--timeout-seconds`; this bounds
-    # everything around it.
-    timeout-minutes: 10
+    # everything around it. A change to a core Foundry Script file selects every family, and the gate
+    # measures each one twice - once on the branch and once on the merge base - so the ceiling has to
+    # clear eight families of both at the presubmit budget rather than one family's worth.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout

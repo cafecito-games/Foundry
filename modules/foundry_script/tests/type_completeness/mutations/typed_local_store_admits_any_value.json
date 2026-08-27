@@ -1,0 +1,316 @@
+{
+  "schema_version": 1,
+  "recipe_id": "typed_local_store_admits_any_value",
+  "description": "OPCODE_ASSIGN_TYPED_BUILTIN stores a value its destination cannot convert instead of refusing it, so an assignment boundary into a directly held destination silently admits anything. The destination keeps its declared type and its descriptor, which is why only a negative probe notices.",
+  "escape_class": "admit_inadmissible_value_silently",
+  "expected_detectors": [
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "static_member",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "numeric_constant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "numeric_constant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "inferred",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "inferred",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "gradual",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "gradual",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "erased",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "erased",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "variant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "variant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "nested_child",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "plain",
+        "source_proof": "nested_child",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "static_member",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "numeric_constant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "numeric_constant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "inferred",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "inferred",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "gradual",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "gradual",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "erased",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "erased",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "variant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "variant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "nested_child",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "runtime_obligation"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "optional",
+        "source_proof": "nested_child",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "runtime_obligation"
+    }
+  ]
+}

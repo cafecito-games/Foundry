@@ -685,6 +685,28 @@ class ReportCensusMemberTests(unittest.TestCase):
             if entry["status"] in ("uncovered", "quality_deferred"):
                 self.assertTrue(entry["issue_url"], entry)
 
+    def test_the_captured_report_says_how_much_of_the_census_it_bound(self) -> None:
+        # Binding a family_case witness means resolving the family it names, so a run that publishes one
+        # family answers for that family's claims and leaves the rest to their own runs. A consumer that
+        # reads a census summary has to be able to tell that document from a whole-catalog audit.
+        census = self._fixture_report()["census"]
+        for member in ("declared_families", "validated_families"):
+            self.assertIn(member, census)
+            self.assertTrue(report.is_integral_number(census[member]), census[member])
+        self.assertGreaterEqual(int(census["declared_families"]), int(census["validated_families"]))
+        # The fixture is a presubmit-tier run of one family, which is the document the gate compares.
+        self.assertEqual(int(census["validated_families"]), 1)
+        self.assertGreater(int(census["declared_families"]), 1)
+
+    def test_a_census_summary_without_the_scope_members_still_loads(self) -> None:
+        # The presubmit gate's develop baseline is published by the binary at the merge base, which may
+        # predate the members; refusing it would turn every older comparison into a gate refusal.
+        document = self._fixture_report()
+        del document["census"]["declared_families"]
+        del document["census"]["validated_families"]
+        loaded = report.load_report(document)
+        self.assertIn("census", loaded.raw)
+
     def test_an_unknown_top_level_member_is_carried_rather_than_refused(self) -> None:
         # A report member a later runner adds must not make an older consumer refuse the document; the
         # loader validates the members it consumes and carries the rest as evidence.

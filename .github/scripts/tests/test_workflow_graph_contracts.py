@@ -891,7 +891,7 @@ class TypeCompletenessGateWorkflowTests(WorkflowContractTestCase):
         )
 
     def test_the_gate_is_bounded_and_diffs_against_a_real_merge_base(self) -> None:
-        self.assertEqual(10, self.workflow.job_key("type-completeness-presubmit", "timeout-minutes"))
+        self.assertEqual(30, self.workflow.job_key("type-completeness-presubmit", "timeout-minutes"))
         self.assertEqual(0, self.workflow.step_with("type-completeness-presubmit", "Checkout")["fetch-depth"])
 
     def test_the_gate_step_ends_with_the_wrapper_so_its_exit_code_is_the_verdict(self) -> None:

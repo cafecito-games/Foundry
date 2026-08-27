@@ -54,6 +54,10 @@ static bool configuration_analyzer_warnings() {
 	return bool(FSCompletenessRunner::configuration_report().get("analyzer_warnings", true));
 }
 
+static bool configuration_dynamic_type_checks() {
+	return bool(FSCompletenessRunner::configuration_report().get("dynamic_type_checks", true));
+}
+
 // Breaks the one thing every cell of every family is judged on, whatever else it expects.
 static void configuration_corrupt_produced_output(FSCompletenessObservation &r_observation) {
 	r_observation.produced_output = "corrupted by the configuration probe\n";
@@ -182,20 +186,24 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Configuration]") {
 			const Dictionary case_record = cases[index];
 			const String case_id = case_record.get("case_id", String());
 			CAPTURE(case_id);
-			const bool expects_warning = FSCompletenessRunner::expectation_requires_analyzer_warnings(
-					case_record.get("expected", Dictionary()));
+			const Dictionary expected = case_record.get("expected", Dictionary());
+			const bool expects_warning =
+					FSCompletenessRunner::expectation_requires_analyzer_warnings(expected);
 			warning_expecting_cases += expects_warning ? 1 : 0;
 			const bool not_covered = String(case_record.get("status", String())) == "not_covered";
-			// A cell is not covered exactly when this build cannot observe what it expects. Nothing else
-			// may reach that status, and nothing that expects a warning may escape it.
-			CHECK_EQ(not_covered, expects_warning && !configuration_analyzer_warnings());
+			// A cell is not covered exactly when this build cannot observe what it expects, whichever
+			// capability it lacks. Nothing else may reach that status, and nothing whose expectation is
+			// unobservable here may escape it.
+			const String unobservable_reason =
+					FSCompletenessRunner::unobservable_expectation_reason(expected);
+			CHECK_EQ(not_covered, !unobservable_reason.is_empty());
+			CHECK_EQ(FSCompletenessRunner::configuration_can_observe(expected), unobservable_reason.is_empty());
 			if (!not_covered) {
 				CHECK_FALSE(case_record.has("not_covered_reason"));
 				continue;
 			}
 			reported_not_covered.push_back(case_id);
-			CHECK_EQ(String(case_record.get("not_covered_reason", String())),
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+			CHECK_EQ(String(case_record.get("not_covered_reason", String())), unobservable_reason);
 			CHECK_EQ(String(case_record.get("category", String())), "not_covered");
 			// It is neither a pass nor a failure, and nothing was derived from an observation that could
 			// not decide it.
@@ -208,7 +216,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Configuration]") {
 		for (int index = 0; index < reported_not_covered.size(); index++) {
 			CHECK_EQ(reported_not_covered[index], baseline->not_covered_case_ids[index]);
 		}
-		if (configuration_analyzer_warnings()) {
+		if (configuration_analyzer_warnings() && configuration_dynamic_type_checks()) {
 			CHECK(baseline->not_covered_case_ids.is_empty());
 		} else {
 			CHECK_FALSE(baseline->not_covered_case_ids.is_empty());

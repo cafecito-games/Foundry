@@ -164,6 +164,7 @@ const CommandOption TEST_COMPLETENESS_RUN_OPTIONS[] = {
 	{ "--report", "path", "Report path below the scratch root; with several families, the index path.", true },
 	{ "--surface", "text|bytecode", "Publish only this surface's cases (both are always executed).", false },
 	{ "--tier", "presubmit|strict|scheduled", "Budget tier the invocation belongs to.", true },
+	{ "--validate-census", nullptr, "Bind every census claim, not only this family's; implied by strict and scheduled.", false },
 	{ "--timeout-seconds", "120", "Wall-clock budget in seconds; defaults to the tier's hard timeout.", false },
 };
 

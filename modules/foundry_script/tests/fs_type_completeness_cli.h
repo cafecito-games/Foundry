@@ -66,6 +66,12 @@ public:
 		int timeout_seconds = 0;
 		// Repository-relative or absolute path of the budgets document; empty uses the tracked one.
 		String budgets_path;
+		// Binds every coverage claim the census makes rather than only the claims naming the family
+		// being run. The strict and scheduled tiers imply it, because a whole-catalog audit is what
+		// they exist to be; `--validate-census` asks for it explicitly at any tier. The presubmit
+		// tier runs one process per family, so leaving it off is what keeps each family paying for its
+		// own claims instead of for every family a witness happens to mention.
+		bool validate_full_census = false;
 		// Test seam: monotonic microsecond clock the deadline is measured on.
 		FSCompletenessClock clock = nullptr;
 		// Test seam: forwarded to every family run, so a test can produce a deterministic product

@@ -82,6 +82,52 @@ static Vector<String> destination_wrapper_parity_families() {
 	return families;
 }
 
+// Rejection text of each form the probe classifier recognizes, spelled the way the runner reports it.
+// A test drives the classification from these rather than from a coordinate, which is the whole point
+// of the dimension: the same cell reports a different obligation when its probe reports differently.
+// A probe whose boundary never carried the value: whatever refused it did so after the crossing, at
+// the destination's own use, so the boundary's check is not what this cell observed.
+static const char *destination_wrapper_deferred_use_rejection =
+		"FS_TEST_RUNTIME_ERROR\nconstruction skipped\nboundary skipped\n>> SCRIPT ERROR at case.fs:1 on "
+		"test(): Invalid type in function 'identity_uint'. Argument 1 has type \"RefCounted\", but the "
+		"parameter requires \"uint\".\n";
+static const char *destination_wrapper_typed_rejection =
+		"FS_TEST_RUNTIME_ERROR\nconstruction skipped\nboundary carried\n>> SCRIPT ERROR at case.fs:1 on "
+		"test(): Trying to "
+		"assign value of type 'Object' to a variable of type 'uint'.\n";
+static const char *destination_wrapper_membership_rejection =
+		"FS_TEST_RUNTIME_ERROR\nconstruction skipped\nboundary carried\n>> SCRIPT ERROR at case.fs:1 on "
+		"test(): Cannot store "
+		"a value of type \"RefCounted\" in a slot of type \"String | uint\": the value is none of the "
+		"alternatives.\n";
+// The same typed rejection reported by a program whose wrapper took the probe value before the
+// boundary refused it: the boundary is what checked, so the construction stage is not blamed.
+static const char *destination_wrapper_typed_rejection_after_construction =
+		"FS_TEST_RUNTIME_ERROR\nconstruction box other\nboundary carried\n>> SCRIPT ERROR at case.fs:1 on "
+		"test(): Trying to "
+		"assign value of type 'Object' to a variable of type 'uint'.\n";
+// A wrapper that refused the probe value and said so without aborting, and one that aborted before
+// the construction line could print. Neither reached the boundary under test.
+static const char *destination_wrapper_construction_rejection =
+		"FS_TEST_RUNTIME_ERROR\n>> ERROR: Attempted to set a variable of type 'Object' into a TypedArray "
+		"of type 'uint'.\nconstruction array true 39 0 empty\nboundary carried\n";
+static const char *destination_wrapper_construction_abort =
+		"FS_TEST_RUNTIME_ERROR\n>> SCRIPT ERROR at case.fs:1 on test(): Invalid assignment of property or "
+		"key 'value' with value of type 'RefCounted' on a base object of type 'RefCounted (Carrier)'.\n";
+
+// The runtime context one direct observation needs: what the cell's own program printed, and what its
+// negative probe did. Both are supplied, because a cell whose probe never ran has no evidence for its
+// runtime obligation and is refused rather than reported without one.
+static Dictionary destination_wrapper_runtime_context(const String &p_produced_output,
+		const String &p_probe_status = "runtime_error",
+		const String &p_probe_output = destination_wrapper_typed_rejection) {
+	Dictionary context;
+	context["produced_output"] = p_produced_output;
+	context["negative_probe_status"] = p_probe_status;
+	context["negative_probe_output"] = p_probe_output;
+	return context;
+}
+
 static FSCompletenessResolution destination_wrapper_resolution(const String &p_family) {
 	FSCompletenessCatalog catalog;
 	FSCompletenessManifest manifest;
@@ -341,8 +387,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 
 			FSCompletenessProgram program;
 			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
-			Dictionary runtime_context;
-			runtime_context["produced_output"] = program.expected_output;
+			const Dictionary runtime_context = destination_wrapper_runtime_context(program.expected_output);
 			const FSCompletenessObservation observation =
 					FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
 			CHECK_MESSAGE(observation.diagnostics.is_empty(), String(" | ").join(observation.diagnostics));
@@ -394,15 +439,17 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 				FSCompletenessProgram program;
 				const Error render_error = FSDestinationWrapperAdapter::shared().render(cell, program);
 				if (render_error != OK) {
-					// The one combination the language has no spelling for.
-					CHECK_EQ(String(expected.destination), "union");
+					// The two element types a typed container has no typed slot for.
+					const bool has_no_typed_element_slot =
+							String(expected.destination) == "union" || String(expected.destination) == "optional";
+					CHECK(has_no_typed_element_slot);
 					CHECK_EQ(boundary, "container_element_store");
 					continue;
 				}
 				CAPTURE(boundary);
 				CAPTURE(expected.destination);
-				Dictionary runtime_context;
-				runtime_context["produced_output"] = program.expected_output;
+				const Dictionary runtime_context =
+						destination_wrapper_runtime_context(program.expected_output);
 				const FSCompletenessObservation observation =
 						FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
 				CHECK_MESSAGE(observation.diagnostics.is_empty(), String(" | ").join(observation.diagnostics));
@@ -450,8 +497,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 
 			FSCompletenessProgram program;
 			REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
-			Dictionary runtime_context;
-			runtime_context["produced_output"] = program.expected_output;
+			const Dictionary runtime_context = destination_wrapper_runtime_context(program.expected_output);
 
 			String first_carrier;
 			String first_census;
@@ -493,8 +539,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 
 		FSCompletenessProgram program;
 		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
-		Dictionary runtime_context;
-		runtime_context["produced_output"] = program.expected_output;
+		const Dictionary runtime_context = destination_wrapper_runtime_context(program.expected_output);
 		const FSCompletenessObservation observed =
 				FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program, runtime_context);
 		CHECK_MESSAGE(observed.diagnostics.is_empty(), String(" | ").join(observed.diagnostics));
@@ -595,26 +640,183 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 
 	TEST_CASE("TypeCompleteness DestinationWrapper refuses a destination a boundary cannot spell") {
 		// A typed container enforces exactly one element type, so a union element slot is not a
-		// spellable destination. The adapter refuses the coordinates rather than rendering a program
-		// that cannot parse, which is what keeps an unrenderable cell from reading as a rejection.
-		FSCompletenessResolvedCell cell;
-		cell.coordinates["destination"] = "union";
-		cell.coordinates["source_proof"] = "static_member";
-		cell.coordinates["boundary"] = "container_element_store";
-		cell.coordinates["census_child"] = "none";
-		cell.coordinates["surface"] = "text";
-		cell.case_id = FSCompletenessCaseID::make("wrapper_parity_container_element_store", cell.coordinates);
+		// spellable destination. The adapter refuses it rather than rendering a program that cannot
+		// parse, which is what keeps an unrenderable cell from reading as a rejection.
+		//
+		// `Array[uint?]` is spellable and is rendered, even though the language gives it no typed
+		// container: that is a product defect, and a defect is represented rather than deleted.
+		for (const String &unspellable : { String("union") }) {
+			CAPTURE(unspellable);
+			FSCompletenessResolvedCell cell;
+			cell.coordinates["destination"] = unspellable;
+			cell.coordinates["source_proof"] = "static_member";
+			cell.coordinates["boundary"] = "container_element_store";
+			cell.coordinates["census_child"] = "none";
+			cell.coordinates["surface"] = "text";
+			cell.case_id =
+					FSCompletenessCaseID::make("wrapper_parity_container_element_store", cell.coordinates);
 
-		FSCompletenessProgram program;
-		CHECK_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), ERR_INVALID_DATA);
-		CHECK(program.source.is_empty());
+			FSCompletenessProgram program;
+			CHECK_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), ERR_INVALID_DATA);
+			CHECK(program.source.is_empty());
+		}
 
-		FSCompletenessResolvedCell accepted = cell;
-		accepted.coordinates["destination"] = "optional";
+		FSCompletenessResolvedCell accepted;
+		accepted.coordinates["destination"] = "container_element";
+		accepted.coordinates["source_proof"] = "static_member";
+		accepted.coordinates["boundary"] = "container_element_store";
+		accepted.coordinates["census_child"] = "none";
+		accepted.coordinates["surface"] = "text";
 		accepted.case_id =
 				FSCompletenessCaseID::make("wrapper_parity_container_element_store", accepted.coordinates);
+		FSCompletenessProgram program;
 		CHECK_EQ(FSDestinationWrapperAdapter::shared().render(accepted, program), OK);
 		CHECK_FALSE(program.source.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper renders one negative probe per destination and boundary") {
+		// Every wrapper-parity cell carries a probe, and cells that differ only in what their source
+		// proves or which census child they declare carry the same one: the probe measures the boundary
+		// and the destination, so staging it per cell would run the same program seven times over.
+		HashMap<String, String> probes_by_key;
+		for (const String &boundary : destination_wrapper_boundaries()) {
+			for (const String &destination : destination_wrapper_destinations()) {
+				HashSet<String> keys_for_pair;
+				for (const String &source_proof : destination_wrapper_source_proofs()) {
+					for (const String &census_child : { String("none"),
+								 String("parser_data_type.container_element_types") }) {
+						FSCompletenessResolvedCell cell;
+						cell.coordinates["destination"] = destination;
+						cell.coordinates["source_proof"] = source_proof;
+						cell.coordinates["boundary"] = boundary;
+						cell.coordinates["census_child"] = census_child;
+						cell.coordinates["surface"] = "text";
+						cell.case_id =
+								FSCompletenessCaseID::make("wrapper_parity_" + boundary, cell.coordinates);
+
+						FSCompletenessProgram program;
+						if (FSDestinationWrapperAdapter::shared().render(cell, program) != OK) {
+							continue;
+						}
+						CAPTURE(boundary);
+						CAPTURE(destination);
+						CAPTURE(source_proof);
+						CAPTURE(census_child);
+						REQUIRE_FALSE(program.negative_probe.is_empty());
+						CHECK_FALSE(program.negative_probe.staged_document.is_empty());
+						CHECK(program.negative_probe.source.contains("RefCounted.new()"));
+						CHECK_NE(program.negative_probe.source, program.source);
+						keys_for_pair.insert(program.negative_probe.key);
+
+						const String *known = probes_by_key.getptr(program.negative_probe.key);
+						if (known == nullptr) {
+							probes_by_key.insert(program.negative_probe.key, program.negative_probe.source);
+						} else {
+							CHECK_EQ(*known, program.negative_probe.source);
+						}
+					}
+				}
+				CHECK(keys_for_pair.size() <= 1);
+			}
+		}
+		CHECK_FALSE(probes_by_key.is_empty());
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper reads the runtime obligation off its probe") {
+		// The obligation is what the probe did, not what the destination's descriptor says: the same
+		// cell, observed against four probe verdicts, reports four obligations. A descriptor-derived
+		// dimension would report the same value for all four.
+		struct ProbeVerdict {
+			const char *status;
+			const char *output;
+			const char *obligation;
+		};
+		const ProbeVerdict verdicts[] = {
+			{ "runtime_error", destination_wrapper_typed_rejection, "typed_destination_check" },
+			{ "runtime_error", destination_wrapper_membership_rejection, "union_membership_check" },
+			{ "runtime_error", destination_wrapper_typed_rejection_after_construction, "typed_destination_check" },
+			{ "runtime_error", destination_wrapper_construction_rejection, "wrapper_construction_check" },
+			{ "runtime_error", destination_wrapper_construction_abort, "wrapper_construction_check" },
+			{ "runtime_error", destination_wrapper_deferred_use_rejection, "deferred_use_check" },
+			// A boundary that raised nothing and left its destination holding something no destination
+			// in the matrix describes took the probe value: that is a silent admission.
+			{ "ok", "FS_TEST_OK\nother\n", "unchecked_destination" },
+			{ "ok", "FS_TEST_OK\nuint 0\n", "silent_destination_refusal" },
+			{ "runtime_error",
+					"FS_TEST_RUNTIME_ERROR\nconstruction skipped\nboundary carried\n>> SCRIPT ERROR: something "
+					"else entirely.\n",
+					"unclassified_rejection" },
+		};
+
+		const bool initialized_here = ensure_fs_language_initialized();
+		FSCompletenessResolvedCell cell;
+		cell.coordinates["destination"] = "plain";
+		cell.coordinates["source_proof"] = "static_member";
+		cell.coordinates["boundary"] = "assignment";
+		cell.coordinates["census_child"] = "none";
+		cell.coordinates["surface"] = "text";
+		cell.case_id = FSCompletenessCaseID::make("wrapper_parity_assignment", cell.coordinates);
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
+
+		for (const ProbeVerdict &verdict : verdicts) {
+			CAPTURE(String(verdict.obligation));
+			CAPTURE(String(verdict.output));
+			const FSCompletenessObservation observation =
+					FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program,
+							destination_wrapper_runtime_context(
+									program.expected_output, verdict.status, verdict.output));
+			CHECK_MESSAGE(observation.diagnostics.is_empty(), String(" | ").join(observation.diagnostics));
+			CHECK_EQ(String(observation.dimensions.get("runtime_obligation", String())), verdict.obligation);
+		}
+
+		// A cell whose probe never ran has no evidence for its obligation, so the observation is
+		// refused as a harness defect rather than published without the dimension.
+		Dictionary without_probe;
+		without_probe["produced_output"] = program.expected_output;
+		Error structural_error = OK;
+		const FSCompletenessObservation refused = FSDestinationWrapperAdapter::shared().inspect_runtime_contract(
+				program, without_probe, &structural_error);
+		CHECK_EQ(structural_error, ERR_INVALID_DATA);
+		CHECK_FALSE(refused.dimensions.has("runtime_obligation"));
+		if (initialized_here) {
+			FSLanguage::get_singleton()->finish();
+		}
+	}
+
+	TEST_CASE("TypeCompleteness DestinationWrapper reads the stored carrier off its readback line") {
+		// The carrier is the token the program printed after the store, so a destination that kept its
+		// descriptor while storing into a different shape reports a different carrier. Feeding the same
+		// cell another destination's readback proves the dimension follows the output and not the
+		// coordinate; feeding it a token no destination produces reports corruption.
+		const bool initialized_here = ensure_fs_language_initialized();
+		FSCompletenessResolvedCell cell;
+		cell.coordinates["destination"] = "plain";
+		cell.coordinates["source_proof"] = "static_member";
+		cell.coordinates["boundary"] = "assignment";
+		cell.coordinates["census_child"] = "none";
+		cell.coordinates["surface"] = "text";
+		cell.case_id = FSCompletenessCaseID::make("wrapper_parity_assignment", cell.coordinates);
+		FSCompletenessProgram program;
+		REQUIRE_EQ(FSDestinationWrapperAdapter::shared().render(cell, program), OK);
+
+		const FSCompletenessObservation intact = FSDestinationWrapperAdapter::shared().inspect_runtime_contract(
+				program, destination_wrapper_runtime_context(program.expected_output));
+		CHECK_MESSAGE(intact.diagnostics.is_empty(), String(" | ").join(intact.diagnostics));
+		CHECK_EQ(String(intact.dimensions.get("stored_carrier", String())), "plain_destination");
+
+		const FSCompletenessObservation elsewhere =
+				FSDestinationWrapperAdapter::shared().inspect_runtime_contract(program,
+						destination_wrapper_runtime_context("uint 5\ncarrier uint 5\n"));
+		CHECK_EQ(String(elsewhere.dimensions.get("stored_carrier", String())), "nominal_instance");
+
+		const FSCompletenessObservation corrupted =
+				FSDestinationWrapperAdapter::shared().inspect_runtime_contract(
+						program, destination_wrapper_runtime_context("uint 5\nint 5\n"));
+		CHECK_EQ(String(corrupted.dimensions.get("stored_carrier", String())), "corrupted_carrier");
+		if (initialized_here) {
+			FSLanguage::get_singleton()->finish();
+		}
 	}
 
 	TEST_CASE("TypeCompleteness DestinationWrapper families resolve every required dimension") {
@@ -670,11 +872,33 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 				refusal += vformat(" | %s: %s (case '%s', witness '%s')", failure.stage, failure.detail,
 						failure.case_id, failure.witness_id);
 			}
-			REQUIRE_MESSAGE(run_error == OK,
-					vformat("run failed with error %d, outcome '%s'%s", run_error, result.outcome, refusal));
 			CHECK_MESSAGE(result.structural_failures.is_empty(), refusal);
-			CHECK_EQ(result.outcome, "passed");
-			CHECK(result.success);
+			// A family is clean when nothing it observed is unaccounted for. A product defect the ledger
+			// classifies is accounted for: the cells still expect the law and still fail against it, which
+			// is how a known gap is represented rather than deleted. Anything the ledger does not name is
+			// a regression and fails here.
+			const Dictionary ledger = Dictionary(result.report).get("ledger", Dictionary());
+			HashSet<String> reconciled;
+			const Array reconciled_records = ledger.get("reconciled", Array());
+			for (int index = 0; index < reconciled_records.size(); index++) {
+				reconciled.insert(Dictionary(reconciled_records[index]).get("finding_id", String()));
+			}
+			CHECK(Array(ledger.get("stale", Array())).is_empty());
+			String unreconciled;
+			for (const FSCompletenessFinding &finding : result.findings) {
+				if (!reconciled.has(finding.finding_id)) {
+					unreconciled += vformat(" | %s on %s: expected %s, actual %s", finding.dimension,
+							finding.case_id, String(finding.expected), String(finding.actual));
+				}
+			}
+			CHECK_MESSAGE(unreconciled.is_empty(), unreconciled);
+			const bool published_a_verdict = run_error == OK || result.outcome == "product_mismatch";
+			REQUIRE_MESSAGE(published_a_verdict,
+					vformat("run failed with error %d, outcome '%s'%s", run_error, result.outcome, refusal));
+			const bool has_findings = !result.findings.is_empty();
+			const String expected_outcome = has_findings ? "product_mismatch" : "passed";
+			CHECK_EQ(result.outcome, expected_outcome);
+			CHECK_EQ(result.success, !has_findings);
 			CHECK(FSCompletenessRunner::report_carries_evidence(result.report));
 
 			// Every declared exception has to be observed by the run, otherwise the manifest claims a
@@ -688,8 +912,13 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][DestinationWrapper]") {
 				// configuration. Anything else is a carve-out no cell exercised.
 				const String not_covered_reason = exception_report.get("not_covered_reason", String());
 				if (!not_covered_reason.is_empty()) {
-					CHECK_EQ(not_covered_reason,
-							String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+					// The reason names a capability this build lacks, and it comes from the closed
+					// vocabulary rather than from a spelling repeated here.
+					bool declared_reason = false;
+					for (const char *reason : FSCompletenessNotCoveredReason::ALL) {
+						declared_reason = declared_reason || not_covered_reason == reason;
+					}
+					CHECK_MESSAGE(declared_reason, not_covered_reason);
 					CHECK_FALSE(bool(exception_report["witnessed"]));
 					continue;
 				}

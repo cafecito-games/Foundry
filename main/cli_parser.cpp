@@ -1118,6 +1118,9 @@ static void parse_test_completeness_run(CLIParseState &r_state) {
 				return;
 			}
 			r_state.result.invocation.completeness_tier = tier;
+		} else if (arg == "--validate-census") {
+			r_state.result.invocation.completeness_validate_census = true;
+			r_state.index++;
 		} else if (arg == "--timeout-seconds" || arg.begins_with("--timeout-seconds=")) {
 			String timeout;
 			if (arg == "--timeout-seconds") {

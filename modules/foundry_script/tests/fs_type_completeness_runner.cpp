@@ -594,7 +594,7 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 		finding.issue_url = record["issue_url"];
 		finding.closure_packet_url = record["closure_packet_url"];
 		if (file_path.get_file().get_basename() != finding.finding_id ||
-				finding_ids.has(finding.finding_id) || finding.family != p_family ||
+				finding_ids.has(finding.finding_id) ||
 				!classification_is_known(finding.classification) ||
 				(!finding.issue_url.begins_with("https://") && !finding.issue_url.begins_with("http://")) ||
 				(!finding.closure_packet_url.begins_with("https://") &&
@@ -617,11 +617,26 @@ static Error load_findings_ledger(const String &p_directory, const String &p_fam
 				return ERR_INVALID_DATA;
 			}
 			const String path = paths[path_index];
-			if (validate_permanent_test_path(path, p_repository_root, p_tracked_file_probe) != OK) {
-				return ERR_INVALID_DATA;
-			}
 			observed_paths.insert(path);
 			finding.permanent_test_paths.push_back(path);
+		}
+
+		// The ledger is one directory for the whole catalog, so it carries entries of every family. An
+		// entry of another family is not this run's to reconcile - its case IDs are not in this
+		// resolution and nothing here could confirm or contradict it - so it is skipped here.
+		//
+		// Everything above is checked whichever family the entry names, so a malformed entry is still a
+		// refusal in every run. What is scoped with ownership is only what has to be *looked up*: below,
+		// whether each permanent test path is a tracked file, and which cells the entry resolves to. A
+		// run asking git about another family's evidence would make one family's finding able to break
+		// every other family's run, and would answer a question that family's own run already answers.
+		if (finding.family != p_family) {
+			continue;
+		}
+		for (const String &permanent_test_path : finding.permanent_test_paths) {
+			if (validate_permanent_test_path(permanent_test_path, p_repository_root, p_tracked_file_probe) != OK) {
+				return ERR_INVALID_DATA;
+			}
 		}
 
 		const String ledger_case_id = finding.case_id;
@@ -1163,11 +1178,38 @@ static String diagnostic_severity_profile(const FSCompletenessObservation &p_obs
 // The one dimension whose expected value can be an analyzer warning. A build whose analyzer emits none
 // observes "no warning" for it whatever the product does, so that observation decides nothing.
 static const char *DIAGNOSTIC_SEVERITY_DIMENSION = "diagnostic_severity";
+static const char *RUNTIME_OBLIGATION_DIMENSION = "runtime_obligation";
+
+// Which of a cell's expectations this build could not observe at all, and why. A cell may be exempt
+// on one dimension and still judged on every other, so the exemption travels as a set rather than as
+// a verdict about the whole cell.
+struct UnobservableExpectation {
+	bool diagnostic_severity = false;
+	bool runtime_obligation = false;
+
+	bool any() const { return diagnostic_severity || runtime_obligation; }
+
+	bool exempts(const String &p_dimension) const {
+		return (diagnostic_severity && p_dimension == DIAGNOSTIC_SEVERITY_DIMENSION) ||
+				(runtime_obligation && p_dimension == RUNTIME_OBLIGATION_DIMENSION);
+	}
+
+	// The reason a cell exempt on any dimension reports. Diagnostics come first so a cell exempt on
+	// both keeps the reason it reported before dynamic checks were a separate question.
+	String reason() const {
+		if (diagnostic_severity) {
+			return FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION;
+		}
+		return runtime_obligation
+				? String(FSCompletenessNotCoveredReason::DYNAMIC_TYPE_CHECKS_UNAVAILABLE_IN_CONFIGURATION)
+				: String();
+	}
+};
 
 static bool observed_expected_dimensions(const FSCompletenessResolvedCell &p_cell,
-		const FSCompletenessRuntimeResult &p_actual, bool p_skip_diagnostic_severity) {
+		const FSCompletenessRuntimeResult &p_actual, const UnobservableExpectation &p_unobservable) {
 	for (const KeyValue<String, FSCompletenessResolvedDimension> &dimension : p_cell.dimensions) {
-		if (p_skip_diagnostic_severity && dimension.key == DIAGNOSTIC_SEVERITY_DIMENSION) {
+		if (p_unobservable.exempts(dimension.key)) {
 			continue;
 		}
 		if (p_actual.dimensions.get(dimension.key, Variant()) != dimension.value.expected) {
@@ -1562,15 +1604,23 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// that produced it can never disagree about which cells were in scope.
 	const Dictionary configuration = FSCompletenessRunner::configuration_report();
 	const bool analyzer_warnings = bool(configuration.get("analyzer_warnings", true));
-	HashSet<String> diagnostics_unobservable_case_ids;
-	if (!analyzer_warnings) {
-		for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
-			if (FSCompletenessRunner::expectation_requires_analyzer_warnings(
-						expected_dimensions(*selected_cell))) {
-				diagnostics_unobservable_case_ids.insert(selected_cell->case_id);
-			}
+	const bool dynamic_type_checks = bool(configuration.get("dynamic_type_checks", true));
+	HashMap<String, UnobservableExpectation> unobservable_by_case;
+	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
+		const Dictionary expected = expected_dimensions(*selected_cell);
+		UnobservableExpectation unobservable;
+		unobservable.diagnostic_severity =
+				!analyzer_warnings && FSCompletenessRunner::expectation_requires_analyzer_warnings(expected);
+		unobservable.runtime_obligation = !dynamic_type_checks &&
+				FSCompletenessRunner::expectation_requires_dynamic_type_checks(expected);
+		if (unobservable.any()) {
+			unobservable_by_case.insert(selected_cell->case_id, unobservable);
 		}
 	}
+	auto unobservable_for = [&](const String &p_case_id) {
+		const UnobservableExpectation *record = unobservable_by_case.getptr(p_case_id);
+		return record == nullptr ? UnobservableExpectation() : *record;
+	};
 
 	Vector<FSCompletenessFinding> findings;
 	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
@@ -1579,7 +1629,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		// its output, its runtime status, its analyzer verdict and every other dimension - is observed
 		// here exactly as it is anywhere, so a regression in a cell that also expects a warning is
 		// reported by the build that cannot see the warning.
-		const bool diagnostics_unobservable = diagnostics_unobservable_case_ids.has(cell.case_id);
+		const UnobservableExpectation unobservable = unobservable_for(cell.case_id);
 		const FSCompletenessRuntimeResult *actual = runtime_result_for(cell, batch);
 		const FSCompletenessProgram *program = program_index.find(cell.case_id);
 		if (actual == nullptr || program == nullptr) {
@@ -1611,7 +1661,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			}
 		}
 		for (const String &dimension_name : sorted_dimension_keys(cell.dimensions)) {
-			if (diagnostics_unobservable && dimension_name == DIAGNOSTIC_SEVERITY_DIMENSION) {
+			if (unobservable.exempts(dimension_name)) {
 				continue;
 			}
 			const FSCompletenessResolvedDimension &dimension = cell.dimensions[dimension_name];
@@ -1755,10 +1805,9 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 				!compared_case_ids.has(entry.value.case_id)) {
 			continue;
 		}
-		// An entry classifying the one dimension this build could not observe is beyond its reach: the
-		// run gathered nothing that could reproduce it or contradict it.
-		if (entry.value.dimension == DIAGNOSTIC_SEVERITY_DIMENSION &&
-				diagnostics_unobservable_case_ids.has(entry.value.case_id)) {
+		// An entry classifying a dimension this build could not observe is beyond its reach: the run
+		// gathered nothing that could reproduce it or contradict it.
+		if (unobservable_for(entry.value.case_id).exempts(entry.value.dimension)) {
 			continue;
 		}
 		reconcilable_ledger.insert(entry.key, entry.value);
@@ -1859,19 +1908,33 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// observable and left an expectation unobserved is the one this build could not judge. Deciding it
 	// here means the case records, the exception records and the run result cannot disagree about it.
 	HashSet<String> not_covered_case_ids;
+	HashMap<String, String> not_covered_reason_by_case;
+	HashSet<String> not_covered_reasons;
 	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
-		if (!diagnostics_unobservable_case_ids.has(selected_cell->case_id) ||
+		const UnobservableExpectation unobservable = unobservable_for(selected_cell->case_id);
+		if (!unobservable.any() ||
 				blocking_finding_ids_by_case.getptr(selected_cell->case_id) != nullptr) {
 			continue;
 		}
 		not_covered_case_ids.insert(selected_cell->case_id);
+		not_covered_reason_by_case.insert(selected_cell->case_id, unobservable.reason());
+		not_covered_reasons.insert(unobservable.reason());
 		r_result.not_covered_case_ids.push_back(selected_cell->case_id);
 	}
 	r_result.not_covered_case_ids.sort();
+	auto not_covered_reason_for = [&](const String &p_case_id) {
+		const String *reason = not_covered_reason_by_case.getptr(p_case_id);
+		return reason == nullptr ? String() : *reason;
+	};
 	if (!r_result.not_covered_case_ids.is_empty()) {
+		Vector<String> reasons;
+		for (const String &reason : not_covered_reasons) {
+			reasons.push_back(reason);
+		}
+		reasons.sort();
 		WARN_PRINT(vformat("Family '%s' left %d of %d selected cells uncovered in this build: %s.",
 				p_options.family, r_result.not_covered_case_ids.size(), selected_cells.size(),
-				FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+				String(", ").join(reasons)));
 	}
 
 	HashMap<String, Dictionary> exception_reports;
@@ -1904,8 +1967,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		witness_report["witnessed"] = blocking == nullptr && !witness_not_covered;
 		witness_report["blocking_finding_ids"] = blocking == nullptr ? Array() : *blocking;
 		if (witness_not_covered) {
-			witness_report["not_covered_reason"] =
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+			witness_report["not_covered_reason"] = not_covered_reason_for(binding.cell->case_id);
 		}
 		executed_witness_count[binding.exception_id]++;
 		Array witnesses = (*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"];
@@ -1918,8 +1980,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		// unwitnessed either: it says what it stands on rather than claiming a verdict.
 		if (witness_not_covered) {
 			(*exception_report)["witnessed"] = false;
-			(*exception_report)["not_covered_reason"] =
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+			(*exception_report)["not_covered_reason"] = not_covered_reason_for(binding.cell->case_id);
 		}
 	}
 	// An exception is witnessed only when every witness it declares was observed. A run narrowed to
@@ -1982,8 +2043,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		const bool not_covered = not_covered_case_ids.has(cell->case_id);
 		bool passed = actual->passed && actual->status == "ok" && actual->diagnostics.is_empty() &&
 				actual->produced_output == program->expected_output &&
-				observed_expected_dimensions(
-						*cell, *actual, diagnostics_unobservable_case_ids.has(cell->case_id)) &&
+				observed_expected_dimensions(*cell, *actual, unobservable_for(cell->case_id)) &&
 				!parity_case_ids.has(cell->case_id);
 		for (const FSCompletenessFinding &finding : findings) {
 			if (finding.case_id == cell->case_id) {
@@ -2009,8 +2069,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		// publishes exactly the document it published before this distinction existed.
 		if (not_covered) {
 			case_report["category"] = "not_covered";
-			case_report["not_covered_reason"] =
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+			case_report["not_covered_reason"] = not_covered_reason_for(cell->case_id);
 		}
 		case_report["runtime_passed"] = actual->passed;
 		case_report["runtime_status"] = actual->status;
@@ -2035,14 +2094,17 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// that cannot be read is the same refusal: a malformed document is never "no census".
 	FSCompletenessCensusSummary census_summary;
 	Vector<String> census_errors;
+	const FSCompletenessCensusScope census_scope = p_options.validate_full_census
+			? FSCompletenessCensusScope::everything()
+			: FSCompletenessCensusScope::for_family(p_options.family);
 	if (FSCompletenessCensus::load(p_options.catalog_root, census_summary, census_errors) != OK) {
 		structural_failures.push_back(make_structural_failure(
 				FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED,
 				vformat("The representation census could not be read: %s", String(" | ").join(census_errors)),
 				String(), String(), String(), ERR_INVALID_DATA));
 	} else {
-		for (const String &unresolved :
-				FSCompletenessCensus::unresolved_witnesses(p_options.catalog_root, census_summary)) {
+		for (const String &unresolved : FSCompletenessCensus::unresolved_witnesses(
+					 p_options.catalog_root, census_summary, census_scope)) {
 			structural_failures.push_back(make_structural_failure(
 					FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED,
 					vformat("A census claim has no witness that resolves: %s", unresolved),
@@ -2051,8 +2113,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		// A witness the running configuration never compiled is neither bound nor broken. Reporting it
 		// as a refusal would make the verdict depend on the build rather than on the catalog, and
 		// dropping it silently would let a configuration publish a coverage claim it never confirmed.
-		r_result.unconfirmed_census_witnesses =
-				FSCompletenessCensus::unconfirmable_witnesses(p_options.catalog_root, census_summary);
+		r_result.unconfirmed_census_witnesses = FSCompletenessCensus::unconfirmable_witnesses(
+				p_options.catalog_root, census_summary, census_scope);
 		for (const String &unconfirmed : r_result.unconfirmed_census_witnesses) {
 			WARN_PRINT(vformat("Type-completeness census claim unconfirmed in this build: %s", unconfirmed));
 		}
@@ -2093,7 +2155,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	report["exceptions"] = exceptions_report;
 	report["cases"] = cases;
 	report["published_surface"] = p_options.published_surface;
-	report["census"] = FSCompletenessCensus::summary_report(census_summary);
+	report["census"] = FSCompletenessCensus::summary_report(census_summary, census_scope);
 	report["configuration"] = FSCompletenessRunner::configuration_report();
 	// How much of the census this build could confirm belongs in the document rather than in the
 	// console of the run that produced it: an artifact is all a consumer of another machine's run ever
@@ -2338,11 +2400,41 @@ Dictionary FSCompletenessRunner::configuration_report() {
 #else
 	configuration["analyzer_warnings"] = false;
 #endif
+	// Whether this binary compiles the dynamic checks a typed destination performs on a value it
+	// cannot hold. They are debugging checks (see the `DEBUG_ENABLED` guards around the typed-store
+	// opcodes in `fs_vm.cpp`), so a release template admits what a debug build refuses. A build without
+	// them cannot tell a boundary that lost its check from one that was never compiled with it.
+#ifdef DEBUG_ENABLED
+	configuration["dynamic_type_checks"] = true;
+#else
+	configuration["dynamic_type_checks"] = false;
+#endif
 	return configuration;
 }
 
 bool FSCompletenessRunner::expectation_requires_analyzer_warnings(const Dictionary &p_expected_dimensions) {
 	return String(p_expected_dimensions.get("diagnostic_severity", String())) == "warning";
+}
+
+bool FSCompletenessRunner::expectation_requires_dynamic_type_checks(const Dictionary &p_expected_dimensions) {
+	return p_expected_dimensions.has(RUNTIME_OBLIGATION_DIMENSION);
+}
+
+String FSCompletenessRunner::unobservable_expectation_reason(const Dictionary &p_expected_dimensions) {
+	const Dictionary configuration = configuration_report();
+	if (!bool(configuration.get("analyzer_warnings", true)) &&
+			expectation_requires_analyzer_warnings(p_expected_dimensions)) {
+		return FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION;
+	}
+	if (!bool(configuration.get("dynamic_type_checks", true)) &&
+			expectation_requires_dynamic_type_checks(p_expected_dimensions)) {
+		return FSCompletenessNotCoveredReason::DYNAMIC_TYPE_CHECKS_UNAVAILABLE_IN_CONFIGURATION;
+	}
+	return String();
+}
+
+bool FSCompletenessRunner::configuration_can_observe(const Dictionary &p_expected_dimensions) {
+	return unobservable_expectation_reason(p_expected_dimensions).is_empty();
 }
 
 namespace {
@@ -2387,10 +2479,14 @@ Variant without_warning_diagnostics(const Variant &p_value) {
 	return p_value;
 }
 
-// Case ids p_document publishes whose expectations only an analyzer that warns could observe. Read
-// off the document rather than off the run, so the produced report and a document captured on
-// another build drop exactly the same cells.
-HashSet<String> cases_requiring_analyzer_warnings(const Dictionary &p_document) {
+// Case ids p_document publishes whose expectations this configuration could not observe at all: an
+// expectation only an analyzer that warns could produce, or one only a build with dynamic type checks
+// could decide. Read off the document rather than off the run, so the produced report and a document
+// captured on another build drop exactly the same cells.
+HashSet<String> cases_unobservable_in_configuration(
+		const Dictionary &p_document, const Dictionary &p_configuration) {
+	const bool analyzer_warnings = bool(p_configuration.get("analyzer_warnings", true));
+	const bool dynamic_type_checks = bool(p_configuration.get("dynamic_type_checks", true));
 	HashSet<String> case_ids;
 	const Variant &cases = p_document.get("cases", Variant());
 	if (cases.get_type() != Variant::ARRAY) {
@@ -2403,8 +2499,14 @@ HashSet<String> cases_requiring_analyzer_warnings(const Dictionary &p_document) 
 		}
 		const Dictionary case_record = case_records[index];
 		const Variant &expected = case_record.get("expected", Variant());
-		if (expected.get_type() != Variant::DICTIONARY ||
-				!FSCompletenessRunner::expectation_requires_analyzer_warnings(expected)) {
+		if (expected.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const bool needs_warnings =
+				!analyzer_warnings && FSCompletenessRunner::expectation_requires_analyzer_warnings(expected);
+		const bool needs_dynamic_checks = !dynamic_type_checks &&
+				FSCompletenessRunner::expectation_requires_dynamic_type_checks(expected);
+		if (!needs_warnings && !needs_dynamic_checks) {
 			continue;
 		}
 		case_ids.insert(case_record.get("case_id", String()));
@@ -2435,14 +2537,16 @@ bool exception_witnesses_any(const Dictionary &p_exception, const HashSet<String
 
 Variant FSCompletenessRunner::evidence_observable_in_configuration(
 		const Variant &p_document, const Dictionary &p_configuration) {
-	if (bool(p_configuration.get("analyzer_warnings", true))) {
+	const bool analyzer_warnings = bool(p_configuration.get("analyzer_warnings", true));
+	const bool dynamic_type_checks = bool(p_configuration.get("dynamic_type_checks", true));
+	if (analyzer_warnings && dynamic_type_checks) {
 		return p_document;
 	}
 	if (p_document.get_type() != Variant::DICTIONARY) {
-		return without_warning_diagnostics(p_document);
+		return analyzer_warnings ? p_document : without_warning_diagnostics(p_document);
 	}
 	const Dictionary document = p_document;
-	const HashSet<String> dropped_case_ids = cases_requiring_analyzer_warnings(document);
+	const HashSet<String> dropped_case_ids = cases_unobservable_in_configuration(document, p_configuration);
 	Dictionary comparable;
 	for (const String &key : Completeness::sorted_dictionary_keys(document)) {
 		if (key == "cases" && document[key].get_type() == Variant::ARRAY) {
@@ -2479,7 +2583,7 @@ Variant FSCompletenessRunner::evidence_observable_in_configuration(
 	}
 	// Warning evidence is dropped from whatever survived, wherever it sits: a document narrowed to the
 	// cells both builds carry still records warnings only one of them could have produced.
-	return without_warning_diagnostics(comparable);
+	return analyzer_warnings ? Variant(comparable) : without_warning_diagnostics(comparable);
 }
 
 Vector<String> FSCompletenessRunner::non_evidence_report_members() {

@@ -90,26 +90,31 @@ void load_record(const String &p_canonical_catalog_root, const String &p_family,
 		FSCompletenessCatalogRecord &r_record) {
 	r_record.error = r_record.catalog.load(p_canonical_catalog_root, r_record.errors);
 	if (r_record.error != OK) {
+		r_record.resolution_error = r_record.error;
 		return;
 	}
 	r_record.error = FSCompletenessManifest::load(
 			p_canonical_catalog_root.path_join("rules").path_join(p_family + ".json"), r_record.manifest,
 			r_record.errors);
 	if (r_record.error != OK) {
+		r_record.resolution_error = r_record.error;
 		return;
 	}
 	if (r_record.manifest.family != p_family) {
 		r_record.errors.push_back(vformat("%s: rule family does not match the requested family '%s'",
 				p_canonical_catalog_root, p_family));
 		r_record.error = ERR_INVALID_DATA;
+		r_record.resolution_error = r_record.error;
 		return;
 	}
 	r_record.error = validate_manifest_vocabulary(r_record.manifest, r_record.catalog, r_record.errors);
 	if (r_record.error != OK) {
+		r_record.resolution_error = r_record.error;
 		return;
 	}
 	r_record.error = FSCompletenessGraph::resolve(
 			r_record.manifest, r_record.catalog, r_record.resolution, r_record.errors);
+	r_record.resolution_error = r_record.error;
 	if (r_record.error != OK) {
 		return;
 	}

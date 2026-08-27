@@ -43,6 +43,26 @@
 
 namespace FSTests {
 
+// The rejecting half of one cell: a program that routes a value the cell's destination cannot hold
+// through the cell's own boundary. Whether that value is refused, and how, is what makes a runtime
+// obligation an observation about the product rather than a reading of the destination's descriptor:
+// a descriptor still names the destination when the check that enforces it is gone.
+//
+// The probe's evidence is the status the runner reports and what the destination held afterwards,
+// never the exact wording of a rejection, so `staged_document` pins only the status a checked
+// boundary produces and is a staging companion rather than the assertion.
+//
+// `key` names the probe rather than the cell: every cell with the same destination and boundary
+// renders a byte-identical probe, so the same program is staged and executed once. A key that two
+// different sources claim is refused rather than resolved in favor of either.
+struct FSCompletenessNegativeProbe {
+	String key;
+	String source;
+	String staged_document;
+
+	bool is_empty() const { return source.is_empty(); }
+};
+
 // One rendered program: the source a single resolved cell turns into, together with the identity and
 // the coordinates it was rendered from. Every family produces the same shape, so the runner never
 // needs to know which family rendered it.
@@ -52,6 +72,8 @@ struct FSCompletenessProgram {
 	Dictionary coordinates;
 	String source;
 	String expected_output;
+	// Empty for a family whose cells carry no runtime obligation.
+	FSCompletenessNegativeProbe negative_probe;
 };
 
 struct FSCompletenessObservation {
