@@ -2514,6 +2514,20 @@ HashSet<String> cases_unobservable_in_configuration(
 	return case_ids;
 }
 
+// p_records without the ones naming a case in p_dropped_case_ids.
+Array records_of_kept_cases(const Array &p_records, const HashSet<String> &p_dropped_case_ids) {
+	Array kept;
+	for (int index = 0; index < p_records.size(); index++) {
+		const Variant &record = p_records[index];
+		if (record.get_type() == Variant::DICTIONARY &&
+				p_dropped_case_ids.has(String(Dictionary(record).get("case_id", String())))) {
+			continue;
+		}
+		kept.push_back(record);
+	}
+	return kept;
+}
+
 bool exception_witnesses_any(const Dictionary &p_exception, const HashSet<String> &p_case_ids) {
 	for (const char *member : { "positive_witnesses", "boundary_witnesses" }) {
 		const Variant &witnesses = p_exception.get(member, Variant());
@@ -2563,6 +2577,27 @@ Variant FSCompletenessRunner::evidence_observable_in_configuration(
 			comparable[key] = kept;
 			continue;
 		}
+		// A finding, and a ledger record reconciling one, are observations about a cell, so they travel
+		// with the cell: a build that could not judge the cell did not fail to reproduce them, it never
+		// asked the question.
+		if (key == "findings" && document[key].get_type() == Variant::ARRAY) {
+			comparable[key] = records_of_kept_cases(document[key], dropped_case_ids);
+			continue;
+		}
+		if (key == "ledger" && document[key].get_type() == Variant::DICTIONARY) {
+			const Dictionary ledger = document[key];
+			Dictionary narrowed_ledger;
+			for (const String &ledger_key : Completeness::sorted_dictionary_keys(ledger)) {
+				const Variant &ledger_value = ledger[ledger_key];
+				if (ledger_value.get_type() == Variant::ARRAY) {
+					narrowed_ledger[ledger_key] = records_of_kept_cases(ledger_value, dropped_case_ids);
+				} else {
+					narrowed_ledger[ledger_key] = ledger_value;
+				}
+			}
+			comparable[key] = narrowed_ledger;
+			continue;
+		}
 		// An exception a dropped cell witnesses is decided by evidence this build cannot gather, so it
 		// travels with its witnesses instead of being reported as an exception nothing observed.
 		if (key == "exceptions" && document[key].get_type() == Variant::ARRAY) {
@@ -2580,6 +2615,16 @@ Variant FSCompletenessRunner::evidence_observable_in_configuration(
 			continue;
 		}
 		comparable[key] = document[key];
+	}
+	// The run-level verdict follows from the evidence, so a document narrowed to fewer cells carries the
+	// verdict that evidence implies rather than the one the whole matrix implied. It is re-derived by
+	// the runner's own rule, applied to what survived, and a structural failure is never rewritten:
+	// that verdict is about the run rather than about any cell.
+	if (!dropped_case_ids.is_empty() &&
+			Array(comparable.get("structural_failures", Array())).is_empty()) {
+		const bool has_findings = !Array(comparable.get("findings", Array())).is_empty();
+		comparable["outcome"] = has_findings ? "product_mismatch" : "passed";
+		comparable["success"] = !has_findings;
 	}
 	// Warning evidence is dropped from whatever survived, wherever it sits: a document narrowed to the
 	// cells both builds carry still records warnings only one of them could have produced.
