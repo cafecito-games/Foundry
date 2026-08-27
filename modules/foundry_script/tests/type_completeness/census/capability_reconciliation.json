@@ -14,7 +14,9 @@
 		"modules/foundry_script/fs_parser_data_type.cpp",
 		"modules/foundry_script/fs_reflection.cpp",
 		"modules/foundry_script/fs_type.cpp",
-		"modules/foundry_script/fs_vm.cpp"
+		"modules/foundry_script/fs_vm.cpp",
+		"modules/foundry_script/language_server/fs_extend_parser.cpp",
+		"modules/foundry_script/language_server/fs_text_document.cpp"
 	],
 	"unmapped_production_paths": [
 		{
@@ -86,6 +88,10 @@
 		},
 		{
 			"path": "modules/foundry_script/tests/type_completeness/rules/wrapper_parity_return.json",
+			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
+		},
+		{
+			"path": "modules/foundry_script/tests/type_completeness/rules/tooling_hover.json",
 			"rationale": "The rule manifest of a family: a change to it can remove or rekey cases, which is exactly the coverage regression the presubmit comparison exists to catch, so it selects its own family."
 		}
 	]

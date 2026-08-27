@@ -159,6 +159,20 @@ public:
 	// Every registered id, in ascending order.
 	static Vector<String> ids();
 
+	// Ids the catalog may name that this build does not register because the surface behind them is
+	// not compiled in, in ascending order. They are declared rather than unknown: a manifest or a
+	// dimension file naming one is well-formed everywhere, and the run reports the cells it would
+	// have covered as not covered instead of refusing the catalog.
+	static Vector<String> configuration_gated_ids();
+
+	// True when p_adapter_id is one of the gated ids, whether or not this build registered it.
+	static bool is_configuration_gated(const String &p_adapter_id);
+
+	// True when p_adapter_id is registered in this build or is a configuration-gated id. This is what
+	// catalog loading validates against, so a catalog stays loadable in a build that cannot observe
+	// every family in it.
+	static bool is_declared(const String &p_adapter_id);
+
 	// The first id p_table registers twice, or an empty string when every id is unique and non-empty.
 	// A malformed entry is reported as "<null>" or "<empty>" rather than silently overwriting an
 	// earlier entry, so a caller only has to test the result for emptiness.

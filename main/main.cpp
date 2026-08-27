@@ -164,9 +164,9 @@
 #endif // TOOLS_ENABLED
 #ifdef TESTS_ENABLED
 #include "modules/foundry_script/tests/fs_benchmark_runner.h"
+#include "modules/foundry_script/tests/fs_type_completeness_cli.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/tests/fs_fixture_cli.h"
-#include "modules/foundry_script/tests/fs_type_completeness_cli.h"
 #endif // TOOLS_ENABLED
 #endif // TESTS_ENABLED
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
@@ -1145,7 +1145,10 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		status = EXIT_FAILURE;
 #endif
 	} else if (kind == Kind::TEST_COMPLETENESS_RUN) {
-#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(TOOLS_ENABLED) && defined(TESTS_ENABLED)
+		// The harness runs wherever the test suites do. A build without the editor tooling surfaces still
+		// has a verdict to publish for every family it can observe, and publishes the tooling families as
+		// not covered rather than not running at all.
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(TESTS_ENABLED)
 		FSTests::FSCompletenessCLI::Options options;
 		for (int i = 0; i < cli_parse.invocation.completeness_families.size(); i++) {
 			options.families.push_back(cli_parse.invocation.completeness_families[i]);
@@ -1156,12 +1159,13 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		options.surface = cli_parse.invocation.completeness_surface;
 		options.tier = cli_parse.invocation.completeness_tier;
 		options.timeout_seconds = cli_parse.invocation.completeness_timeout_seconds;
+		options.require_tooling = cli_parse.invocation.completeness_require_tooling;
 		status = FSTests::FSCompletenessCLI::run(options, &completeness_published_paths);
 		for (int i = 0; i < completeness_published_paths.size(); i++) {
 			owned_user_root_artifacts.push_back(completeness_published_paths[i]);
 		}
 #else
-		ERR_PRINT("foundry test completeness run requires an editor build with tests and the Foundry Script module enabled.");
+		ERR_PRINT("foundry test completeness run requires a build with tests and the Foundry Script module enabled.");
 		status = EXIT_FAILURE;
 #endif
 	} else if (kind == Kind::TEST_COMPLETENESS_SELECT) {

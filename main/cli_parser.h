@@ -139,6 +139,9 @@ public:
 		String completeness_surface;
 		String completeness_tier;
 		int completeness_timeout_seconds = 0;
+		// Refuses the invocation when this build compiles no tooling surface to observe. The
+		// families still run and publish their uncovered cells; only the exit code changes.
+		bool completeness_require_tooling = false;
 
 		// `test completeness select` inputs: the file listing one changed repository path per
 		// line and the catalog whose capability map maps them to families. `completeness_json`

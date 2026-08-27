@@ -46,6 +46,14 @@ namespace FSCompletenessStructuralStage {
 
 static constexpr const char *ADAPTER_UNKNOWN = "adapter_unknown";
 static constexpr const char *ADAPTER_DUPLICATE = "adapter_duplicate";
+// The manifest names a configuration-gated adapter that this build registers, yet a cell of that
+// family was still reported as uncovered for want of it. The two answers contradict each other, so
+// the run refuses rather than publishing a document whose configuration disagrees with its cases.
+static constexpr const char *ADAPTER_UNAVAILABLE_IN_CONFIGURATION = "adapter_unavailable_in_configuration";
+// The surface a family observes could not be driven at all: a host process that never started, a
+// readiness record that could not be read, or a tooling helper that refused. The staged programs are
+// kept so the refusal can be reproduced, and no cell of the run is published as a pass.
+static constexpr const char *TOOLING_HOST_UNAVAILABLE = "tooling_host_unavailable";
 static constexpr const char *PROGRAM_CARDINALITY = "program_cardinality";
 static constexpr const char *PUBLISHED_SURFACE_NOT_EXECUTED = "published_surface_not_executed";
 static constexpr const char *NO_EVIDENCE = "no_evidence";
@@ -66,6 +74,8 @@ static constexpr const char *RUN_ABORTED = "run_aborted";
 static constexpr const char *ALL[] = {
 	ADAPTER_UNKNOWN,
 	ADAPTER_DUPLICATE,
+	ADAPTER_UNAVAILABLE_IN_CONFIGURATION,
+	TOOLING_HOST_UNAVAILABLE,
 	PROGRAM_CARDINALITY,
 	PUBLISHED_SURFACE_NOT_EXECUTED,
 	NO_EVIDENCE,
@@ -97,7 +107,14 @@ namespace FSCompletenessNotCoveredReason {
 static constexpr const char *DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION =
 		"diagnostics_unavailable_in_configuration";
 
+// The family's adapter is not registered in this build because the surface behind it is not compiled
+// in. Nothing it could observe would decide the cell either way, so an observation of "no
+// disagreement" here is not evidence that the tooling surface agreed.
+static constexpr const char *ADAPTER_UNAVAILABLE_IN_CONFIGURATION =
+		"adapter_unavailable_in_configuration";
+
 static constexpr const char *ALL[] = {
+	ADAPTER_UNAVAILABLE_IN_CONFIGURATION,
 	DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION,
 };
 

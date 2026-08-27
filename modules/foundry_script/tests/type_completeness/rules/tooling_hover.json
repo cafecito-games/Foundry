@@ -1,0 +1,137 @@
+{
+  "schema_version": 2,
+  "family": "tooling_hover",
+  "adapter": "tooling",
+  "domain": {
+    "destination": [
+      "plain",
+      "union",
+      "optional",
+      "container_element",
+      "tuple_field"
+    ],
+    "tooling_action": [
+      "hover"
+    ],
+    "surface": [
+      "text",
+      "bytecode"
+    ]
+  },
+  "required_dimensions": [
+    {
+      "dimension": "tooling_parity",
+      "when": {}
+    },
+    {
+      "dimension": "tooling_outcome",
+      "when": {}
+    }
+  ],
+  "anchors": [
+    {
+      "id": "plain_hover",
+      "coordinates": {
+        "destination": "plain",
+        "tooling_action": "hover"
+      },
+      "expect": {
+        "tooling_parity": "agrees",
+        "tooling_outcome": "rendered"
+      },
+      "surfaces": [
+        "text",
+        "bytecode"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "plain_to_union",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "union"
+      },
+      "derive": {
+        "tooling_parity": "same",
+        "tooling_outcome": "same"
+      }
+    },
+    {
+      "id": "plain_to_optional",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "optional"
+      },
+      "derive": {
+        "tooling_parity": "same",
+        "tooling_outcome": "same"
+      }
+    },
+    {
+      "id": "plain_to_container_element",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "container_element"
+      },
+      "derive": {
+        "tooling_parity": "same",
+        "tooling_outcome": "same"
+      }
+    },
+    {
+      "id": "plain_to_tuple_field",
+      "from": {
+        "destination": "plain"
+      },
+      "to": {
+        "destination": "tuple_field"
+      },
+      "derive": {
+        "tooling_parity": "same",
+        "tooling_outcome": "same"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "a_binary_records_a_tuple_carrier_rather_than_its_shape",
+      "parent": "plain_to_tuple_field",
+      "when": {
+        "surface": "bytecode"
+      },
+      "derive": {
+        "tooling_parity": "type_differs",
+        "tooling_outcome": "same"
+      },
+      "rationale": "A tuple-typed member is carried by an Array at run time, and an exported binary records the carrier: the member data type restored from the binary renders as 'Array', while the analyzer resolves and a hover shows '(uint, String)'. The declared shape is therefore analyzer-level information that the compiled artifact does not carry, so on the surface whose subject is the binary the two spellings disagree for this destination and for no other. The text surface of the same destination agrees, which is what makes the disagreement a property of the artifact rather than of the tooling surface.",
+      "positive_witnesses": [
+        {
+          "id": "bytecode_tuple_field",
+          "coordinates": {
+            "destination": "tuple_field",
+            "tooling_action": "hover",
+            "surface": "bytecode"
+          }
+        }
+      ],
+      "boundary_witnesses": [
+        {
+          "id": "text_tuple_field_boundary",
+          "coordinates": {
+            "destination": "tuple_field",
+            "tooling_action": "hover",
+            "surface": "text"
+          }
+        }
+      ]
+    }
+  ],
+  "max_chain_length": 2
+}

@@ -1,0 +1,2407 @@
+{
+	"schema_version": 1.0,
+	"family": "tooling_hover",
+	"success": true,
+	"cell_count": 10.0,
+	"executed_by_surface": {
+		"text": 5.0,
+		"bytecode": 5.0
+	},
+	"coverage_by_chain_length": {
+		"0": 4.0,
+		"1": 16.0,
+		"2": 0.0
+	},
+	"coverage_by_dimension": {
+		"tooling_outcome": 10.0,
+		"tooling_parity": 10.0
+	},
+	"uncovered_required_dimensions": 0.0,
+	"text_bytecode_parity_failures": 0.0,
+	"outcome": "passed",
+	"findings": [],
+	"structural_failures": [],
+	"ledger": {
+		"reconciled": [],
+		"stale": []
+	},
+	"exceptions": [
+		{
+			"exception_id": "a_binary_records_a_tuple_carrier_rather_than_its_shape",
+			"parent": "plain_to_tuple_field",
+			"witnessed": true,
+			"positive_witnesses": [
+				{
+					"witness_id": "bytecode_tuple_field",
+					"case_id": "fstc-v1-d0c5139f23a182fef6e5",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			],
+			"boundary_witnesses": [
+				{
+					"witness_id": "text_tuple_field_boundary",
+					"case_id": "fstc-v1-c8079bb996b64c34671a",
+					"witnessed": true,
+					"blocking_finding_ids": []
+				}
+			]
+		}
+	],
+	"cases": [
+		{
+			"case_id": "fstc-v1-033bbf8204a400448ce7",
+			"coordinates": {
+				"destination": "container_element",
+				"surface": "text",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_container_element",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "container_element",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_container_element",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "container_element",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_container_element",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "container_element",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_container_element",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "container_element",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "Array[uint]",
+				"tooling_rendered_type": "Array[uint]"
+			}
+		},
+		{
+			"case_id": "fstc-v1-0bbd177bc267ee7fc883",
+			"coordinates": {
+				"destination": "plain",
+				"surface": "bytecode",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [],
+				"tooling_parity": []
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[]
+				],
+				"tooling_parity": [
+					[]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "uint",
+				"tooling_rendered_type": "uint"
+			}
+		},
+		{
+			"case_id": "fstc-v1-176bfd7de45a8ef0fa2a",
+			"coordinates": {
+				"destination": "union",
+				"surface": "text",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_union",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "union",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_union",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "union",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_union",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "union",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_union",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "union",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "String | uint",
+				"tooling_rendered_type": "String | uint"
+			}
+		},
+		{
+			"case_id": "fstc-v1-4bce86ceeb4f590c8365",
+			"coordinates": {
+				"destination": "union",
+				"surface": "bytecode",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_union",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "union",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_union",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "union",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_union",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "union",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_union",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "union",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "String | uint",
+				"tooling_rendered_type": "String | uint"
+			}
+		},
+		{
+			"case_id": "fstc-v1-4e1678049e522732f60c",
+			"coordinates": {
+				"destination": "container_element",
+				"surface": "bytecode",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_container_element",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "container_element",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_container_element",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "container_element",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_container_element",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "container_element",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_container_element",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "container_element",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "Array[uint]",
+				"tooling_rendered_type": "Array[uint]"
+			}
+		},
+		{
+			"case_id": "fstc-v1-6b86620aa53b1cc307bf",
+			"coordinates": {
+				"destination": "optional",
+				"surface": "text",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_optional",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "optional",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_optional",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "optional",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_optional",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "optional",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_optional",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "optional",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "uint?",
+				"tooling_rendered_type": "uint?"
+			}
+		},
+		{
+			"case_id": "fstc-v1-6d95df6838afabfeadf6",
+			"coordinates": {
+				"destination": "optional",
+				"surface": "bytecode",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_optional",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "optional",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_optional",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "optional",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_optional",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "optional",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_optional",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "optional",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "uint?",
+				"tooling_rendered_type": "uint?"
+			}
+		},
+		{
+			"case_id": "fstc-v1-c8079bb996b64c34671a",
+			"coordinates": {
+				"destination": "tuple_field",
+				"surface": "text",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_tuple_field",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "tuple_field",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_tuple_field",
+						"exception_id": "",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "tuple_field",
+							"surface": "text",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_tuple_field",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "tuple_field",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_tuple_field",
+							"exception_id": "",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "tuple_field",
+								"surface": "text",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "(uint, String)",
+				"tooling_rendered_type": "(uint, String)"
+			}
+		},
+		{
+			"case_id": "fstc-v1-d0c5139f23a182fef6e5",
+			"coordinates": {
+				"destination": "tuple_field",
+				"surface": "bytecode",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "type_differs"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "type_differs"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [
+					{
+						"relation_id": "plain_to_tuple_field",
+						"exception_id": "a_binary_records_a_tuple_carrier_rather_than_its_shape",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "tuple_field",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "type_differs"
+						}
+					}
+				],
+				"tooling_parity": [
+					{
+						"relation_id": "plain_to_tuple_field",
+						"exception_id": "a_binary_records_a_tuple_carrier_rather_than_its_shape",
+						"source_coordinates": {
+							"destination": "plain",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"target_coordinates": {
+							"destination": "tuple_field",
+							"surface": "bytecode",
+							"tooling_action": "hover"
+						},
+						"input_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "agrees"
+						},
+						"output_dimensions": {
+							"tooling_outcome": "rendered",
+							"tooling_parity": "type_differs"
+						}
+					}
+				]
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[
+						{
+							"relation_id": "plain_to_tuple_field",
+							"exception_id": "a_binary_records_a_tuple_carrier_rather_than_its_shape",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "tuple_field",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "type_differs"
+							}
+						}
+					]
+				],
+				"tooling_parity": [
+					[
+						{
+							"relation_id": "plain_to_tuple_field",
+							"exception_id": "a_binary_records_a_tuple_carrier_rather_than_its_shape",
+							"source_coordinates": {
+								"destination": "plain",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"target_coordinates": {
+								"destination": "tuple_field",
+								"surface": "bytecode",
+								"tooling_action": "hover"
+							},
+							"input_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "agrees"
+							},
+							"output_dimensions": {
+								"tooling_outcome": "rendered",
+								"tooling_parity": "type_differs"
+							}
+						}
+					]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "Array",
+				"tooling_rendered_type": "(uint, String)"
+			}
+		},
+		{
+			"case_id": "fstc-v1-eca25e9d0a92fb1f12c6",
+			"coordinates": {
+				"destination": "plain",
+				"surface": "text",
+				"tooling_action": "hover"
+			},
+			"expected": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"actual": {
+				"tooling_outcome": "rendered",
+				"tooling_parity": "agrees"
+			},
+			"canonical_provenance": {
+				"tooling_outcome": [],
+				"tooling_parity": []
+			},
+			"agreeing_provenance": {
+				"tooling_outcome": [
+					[]
+				],
+				"tooling_parity": [
+					[]
+				]
+			},
+			"status": "passed",
+			"passed": true,
+			"runtime_passed": true,
+			"runtime_status": "ok",
+			"diagnostics": [],
+			"diagnostic_records": [],
+			"diagnostic_severity": "none",
+			"produced_output": "",
+			"expected_output": "",
+			"artifact_path": "",
+			"parity_evidence": {},
+			"adapter_evidence": {
+				"analyzer_rendered_type": "uint",
+				"tooling_rendered_type": "uint"
+			}
+		}
+	],
+	"published_surface": "",
+	"census": {
+		"covered": 23.0,
+		"uncovered": 57.0,
+		"unsupported": 0.0,
+		"quality_deferred": 1.0,
+		"entries": [
+			{
+				"representation": "bytecode_serialized_type",
+				"child_slot": "serialized_container_element_types",
+				"surface": "bytecode_serialization",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec] FSDataType round-trip",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "bytecode_serialized_type",
+				"child_slot": "serialized_container_element_types",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "bytecode_serialized_type",
+				"child_slot": "serialized_type_arguments",
+				"surface": "bytecode_serialization",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "bytecode_serialized_type",
+				"child_slot": "serialized_type_arguments",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "bytecode_serialized_type",
+				"child_slot": "serialized_union_alternatives",
+				"surface": "bytecode_serialization",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "bytecode_serialized_type",
+				"child_slot": "serialized_union_alternatives",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "element_types",
+				"surface": "bytecode_serialization",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "element_types",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "element_types",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "element_types",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "element_types",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "type_arguments",
+				"surface": "bytecode_serialization",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "type_arguments",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "type_arguments",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "type_arguments",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "container_descriptor",
+				"child_slot": "type_arguments",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "fixed",
+				"surface": "bytecode_serialization",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "fixed",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "fixed",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "fixed",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "tuple_slot_shape",
+				"surface": "bytecode_serialization",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "tuple_slot_shape",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "tuple_slot_shape",
+				"surface": "runtime_bytecode",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeScript] A tuple parameter's shape survives a reload and still rejects",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "member_binding_descriptor",
+				"child_slot": "tuple_slot_shape",
+				"surface": "runtime_text",
+				"status": "covered",
+				"witness": {
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/runtime/features/tuple_member_reflective_write_rejected.fs",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "container_element_types",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into container element types",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "container_element_types",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "container_element_types",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "container_element_types",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "enum_case_payload_field_names",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/runtime/features/named_tuple_contextual_case_field.fs",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "enum_case_payload_field_names",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "enum_case_payload_field_names",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "enum_case_payload_field_types",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/analyzer/features/type_self_enum_payload_field_nested_self_union_alternatives.fs",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "enum_case_payload_field_types",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "enum_case_payload_field_types",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_parameter_types",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_parameter_types",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_parameter_types",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_parameter_types",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_rest_parameter_type",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/analyzer/features/typed_rest_parameter_concrete.fs",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_rest_parameter_type",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_rest_parameter_type",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_rest_parameter_type",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_return_type",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript] Type compatibility checks callable and signal signatures",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_return_type",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_return_type",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "method_return_type",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_arguments",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][GenericTypeModel] substitute recurses into type arguments",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_arguments",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_arguments",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_arguments",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_parameter_bound",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "fixture",
+					"reference": "modules/foundry_script/tests/scripts/analyzer/features/generic_class_bounds.fs",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_parameter_bound",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "type_parameter_bound",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "union_members",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "family_case",
+					"reference": "",
+					"family": "union_destination_membership",
+					"build_configuration": "",
+					"coordinates": {
+						"boundary": "argument_binding",
+						"destination": "union",
+						"source_proof": "gradual",
+						"surface": "text"
+					}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "union_members",
+				"surface": "editor_tools",
+				"status": "quality_deferred",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][TypeUnion] A union prints as valid source",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "union_members",
+				"surface": "reflection",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript][TypeUnion] A multi-member union reports untyped property info",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "parser_data_type",
+				"child_slot": "union_members",
+				"surface": "runtime_text",
+				"status": "covered",
+				"witness": {
+					"kind": "family_case",
+					"reference": "",
+					"family": "union_destination_membership",
+					"build_configuration": "",
+					"coordinates": {
+						"boundary": "argument_binding",
+						"destination": "union",
+						"source_proof": "variant",
+						"surface": "text"
+					}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "reflection_property_info",
+				"child_slot": "hint_string",
+				"surface": "analyzer",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[Modules][FoundryScript] AsyncCallable async marker survives the PropertyInfo boundary",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "reflection_property_info",
+				"child_slot": "hint_string",
+				"surface": "bytecode_serialization",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "reflection_property_info",
+				"child_slot": "hint_string",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "reflection_property_info",
+				"child_slot": "hint_string",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "reflection_property_info",
+				"child_slot": "hint_string",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "reflection_property_info",
+				"child_slot": "hint_string",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "container_element_types",
+				"surface": "bytecode_serialization",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "container_element_types",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "container_element_types",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "container_element_types",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "container_element_types",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "type_arguments",
+				"surface": "bytecode_serialization",
+				"status": "covered",
+				"witness": {
+					"kind": "doctest_case",
+					"reference": "[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments",
+					"family": "",
+					"build_configuration": "editor",
+					"coordinates": {}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "type_arguments",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "type_arguments",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "type_arguments",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "type_arguments",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "union_alternatives",
+				"surface": "bytecode_serialization",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "union_alternatives",
+				"surface": "editor_tools",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2482"
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "union_alternatives",
+				"surface": "reflection",
+				"status": "covered",
+				"witness": {
+					"kind": "family_case",
+					"reference": "",
+					"family": "union_destination_membership",
+					"build_configuration": "",
+					"coordinates": {
+						"boundary": "reflective_write",
+						"destination": "union",
+						"source_proof": "erased",
+						"surface": "text"
+					}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "union_alternatives",
+				"surface": "runtime_bytecode",
+				"status": "covered",
+				"witness": {
+					"kind": "family_case",
+					"reference": "",
+					"family": "union_destination_membership",
+					"build_configuration": "",
+					"coordinates": {
+						"boundary": "argument_binding",
+						"destination": "union",
+						"source_proof": "erased",
+						"surface": "bytecode"
+					}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "runtime_data_type",
+				"child_slot": "union_alternatives",
+				"surface": "runtime_text",
+				"status": "covered",
+				"witness": {
+					"kind": "family_case",
+					"reference": "",
+					"family": "union_destination_membership",
+					"build_configuration": "",
+					"coordinates": {
+						"boundary": "argument_binding",
+						"destination": "union",
+						"source_proof": "erased",
+						"surface": "text"
+					}
+				},
+				"issue_url": ""
+			},
+			{
+				"representation": "specialization_evidence",
+				"child_slot": "evidence_type_arguments",
+				"surface": "reflection",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "specialization_evidence",
+				"child_slot": "evidence_type_arguments",
+				"surface": "runtime_bytecode",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			},
+			{
+				"representation": "specialization_evidence",
+				"child_slot": "evidence_type_arguments",
+				"surface": "runtime_text",
+				"status": "uncovered",
+				"witness": {
+					"kind": "",
+					"reference": "",
+					"family": "",
+					"build_configuration": "",
+					"coordinates": {}
+				},
+				"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			}
+		]
+	},
+	"configuration": {
+		"tools_enabled": true,
+		"adapters": [
+			"destination_wrapper",
+			"lifecycle",
+			"synthetic_pair_identity",
+			"tooling"
+		],
+		"analyzer_warnings": true
+	},
+	"unconfirmed_census_witnesses": [],
+	"timings_ms": {
+		"load": 17.448,
+		"resolve": 0.139,
+		"render": 12.111,
+		"analyze": 0.433,
+		"execute": 69.363,
+		"report": 348.127,
+		"total": 449.374
+	}
+}

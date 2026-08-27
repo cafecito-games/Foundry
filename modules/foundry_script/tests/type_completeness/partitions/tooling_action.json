@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "axis": "tooling_action",
+  "leaves": [
+    "completion",
+    "diagnostic_rendering",
+    "documentation",
+    "hover",
+    "migration",
+    "navigation",
+    "project_scan",
+    "rename_refactor",
+    "signature_help"
+  ],
+  "classes": {
+    "symbol_query": [
+      "completion",
+      "documentation",
+      "hover",
+      "navigation",
+      "signature_help"
+    ],
+    "program_report": [
+      "diagnostic_rendering",
+      "project_scan"
+    ],
+    "program_transform": [
+      "migration",
+      "rename_refactor"
+    ]
+  }
+}

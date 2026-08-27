@@ -38,6 +38,7 @@
 #include "fs_type_completeness_graph.h"
 #include "fs_type_completeness_json.h"
 #include "fs_type_completeness_manifest.h"
+#include "fs_type_completeness_tooling_adapter.h"
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -1125,6 +1126,22 @@ static Dictionary observed_dimensions(const FSCompletenessResolvedCell &p_cell,
 	return observed;
 }
 
+// Readings an adapter recorded for a human rather than for a verdict. A closed dimension vocabulary
+// says which outcome a cell reached but never what the surfaces actually rendered, so a disagreement
+// would otherwise be a finding nobody could classify without re-running it. Keys under the reserved
+// `evidence.` prefix are published verbatim and are never compared, so adding one can change what a
+// report explains but never what it decides.
+static Dictionary adapter_evidence(const FSCompletenessRuntimeResult &p_actual) {
+	static const String prefix = "evidence.";
+	Dictionary evidence;
+	for (const String &key : Completeness::sorted_dictionary_keys(p_actual.dimensions)) {
+		if (key.begins_with(prefix)) {
+			evidence[key.substr(prefix.length())] = p_actual.dimensions[key];
+		}
+	}
+	return evidence;
+}
+
 static Dictionary canonical_provenance(const FSCompletenessResolvedCell &p_cell) {
 	Dictionary provenance;
 	for (const String &dimension_name : sorted_dimension_keys(p_cell.dimensions)) {
@@ -1274,6 +1291,92 @@ static Dictionary timeout_report(const String &p_family, const StageTimings &p_t
 	return report;
 }
 
+// The document a build publishes for a family whose adapter it does not compile. Every cell the
+// matrix resolves is published as not covered, carrying the reason nothing could judge it: a build
+// that observes nothing about a family has no verdict for it, and leaving the cells out would let a
+// narrower configuration publish a document that looks like a clean run of a smaller matrix.
+static Dictionary adapter_unavailable_report(const String &p_family, const String &p_published_surface,
+		const Vector<const FSCompletenessResolvedCell *> &p_cells, const FSCompletenessManifest &p_manifest,
+		int p_uncovered_dimension_count, const StageTimings &p_timings) {
+	Vector<const FSCompletenessResolvedCell *> sorted_cells = p_cells;
+	sort_cells_by_id(sorted_cells);
+	Array cases;
+	for (const FSCompletenessResolvedCell *cell : sorted_cells) {
+		if (!p_published_surface.is_empty() &&
+				String(cell->coordinates.get("surface", String())) != p_published_surface) {
+			continue;
+		}
+		Dictionary case_report;
+		case_report["case_id"] = cell->case_id;
+		case_report["coordinates"] = sorted_dictionary_copy(cell->coordinates);
+		case_report["expected"] = expected_dimensions(*cell);
+		case_report["actual"] = Dictionary();
+		case_report["canonical_provenance"] = canonical_provenance(*cell);
+		case_report["agreeing_provenance"] = all_agreeing_provenance(*cell);
+		case_report["status"] = "not_covered";
+		case_report["passed"] = false;
+		case_report["category"] = "not_covered";
+		case_report["not_covered_reason"] =
+				String(FSCompletenessNotCoveredReason::ADAPTER_UNAVAILABLE_IN_CONFIGURATION);
+		case_report["runtime_passed"] = false;
+		case_report["runtime_status"] = String();
+		case_report["diagnostics"] = Array();
+		case_report["diagnostic_records"] = Array();
+		case_report["diagnostic_severity"] = Dictionary();
+		case_report["produced_output"] = String();
+		case_report["expected_output"] = String();
+		case_report["artifact_path"] = String();
+		case_report["parity_evidence"] = Dictionary();
+		cases.push_back(case_report);
+	}
+	Array exceptions;
+	for (const FSCompletenessException &exception : p_manifest.exceptions) {
+		Dictionary exception_report;
+		exception_report["exception_id"] = exception.id;
+		exception_report["parent"] = exception.parent;
+		// A carve-out this build bound no cell to is not a carve-out nobody exercises: it is one this
+		// build could not reach, and it carries the same reason its cells do.
+		exception_report["witnessed"] = false;
+		exception_report["not_covered_reason"] =
+				String(FSCompletenessNotCoveredReason::ADAPTER_UNAVAILABLE_IN_CONFIGURATION);
+		exception_report["positive_witnesses"] = Array();
+		exception_report["boundary_witnesses"] = Array();
+		exceptions.push_back(exception_report);
+	}
+
+	Dictionary report;
+	report["schema_version"] = 1.0;
+	report["family"] = p_family;
+	// Not covered is neither a pass nor a failure. The run did everything it could do in this build,
+	// so it is a success; what it could not observe is published cell by cell rather than in the
+	// verdict, and `--require-tooling` is what turns an unobservable family into a refusal.
+	report["success"] = true;
+	report["cell_count"] = double(p_cells.size());
+	Dictionary executed_by_surface;
+	executed_by_surface["text"] = 0.0;
+	executed_by_surface["bytecode"] = 0.0;
+	report["executed_by_surface"] = executed_by_surface;
+	report["coverage_by_chain_length"] = Dictionary();
+	report["coverage_by_dimension"] = Dictionary();
+	report["uncovered_required_dimensions"] = double(p_uncovered_dimension_count);
+	report["text_bytecode_parity_failures"] = 0.0;
+	report["outcome"] = "not_covered";
+	report["findings"] = Array();
+	report["structural_failures"] = Array();
+	Dictionary ledger;
+	ledger["reconciled"] = Array();
+	ledger["stale"] = Array();
+	report["ledger"] = ledger;
+	report["exceptions"] = exceptions;
+	report["cases"] = cases;
+	report["published_surface"] = p_published_surface;
+	report["census"] = Dictionary();
+	report["configuration"] = FSCompletenessRunner::configuration_report();
+	report["unconfirmed_census_witnesses"] = Array();
+	report["timings_ms"] = p_timings.to_report();
+	return report;
+}
+
 static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenessRunResult &r_result) {
 	r_result = FSCompletenessRunResult();
 	StageTimings timings;
@@ -1368,9 +1471,27 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return ERR_INVALID_DATA;
 	}
 	const FSCompletenessFamilyAdapter *adapter = FSCompletenessAdapterRegistry::find(manifest.adapter);
-	if (adapter == nullptr) {
+	// An adapter the catalog declares but this build does not compile is not an unknown adapter: the
+	// family is real and its cells are real, and what this build lacks is the surface they observe.
+	// The run goes on far enough to resolve the matrix and then publishes every cell of it as not
+	// covered, so a document produced here still names the coverage this configuration owes.
+	const bool adapter_unavailable_in_configuration =
+			adapter == nullptr && FSCompletenessAdapterRegistry::is_configuration_gated(manifest.adapter);
+	if (adapter == nullptr && !adapter_unavailable_in_configuration) {
 		fail_structurally(FSCompletenessStructuralStage::ADAPTER_UNKNOWN,
 				vformat("rules/%s.json:$.adapter names adapter '%s', which is not registered.",
+						p_options.family, manifest.adapter));
+		return ERR_INVALID_DATA;
+	}
+	// The configuration a report carries and the adapters a run can reach are two statements about
+	// the same build. A build that says it compiled the tooling surfaces and cannot hand out the
+	// adapter that drives them contradicts itself, and a contradiction is refused rather than
+	// published as a family nobody has to cover.
+	if (adapter_unavailable_in_configuration &&
+			bool(FSCompletenessRunner::configuration_report().get("tools_enabled", false))) {
+		fail_structurally(FSCompletenessStructuralStage::ADAPTER_UNAVAILABLE_IN_CONFIGURATION,
+				vformat("rules/%s.json:$.adapter names adapter '%s', which this build reports as compiled "
+						"in but does not register.",
 						p_options.family, manifest.adapter));
 		return ERR_INVALID_DATA;
 	}
@@ -1418,6 +1539,27 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	timings.load += StageTimings::since(stage_started_at);
 	if (abort_after_timeout("load")) {
 		return ERR_TIMEOUT;
+	}
+	if (adapter_unavailable_in_configuration) {
+		timings.total = StageTimings::since(run_started_at);
+		const Dictionary report = adapter_unavailable_report(p_options.family, p_options.published_surface,
+				selected_cells, manifest, resolution.uncovered_dimension_count, timings);
+		const Error publish_error = write_report_atomically(canonical_scratch_root, p_options.catalog_root,
+				p_options.report_path, report, p_options.persisted_write_hook);
+		if (publish_error != OK) {
+			return publish_error;
+		}
+		for (const FSCompletenessResolvedCell *cell : selected_cells) {
+			r_result.not_covered_case_ids.push_back(cell->case_id);
+		}
+		r_result.not_covered_case_ids.sort();
+		r_result.success = true;
+		r_result.outcome = "not_covered";
+		r_result.report = report;
+		WARN_PRINT(vformat("Family '%s' covers none of its %d cells in this build: %s.", p_options.family,
+				selected_cells.size(),
+				FSCompletenessNotCoveredReason::ADAPTER_UNAVAILABLE_IN_CONFIGURATION));
+		return OK;
 	}
 
 	stage_started_at = StageTimings::now();
@@ -1504,6 +1646,17 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	timings.execute += StageTimings::since(stage_started_at);
 	if (abort_after_timeout("execute")) {
 		return ERR_TIMEOUT;
+	}
+	if (error == ERR_UNAVAILABLE) {
+		// An adapter reports ERR_UNAVAILABLE when the surface it drives could not be reached at all -
+		// a host process that never started, a readiness record that could not be read, a helper that
+		// refused. That is a defect in the harness or in the host rather than an observation about the
+		// product, and the staged programs are kept so it can be reproduced from the same inputs.
+		fail_structurally(FSCompletenessStructuralStage::TOOLING_HOST_UNAVAILABLE,
+				vformat("Family '%s' could not drive the surface it observes.", p_options.family),
+				ERR_UNAVAILABLE);
+		artifact_scope.commit();
+		return ERR_UNAVAILABLE;
 	}
 	if (error != OK) {
 		return error;
@@ -1858,20 +2011,23 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 	// A cell that failed on evidence this build did gather is a failure; a cell that survived everything
 	// observable and left an expectation unobserved is the one this build could not judge. Deciding it
 	// here means the case records, the exception records and the run result cannot disagree about it.
-	HashSet<String> not_covered_case_ids;
+	// Each uncovered cell carries the reason it could not be judged rather than a reason chosen again
+	// at every place the document mentions it, so a second reason cannot be spelled one way in a case
+	// record and another way in a witness record.
+	HashMap<String, String> not_covered_reason_by_case;
 	for (const FSCompletenessResolvedCell *selected_cell : selected_cells) {
 		if (!diagnostics_unobservable_case_ids.has(selected_cell->case_id) ||
 				blocking_finding_ids_by_case.getptr(selected_cell->case_id) != nullptr) {
 			continue;
 		}
-		not_covered_case_ids.insert(selected_cell->case_id);
+		not_covered_reason_by_case.insert(selected_cell->case_id,
+				FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
 		r_result.not_covered_case_ids.push_back(selected_cell->case_id);
 	}
 	r_result.not_covered_case_ids.sort();
-	if (!r_result.not_covered_case_ids.is_empty()) {
-		WARN_PRINT(vformat("Family '%s' left %d of %d selected cells uncovered in this build: %s.",
-				p_options.family, r_result.not_covered_case_ids.size(), selected_cells.size(),
-				FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION));
+	for (const String &uncovered : r_result.not_covered_case_ids) {
+		WARN_PRINT(vformat("Family '%s' left cell '%s' uncovered in this build: %s.", p_options.family,
+				uncovered, not_covered_reason_by_case[uncovered]));
 	}
 
 	HashMap<String, Dictionary> exception_reports;
@@ -1897,15 +2053,16 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			return ERR_INVALID_DATA;
 		}
 		const Array *blocking = blocking_finding_ids_by_case.getptr(binding.cell->case_id);
-		const bool witness_not_covered = not_covered_case_ids.has(binding.cell->case_id);
+		const String *witness_not_covered_reason =
+				not_covered_reason_by_case.getptr(binding.cell->case_id);
+		const bool witness_not_covered = witness_not_covered_reason != nullptr;
 		Dictionary witness_report;
 		witness_report["witness_id"] = binding.witness_id;
 		witness_report["case_id"] = binding.cell->case_id;
 		witness_report["witnessed"] = blocking == nullptr && !witness_not_covered;
 		witness_report["blocking_finding_ids"] = blocking == nullptr ? Array() : *blocking;
 		if (witness_not_covered) {
-			witness_report["not_covered_reason"] =
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+			witness_report["not_covered_reason"] = *witness_not_covered_reason;
 		}
 		executed_witness_count[binding.exception_id]++;
 		Array witnesses = (*exception_report)[binding.boundary ? "boundary_witnesses" : "positive_witnesses"];
@@ -1918,8 +2075,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		// unwitnessed either: it says what it stands on rather than claiming a verdict.
 		if (witness_not_covered) {
 			(*exception_report)["witnessed"] = false;
-			(*exception_report)["not_covered_reason"] =
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+			(*exception_report)["not_covered_reason"] = *witness_not_covered_reason;
 		}
 	}
 	// An exception is witnessed only when every witness it declares was observed. A run narrowed to
@@ -1979,7 +2135,8 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		if (actual == nullptr || program == nullptr) {
 			return ERR_INVALID_DATA;
 		}
-		const bool not_covered = not_covered_case_ids.has(cell->case_id);
+		const String *not_covered_reason = not_covered_reason_by_case.getptr(cell->case_id);
+		const bool not_covered = not_covered_reason != nullptr;
 		bool passed = actual->passed && actual->status == "ok" && actual->diagnostics.is_empty() &&
 				actual->produced_output == program->expected_output &&
 				observed_expected_dimensions(
@@ -2009,8 +2166,7 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		// publishes exactly the document it published before this distinction existed.
 		if (not_covered) {
 			case_report["category"] = "not_covered";
-			case_report["not_covered_reason"] =
-					String(FSCompletenessNotCoveredReason::DIAGNOSTICS_UNAVAILABLE_IN_CONFIGURATION);
+			case_report["not_covered_reason"] = *not_covered_reason;
 		}
 		case_report["runtime_passed"] = actual->passed;
 		case_report["runtime_status"] = actual->status;
@@ -2027,6 +2183,12 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		const Dictionary *case_parity_evidence = parity_evidence_by_case.getptr(cell->case_id);
 		case_report["parity_evidence"] =
 				case_parity_evidence == nullptr ? Dictionary() : *case_parity_evidence;
+		// Written only where an adapter recorded something, so a family that records nothing publishes
+		// exactly the document it published before this member existed.
+		const Dictionary case_adapter_evidence = adapter_evidence(*actual);
+		if (!case_adapter_evidence.is_empty()) {
+			case_report["adapter_evidence"] = case_adapter_evidence;
+		}
 		cases.push_back(case_report);
 	}
 	// The representation census is evidence this report carries. A cell that claims to be covered by a
@@ -2318,7 +2480,7 @@ Dictionary FSCompletenessRunner::configuration_report() {
 	// Whether the editor tooling surfaces are compiled into this binary at all. It is deliberately not
 	// the same question as whether debugging checks are on: a template build with tests enabled runs
 	// this harness with no tooling surface to observe.
-#ifdef TOOLS_ENABLED
+#ifdef FS_COMPLETENESS_TOOLING_ADAPTER_AVAILABLE
 	configuration["tools_enabled"] = true;
 #else
 	configuration["tools_enabled"] = false;
