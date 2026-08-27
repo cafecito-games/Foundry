@@ -463,9 +463,16 @@ static Error restore_tooling_artifact(
 	return OK;
 }
 
-// What the tooling surface shows a user for the carried member. The hover body is the document
-// symbol's own rendering, which is what `FSTextDocument::hover` returns for a resolved symbol, so
-// this reads the product's rendering rather than a copy of it.
+// What the tooling surface shows a user for the carried member.
+//
+// The subject is the document symbol the language server builds for the program and the markdown
+// body `DocumentSymbol::render()` produces from it, which is verbatim what `FSTextDocument::hover`
+// returns once a symbol has been resolved. What this does not cover is the step before that:
+// `FSWorkspace::resolve_symbol` turning a cursor position into that symbol, and the JSON-RPC
+// response built around it. Driving those needs a workspace rooted in a real project and a
+// connected client, which a completeness run does not have, so a resolution defect would still be
+// reported here as a rendered hover. The family therefore observes the type a hover shows, not the
+// request path that delivers it; extending it to the request path is tracked separately.
 static String tooling_rendered_type(const String &p_source, const String &p_path, Error &r_error) {
 	r_error = OK;
 	if (tooling_host_unavailable_for_test) {

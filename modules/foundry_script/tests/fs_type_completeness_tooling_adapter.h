@@ -135,6 +135,12 @@ void set_respaced_tooling_rendering_for_test(bool p_respaced);
 // `tooling_parity` is read by rendering the member's type through the tooling surface and again
 // through the analyzer, off the same program. It is never derived from the cell's coordinates: a
 // test seam blanks the tooling rendering and the regression tests require it to flip.
+//
+// What a family observes is the type its surface renders, not the request path that delivers it.
+// The hover pilot builds the same document symbol and the same markdown body the language server
+// answers a resolved hover with; the cursor-position resolution and the JSON-RPC envelope around it
+// need a workspace rooted in a real project and a connected client, which a completeness run does
+// not stand up.
 class FSToolingAdapter : public FSCompletenessFamilyAdapter {
 public:
 	// The one instance of this adapter, and the one the registry hands out.

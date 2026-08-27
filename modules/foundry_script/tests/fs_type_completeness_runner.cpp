@@ -1541,6 +1541,20 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 		return ERR_TIMEOUT;
 	}
 	if (adapter_unavailable_in_configuration) {
+		// Everything about the catalog that does not need the adapter is still checked here, so a
+		// manifest with a duplicate witness id or two witnesses on one cell is refused in this build
+		// exactly as it is in one that compiles the adapter. Whether a catalog is well formed is a
+		// property of the catalog; only whether its cells can be observed is a property of the build.
+		Vector<FSCompletenessWitnessBinding> gated_witness_bindings;
+		Vector<FSCompletenessStructuralFailure> gated_failures;
+		const Error witness_error =
+				collect_witness_bindings(manifest, resolution, gated_witness_bindings, gated_failures);
+		if (witness_error != OK) {
+			sort_structural_failures(gated_failures);
+			r_result.outcome = "structural_failure";
+			r_result.structural_failures = gated_failures;
+			return witness_error;
+		}
 		timings.total = StageTimings::since(run_started_at);
 		const Dictionary report = adapter_unavailable_report(p_options.family, p_options.published_surface,
 				selected_cells, manifest, resolution.uncovered_dimension_count, timings);
