@@ -1,6 +1,6 @@
 # A nullable element type is spelled, but the language gives `Array[uint?]` no typed container: it
 # reports `is_typed() == false`, so the element store enforces nothing and admits a value the slot's
-# declared type cannot hold. This fixture records that behaviour so the defect is represented rather
+# declared type cannot hold. This fixture records that behavior so the defect is represented rather
 # than described: https://github.com/cafecito-games/Foundry/issues/2515 changes what it prints.
 class Slots extends RefCounted:
 	var values: Array[uint?] = [null]
