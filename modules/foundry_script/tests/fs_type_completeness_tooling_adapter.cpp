@@ -83,6 +83,22 @@ Vector<String> tooling_driven_actions() {
 	return Vector<String>({ "hover" });
 }
 
+Vector<String> tooling_destinations() {
+	return Vector<String>({ "plain", "union", "optional", "container_element", "tuple_field" });
+}
+
+HashMap<String, Vector<String>> tooling_renderable_leaves() {
+	HashMap<String, Vector<String>> leaves;
+	leaves["destination"] = tooling_destinations();
+	leaves["tooling_action"] = tooling_driven_actions();
+	leaves["surface"] = Vector<String>({ "text", "bytecode" });
+	return leaves;
+}
+
+HashSet<String> tooling_observable_dimensions() {
+	return HashSet<String>({ "tooling_parity", "tooling_outcome" });
+}
+
 String compare_tooling_evidence(const FSCompletenessToolingEvidence &p_evidence) {
 	// A tooling surface that rendered nothing agreed with nothing. Treating an empty rendering as a
 	// wording difference would let a surface that lost the type entirely report the mildest outcome
@@ -519,19 +535,11 @@ String FSToolingAdapter::id() const {
 }
 
 HashSet<String> FSToolingAdapter::observable_dimensions() const {
-	return HashSet<String>({ "tooling_parity", "tooling_outcome" });
+	return tooling_observable_dimensions();
 }
 
 HashMap<String, Vector<String>> FSToolingAdapter::renderable_leaves() const {
-	HashMap<String, Vector<String>> leaves;
-	Vector<String> destinations;
-	for (const ToolingDestinationShape &shape : tooling_destination_shapes) {
-		destinations.push_back(shape.leaf);
-	}
-	leaves["destination"] = destinations;
-	leaves["tooling_action"] = tooling_driven_actions();
-	leaves["surface"] = Vector<String>({ "text", "bytecode" });
-	return leaves;
+	return tooling_renderable_leaves();
 }
 
 Error FSToolingAdapter::render(

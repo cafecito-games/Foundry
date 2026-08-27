@@ -1553,6 +1553,37 @@ static Error run_family(const FSCompletenessRunOptions &p_options, FSCompletenes
 			r_result.not_covered_case_ids.push_back(cell->case_id);
 		}
 		r_result.not_covered_case_ids.sort();
+		// The verdict is decided once more from a clock read taken after the last write, exactly as the
+		// path that observes cells does. Publishing a document is the one span with no stage boundary
+		// inside it, so a budget crossed there would otherwise be published as an in-budget run and read
+		// by a gate as a clean one.
+		if (deadline_exceeded()) {
+			const String timeout_detail =
+					"The run exceeded its wall-clock budget while publishing its report.";
+			Vector<FSCompletenessStructuralFailure> failures;
+			failures.push_back(make_structural_failure(FSCompletenessStructuralStage::RUN_TIMEOUT,
+					timeout_detail, String(), String(), String(), ERR_TIMEOUT));
+			const Dictionary timed_out_report = document_with_timeout_verdict(report, timeout_detail);
+			const Error republish_error = write_report_atomically(canonical_scratch_root,
+					p_options.catalog_root, p_options.report_path, timed_out_report,
+					p_options.persisted_write_hook);
+			r_result.success = false;
+			r_result.outcome = "structural_failure";
+			if (republish_error != OK) {
+				// The document on disk still claims the run was in budget and nothing replaced it, so the
+				// result must not carry a report a consumer would trust.
+				failures.push_back(make_structural_failure(
+						FSCompletenessStructuralStage::RUN_TIMEOUT_REPORT_UNWRITABLE,
+						"The verdict of a run that exceeded its budget could not be republished.", String(),
+						String(), String(), republish_error));
+				sort_structural_failures(failures);
+				r_result.structural_failures = failures;
+				return ERR_TIMEOUT;
+			}
+			r_result.structural_failures = failures;
+			r_result.report = timed_out_report;
+			return ERR_TIMEOUT;
+		}
 		r_result.success = true;
 		r_result.outcome = "not_covered";
 		r_result.report = report;

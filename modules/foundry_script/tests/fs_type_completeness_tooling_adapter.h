@@ -33,6 +33,8 @@
 #include "fs_type_completeness_adapter.h"
 
 #include "core/string/ustring.h"
+#include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 // The tooling surfaces this adapter observes are the editor's language-server helpers, which are
@@ -59,6 +61,14 @@ Vector<String> tooling_actions();
 // any other leaf is refused when it is validated, so a family whose surface has no driver yet is a
 // catalog defect rather than a cell that quietly observes nothing.
 Vector<String> tooling_driven_actions();
+
+// The declared types a tooling cell can hold, and the axes and leaves the adapter renders. Declared
+// unconditionally, so a build that does not compile the adapter still validates a tooling manifest
+// against exactly what an editor build would: catalog validity is a property of the catalog, never of
+// the configuration reading it.
+Vector<String> tooling_destinations();
+HashMap<String, Vector<String>> tooling_renderable_leaves();
+HashSet<String> tooling_observable_dimensions();
 
 // What one tooling cell compares: the type the tooling surface rendered for a program's carried
 // member, and the type the analyzer resolved for the same member of the same program.

@@ -1300,11 +1300,16 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 		const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors) {
 	r_errors.clear();
 
-	// An unregistered adapter is not a vocabulary defect: the runner reports it as a structural failure
-	// naming the manifest, so a catalog with one still loads and still reports every other defect.
-	const FSCompletenessFamilyAdapter *adapter = FSCompletenessAdapterRegistry::find(p_manifest.adapter);
-	if (adapter != nullptr) {
-		adapter->renderable_coordinates(p_catalog, r_errors);
+	// An adapter this build does not know at all is not a vocabulary defect: the runner reports it as a
+	// structural failure naming the manifest, so a catalog with one still loads and still reports every
+	// other defect. An adapter it does know - registered, or declared and gated out of this
+	// configuration - is held to its declaration here, so whether a manifest is well formed is a
+	// property of the catalog rather than of the build reading it.
+	FSCompletenessAdapterCapability capability;
+	const bool adapter_is_declared =
+			FSCompletenessAdapterRegistry::declared_capability(p_manifest.adapter, capability);
+	if (adapter_is_declared) {
+		validate_declared_coordinates(p_manifest.adapter, capability.renderable_leaves, p_catalog, r_errors);
 	}
 
 	if (!p_manifest.domain.has("surface")) {
@@ -1322,10 +1327,13 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 			const String &leaf = leaves[index];
 			if (!p_catalog.axis_has_leaf(axis, leaf)) {
 				r_errors.push_back(vformat("domain axis '%s' uses unknown leaf '%s'", axis, leaf));
-			} else if (adapter != nullptr && !adapter->can_render(axis, leaf)) {
-				append_error(r_errors,
-						vformat("%s[%d]", append_json_path_member("$.domain", axis), index),
-						vformat("adapter '%s' cannot render leaf '%s'", adapter->id(), leaf));
+			} else if (adapter_is_declared) {
+				const Vector<String> *renderable = capability.renderable_leaves.getptr(axis);
+				if (renderable == nullptr || !renderable->has(leaf)) {
+					append_error(r_errors,
+							vformat("%s[%d]", append_json_path_member("$.domain", axis), index),
+							vformat("adapter '%s' cannot render leaf '%s'", p_manifest.adapter, leaf));
+				}
 			}
 		}
 	}
@@ -1374,8 +1382,8 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 	// relation or an exception - is compared against what the adapter reports for a cell. One the
 	// adapter cannot observe would be published as a product mismatch instead of the catalog defect it
 	// is, so the whole named set is checked rather than only the required half.
-	if (adapter != nullptr) {
-		const HashSet<String> observable = adapter->observable_dimensions();
+	if (adapter_is_declared) {
+		const HashSet<String> &observable = capability.observable_dimensions;
 		Vector<String> named_dimensions;
 		for (const FSCompletenessRequiredDimension &required : p_manifest.required_dimensions) {
 			named_dimensions.push_back(required.dimension);
@@ -1397,14 +1405,14 @@ Error validate_manifest_vocabulary(const FSCompletenessManifest &p_manifest,
 			}
 			previous = dimension_name;
 			const FSCompletenessDimension *declared = p_catalog.dimensions.getptr(dimension_name);
-			if (declared != nullptr && declared->adapter != adapter->id()) {
+			if (declared != nullptr && declared->adapter != p_manifest.adapter) {
 				r_errors.push_back(
 						vformat("dimension '%s' is declared in %s for adapter '%s', not for adapter '%s'",
-								dimension_name, declared->source_file, declared->adapter, adapter->id()));
+								dimension_name, declared->source_file, declared->adapter, p_manifest.adapter));
 			}
 			if (!observable.has(dimension_name)) {
 				r_errors.push_back(vformat("dimension '%s' is not observable by adapter '%s'",
-						dimension_name, adapter->id()));
+						dimension_name, p_manifest.adapter));
 			}
 		}
 	}

@@ -149,6 +149,23 @@ public:
 	FSCompletenessFamilyAdapter &operator=(const FSCompletenessFamilyAdapter &) = delete;
 };
 
+// What an adapter renders and can observe, stated without holding one. A configuration-gated adapter
+// is absent from some builds, so the checks that decide whether a rule manifest is well formed have
+// to be able to ask this instead of asking the instance; otherwise catalog validity would depend on
+// the build reading the catalog.
+struct FSCompletenessAdapterCapability {
+	HashMap<String, Vector<String>> renderable_leaves;
+	HashSet<String> observable_dimensions;
+};
+
+// Checks a declared coordinate set against the catalog: every axis must be one the catalog declares,
+// and no axis may declare a leaf twice or an empty one. Appends one message per defect and returns
+// ERR_INVALID_DATA when any was appended. Shared by the adapter instance and by the build-independent
+// declaration, so an absent adapter is held to exactly the same rule as a present one.
+Error validate_declared_coordinates(const String &p_adapter_id,
+		const HashMap<String, Vector<String>> &p_leaves, const FSCompletenessCatalog &p_catalog,
+		Vector<String> &r_errors);
+
 // The one lookup from an adapter id to an adapter. Backed by a single static table rather than by
 // self-registering globals, so the set of adapters is the same in every build and does not depend on
 // static initialization order.
@@ -172,6 +189,12 @@ public:
 	// catalog loading validates against, so a catalog stays loadable in a build that cannot observe
 	// every family in it.
 	static bool is_declared(const String &p_adapter_id);
+
+	// What p_adapter_id renders and observes, from the registered instance when there is one and from
+	// the adapter's build-independent declaration when there is not. False for an id that is neither
+	// registered nor gated.
+	static bool declared_capability(
+			const String &p_adapter_id, FSCompletenessAdapterCapability &r_capability);
 
 	// The first id p_table registers twice, or an empty string when every id is unique and non-empty.
 	// A malformed entry is reported as "<null>" or "<empty>" rather than silently overwriting an

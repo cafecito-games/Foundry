@@ -181,37 +181,43 @@ const HashMap<String, FSCompletenessRuntimeResult> *FSCompletenessRuntimeBatch::
 	return p_surface == "bytecode" ? &bytecode : nullptr;
 }
 
-Error FSCompletenessFamilyAdapter::renderable_coordinates(
-		const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors) const {
+Error validate_declared_coordinates(const String &p_adapter_id,
+		const HashMap<String, Vector<String>> &p_leaves, const FSCompletenessCatalog &p_catalog,
+		Vector<String> &r_errors) {
 	const int error_count_before = r_errors.size();
-	const HashMap<String, Vector<String>> leaves = renderable_leaves();
-	if (leaves.is_empty()) {
-		r_errors.push_back(vformat("adapter '%s' renders no coordinates", id()));
+	if (p_leaves.is_empty()) {
+		r_errors.push_back(vformat("adapter '%s' renders no coordinates", p_adapter_id));
 	}
-	for (const String &axis : sorted_axes(leaves)) {
+	for (const String &axis : sorted_axes(p_leaves)) {
 		if (axis.is_empty()) {
-			r_errors.push_back(vformat("adapter '%s' declares an empty axis", id()));
+			r_errors.push_back(vformat("adapter '%s' declares an empty axis", p_adapter_id));
 			continue;
 		}
 		if (!p_catalog.has_axis(axis)) {
-			r_errors.push_back(vformat("adapter '%s' renders unknown axis '%s'", id(), axis));
+			r_errors.push_back(vformat("adapter '%s' renders unknown axis '%s'", p_adapter_id, axis));
 			continue;
 		}
 		HashSet<String> seen;
-		for (const String &leaf : leaves[axis]) {
+		for (const String &leaf : p_leaves[axis]) {
 			if (leaf.is_empty()) {
-				r_errors.push_back(vformat("adapter '%s' declares an empty leaf on axis '%s'", id(), axis));
+				r_errors.push_back(
+						vformat("adapter '%s' declares an empty leaf on axis '%s'", p_adapter_id, axis));
 				continue;
 			}
 			if (seen.has(leaf)) {
-				r_errors.push_back(
-						vformat("adapter '%s' declares leaf '%s' twice on axis '%s'", id(), leaf, axis));
+				r_errors.push_back(vformat(
+						"adapter '%s' declares leaf '%s' twice on axis '%s'", p_adapter_id, leaf, axis));
 				continue;
 			}
 			seen.insert(leaf);
 		}
 	}
 	return r_errors.size() == error_count_before ? OK : ERR_INVALID_DATA;
+}
+
+Error FSCompletenessFamilyAdapter::renderable_coordinates(
+		const FSCompletenessCatalog &p_catalog, Vector<String> &r_errors) const {
+	return validate_declared_coordinates(id(), renderable_leaves(), p_catalog, r_errors);
 }
 
 bool FSCompletenessFamilyAdapter::can_render(const String &p_axis, const String &p_leaf) const {
@@ -245,6 +251,25 @@ bool FSCompletenessAdapterRegistry::is_configuration_gated(const String &p_adapt
 
 bool FSCompletenessAdapterRegistry::is_declared(const String &p_adapter_id) {
 	return find(p_adapter_id) != nullptr || is_configuration_gated(p_adapter_id);
+}
+
+bool FSCompletenessAdapterRegistry::declared_capability(
+		const String &p_adapter_id, FSCompletenessAdapterCapability &r_capability) {
+	r_capability = FSCompletenessAdapterCapability();
+	const FSCompletenessFamilyAdapter *adapter = find(p_adapter_id);
+	if (adapter != nullptr) {
+		r_capability.renderable_leaves = adapter->renderable_leaves();
+		r_capability.observable_dimensions = adapter->observable_dimensions();
+		return true;
+	}
+	if (p_adapter_id == tooling_adapter_id()) {
+		// The declaration the gated adapter itself returns, compiled into every build so a tooling
+		// manifest is judged the same way everywhere.
+		r_capability.renderable_leaves = tooling_renderable_leaves();
+		r_capability.observable_dimensions = tooling_observable_dimensions();
+		return true;
+	}
+	return false;
 }
 
 Vector<String> FSCompletenessAdapterRegistry::ids() {

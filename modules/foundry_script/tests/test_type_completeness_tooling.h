@@ -265,6 +265,60 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness] Tooling") {
 		}
 	}
 
+	TEST_CASE("TypeCompleteness Tooling judges a tooling manifest the same way in every build") {
+		// A build that does not compile the adapter still has to refuse a tooling manifest an editor
+		// build refuses, or catalog validity would be a property of the build reading the catalog and a
+		// malformed family would publish a clean uncovered report in the narrower one.
+		FSCompletenessAdapterCapability capability;
+		REQUIRE(FSCompletenessAdapterRegistry::declared_capability(tooling_adapter_id(), capability));
+		CHECK_EQ(capability.observable_dimensions.size(), tooling_observable_dimensions().size());
+		for (const String &dimension : tooling_observable_dimensions()) {
+			CHECK(capability.observable_dimensions.has(dimension));
+		}
+		const HashMap<String, Vector<String>> declared_leaves = tooling_renderable_leaves();
+		CHECK_EQ(capability.renderable_leaves.size(), declared_leaves.size());
+		for (const KeyValue<String, Vector<String>> &axis : declared_leaves) {
+			const Vector<String> *reported = capability.renderable_leaves.getptr(axis.key);
+			REQUIRE(reported != nullptr);
+			CHECK_EQ(*reported, axis.value);
+		}
+		// An id nothing declares stays unknown, so a typo in a manifest is still a typo.
+		FSCompletenessAdapterCapability absent;
+		CHECK_FALSE(FSCompletenessAdapterRegistry::declared_capability("no_such_adapter", absent));
+
+		FSCompletenessCatalog catalog;
+		Vector<String> errors;
+		REQUIRE_MESSAGE(catalog.load(tooling_catalog_root, errors) == OK, String(" | ").join(errors));
+
+		FSCompletenessManifest manifest;
+		manifest.family = "tooling_staged";
+		manifest.adapter = tooling_adapter_id();
+		manifest.domain["destination"] = Vector<String>({ "plain" });
+		// A tooling surface the adapter declares no driver for. The leaf is a real leaf of a real axis,
+		// so only the adapter's own declaration can refuse it.
+		manifest.domain["tooling_action"] = Vector<String>({ "completion" });
+		manifest.domain["surface"] = Vector<String>({ "text" });
+		FSCompletenessRequiredDimension required;
+		required.dimension = "tooling_parity";
+		manifest.required_dimensions.push_back(required);
+		CHECK_EQ(validate_manifest_vocabulary(manifest, catalog, errors), ERR_INVALID_DATA);
+		CHECK_MESSAGE(String(" | ").join(errors).contains("cannot render leaf 'completion'"),
+				String(" | ").join(errors));
+
+		// A dimension the adapter cannot observe is a catalog defect rather than a cell that would be
+		// published as a product mismatch, and that too is decided without holding the adapter.
+		manifest.domain["tooling_action"] = Vector<String>({ "hover" });
+		manifest.required_dimensions.write[0].dimension = "semantic_identity";
+		CHECK_EQ(validate_manifest_vocabulary(manifest, catalog, errors), ERR_INVALID_DATA);
+		CHECK_MESSAGE(String(" | ").join(errors).contains("not observable by adapter 'tooling'"),
+				String(" | ").join(errors));
+
+		// The same manifest with a leaf and a dimension the adapter does declare is accepted.
+		manifest.required_dimensions.write[0].dimension = "tooling_parity";
+		CHECK_MESSAGE(validate_manifest_vocabulary(manifest, catalog, errors) == OK,
+				String(" | ").join(errors));
+	}
+
 	TEST_CASE("TypeCompleteness Tooling the pilot family resolves every required dimension") {
 		const FSCompletenessResolution resolution = tooling_resolution(tooling_pilot_family);
 		// Every declared destination, on both surfaces.
