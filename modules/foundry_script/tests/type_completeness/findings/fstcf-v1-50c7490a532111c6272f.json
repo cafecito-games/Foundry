@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "finding_id": "fstcf-v1-50c7490a532111c6272f",
+  "case_id": "fstc-v1-835d90238d3d62321270",
+  "family": "wrapper_parity_container_element_store",
+  "dimension": "runtime_obligation",
+  "classification": "product_defect",
+  "issue_url": "https://github.com/cafecito-games/Foundry/issues/2515",
+  "closure_packet_url": "https://github.com/cafecito-games/Foundry/pull/2514",
+  "permanent_test_paths": [
+    "modules/foundry_script/tests/scripts/runtime/features/typed_array_nullable_element_is_untyped.fs",
+    "modules/foundry_script/tests/scripts/runtime/features/typed_array_nullable_element_is_untyped.out"
+  ]
+}

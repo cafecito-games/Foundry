@@ -33,6 +33,8 @@
 #include "fs_temporary_project_tree.h"
 #include "fs_type_completeness_cache.h"
 #include "fs_type_completeness_census.h"
+#include "fs_type_completeness_common.h"
+#include "fs_type_completeness_json.h"
 
 #include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
@@ -288,6 +290,43 @@ static Dictionary tracked_coverage_document() {
 
 static void write_staged_coverage(TemporaryProjectTree &p_tree, const Dictionary &p_document) {
 	p_tree.write_file("catalog/census/coverage.json", JSON::stringify(p_document, "\t") + "\n");
+}
+
+// Index of the first coverage entry whose family_case witness names p_family, or -1.
+static int first_coverage_entry_for_family(const Array &p_entries, const String &p_family) {
+	for (int index = 0; index < p_entries.size(); index++) {
+		const Dictionary entry = p_entries[index];
+		const Variant &witness = entry.get("witness", Variant());
+		if (witness.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Dictionary witness_record = witness;
+		if (census_string(witness_record, "kind") == "family_case" &&
+				census_string(witness_record, "family") == p_family) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+// The tracked coverage document with the family_case witness of p_family pointed at coordinates its
+// family's domain does not contain, so the claim can only be answered by resolving that family.
+static Dictionary coverage_with_broken_family_witness(const String &p_family) {
+	Dictionary document = tracked_coverage_document();
+	Array entries = document["entries"];
+	const int index = first_coverage_entry_for_family(entries, p_family);
+	REQUIRE_MESSAGE(index >= 0, vformat("the census declares no family_case witness for '%s'", p_family));
+	Dictionary entry = entries[index];
+	Dictionary witness = entry["witness"];
+	Dictionary coordinates = Dictionary(witness["coordinates"]).duplicate(true);
+	const Vector<String> axes = Completeness::sorted_dictionary_keys(coordinates);
+	REQUIRE_FALSE(axes.is_empty());
+	coordinates[axes[0]] = "a_leaf_no_axis_declares";
+	witness["coordinates"] = coordinates;
+	entry["witness"] = witness;
+	entries[index] = entry;
+	document["entries"] = entries;
+	return document;
 }
 
 // The first entry of p_kind whose witness this build can bind. A witness declared for another build
@@ -905,7 +944,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		CHECK(summary.unsupported_witnesses.size() > 0);
 
 		const Vector<String> unresolved =
-				FSCompletenessCensus::unresolved_witnesses(type_census_root(), summary);
+				FSCompletenessCensus::unresolved_witnesses(type_census_root(), summary, FSCompletenessCensusScope::everything());
 		CHECK_MESSAGE(unresolved.is_empty(), String(" | ").join(unresolved));
 
 		// Every witness kind the census can express is exercised, so a resolution path cannot rot
@@ -927,9 +966,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
 
 		const Vector<String> unresolved =
-				FSCompletenessCensus::unresolved_witnesses(type_census_root(), summary);
+				FSCompletenessCensus::unresolved_witnesses(type_census_root(), summary, FSCompletenessCensusScope::everything());
 		const Vector<String> unconfirmable =
-				FSCompletenessCensus::unconfirmable_witnesses(type_census_root(), summary);
+				FSCompletenessCensus::unconfirmable_witnesses(type_census_root(), summary, FSCompletenessCensusScope::everything());
 		CHECK_MESSAGE(unresolved.is_empty(), String(" | ").join(unresolved));
 
 		// Every claim the census makes lands in exactly one bucket, so a configuration can never both
@@ -1034,9 +1073,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 			const Vector<String> unconfirmable =
-					FSCompletenessCensus::unconfirmable_witnesses(staged_root, summary);
+					FSCompletenessCensus::unconfirmable_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 #ifdef TOOLS_ENABLED
 			// The editor configuration compiles the case the witness names, so a reference nothing
 			// registers is the defect it always was.
@@ -1050,6 +1089,113 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			REQUIRE_FALSE(unconfirmable.is_empty());
 #endif
 		}
+	}
+
+	TEST_CASE("TypeCompleteness Census family-case witnesses stand on a family that resolves") {
+		// A coverage claim may only stand on a family a run could execute. A manifest that parses and
+		// whose vocabulary holds against the catalog can still have a derivation graph that leaves a
+		// required dimension with no reachable disposition, and a witness accepted for such a family
+		// would report coverage backed by a case that cannot run.
+		Vector<String> errors;
+		FSCompletenessCensusSummary summary;
+		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
+
+		int checked_witnesses = 0;
+		HashSet<String> witness_families;
+		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
+			if (entry.status != "covered" || entry.witness.kind != "family_case") {
+				continue;
+			}
+			CAPTURE(entry.key());
+			witness_families.insert(entry.witness.family);
+			String detail;
+			CHECK(FSCompletenessCensus::resolve_witness(type_census_root(), entry, detail));
+			CHECK(detail.is_empty());
+			checked_witnesses++;
+		}
+		CHECK(checked_witnesses > 0);
+		CHECK_FALSE(witness_families.is_empty());
+
+		// A family whose manifest still loads and still validates, but whose graph now leaves a
+		// required dimension unreachable on every cell. The catalog is staged so the tracked one is
+		// untouched, and a fresh root keeps the resolved-catalog cache from answering for it.
+		TemporaryProjectTree tree(
+				vformat("type_completeness_census_underived_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+
+		const String broken_family = "union_destination_membership";
+		REQUIRE(witness_families.has(broken_family));
+		const String manifest_path = vformat("catalog/rules/%s.json", broken_family);
+		Error read_error = OK;
+		const String manifest_source =
+				FileAccess::get_file_as_string(tree.root.path_join(manifest_path), &read_error);
+		REQUIRE_EQ(read_error, OK);
+		Variant manifest_document;
+		Vector<String> parse_errors;
+		REQUIRE_MESSAGE(parse_type_completeness_json(manifest_source, String(), manifest_document, parse_errors) == OK,
+				String(" | ").join(parse_errors));
+		Dictionary manifest = Dictionary(manifest_document).duplicate(true);
+		Array required = manifest["required_dimensions"];
+		Dictionary unreachable;
+		// Observable by the family's adapter and declared by the catalog, so the manifest still
+		// validates; derived by no anchor, relation or exception, so no cell can reach it.
+		unreachable["dimension"] = "census_child_evidence";
+		unreachable["when"] = Dictionary();
+		required.push_back(unreachable);
+		manifest["required_dimensions"] = required;
+		tree.write_file(manifest_path, JSON::stringify(manifest, "\t") + "\n");
+
+		// The staged manifest is still a manifest and still validates against the staged catalog.
+		FSCompletenessManifest staged_manifest;
+		Vector<String> staged_errors;
+		REQUIRE_EQ(FSCompletenessManifest::load(
+						   staged_root.path_join(vformat("rules/%s.json", broken_family)), staged_manifest,
+						   staged_errors),
+				OK);
+		FSCompletenessCatalog staged_catalog;
+		REQUIRE_MESSAGE(staged_catalog.load(staged_root, staged_errors) == OK, String(" | ").join(staged_errors));
+		REQUIRE_MESSAGE(validate_manifest_vocabulary(staged_manifest, staged_catalog, staged_errors) == OK,
+				String(" | ").join(staged_errors));
+		// ... and its graph is exactly what no longer resolves.
+		FSCompletenessResolution staged_resolution;
+		Vector<String> resolve_errors;
+		CHECK_NE(FSCompletenessGraph::resolve(staged_manifest, staged_catalog, staged_resolution, resolve_errors), OK);
+
+		FSCompletenessCensusSummary staged_summary;
+		Vector<String> staged_census_errors;
+		REQUIRE_EQ(load_staged_census(staged_root, staged_summary, staged_census_errors), OK);
+		const Vector<String> unresolved =
+				FSCompletenessCensus::unresolved_witnesses(staged_root, staged_summary, FSCompletenessCensusScope::everything());
+		CHECK_FALSE(unresolved.is_empty());
+		CHECK_MESSAGE(census_errors_mention(unresolved, broken_family), String(" | ").join(unresolved));
+		// The refusal carries the graph's own reason, so a maintainer reads why the family cannot run
+		// rather than only that it cannot.
+		CHECK_MESSAGE(census_errors_mention(unresolved, "has no reachable disposition"),
+				String(" | ").join(unresolved));
+
+		// A migration index written for another family's case IDs makes the record's own error
+		// non-OK without saying anything about whether this family's matrix resolves, so it must not
+		// take a coverage claim down with it.
+		TemporaryProjectTree migration_tree(vformat(
+				"type_completeness_census_foreign_migration_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(migration_tree.is_valid());
+		const String migration_root = stage_census_catalog(migration_tree);
+		migration_tree.write_file("catalog/migrations/v1.json", R"JSON({
+	"schema_version": 1,
+	"migrations": [{
+		"old_id": "fstc-v1-not-a-current-case",
+		"new_ids": ["fstc-v1-also-not-a-current-case"],
+		"reason": "a case identity no family carries"
+	}]
+}
+)JSON");
+		FSCompletenessCensusSummary migration_summary;
+		Vector<String> migration_errors;
+		REQUIRE_EQ(load_staged_census(migration_root, migration_summary, migration_errors), OK);
+		const Vector<String> migration_unresolved =
+				FSCompletenessCensus::unresolved_witnesses(migration_root, migration_summary, FSCompletenessCensusScope::everything());
+		CHECK_MESSAGE(migration_unresolved.is_empty(), String(" | ").join(migration_unresolved));
 	}
 
 	TEST_CASE("TypeCompleteness Census refuses an exemption whose negative witness observes nothing") {
@@ -1077,7 +1223,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		Vector<String> errors;
 		FSCompletenessCensusSummary summary;
 		REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
-		const Vector<String> unresolved = FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+		const Vector<String> unresolved = FSCompletenessCensus::unresolved_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 		REQUIRE_EQ(unresolved.size(), 1);
 		CHECK_MESSAGE(unresolved[0].begins_with(vformat("unsupported '%s'", String(entry["id"]))), unresolved[0]);
 		CHECK_MESSAGE(unresolved[0].contains("does not exist"), unresolved[0]);
@@ -1119,7 +1265,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 			REQUIRE_EQ(unresolved.size(), 1);
 			CHECK(unresolved[0].begins_with(String(entry["representation"]) + "::"));
 			CHECK_MESSAGE(unresolved[0].contains(broken.expected_fragment), unresolved[0]);
@@ -1145,7 +1291,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 			REQUIRE_EQ(unresolved.size(), 1);
 			CHECK_MESSAGE(unresolved[0].contains("resolve to 0 cells"), unresolved[0]);
 		}
@@ -1169,7 +1315,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 			FSCompletenessCensusSummary summary;
 			REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 			const Vector<String> unresolved =
-					FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+					FSCompletenessCensus::unresolved_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 			REQUIRE_EQ(unresolved.size(), 1);
 			CHECK_MESSAGE(unresolved[0].contains("is not a repository-relative path"), unresolved[0]);
 		}
@@ -1188,7 +1334,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		FSCompletenessCensusSummary summary;
 		REQUIRE_EQ(load_staged_census(staged_root, summary, errors), OK);
 		const Vector<String> unresolved =
-				FSCompletenessCensus::unresolved_witnesses(staged_root, summary);
+				FSCompletenessCensus::unresolved_witnesses(staged_root, summary, FSCompletenessCensusScope::everything());
 		REQUIRE_EQ(unresolved.size(), 1);
 		CHECK_MESSAGE(unresolved[0].contains("declares no witness"), unresolved[0]);
 	}
@@ -1608,7 +1754,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		FSCompletenessCensusSummary summary;
 		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), summary, errors), OK);
 
-		const Dictionary report = FSCompletenessCensus::summary_report(summary);
+		const Dictionary report =
+				FSCompletenessCensus::summary_report(summary, FSCompletenessCensusScope::everything());
 		for (const String &member : FSCompletenessCensus::summary_count_members()) {
 			CAPTURE(member);
 			REQUIRE(report.has(member));
@@ -1629,11 +1776,97 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][Census]") {
 		FSCompletenessCensusSummary repeated_summary;
 		Vector<String> repeated_errors;
 		REQUIRE_EQ(FSCompletenessCensus::load(type_census_root(), repeated_summary, repeated_errors), OK);
-		CHECK_EQ(FSCompletenessCensus::summary_report(repeated_summary), report);
+		CHECK_EQ(FSCompletenessCensus::summary_report(repeated_summary, FSCompletenessCensusScope::everything()),
+				report);
+
+		// The scope the publishing consumer bound its claims under is part of the document, so a
+		// family-scoped census and a whole-catalog one are told apart by reading it.
+		const Vector<String> claimed = FSCompletenessCensus::claimed_families(summary);
+		REQUIRE_FALSE(claimed.is_empty());
+		CHECK_EQ(Variant(report["declared_families"]).get_type(), Variant::FLOAT);
+		CHECK_EQ(Variant(report["validated_families"]).get_type(), Variant::FLOAT);
+		CHECK_EQ(int(double(report["declared_families"])), claimed.size());
+		CHECK_EQ(int(double(report["validated_families"])), claimed.size());
+
+		const Dictionary scoped = FSCompletenessCensus::summary_report(
+				summary, FSCompletenessCensusScope::for_family(claimed[0]));
+		CHECK_EQ(int(double(scoped["declared_families"])), claimed.size());
+		CHECK_EQ(int(double(scoped["validated_families"])), 1);
+		// A family the census names no claim for validates none of them, and still says so.
+		const Dictionary unclaimed = FSCompletenessCensus::summary_report(
+				summary, FSCompletenessCensusScope::for_family("a_family_no_claim_names"));
+		CHECK_EQ(int(double(unclaimed["validated_families"])), 0);
 		String previous_key;
 		for (const FSCompletenessCoverageEntry &entry : summary.entries) {
 			CHECK(previous_key < entry.key());
 			previous_key = entry.key();
+		}
+	}
+
+	TEST_CASE("TypeCompleteness Census a family run answers for its own claims and no others") {
+		// Binding a family_case witness means resolving the family it names. A run publishes one
+		// family and has resolved exactly that one, so it answers for the claims that name it and
+		// leaves every other family's claims to that family's own run. Auditing the whole catalog is
+		// what the strict and scheduled tiers, and this suite, ask for explicitly.
+		TemporaryProjectTree tree(
+				vformat("type_completeness_census_scope_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String staged_root = stage_census_catalog(tree);
+		const String scratch_root = tree.root.path_join("scratch");
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(scratch_root), OK);
+
+		const String own_family = "union_destination_membership";
+		const String other_family = "wrapper_parity_assignment";
+		FSCompletenessRunOptions options;
+		options.catalog_root = staged_root;
+		options.family = own_family;
+		options.scratch_root = scratch_root;
+		options.report_path = scratch_root.path_join("report.json");
+
+		SUBCASE("a claim naming the running family is answered") {
+			write_staged_coverage(tree, coverage_with_broken_family_witness(own_family));
+
+			FSCompletenessRunResult result;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_FALSE(result.success);
+			CHECK_EQ(result.outcome, "structural_failure");
+			REQUIRE_EQ(result.structural_failures.size(), 1);
+			CHECK_EQ(result.structural_failures[0].stage,
+					FSCompletenessStructuralStage::CENSUS_WITNESS_UNRESOLVED);
+			CHECK_MESSAGE(result.structural_failures[0].detail.contains(own_family),
+					result.structural_failures[0].detail);
+		}
+
+		SUBCASE("a claim naming another family is left to that family's own run") {
+			write_staged_coverage(tree, coverage_with_broken_family_witness(other_family));
+
+			FSCompletenessRunResult result;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), OK);
+			CHECK(result.success);
+			CHECK_EQ(result.outcome, "passed");
+			CHECK(result.structural_failures.is_empty());
+
+			// The document says which question was asked, so a family-scoped census is never read as a
+			// whole-catalog one.
+			const Dictionary census = result.report["census"];
+			CHECK_EQ(int(double(census["validated_families"])), 1);
+			CHECK_GT(int(double(census["declared_families"])), 1);
+		}
+
+		SUBCASE("the same claim is answered when the run audits the whole census") {
+			write_staged_coverage(tree, coverage_with_broken_family_witness(other_family));
+			options.validate_full_census = true;
+
+			FSCompletenessRunResult result;
+			CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
+			CHECK_FALSE(result.success);
+			CHECK_EQ(result.outcome, "structural_failure");
+			REQUIRE_EQ(result.structural_failures.size(), 1);
+			CHECK_MESSAGE(result.structural_failures[0].detail.contains(other_family),
+					result.structural_failures[0].detail);
+
+			const Dictionary census = result.report["census"];
+			CHECK_EQ(int(double(census["validated_families"])), int(double(census["declared_families"])));
 		}
 	}
 

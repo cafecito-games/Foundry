@@ -1155,6 +1155,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		options.report_path = cli_parse.invocation.completeness_report;
 		options.surface = cli_parse.invocation.completeness_surface;
 		options.tier = cli_parse.invocation.completeness_tier;
+		options.validate_full_census = cli_parse.invocation.completeness_validate_census;
 		options.timeout_seconds = cli_parse.invocation.completeness_timeout_seconds;
 		status = FSTests::FSCompletenessCLI::run(options, &completeness_published_paths);
 		for (int i = 0; i < completeness_published_paths.size(); i++) {

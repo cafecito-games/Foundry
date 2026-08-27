@@ -13,7 +13,12 @@
       "id": "runtime_obligation",
       "outcomes": [
         "typed_destination_check",
-        "union_membership_check"
+        "union_membership_check",
+        "wrapper_construction_check",
+        "deferred_use_check",
+        "silent_destination_refusal",
+        "unchecked_destination",
+        "unclassified_rejection"
       ]
     },
     {
@@ -27,7 +32,8 @@
         "tuple_slot",
         "callable_slot",
         "nominal_instance",
-        "trait_witness"
+        "trait_witness",
+        "corrupted_carrier"
       ]
     },
     {

@@ -118,6 +118,31 @@ struct FSCompletenessCensusSummary {
 	int total() const;
 };
 
+// Which coverage claims one consumer is answerable for.
+//
+// Binding a `family_case` witness means resolving the family it names, and a run that publishes one
+// family has resolved exactly one matrix. Resolving every other family a witness mentions makes a
+// single-family run pay for claims that another family's own run already answers, which is the whole
+// difference between a per-family gate and a whole-catalog audit. A scope is therefore data on the
+// call rather than a mode inside the census: the strict and scheduled tiers, and the census tests,
+// ask for everything; the presubmit tier asks for the family it is running.
+//
+// Only `family_case` witnesses are ever narrowed. A doctest case and a tracked fixture belong to no
+// family and cost a registry lookup, so every scope binds them and no configuration can publish a
+// coverage claim of those kinds without confirming it.
+struct FSCompletenessCensusScope {
+	// Empty means every family. Otherwise a `family_case` witness is bound when it names one of these.
+	HashSet<String> families;
+	// True when this scope was asked for everything, which is not the same as a scope that happens to
+	// list every family the census currently names: the report has to say which question was asked.
+	bool exhaustive = true;
+
+	static FSCompletenessCensusScope everything();
+	static FSCompletenessCensusScope for_family(const String &p_family);
+
+	bool includes(const FSCompletenessCoverageWitness &p_witness) const;
+};
+
 // Loading, summarizing, and witness binding for the representation census. Consumers never read the
 // census documents themselves: a report producer that parsed them again could disagree with the
 // validator about what the census says while both looked correct in isolation.
@@ -131,9 +156,16 @@ public:
 	// mistaken for an absent one. Returns ERR_INVALID_DATA when any message was appended.
 	static Error load(const String &p_root, FSCompletenessCensusSummary &r_summary, Vector<String> &r_errors);
 
-	// The report document of a summary: one count per coverage status as a report number, and one
-	// record per entry, in summary order.
-	static Dictionary summary_report(const FSCompletenessCensusSummary &p_summary);
+	// The report document of a summary: one count per coverage status as a report number, one record
+	// per entry in summary order, and the scope the publishing consumer bound its witnesses under.
+	// `declared_families` counts the distinct families the census's own claims name and
+	// `validated_families` how many of them this consumer bound, so a family-scoped census and a whole
+	// catalog audit are told apart by the document rather than by knowing who wrote it.
+	static Dictionary summary_report(
+			const FSCompletenessCensusSummary &p_summary, const FSCompletenessCensusScope &p_scope);
+
+	// Every distinct family the summary's claims name, ascending.
+	static Vector<String> claimed_families(const FSCompletenessCensusSummary &p_summary);
 
 	// The count members a summary report carries, in status order. Named here rather than spelled by
 	// each consumer, so nothing can check a member the producer does not write.
@@ -147,15 +179,15 @@ public:
 	// One message per witness the census claims and that does not resolve: the witness of every
 	// `covered` cell, and every present negative witness an exemption stands on. An empty result is
 	// what lets a run publish the census as evidence.
-	static Vector<String> unresolved_witnesses(
-			const String &p_root, const FSCompletenessCensusSummary &p_summary);
+	static Vector<String> unresolved_witnesses(const String &p_root,
+			const FSCompletenessCensusSummary &p_summary, const FSCompletenessCensusScope &p_scope);
 
 	// One message per witness this configuration cannot bind because the configuration it declares is
 	// not the one running. Such a witness is never counted as unresolved - a build that does not
 	// compile a case learns nothing about whether the case exists - and never counted as confirmed
 	// either, so a consumer reports the claim as unconfirmed rather than as evidence.
-	static Vector<String> unconfirmable_witnesses(
-			const String &p_root, const FSCompletenessCensusSummary &p_summary);
+	static Vector<String> unconfirmable_witnesses(const String &p_root,
+			const FSCompletenessCensusSummary &p_summary, const FSCompletenessCensusScope &p_scope);
 
 	// True when p_witness declares a configuration this build is not. The declaration is the census
 	// document's, so the same catalog reads the same way in every build; only the verdict differs.

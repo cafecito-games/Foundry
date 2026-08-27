@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "recipe_id": "typed_array_store_drops_element_type",
+  "description": "OPCODE_ASSIGN_TYPED_ARRAY stores an untyped copy of the array it validated, so a container-element destination holds the right values in the wrong carrier. Nothing about the store is refused and the destination's descriptor is intact, so only reading the carrier back out of the destination notices.",
+  "escape_class": "corrupt_destination_carrier",
+  "expected_detectors": [
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "static_member",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "static_member",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "numeric_constant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "numeric_constant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "inferred",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "inferred",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "gradual",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "gradual",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "erased",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "erased",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "variant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "variant",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "nested_child",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "text"
+      },
+      "dimension": "stored_carrier"
+    },
+    {
+      "family": "wrapper_parity_assignment",
+      "case_coordinates": {
+        "destination": "container_element",
+        "source_proof": "nested_child",
+        "boundary": "assignment",
+        "census_child": "none",
+        "surface": "bytecode"
+      },
+      "dimension": "stored_carrier"
+    }
+  ]
+}

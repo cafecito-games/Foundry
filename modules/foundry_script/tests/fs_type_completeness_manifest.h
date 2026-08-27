@@ -57,6 +57,9 @@ struct FSCompletenessRelation {
 	Dictionary from;
 	Dictionary to;
 	Dictionary derive;
+	// Why the relation's cells measure what they measure, when that is not what the coordinates read
+	// like. Optional, and non-empty whenever it is present.
+	String rationale;
 };
 
 // One declared witness of an exception: an identity and the full coordinates of the cell that must

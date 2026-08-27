@@ -784,12 +784,15 @@ static String union_pilot_finding_record(const String &p_finding_id, const Strin
 static Error union_pilot_tracked_file_probe_error = OK;
 static int union_pilot_tracked_file_probe_exit_code = 0;
 static String union_pilot_tracked_file_probe_repository_root;
-static String union_pilot_tracked_file_probe_path;
+// Every path the probe was asked about, not only the last: the ledger is one directory for the whole
+// catalog, so a run validates the permanent test paths of every entry its family owns and a test that
+// pinned the last one would be asserting on which family filed a finding most recently.
+static Vector<String> union_pilot_tracked_file_probe_paths;
 
 static Error union_pilot_tracked_file_probe(const String &p_repository_root, const String &p_path,
 		String &r_output, int &r_exit_code) {
 	union_pilot_tracked_file_probe_repository_root = p_repository_root;
-	union_pilot_tracked_file_probe_path = p_path;
+	union_pilot_tracked_file_probe_paths.push_back(p_path);
 	r_output = String();
 	r_exit_code = union_pilot_tracked_file_probe_exit_code;
 	return union_pilot_tracked_file_probe_error;
@@ -934,8 +937,19 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			const Dictionary case_report = cases[i];
 			CHECK_FALSE(String(case_report.get("case_id", String())).is_empty());
 			CHECK_EQ(Dictionary(case_report.get("coordinates", Dictionary())).size(), 4);
-			CHECK_EQ(String(case_report.get("status", String())), "passed");
-			CHECK_EQ(bool(case_report.get("passed", false)), true);
+			// A clean run passes every cell this build could judge. One whose expectation this build
+			// cannot observe is published as not covered with its reason, which is a clean run too: the
+			// programs still ran and still produced what they were expected to.
+			const String unobservable = FSCompletenessRunner::unobservable_expectation_reason(
+					case_report.get("expected", Dictionary()));
+			if (unobservable.is_empty()) {
+				CHECK_EQ(String(case_report.get("status", String())), "passed");
+				CHECK_EQ(bool(case_report.get("passed", false)), true);
+			} else {
+				CHECK_EQ(String(case_report.get("status", String())), "not_covered");
+				CHECK_EQ(String(case_report.get("not_covered_reason", String())), unobservable);
+				CHECK_FALSE(bool(case_report.get("passed", true)));
+			}
 			CHECK_EQ(bool(case_report.get("runtime_passed", false)), true);
 			const String case_id = case_report.get("case_id", String());
 			const String surface = Dictionary(case_report.get("coordinates", Dictionary())).get("surface", String());
@@ -1899,6 +1913,25 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		options.report_path = tree.root.path_join("report.json");
 		options.observation_mutator = corrupt_union_pilot_witness_dimension;
 		FSCompletenessRunResult result;
+		// A build that cannot judge a runtime obligation does not report the corrupted cell against its
+		// expectation - that is the whole point of the distinction - but the two surfaces still have to
+		// agree with each other, and this mutation made only one of them report the corrupted value. So
+		// the regression surfaces there instead, which is evidence this build did gather.
+		Dictionary obligation_expectation;
+		obligation_expectation["runtime_obligation"] = "union_membership_check";
+		if (!FSCompletenessRunner::configuration_can_observe(obligation_expectation)) {
+			const Error unobservable_error = FSCompletenessRunner::run(options, result);
+			String reported;
+			for (const FSCompletenessFinding &finding : result.findings) {
+				reported += vformat(" | %s on %s", finding.dimension, finding.case_id);
+			}
+			CHECK_EQ(unobservable_error, FAILED);
+			REQUIRE_MESSAGE(result.findings.size() == 1, reported);
+			CHECK_EQ(result.findings[0].case_id, union_pilot_mutated_case_id);
+			CHECK_EQ(result.findings[0].dimension, FSCompletenessRunner::TEXT_BYTECODE_PARITY_DIMENSION);
+			CHECK(FileAccess::exists(options.report_path));
+			return;
+		}
 		CHECK_EQ(FSCompletenessRunner::run(options, result), FAILED);
 		REQUIRE_EQ(result.findings.size(), 1);
 		if (result.findings.size() != 1) {
@@ -2091,7 +2124,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		union_pilot_tracked_file_probe_error = ERR_CANT_FORK;
 		union_pilot_tracked_file_probe_exit_code = -1;
 		union_pilot_tracked_file_probe_repository_root.clear();
-		union_pilot_tracked_file_probe_path.clear();
+		union_pilot_tracked_file_probe_paths.clear();
 		FSCompletenessRunOptions options;
 		options.catalog_root = catalog_root;
 		options.family = "union_destination_membership";
@@ -2111,8 +2144,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		REQUIRE(filesystem.is_valid());
 		CHECK_EQ(union_pilot_tracked_file_probe_repository_root,
 				filesystem->get_current_dir().replace("\\", "/").simplify_path());
-		CHECK_EQ(union_pilot_tracked_file_probe_path,
-				"modules/foundry_script/tests/test_type_completeness_union_pilot.h");
+		CHECK(union_pilot_tracked_file_probe_paths.has(
+				"modules/foundry_script/tests/test_type_completeness_union_pilot.h"));
 		CHECK(warnings.messages.contains("Git tracked-file verification is unavailable"));
 		CHECK(warnings.messages.contains("accepting canonical existing test path"));
 	}
@@ -2139,7 +2172,7 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		union_pilot_tracked_file_probe_error = OK;
 		union_pilot_tracked_file_probe_exit_code = 1;
 		union_pilot_tracked_file_probe_repository_root.clear();
-		union_pilot_tracked_file_probe_path.clear();
+		union_pilot_tracked_file_probe_paths.clear();
 		FSCompletenessRunOptions options;
 		options.catalog_root = catalog_root;
 		options.family = "union_destination_membership";
@@ -2150,8 +2183,8 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 		UnionPilotWarningRecorder warnings;
 		CHECK_EQ(FSCompletenessRunner::run(options, result), ERR_INVALID_DATA);
 		CHECK(result.findings.is_empty());
-		CHECK_EQ(union_pilot_tracked_file_probe_path,
-				"modules/foundry_script/tests/test_type_completeness_union_pilot.h");
+		CHECK(union_pilot_tracked_file_probe_paths.has(
+				"modules/foundry_script/tests/test_type_completeness_union_pilot.h"));
 		CHECK_FALSE(warnings.messages.contains("Git tracked-file verification is unavailable"));
 	}
 
@@ -3015,7 +3048,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][UnionPilot]") {
 			const Dictionary case_report = cases[index];
 			const Dictionary coordinates = case_report["coordinates"];
 			CHECK_EQ(String(coordinates["surface"]), "text");
-			CHECK_EQ(String(case_report["status"]), "passed");
+			const String unobservable = FSCompletenessRunner::unobservable_expectation_reason(
+					Dictionary(case_report).get("expected", Dictionary()));
+			CHECK_EQ(String(case_report["status"]), unobservable.is_empty() ? "passed" : "not_covered");
 		}
 
 		// The exception declares a witness on the surface this run did not execute, so it is not

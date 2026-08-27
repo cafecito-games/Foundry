@@ -138,6 +138,7 @@ public:
 		String completeness_report;
 		String completeness_surface;
 		String completeness_tier;
+		bool completeness_validate_census = false;
 		int completeness_timeout_seconds = 0;
 
 		// `test completeness select` inputs: the file listing one changed repository path per

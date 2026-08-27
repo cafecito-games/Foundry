@@ -90,15 +90,30 @@ struct DestinationShape {
 	// program's own output would otherwise carry.
 	const char *unwrap_annotation;
 	const char *stored_carrier;
+	// A second value this destination admits and no other does, which is the only runtime evidence that
+	// an alternative or a nullable layer survived. Empty when the destination's shape is already
+	// visible in the transported value itself.
+	//
+	// The sibling is never stored into a local copy of the destination: it crosses the cell's own
+	// boundary, by the same route the source and the negative probe take, so a boundary that rejects
+	// null while accepting a uint cannot pass a cell that claims the nullable layer.
+	const char *sibling_expression;
+	// The token `readback_of` prints for an intact destination, read after the sibling has crossed
+	// where there is one and after the source has crossed where there is not.
+	const char *expected_readback;
 };
 
 static const DestinationShape destination_shapes[] = {
 	// A destination whose shape is the source's own shape takes the source expression straight across
 	// the boundary: nothing between the source proof and the boundary re-types the value, so the
 	// boundary under test is what performs the destination's check.
-	{ "plain", "uint", "0U", "", "SOURCE", "transported", "", "plain_destination" },
-	{ "union", "uint | String", "0U", "", "SOURCE", "transported", "", "admitting_alternative" },
-	{ "optional", "uint?", "null", "", "SOURCE", "transported", "", "optional_payload" },
+	{ "plain", "uint", "0U", "", "SOURCE", "transported", "", "plain_destination", "", "uint 5" },
+	// A union and a nullable admit a sibling value no other destination admits, and that admission is
+	// the only runtime evidence that the alternative or the nullable layer survived the boundary. The
+	// sibling crosses the same declared slot before it is read back.
+	{ "union", "uint | String", "0U", "", "SOURCE", "transported", "", "admitting_alternative",
+			"\"tag\"", "String tag" },
+	{ "optional", "uint?", "null", "", "SOURCE", "transported", "", "optional_payload", "null", "null" },
 	// A wrapper destination has to be built before it can cross a boundary, and the language admits no
 	// untyped carrier into a typed one: an `Array` is refused by an `Array[uint]` slot, and a raw
 	// `Box.new()` keeps no argument to check against. The destination's own check therefore happens
@@ -106,22 +121,24 @@ static const DestinationShape destination_shapes[] = {
 	// transports a value already of the destination type. `stored_carrier` and the descriptor are still
 	// read from the boundary's own slot, so a boundary that lost its record is still caught.
 	{ "container_element", "Array[uint]", "[] as Array[uint]", "var wrapped: Array[uint] = [SOURCE]",
-			"wrapped", "transported[0]", "", "element_slot" },
+			"wrapped", "transported[0]", "", "element_slot", "", "array true 39 1 uint 5" },
 	{ "generic_argument", "Box[uint]", "Box[uint].new()",
 			"var wrapped: Box[uint] = Box[uint].new()\nwrapped.value = SOURCE", "wrapped",
-			"transported.value", "", "reified_argument" },
+			"transported.value", "", "reified_argument", "", "box uint 5" },
 	{ "tuple_field", "(uint, String)", "(0U, \"\")", "var wrapped: (uint, String) = (SOURCE, \"tag\")",
-			"wrapped", "transported[0]", "", "tuple_slot" },
+			"wrapped", "transported[0]", "", "tuple_slot", "", "array false 0 2 uint 5" },
 	// The uint reaches a callable destination at the call, which happens after the boundary has
 	// transported the callable, so the source crosses this destination unwrapped.
 	{ "callable_slot", "Callable[[uint], Variant]", "Callable()",
 			"var wrapped: Callable[[uint], Variant] = identity_uint", "wrapped", "transported.call(SOURCE)",
-			"@warning_ignore(\"unsafe_call_argument\")", "callable_slot" },
+			"@warning_ignore(\"unsafe_call_argument\")", "callable_slot", "", "callable true 1" },
+	// A nominal destination and a trait destination hold different classes, so the token a readback
+	// prints tells the two witnesses apart instead of restating the coordinate that rendered them.
 	{ "nominal_class", "Carrier", "Carrier.new()",
 			"var wrapped: Carrier = Carrier.new()\nwrapped.value = SOURCE", "wrapped", "transported.value",
-			"", "nominal_instance" },
-	{ "trait", "HasValue", "Carrier.new()", "var wrapped: HasValue = Carrier.new()\nwrapped.value = SOURCE",
-			"wrapped", "transported.value", "", "trait_witness" },
+			"", "nominal_instance", "", "carrier uint 5" },
+	{ "trait", "HasValue", "Witness.new()", "var wrapped: HasValue = Witness.new()\nwrapped.value = SOURCE",
+			"wrapped", "transported.value", "", "trait_witness", "", "witness uint 5" },
 };
 
 // Where a boundary's own destination slot is recorded, and so where its descriptor is read back from.
@@ -161,7 +178,7 @@ static const BoundaryShape boundary_shapes[] = {
 	{ "return", "func produce(value: Variant) -> DESTINATION:\n\treturn value",
 			"var transported: DESTINATION = produce(BOUNDARY_VALUE)", SITE_FUNCTION_RETURN, "produce", "" },
 	{ "assignment", "", "var transported: DESTINATION = DEFAULT\ntransported = BOUNDARY_VALUE",
-			SITE_FUNCTION_LOCAL, "test", "transported" },
+			SITE_FUNCTION_LOCAL, "cross_primary", "transported" },
 	{ "member_store", "class Holder extends RefCounted:\n\tvar value: DESTINATION = DEFAULT",
 			"var holder := Holder.new()\nholder.value = BOUNDARY_VALUE\nvar transported: DESTINATION = holder.value",
 			SITE_CLASS_MEMBER, "Holder", "value" },
@@ -320,6 +337,12 @@ static const CensusWitnessShape *find_census_witness_shape(const String &p_leaf)
 // A typed container enforces exactly one element type at run time, so `Array[uint | String]` is not a
 // spellable slot. The pair is refused here rather than rendered into a program that cannot parse: a
 // coordinate the adapter cannot realize is a catalog defect, not an observation.
+//
+// `Array[uint?]` is spellable and is rendered, even though the language gives it no typed container -
+// it reports `is_typed() == false`, so its element store admits anything. That is a product defect
+// (https://github.com/cafecito-games/Foundry/issues/2515), and a defect is represented rather than
+// deleted: the cells stay in the matrix, expect the check the law requires, and fail as findings the
+// ledger classifies.
 static bool destination_crosses_boundary(const String &p_destination, const String &p_boundary) {
 	return !(p_destination == "union" && p_boundary == "container_element_store");
 }
@@ -362,6 +385,9 @@ static const char *wrapper_parity_preamble = R"FS(trait HasValue:
 class Carrier extends RefCounted:
 	uses HasValue
 
+class Witness extends RefCounted:
+	uses HasValue
+
 class Box[T] extends RefCounted:
 	var value: T
 
@@ -379,60 +405,216 @@ func carrier_of(value: Variant) -> String:
 		return "uint " + str(value)
 	if value is int:
 		return "int " + str(value)
+	if value is String:
+		return "String " + str(value)
 	return "other"
+
+func readback_of(value: Variant) -> String:
+	if value == null:
+		return "null"
+	if value is Box:
+		return "box " + carrier_of(value.value)
+	if value is Carrier:
+		return "carrier " + carrier_of(value.value)
+	if value is HasValue:
+		return "witness " + carrier_of(value.value)
+	if value is Callable:
+		return "callable " + str(value.is_valid()) + " " + str(value.get_argument_count())
+	if value is Array:
+		var head: String = "empty"
+		if value.size() > 0:
+			head = carrier_of(value[0])
+		return "array " + str(value.is_typed()) + " " + str(value.get_typed_builtin()) + " " + str(value.size()) + " " + head
+	return carrier_of(value)
 )FS";
 
-// The program one wrapper-parity cell observes. The value is carried through the boundary's own slot
-// and read back out of it, and the descriptor the observation inspects is that same slot, so a
-// boundary that lost its conversion or its check cannot be hidden by an intact declaration elsewhere.
-static String render_wrapper_parity_source(const DestinationShape &p_destination,
-		const BoundaryShape &p_boundary, const SourceProofShape &p_source_proof,
-		const CensusWitnessShape &p_census_witness) {
+// The expression a negative probe carries: a value no destination in the matrix can hold, routed
+// through the same gradual hop every unproven source uses so nothing rejects it before the boundary.
+static const char *negative_probe_expression = "supply(RefCounted.new())";
+
+// The document a probe is staged with. The probe's evidence is its status and what the destination
+// held afterwards, so this pins the status a checked boundary produces and nothing below it; the
+// rejection's wording is product text and is classified rather than compared.
+static const char *negative_probe_staged_document = "FS_TEST_RUNTIME_ERROR\n";
+
+// The token a readback prints for a value that is none of the shapes a destination in this matrix
+// holds, and therefore the mark of a boundary that admitted the probe value.
+static const char *negative_probe_admitted_token = "other";
+
+// Line a probe prints between building its wrapper and crossing its boundary, carrying the wrapper's
+// own readback. Five destinations admit no unwrapped value by language design, so their probe value
+// meets a typed slot while the wrapper is built - before the boundary under test runs. Without this
+// line a rejection there would be published as the boundary's own check, which is the one thing a
+// probe exists to establish. A destination whose wrapper never receives the probe value prints
+// `NEGATIVE_PROBE_CONSTRUCTION_SKIPPED` instead, so "no construction stage" and "construction refused
+// the value" are different observations rather than the same silence.
+static const char *NEGATIVE_PROBE_CONSTRUCTION_PREFIX = "construction ";
+static const char *NEGATIVE_PROBE_CONSTRUCTION_SKIPPED = "construction skipped";
+
+// Line a probe prints before it crosses, naming whether the boundary itself carries the probe value.
+// A callable destination is reached at the call, which happens after the boundary has transported the
+// callable, so no value a cell can send through that boundary is the one the destination checks.
+// Saying so is what keeps the rejection that eventually happens from being published as the
+// boundary's own check. The line records what was rendered rather than where execution reached, so it
+// is printed before the crossing and cannot be lost to an abort inside it.
+static const char *NEGATIVE_PROBE_BOUNDARY_PREFIX = "boundary ";
+static const char *NEGATIVE_PROBE_BOUNDARY_CARRIED = "boundary carried";
+static const char *NEGATIVE_PROBE_BOUNDARY_SKIPPED = "boundary skipped";
+
+// Which value a crossing carries, and therefore what it prints.
+enum BoundaryCrossing {
+	// The cell's own source. Prints the carrier the value kept, and the destination's readback when the
+	// destination has no sibling to expose its shape.
+	CROSSING_SOURCE,
+	// The sibling value only this destination admits. Prints the readback alone.
+	CROSSING_SIBLING,
+	// A value no destination in the matrix can hold. Prints where the wrapper stood, then what the
+	// destination held afterwards.
+	CROSSING_NEGATIVE,
+};
+
+// The name of the function one crossing is rendered into. Each crossing gets its own function because
+// a boundary's statements declare their own locals, so a second crossing in the same body could not
+// use them; separate functions are what let every value take the *same* route instead of one of them
+// being stored into a leftover local from another.
+static String boundary_crossing_function(BoundaryCrossing p_crossing) {
+	return p_crossing == CROSSING_SIBLING ? "cross_sibling" : "cross_primary";
+}
+
+// One value crossing one boundary into one destination, and nothing else.
+//
+// Every value a cell observes goes through this: the source, the sibling that exposes a nullable or
+// union destination's shape, and the negative probe. They differ only in the expression handed in and
+// in what is printed at the end, so no value can reach a destination by a route the others do not
+// take - which is what makes a readback evidence about the boundary the cell names rather than about
+// a local copy of its type.
+static String render_boundary_crossing(const DestinationShape &p_destination,
+		const BoundaryShape &p_boundary, const String &p_value_expression, BoundaryCrossing p_crossing) {
 	const String destination_type = p_destination.type_spelling;
 	const String default_expression = p_destination.default_expression;
 	auto substitute = [&](const String &p_text) {
 		return p_text.replace("DESTINATION", destination_type).replace("DEFAULT", default_expression);
 	};
 
-	String source = wrapper_parity_preamble;
-	const String declarations = substitute(p_boundary.declarations);
-	if (!declarations.is_empty()) {
-		source += "\n" + declarations + "\n";
+	String body;
+	if (p_crossing != CROSSING_SIBLING) {
+		// The declared sources every source proof reads from. A sibling carries a literal, so it needs
+		// none of them.
+		body += "var typed_source: uint = 5U\n"
+				"var variant_source: Variant = 5U\n"
+				"var inferred_source := 5U\n"
+				"var nested_source: Array = [5U]\n"
+				"var _source_witnesses: Variant = [typed_source, variant_source, inferred_source, "
+				"nested_source]\n";
 	}
-	const String census_declarations = p_census_witness.declarations;
-	if (!census_declarations.is_empty()) {
-		source += "\n" + census_declarations + "\n";
-	}
-
-	const String boundary_value =
-			String(p_destination.boundary_value).replace("SOURCE", p_source_proof.wrapper_expression);
-	String body = "var typed_source: uint = 5U\n"
-				  "var variant_source: Variant = 5U\n"
-				  "var inferred_source := 5U\n"
-				  "var nested_source: Array = [5U]\n"
-				  "var _source_witnesses: Variant = [typed_source, variant_source, inferred_source, "
-				  "nested_source]\n";
-	const String source_expression = p_source_proof.wrapper_expression;
 	const String wrap_statements =
-			String(p_destination.wrap_statements).replace("SOURCE", source_expression);
+			String(p_destination.wrap_statements).replace("SOURCE", p_value_expression);
 	if (!wrap_statements.is_empty()) {
 		body += wrap_statements + "\n";
 	}
+	if (p_crossing == CROSSING_NEGATIVE) {
+		// Only a wrapper the probe value actually passes through can refuse it, so a wrapper built
+		// without the source reports the stage as skipped rather than as an intact wrapper.
+		body += String(p_destination.wrap_statements).contains("SOURCE")
+				? vformat("print(\"%s\" + readback_of(wrapped))\n", NEGATIVE_PROBE_CONSTRUCTION_PREFIX)
+				: vformat("print(\"%s\")\n", NEGATIVE_PROBE_CONSTRUCTION_SKIPPED);
+	}
+	const String boundary_value =
+			String(p_destination.boundary_value).replace("SOURCE", p_value_expression);
+	if (p_crossing == CROSSING_NEGATIVE) {
+		body += vformat("print(\"%s\")\n",
+				String(p_destination.boundary_value).contains("SOURCE") ? NEGATIVE_PROBE_BOUNDARY_CARRIED
+																		: NEGATIVE_PROBE_BOUNDARY_SKIPPED);
+	}
 	body += substitute(p_boundary.statements).replace("BOUNDARY_VALUE", boundary_value) + "\n";
-	const String census_use = p_census_witness.use_statement;
-	if (!census_use.is_empty()) {
-		body += census_use + "\n";
+	if (p_crossing == CROSSING_SIBLING) {
+		body += "print(readback_of(transported))";
+		return body;
 	}
 	const String unwrap_annotation = p_destination.unwrap_annotation;
 	if (!unwrap_annotation.is_empty()) {
 		body += unwrap_annotation + "\n";
 	}
 	body += vformat("var stored: Variant = %s\n",
-			String(p_destination.unwrap_expression).replace("SOURCE", source_expression));
+			String(p_destination.unwrap_expression).replace("SOURCE", p_value_expression));
+	if (p_crossing == CROSSING_NEGATIVE) {
+		body += "print(readback_of(stored))";
+		return body;
+	}
 	body += "print(carrier_of(stored))";
+	// A destination with a sibling reads back after the sibling has crossed, not here.
+	if (String(p_destination.sibling_expression).is_empty()) {
+		body += "\nprint(readback_of(transported))";
+	}
+	return body;
+}
 
-	source += "\nfunc test() -> void:\n" + indent_block(body);
+// The program one wrapper-parity cell observes. The value is carried through the boundary's own slot
+// and read back out of it, and the descriptor the observation inspects is that same slot, so a
+// boundary that lost its conversion or its check cannot be hidden by an intact declaration elsewhere.
+//
+// `p_negative_probe` renders the rejecting half of the same cell: the same declarations, the same
+// wrapper, and the same boundary, fed the probe expression instead of the cell's source. It ends on
+// the readback of the value that crossed, so a boundary that refused the probe silently and one that
+// admitted it are told apart by what the destination holds rather than by the absence of an error.
+static String render_wrapper_parity_source(const DestinationShape &p_destination,
+		const BoundaryShape &p_boundary, const SourceProofShape &p_source_proof,
+		const CensusWitnessShape &p_census_witness, bool p_negative_probe = false) {
+	const String destination_type = p_destination.type_spelling;
+	const String default_expression = p_destination.default_expression;
+
+	String source = wrapper_parity_preamble;
+	const String declarations = String(p_boundary.declarations)
+										.replace("DESTINATION", destination_type)
+										.replace("DEFAULT", default_expression);
+	if (!declarations.is_empty()) {
+		source += "\n" + declarations + "\n";
+	}
+	// A probe measures the boundary, never a census child, so it carries none of the declarations a
+	// census witness needs. That also makes every probe of one destination and boundary identical
+	// whatever cell rendered it, which is what lets the batch stage and run it once.
+	const String census_declarations = p_negative_probe ? String() : String(p_census_witness.declarations);
+	if (!census_declarations.is_empty()) {
+		source += "\n" + census_declarations + "\n";
+	}
+
+	const String source_expression =
+			p_negative_probe ? String(negative_probe_expression) : String(p_source_proof.wrapper_expression);
+	const BoundaryCrossing primary = p_negative_probe ? CROSSING_NEGATIVE : CROSSING_SOURCE;
+	source += vformat("\nfunc %s() -> void:\n", boundary_crossing_function(primary)) +
+			indent_block(render_boundary_crossing(p_destination, p_boundary, source_expression, primary));
+
+	const String sibling_expression =
+			p_negative_probe ? String() : String(p_destination.sibling_expression);
+	if (!sibling_expression.is_empty()) {
+		source += vformat("\nfunc %s() -> void:\n", boundary_crossing_function(CROSSING_SIBLING)) +
+				indent_block(render_boundary_crossing(
+						p_destination, p_boundary, sibling_expression, CROSSING_SIBLING));
+	}
+
+	String test_body = vformat("%s()\n", boundary_crossing_function(primary));
+	const String census_use = p_negative_probe ? String() : String(p_census_witness.use_statement);
+	if (!census_use.is_empty()) {
+		test_body += census_use + "\n";
+	}
+	if (!sibling_expression.is_empty()) {
+		test_body += vformat("%s()", boundary_crossing_function(CROSSING_SIBLING));
+	}
+	source += "\nfunc test() -> void:\n" + indent_block(test_body.trim_suffix("\n"));
 	return source;
+}
+
+// The expected document of one wrapper-parity cell: the carrier the value kept across the boundary,
+// then the destination's own readback token.
+static String wrapper_parity_expected_output(const DestinationShape &p_destination) {
+	return vformat("uint 5\n%s\n", p_destination.expected_readback);
+}
+
+// The identity of one probe. Two cells that differ only in their source proof or their census child
+// render byte-identical probes, so the key names what the probe actually depends on and the batch
+// stages and runs it once.
+static String negative_probe_key(const String &p_destination, const String &p_boundary) {
+	return vformat("probe_%s_%s", p_destination, p_boundary);
 }
 
 static const char *DIAGNOSTIC_SEVERITY_ERROR = "error";
@@ -1681,6 +1863,84 @@ static String observe_census_child(const Ref<FoundryScript> &p_inspected,
 	return parser_census_evidence(p_analyzed_tree, p_census_child);
 }
 
+// Rejection forms a typed destination produces. Only the form is recognized, never the wording: a
+// rejection the table does not know falls to `unclassified_rejection`, which no manifest expects, so
+// a reworded diagnostic surfaces as a finding instead of being read as either kind of check.
+static const char *typed_rejection_forms[] = {
+	"Trying to assign value of type",
+	"Trying to assign a value of type",
+	"Trying to return value of type",
+	"Attempted to set a variable of type",
+	"Attempted to assign a variable of type",
+	"Invalid assignment of property or key",
+	"but the parameter requires",
+};
+
+static const char *union_membership_rejection_form = "none of the alternatives";
+
+// What the boundary did with a value its destination cannot hold. This is the whole reason the probe
+// exists: a destination descriptor still names its type when the check that enforces it is gone, so
+// only the probe separates a boundary that checks from one that silently drops the store and one that
+// silently takes it.
+// The line a probe printed with p_prefix, or an empty string when the program never reached it.
+static String negative_probe_stage_line(const String &p_output, const char *p_prefix) {
+	for (const String &line : p_output.split("\n", false)) {
+		if (line.begins_with(p_prefix)) {
+			return line;
+		}
+	}
+	return String();
+}
+
+static String classify_negative_probe(const String &p_status, const String &p_output) {
+	if (p_status == "ok") {
+		return p_output.contains(negative_probe_admitted_token) ? "unchecked_destination"
+																: "silent_destination_refusal";
+	}
+	if (p_status != "runtime_error") {
+		return "unclassified_rejection";
+	}
+	// A wrapper that never took the probe value is what refused it, whether it said so and carried on
+	// or aborted the program before the line could print. Either way the boundary under test never saw
+	// the value, so the rejection is reported as the wrapper's and not as the boundary's.
+	const String construction = negative_probe_stage_line(p_output, NEGATIVE_PROBE_CONSTRUCTION_PREFIX);
+	if (construction != NEGATIVE_PROBE_CONSTRUCTION_SKIPPED &&
+			(construction.is_empty() || !construction.contains(negative_probe_admitted_token))) {
+		return "wrapper_construction_check";
+	}
+	// The boundary never carried the probe value either, so whatever refused it did so after the
+	// crossing, where the destination is first asked to hold it. The two lines are what tell that apart
+	// from a boundary that did carry the value and refused it.
+	const String boundary = negative_probe_stage_line(p_output, NEGATIVE_PROBE_BOUNDARY_PREFIX);
+	if (boundary.is_empty()) {
+		return "wrapper_construction_check";
+	}
+	if (boundary == NEGATIVE_PROBE_BOUNDARY_SKIPPED) {
+		return "deferred_use_check";
+	}
+	if (p_output.contains(union_membership_rejection_form)) {
+		return "union_membership_check";
+	}
+	for (const char *form : typed_rejection_forms) {
+		if (p_output.contains(form)) {
+			return "typed_destination_check";
+		}
+	}
+	return "unclassified_rejection";
+}
+
+// The carrier a readback token names, decided by the token the program printed rather than by the
+// coordinate that rendered it. A token no destination in the matrix produces is reported as its own
+// outcome, so a store that landed in a shape nothing declares is a finding rather than a silent pass.
+static String carrier_for_readback_token(const String &p_token) {
+	for (const DestinationShape &shape : destination_shapes) {
+		if (p_token == shape.expected_readback) {
+			return shape.stored_carrier;
+		}
+	}
+	return "corrupted_carrier";
+}
+
 static String extract_program_output(const FSTestRunner::FixtureOutcome &p_outcome) {
 	const String status_line = "FS_TEST_OK\n";
 	if (p_outcome.output.begins_with(status_line)) {
@@ -1871,7 +2131,11 @@ Error FSDestinationWrapperAdapter::render(
 		wrapper_program.coordinates = p_cell.coordinates.duplicate();
 		wrapper_program.source = render_wrapper_parity_source(
 				*destination_shape, *boundary_shape, *source_proof_shape, *census_witness_shape);
-		wrapper_program.expected_output = "uint 5\n";
+		wrapper_program.expected_output = wrapper_parity_expected_output(*destination_shape);
+		wrapper_program.negative_probe.key = negative_probe_key(destination, boundary);
+		wrapper_program.negative_probe.source = render_wrapper_parity_source(
+				*destination_shape, *boundary_shape, *source_proof_shape, *census_witness_shape, true);
+		wrapper_program.negative_probe.staged_document = negative_probe_staged_document;
 		r_program = wrapper_program;
 		return OK;
 	}
@@ -2075,12 +2339,26 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 	}
 
 	const String produced_output = observation.produced_output;
-	const PackedStringArray output_tokens = produced_output.strip_edges().split(" ", false);
-	if (output_tokens.size() != 2 || output_tokens[0] != "uint" || output_tokens[1] != "5" ||
-			produced_output != "uint 5\n") {
-		observation.diagnostics.push_back(
-				vformat("Runtime output does not expose the expected uint carrier: '%s'.", produced_output));
-		return observation;
+	String readback_token;
+	if (coordinates.names_census_child) {
+		// Two lines: the carrier the value kept across the boundary, then the destination's own
+		// readback. The second line is where `stored_carrier` comes from, so it is read out of the
+		// output rather than compared against the coordinate that rendered it.
+		const PackedStringArray output_lines = produced_output.split("\n", false);
+		if (output_lines.size() != 2 || output_lines[0] != "uint 5" || !produced_output.ends_with("\n")) {
+			observation.diagnostics.push_back(vformat(
+					"Runtime output does not expose a carrier line and a readback line: '%s'.", produced_output));
+			return observation;
+		}
+		readback_token = output_lines[1];
+	} else {
+		const PackedStringArray output_tokens = produced_output.strip_edges().split(" ", false);
+		if (output_tokens.size() != 2 || output_tokens[0] != "uint" || output_tokens[1] != "5" ||
+				produced_output != "uint 5\n") {
+			observation.diagnostics.push_back(
+					vformat("Runtime output does not expose the expected uint carrier: '%s'.", produced_output));
+			return observation;
+		}
 	}
 
 	const SourceProofShape *source_proof_shape = find_source_proof_shape(source_proof);
@@ -2091,16 +2369,29 @@ static FSCompletenessObservation inspect_runtime_contract_body(
 		return observation;
 	}
 	if (coordinates.names_census_child) {
-		// Both dimensions are read back from the boundary's own destination rather than derived from
-		// the coordinates: a boundary that lost its wrapper reports a different carrier here, and a
-		// destination that stopped being a set reports a different obligation.
-		observation.dimensions["stored_carrier"] = descriptor_evidence.carrier;
-		if (source_proof_shape->unproven) {
-			observation.dimensions["runtime_obligation"] = descriptor_evidence.site_is_union ||
-							descriptor_evidence.carrier == "admitting_alternative"
-					? "union_membership_check"
-					: "typed_destination_check";
+		// Both dimensions come from what the two programs of this cell did, never from the descriptor
+		// the boundary's slot carries: the descriptor survives a lost check, so reading either from it
+		// would report agreement for a boundary that no longer enforces anything.
+		const String observed_carrier = carrier_for_readback_token(readback_token);
+		observation.dimensions["stored_carrier"] = observed_carrier;
+		// The descriptor is still inspected, and is still expected to agree with what the store did.
+		// Now that no dimension is read from it, this is the only thing left holding a lost or altered
+		// destination record against the behavior of the boundary that owns it.
+		if (!descriptor_evidence.carrier.is_empty() && descriptor_evidence.carrier != observed_carrier) {
+			observation.diagnostics.push_back(
+					vformat("Destination descriptor reports carrier '%s' but the store read back '%s'.",
+							descriptor_evidence.carrier, observed_carrier));
 		}
+
+		const Variant probe_status = p_runtime_context.get("negative_probe_status", Variant());
+		const Variant probe_output = p_runtime_context.get("negative_probe_output", Variant());
+		if (probe_status.get_type() != Variant::STRING || probe_output.get_type() != Variant::STRING) {
+			observation.diagnostics.push_back("Negative probe evidence is unavailable.");
+			r_structural_error = ERR_INVALID_DATA;
+			return observation;
+		}
+		observation.dimensions["runtime_obligation"] =
+				classify_negative_probe(String(probe_status), String(probe_output));
 	} else {
 		if (source_proof_shape->unproven) {
 			observation.dimensions["runtime_obligation"] =
@@ -2172,6 +2463,13 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 		String text_id;
 		String bytecode_id;
 	};
+	// What one probe did, as the runner reported it. The status separates a rejection from a boundary
+	// that raised nothing, and the output carries both the rejection's form and what the destination
+	// held afterwards.
+	struct ProbeVerdict {
+		String status;
+		String output;
+	};
 	HashMap<String, SemanticPair> pairs;
 	// The family every case ID in this batch must be canonical under. A rendered program carries no
 	// family, so the first program decides which of the adapter's families the batch belongs to and
@@ -2183,6 +2481,12 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 	HashMap<String, String> case_id_surfaces;
 	HashMap<String, FSCompletenessProgram> text_programs;
 	HashMap<String, FSCompletenessProgram> bytecode_programs;
+	// Probe key to the program it stages, per surface. Cells that differ only in a source proof or a
+	// census child render byte-identical probes; staging one of them once keeps a probe per boundary
+	// and destination rather than a probe per cell.
+	HashMap<String, String> text_probes;
+	HashMap<String, String> bytecode_probes;
+	HashMap<String, String> probe_documents;
 	for (const FSCompletenessProgram &program : p_programs) {
 		if (!is_safe_case_id(program.case_id) || program.source.is_empty()) {
 			return ERR_INVALID_DATA;
@@ -2239,6 +2543,24 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 			pair->bytecode_id = program.case_id;
 			bytecode_programs[program.case_id] = program;
 		}
+
+		if (program.negative_probe.is_empty()) {
+			continue;
+		}
+		if (!is_safe_case_id(program.negative_probe.key) ||
+				program.negative_probe.staged_document.is_empty()) {
+			return ERR_INVALID_DATA;
+		}
+		HashMap<String, String> &surface_probes = surface == "text" ? text_probes : bytecode_probes;
+		String *existing = surface_probes.getptr(program.negative_probe.key);
+		if (existing == nullptr) {
+			surface_probes.insert(program.negative_probe.key, program.negative_probe.source);
+		} else if (*existing != program.negative_probe.source) {
+			// Two cells claim one probe identity with two different programs. Running either would
+			// classify the other's boundary from evidence it never produced.
+			return ERR_INVALID_DATA;
+		}
+		probe_documents[program.negative_probe.key] = program.negative_probe.staged_document;
 	}
 	// The absolute size of the matrix is the manifest domain's business and is checked by the runner
 	// against the resolved cells; here only that every program was filed under a surface is enforced.
@@ -2276,6 +2598,35 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 		expected_files.insert(program.surface.path_join(program.case_id + ".fs"));
 		expected_files.insert(program.surface.path_join(program.case_id + ".out"));
 	}
+	// One staged probe: which surface runs it, the identity its files are named after, and the program
+	// and document those files carry. Built once and walked twice, so preflight, staging, and the
+	// staging whitelist can never disagree about which files a run owns.
+	struct StagedProbe {
+		String surface;
+		String key;
+		String source;
+		String document;
+	};
+	Vector<StagedProbe> staged_probes;
+	for (const String &probe_surface : { String("text"), String("bytecode") }) {
+		const HashMap<String, String> &surface_probes =
+				probe_surface == "text" ? text_probes : bytecode_probes;
+		Vector<String> keys;
+		for (const KeyValue<String, String> &probe : surface_probes) {
+			keys.push_back(probe.key);
+		}
+		keys.sort();
+		for (const String &key : keys) {
+			staged_probes.push_back({ probe_surface, key, surface_probes[key], probe_documents[key] });
+		}
+	}
+	for (const StagedProbe &probe : staged_probes) {
+		const String surface_root = probe.surface == "text" ? text_root : bytecode_root;
+		destinations.push_back({ surface_root.path_join(probe.key + ".fs"), RUNTIME_DESTINATION_FILE });
+		destinations.push_back({ surface_root.path_join(probe.key + ".out"), RUNTIME_DESTINATION_FILE });
+		expected_files.insert(probe.surface.path_join(probe.key + ".fs"));
+		expected_files.insert(probe.surface.path_join(probe.key + ".out"));
+	}
 	for (const RuntimeDestination &destination : destinations) {
 		error = preflight_runtime_destination(invocation.get_path(), destination);
 		if (error != OK) {
@@ -2303,6 +2654,16 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 			return error;
 		}
 	}
+	for (const StagedProbe &probe : staged_probes) {
+		const String surface_root = probe.surface == "text" ? text_root : bytecode_root;
+		error = write_runtime_file_exclusive(surface_root.path_join(probe.key + ".fs"), probe.source);
+		if (error == OK) {
+			error = write_runtime_file_exclusive(surface_root.path_join(probe.key + ".out"), probe.document);
+		}
+		if (error != OK) {
+			return error;
+		}
+	}
 	error = validate_runtime_staging_whitelist(invocation.get_path(), expected_files);
 	if (error != OK) {
 		return error;
@@ -2311,6 +2672,7 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 	FSCompletenessRuntimeBatch completed;
 	auto execute_surface = [&](const String &p_surface, const String &p_root,
 								   const HashMap<String, FSCompletenessProgram> &p_surface_programs,
+								   const HashMap<String, String> &p_surface_probes,
 								   HashMap<String, FSCompletenessRuntimeResult> &r_results) -> Error {
 		const bool compiled_bytecode = p_surface == "bytecode";
 		FSTestRunner runner(p_root, true, false, false, compiled_bytecode);
@@ -2319,15 +2681,39 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 		if (!setup_ok) {
 			return ERR_CANT_OPEN;
 		}
-		if (outcomes.size() != p_surface_programs.size()) {
+		if (outcomes.size() != p_surface_programs.size() + p_surface_probes.size()) {
 			return ERR_INVALID_DATA;
 		}
+		// Probes are read in full before any cell is classified: a cell's runtime obligation is the
+		// verdict of its own probe, and a probe that never ran is a structural failure rather than an
+		// absent dimension.
+		HashMap<String, ProbeVerdict> probe_verdicts;
+		for (const FSTestRunner::FixtureOutcome &outcome : outcomes) {
+			if (outcome.pass != p_surface || outcome.path.get_extension().to_lower() != "fs") {
+				return ERR_INVALID_DATA;
+			}
+			const String identity = outcome.path.get_file().get_basename();
+			if (!p_surface_probes.has(identity)) {
+				continue;
+			}
+			if (probe_verdicts.has(identity)) {
+				return ERR_INVALID_DATA;
+			}
+			probe_verdicts.insert(identity, { outcome.status, outcome.output });
+		}
+		if (probe_verdicts.size() != p_surface_probes.size()) {
+			return ERR_INVALID_DATA;
+		}
+
 		HashSet<String> observed_ids;
 		for (const FSTestRunner::FixtureOutcome &outcome : outcomes) {
 			if (outcome.pass != p_surface || outcome.path.get_extension().to_lower() != "fs") {
 				return ERR_INVALID_DATA;
 			}
 			const String case_id = outcome.path.get_file().get_basename();
+			if (p_surface_probes.has(case_id)) {
+				continue;
+			}
 			const FSCompletenessProgram *program = p_surface_programs.getptr(case_id);
 			if (program == nullptr || observed_ids.has(case_id)) {
 				return ERR_INVALID_DATA;
@@ -2340,6 +2726,14 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 			const String produced_output = extract_program_output(outcome);
 			Dictionary runtime_context;
 			runtime_context["produced_output"] = produced_output;
+			if (!program->negative_probe.is_empty()) {
+				const ProbeVerdict *verdict = probe_verdicts.getptr(program->negative_probe.key);
+				if (verdict == nullptr) {
+					return ERR_INVALID_DATA;
+				}
+				runtime_context["negative_probe_status"] = verdict->status;
+				runtime_context["negative_probe_output"] = verdict->output;
+			}
 			Error inspection_error = OK;
 			FSCompletenessObservation observation =
 					inspect_runtime_contract_internal(*program, runtime_context, inspection_error);
@@ -2356,11 +2750,11 @@ Error FSDestinationWrapperAdapter::execute(const String &p_scratch_root,
 		return observed_ids.size() == p_surface_programs.size() ? OK : ERR_INVALID_DATA;
 	};
 
-	error = execute_surface("text", text_root, text_programs, completed.text);
+	error = execute_surface("text", text_root, text_programs, text_probes, completed.text);
 	if (error != OK) {
 		return error;
 	}
-	error = execute_surface("bytecode", bytecode_root, bytecode_programs, completed.bytecode);
+	error = execute_surface("bytecode", bytecode_root, bytecode_programs, bytecode_probes, completed.bytecode);
 	if (error != OK) {
 		return error;
 	}

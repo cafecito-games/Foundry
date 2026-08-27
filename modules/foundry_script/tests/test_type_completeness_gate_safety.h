@@ -240,6 +240,21 @@ static Dictionary gate_safety_case_report(const Dictionary &p_report, const Stri
 	return Dictionary();
 }
 
+// Several gate scenarios are decided by a witness's runtime obligation. A build without the
+// destination's dynamic type checks decides none of them - it cannot tell a boundary that lost its
+// check from one it never compiled - so those cases would assert on the configuration rather than on
+// the gate. Asked once here, from the one place that answers it.
+static bool gate_safety_skips_runtime_obligation_scenario() {
+	Dictionary expectation;
+	expectation["runtime_obligation"] = "union_membership_check";
+	if (FSCompletenessRunner::configuration_can_observe(expectation)) {
+		return false;
+	}
+	Completeness::fs_completeness_skip(
+			"the gate's witness is judged on a runtime obligation this build cannot observe");
+	return true;
+}
+
 TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 	TEST_CASE("TypeCompleteness GateSafety separates product mismatches from structural failures") {
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
@@ -326,7 +341,70 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 		CHECK_EQ(Dictionary(json.get_data()), report);
 	}
 
+	TEST_CASE("TypeCompleteness GateSafety reads only its own family's ledger entries") {
+		// The ledger is one directory for the whole catalog, so it carries entries of every family. An
+		// entry naming another family is not this run's to reconcile and must not stop it; a malformed
+		// entry is still a refusal whichever family it names.
+		TemporaryProjectTree tree(
+				vformat("type_completeness_gate_foreign_ledger_%d", OS::get_singleton()->get_process_id()));
+		REQUIRE(tree.is_valid());
+		const String catalog_root = stage_union_pilot_completeness_catalog(tree);
+		const String foreign_id = "fstcf-v1-foreign-family-entry";
+		tree.write_file("catalog/findings/" + foreign_id + ".json", vformat(R"JSON({
+	"schema_version": 1,
+	"finding_id": "%s",
+	"case_id": "fstc-v1-a-case-of-another-family",
+	"family": "wrapper_parity_assignment",
+	"dimension": "runtime_obligation",
+	"classification": "product_defect",
+	"issue_url": "https://example.invalid/issues/1",
+	"closure_packet_url": "https://example.invalid/closure/1",
+	"permanent_test_paths": ["modules/foundry_script/tests/test_type_completeness_gate_safety.h"]
+}
+)JSON",
+																			foreign_id));
+
+		FSCompletenessRunOptions options;
+		options.catalog_root = catalog_root;
+		options.family = "union_destination_membership";
+		options.scratch_root = tree.root;
+		options.report_path = tree.root.path_join("report.json");
+		FSCompletenessRunResult result;
+		CHECK_EQ(FSCompletenessRunner::run(options, result), OK);
+		CHECK(result.success);
+		CHECK_EQ(result.outcome, "passed");
+		// It is skipped, not adopted: nothing in this run's ledger report names it.
+		const Dictionary ledger = result.report.get("ledger", Dictionary());
+		const Array reconciled = ledger.get("reconciled", Array());
+		for (int index = 0; index < reconciled.size(); index++) {
+			CHECK_NE(String(Dictionary(reconciled[index]).get("finding_id", String())), foreign_id);
+		}
+		CHECK(Array(ledger.get("stale", Array())).is_empty());
+
+		// Ownership is what is scoped, never validity: an entry of another family that is malformed is
+		// refused exactly as one of this family would be.
+		tree.write_file("catalog/findings/" + foreign_id + ".json", vformat(R"JSON({
+	"schema_version": 1,
+	"finding_id": "%s",
+	"case_id": "fstc-v1-a-case-of-another-family",
+	"family": "wrapper_parity_assignment",
+	"dimension": "runtime_obligation",
+	"classification": "product_defect",
+	"issue_url": "not-a-url",
+	"closure_packet_url": "https://example.invalid/closure/1",
+	"permanent_test_paths": ["modules/foundry_script/tests/test_type_completeness_gate_safety.h"]
+}
+)JSON",
+																			foreign_id));
+		FSCompletenessRunResult refused;
+		CHECK_NE(FSCompletenessRunner::run(options, refused), OK);
+		CHECK_FALSE(refused.success);
+	}
+
 	TEST_CASE("TypeCompleteness GateSafety keeps a classified failing witness blocking and unwitnessed") {
+		if (gate_safety_skips_runtime_obligation_scenario()) {
+			return;
+		}
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		union_pilot_mutated_case_id =
 				gate_safety_witness_case_id(resolution, "text_gradual_argument_binding");
@@ -387,6 +465,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 	// Assertion-only: the clean run it needs is the shared baseline, so the matrix is not executed
 	// again just to read its report.
 	TEST_CASE("TypeCompleteness GateSafety reports every exception witnessed on a clean run") {
+		if (gate_safety_skips_runtime_obligation_scenario()) {
+			return;
+		}
 		const FSCompletenessRunResult *baseline =
 				FSCompletenessBaseline::shared_or_skip("union_destination_membership");
 		if (baseline == nullptr) {
@@ -1139,6 +1220,9 @@ TEST_SUITE("[Modules][FoundryScript][TypeCompleteness][GateSafety]") {
 	}
 
 	TEST_CASE("TypeCompleteness GateSafety unwitnesses an exception when only the paired surface fails") {
+		if (gate_safety_skips_runtime_obligation_scenario()) {
+			return;
+		}
 		const FSCompletenessResolution resolution = load_union_pilot_completeness_resolution();
 		const String witness_case_id =
 				gate_safety_witness_case_id(resolution, "text_gradual_argument_binding");

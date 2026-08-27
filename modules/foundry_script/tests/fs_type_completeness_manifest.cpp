@@ -265,7 +265,8 @@ static void parse_relations(const Array &p_records, FSCompletenessManifest &r_ma
 		if (!require_dictionary(p_records[i], record_path, object, r_errors)) {
 			continue;
 		}
-		validate_allowed_fields(object, Vector<String>({ "id", "from", "to", "derive" }), record_path, r_errors);
+		validate_allowed_fields(
+				object, Vector<String>({ "id", "from", "to", "derive", "rationale" }), record_path, r_errors);
 		FSCompletenessRelation record;
 		if (require_string(object, SNAME("id"), record_path + ".id", record.id, r_errors)) {
 			append_unique_id(record.id, record_path + ".id", r_ids, r_errors);
@@ -281,6 +282,14 @@ static void parse_relations(const Array &p_records, FSCompletenessManifest &r_ma
 		}
 		if (require_dictionary(object, SNAME("derive"), record_path + ".derive", record.derive, r_errors) && record.derive.is_empty()) {
 			append_error(r_errors, record_path + ".derive", "must be non-empty");
+		}
+		// Optional, and never empty when present: a relation whose cells measure something other than
+		// what its coordinates read like says so here rather than in a comment no loader can enforce.
+		if (object.has(SNAME("rationale"))) {
+			if (require_string(object, SNAME("rationale"), record_path + ".rationale", record.rationale, r_errors) &&
+					record.rationale.is_empty()) {
+				append_error(r_errors, record_path + ".rationale", "must be non-empty");
+			}
 		}
 		r_manifest.relations.push_back(record);
 	}

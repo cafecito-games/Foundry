@@ -144,15 +144,35 @@
 			"representation": "member_binding_descriptor",
 			"child_slot": "fixed",
 			"surface": "runtime_bytecode",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_member_store",
+				"coordinates": {
+					"boundary": "member_store",
+					"census_child": "member_binding_descriptor.fixed",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "bytecode"
+				}
+			}
 		},
 		{
 			"representation": "member_binding_descriptor",
 			"child_slot": "fixed",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2480"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_member_store",
+				"coordinates": {
+					"boundary": "member_store",
+					"census_child": "member_binding_descriptor.fixed",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "member_binding_descriptor",
@@ -221,8 +241,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "container_element_types",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_argument_binding",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"census_child": "parser_data_type.container_element_types",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -245,8 +275,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "enum_case_payload_field_names",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_reflective_write",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"census_child": "parser_data_type.enum_case_payload_field_names",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -269,8 +309,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "enum_case_payload_field_types",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_reflective_write",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"census_child": "parser_data_type.enum_case_payload_field_types",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -300,8 +350,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_parameter_types",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_argument_binding",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"census_child": "parser_data_type.method_parameter_types",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -331,8 +391,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_rest_parameter_type",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_member_store",
+				"coordinates": {
+					"boundary": "member_store",
+					"census_child": "parser_data_type.method_rest_parameter_type",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -362,8 +432,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "method_return_type",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_return",
+				"coordinates": {
+					"boundary": "return",
+					"census_child": "parser_data_type.method_return_type",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -393,8 +473,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "type_arguments",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_assignment",
+				"coordinates": {
+					"boundary": "assignment",
+					"census_child": "parser_data_type.type_arguments",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -417,8 +507,18 @@
 			"representation": "parser_data_type",
 			"child_slot": "type_parameter_bound",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_assignment",
+				"coordinates": {
+					"boundary": "assignment",
+					"census_child": "parser_data_type.type_parameter_bound",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "parser_data_type",
@@ -501,22 +601,52 @@
 			"representation": "reflection_property_info",
 			"child_slot": "hint_string",
 			"surface": "reflection",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_reflective_write",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"census_child": "reflection_property_info.hint_string",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "reflection_property_info",
 			"child_slot": "hint_string",
 			"surface": "runtime_bytecode",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_reflective_write",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"census_child": "reflection_property_info.hint_string",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "bytecode"
+				}
+			}
 		},
 		{
 			"representation": "reflection_property_info",
 			"child_slot": "hint_string",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_reflective_write",
+				"coordinates": {
+					"boundary": "reflective_write",
+					"census_child": "reflection_property_info.hint_string",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "runtime_data_type",
@@ -547,15 +677,35 @@
 			"representation": "runtime_data_type",
 			"child_slot": "container_element_types",
 			"surface": "runtime_bytecode",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_argument_binding",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"census_child": "runtime_data_type.container_element_types",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "bytecode"
+				}
+			}
 		},
 		{
 			"representation": "runtime_data_type",
 			"child_slot": "container_element_types",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_argument_binding",
+				"coordinates": {
+					"boundary": "argument_binding",
+					"census_child": "runtime_data_type.container_element_types",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "runtime_data_type",
@@ -586,15 +736,35 @@
 			"representation": "runtime_data_type",
 			"child_slot": "type_arguments",
 			"surface": "runtime_bytecode",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_assignment",
+				"coordinates": {
+					"boundary": "assignment",
+					"census_child": "runtime_data_type.type_arguments",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "bytecode"
+				}
+			}
 		},
 		{
 			"representation": "runtime_data_type",
 			"child_slot": "type_arguments",
 			"surface": "runtime_text",
-			"status": "uncovered",
-			"issue_url": "https://github.com/cafecito-games/Foundry/issues/2481"
+			"status": "covered",
+			"witness": {
+				"kind": "family_case",
+				"family": "wrapper_parity_assignment",
+				"coordinates": {
+					"boundary": "assignment",
+					"census_child": "runtime_data_type.type_arguments",
+					"destination": "plain",
+					"source_proof": "static_member",
+					"surface": "text"
+				}
+			}
 		},
 		{
 			"representation": "runtime_data_type",

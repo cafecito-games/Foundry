@@ -169,6 +169,10 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 		options.report_path = family_report_path(p_options.report_path, family, single_family);
 		options.published_surface = p_options.surface;
 		options.deadline_usec = deadline_usec;
+		// A tier that audits the whole catalog says so once here rather than at every call site that
+		// builds an invocation.
+		options.validate_full_census =
+				p_options.validate_full_census || p_options.tier == "strict" || p_options.tier == "scheduled";
 		options.observation_mutator = p_options.observation_mutator;
 		options.persisted_write_hook = p_options.persisted_write_hook;
 		options.clock = p_options.clock;

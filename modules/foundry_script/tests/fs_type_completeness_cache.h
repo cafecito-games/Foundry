@@ -50,6 +50,12 @@ struct FSCompletenessCatalogRecord {
 	FSCompletenessResolution resolution;
 	FSCompletenessMigrations migrations;
 	Error error = OK;
+	// How far the load got before `error`: OK once the manifest loaded, validated, and its derivation
+	// graph resolved, whatever the migration index then did. A consumer that only needs the matrix -
+	// a census witness asking whether a family could run at all - reads this, because migrations are
+	// keyed to one family's case IDs and a migration file written for another family says nothing
+	// about whether this one resolves.
+	Error resolution_error = OK;
 	Vector<String> errors;
 };
 
