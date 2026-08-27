@@ -1,0 +1,1 @@
+FOUNDRY_TOOLING {"project":"/tmp/foundry-tooling-capture","pid":10000,"local_only":true,"services":["lsp","dap"],"lsp_port":65063,"dap_port":65060}

@@ -1,0 +1,20 @@
+{
+  "id": 2,
+  "jsonrpc": "2.0",
+  "result": {
+    "contents": {
+      "kind": "markdown",
+      "value": "\tvar value: uint = 0UL\n\nDefined in [res://carrier.fs](file:///tmp/foundry-tooling-capture/carrier.fs)"
+    },
+    "range": {
+      "end": {
+        "character": 5,
+        "line": 1
+      },
+      "start": {
+        "character": 5,
+        "line": 1
+      }
+    }
+  }
+}

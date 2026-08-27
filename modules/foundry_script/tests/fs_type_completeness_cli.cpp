@@ -273,7 +273,18 @@ int FSCompletenessCLI::run(const Options &p_options, PackedStringArray *r_publis
 	if (unpublished) {
 		return EXIT_STRUCTURAL_FAILURE;
 	}
-	return timed_out ? int(EXIT_TIMEOUT) : exit_code_for_outcome(worst);
+	if (timed_out) {
+		return EXIT_TIMEOUT;
+	}
+	// Every document is on disk by now, so an invocation that demanded tooling coverage refuses on
+	// evidence rather than instead of it: the uncovered cells are published and the exit code says the
+	// configuration owed coverage it could not produce.
+	if (p_options.require_tooling &&
+			!bool(FSCompletenessRunner::configuration_report().get("tools_enabled", false))) {
+		return refuse("--require-tooling was passed, but this build compiles no tooling surface to "
+					  "observe; every tooling cell is reported as not covered.");
+	}
+	return exit_code_for_outcome(worst);
 }
 
 namespace {

@@ -1045,7 +1045,7 @@ static void parse_dimension_file(const String &p_path, HashSet<String> &r_seen_d
 	if (require_string(root, SNAME("adapter"), "$.adapter", adapter, file_errors)) {
 		if (adapter.is_empty()) {
 			append_error(file_errors, "$.adapter", "must be non-empty");
-		} else if (FSCompletenessAdapterRegistry::find(adapter) == nullptr) {
+		} else if (!FSCompletenessAdapterRegistry::is_declared(adapter)) {
 			append_error(file_errors, "$.adapter", vformat("unknown adapter '%s'", adapter));
 		}
 	}

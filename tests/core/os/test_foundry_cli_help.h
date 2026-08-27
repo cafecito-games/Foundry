@@ -173,6 +173,7 @@ TEST_CASE("[FoundryCLIHelp] Test completeness run help documents its required in
 	CHECK(text.contains("--surface"));
 	CHECK(text.contains("--timeout-seconds"));
 	CHECK(text.contains("(required)"));
+	CHECK(text.contains("--require-tooling"));
 	CHECK(text.contains("foundry --headless test completeness run"));
 }
 

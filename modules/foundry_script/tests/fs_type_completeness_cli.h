@@ -66,6 +66,11 @@ public:
 		int timeout_seconds = 0;
 		// Repository-relative or absolute path of the budgets document; empty uses the tracked one.
 		String budgets_path;
+		// Refuses the invocation when this build cannot observe the tooling surfaces at all. The
+		// families still run and still publish their documents, so the uncovered cells are on record;
+		// only the exit code changes, which is what lets a gate demand tooling coverage from the
+		// configurations that owe it without changing what a narrower configuration publishes.
+		bool require_tooling = false;
 		// Test seam: monotonic microsecond clock the deadline is measured on.
 		FSCompletenessClock clock = nullptr;
 		// Test seam: forwarded to every family run, so a test can produce a deterministic product

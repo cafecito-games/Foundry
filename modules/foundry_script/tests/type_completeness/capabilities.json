@@ -24,6 +24,7 @@
         "lifecycle_proxy_reflection",
         "lifecycle_reload",
         "lifecycle_shutdown_reinitialization",
+        "tooling_hover",
         "union_destination_membership",
         "wrapper_parity_argument_binding",
         "wrapper_parity_assignment",
@@ -110,6 +111,7 @@
         "lifecycle_proxy_reflection",
         "lifecycle_reload",
         "lifecycle_shutdown_reinitialization",
+        "tooling_hover",
         "union_destination_membership",
         "wrapper_parity_argument_binding",
         "wrapper_parity_assignment",
@@ -166,6 +168,23 @@
       ],
       "families": [
         "lifecycle_dependency_invalidation"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/language_server/fs_extend_parser.cpp",
+        "modules/foundry_script/language_server/fs_text_document.cpp"
+      ],
+      "families": [
+        "tooling_hover"
+      ]
+    },
+    {
+      "paths": [
+        "modules/foundry_script/tests/type_completeness/rules/tooling_hover.json"
+      ],
+      "families": [
+        "tooling_hover"
       ]
     }
   ],

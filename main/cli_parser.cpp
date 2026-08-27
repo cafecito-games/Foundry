@@ -1134,6 +1134,9 @@ static void parse_test_completeness_run(CLIParseState &r_state) {
 				return;
 			}
 			r_state.result.invocation.completeness_timeout_seconds = timeout.to_int();
+		} else if (arg == "--require-tooling") {
+			r_state.result.invocation.completeness_require_tooling = true;
+			r_state.index++;
 		} else {
 			fail(r_state.result, "Unknown option for test completeness run: " + arg + ".");
 			return;

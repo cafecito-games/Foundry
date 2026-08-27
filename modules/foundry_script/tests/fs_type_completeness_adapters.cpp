@@ -32,6 +32,7 @@
 
 #include "fs_type_completeness_destination_wrapper_adapter.h"
 #include "fs_type_completeness_lifecycle_adapter.h"
+#include "fs_type_completeness_tooling_adapter.h"
 
 namespace FSTests {
 
@@ -142,6 +143,11 @@ const Vector<const FSCompletenessFamilyAdapter *> &builtin_adapters() {
 	static const Vector<const FSCompletenessFamilyAdapter *> table = {
 		&FSDestinationWrapperAdapter::shared(),
 		&FSLifecycleAdapter::shared(),
+#ifdef FS_COMPLETENESS_TOOLING_ADAPTER_AVAILABLE
+		// Registered only where the editor tooling surfaces it drives are compiled in. A build without
+		// them declares the id and covers no tooling cell rather than pretending to observe one.
+		&FSToolingAdapter::shared(),
+#endif
 		&FSSyntheticPairIdentityAdapter::shared(),
 	};
 	return table;
@@ -224,6 +230,21 @@ const FSCompletenessFamilyAdapter *FSCompletenessAdapterRegistry::find(const Str
 		}
 	}
 	return nullptr;
+}
+
+Vector<String> FSCompletenessAdapterRegistry::configuration_gated_ids() {
+	Vector<String> gated;
+	gated.push_back(tooling_adapter_id());
+	gated.sort();
+	return gated;
+}
+
+bool FSCompletenessAdapterRegistry::is_configuration_gated(const String &p_adapter_id) {
+	return !p_adapter_id.is_empty() && configuration_gated_ids().has(p_adapter_id);
+}
+
+bool FSCompletenessAdapterRegistry::is_declared(const String &p_adapter_id) {
+	return find(p_adapter_id) != nullptr || is_configuration_gated(p_adapter_id);
 }
 
 Vector<String> FSCompletenessAdapterRegistry::ids() {

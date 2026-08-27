@@ -105,9 +105,11 @@ TEST_CASE("[FoundryCLIParser] Test completeness run collects families and requir
 			"presubmit",
 			"--timeout-seconds",
 			"90",
+			"--require-tooling",
 	}));
 	REQUIRE_MESSAGE(result.ok, result.error);
 	CHECK_EQ(result.invocation.kind, Kind::TEST_COMPLETENESS_RUN);
+	CHECK(result.invocation.completeness_require_tooling);
 	CHECK_EQ(result.invocation.completeness_families,
 			make_args({ "union_destination_membership", "second_family" }));
 	CHECK_EQ(result.invocation.completeness_catalog, "catalog");
@@ -117,6 +119,27 @@ TEST_CASE("[FoundryCLIParser] Test completeness run collects families and requir
 	CHECK_EQ(result.invocation.completeness_tier, "presubmit");
 	CHECK_EQ(result.invocation.completeness_timeout_seconds, 90);
 	CHECK_EQ(result.command_path, make_args({ "test", "completeness run" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Test completeness run demands tooling coverage only when asked") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"completeness",
+			"run",
+			"--family",
+			"union_destination_membership",
+			"--catalog",
+			"catalog",
+			"--scratch",
+			"scratch",
+			"--report",
+			"scratch/report.json",
+			"--tier",
+			"presubmit",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_FALSE(result.invocation.completeness_require_tooling);
 }
 
 TEST_CASE("[FoundryCLIParser] Test completeness select parses its inputs") {

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "adapter": "tooling",
+  "dimensions": [
+    {
+      "id": "tooling_parity",
+      "outcomes": [
+        "agrees",
+        "wording_differs",
+        "type_differs"
+      ]
+    },
+    {
+      "id": "tooling_outcome",
+      "outcomes": [
+        "rendered",
+        "absent"
+      ]
+    }
+  ]
+}
